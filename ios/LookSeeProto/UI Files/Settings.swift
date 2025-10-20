@@ -1,6 +1,6 @@
 //
-//  ContentView.swift
-//  Playaround
+//  Settings.swift
+//  LookSeeProto
 //
 //  Created by Christian Barbara on 10/15/25.
 //

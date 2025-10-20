@@ -6,6 +6,11 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		56C3FA082EA6CA3100EA6153 /* Settings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56C3FA052EA6CA3100EA6153 /* Settings.swift */; };
+		56C3FA092EA6CA3100EA6153 /* Splash.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56C3FA062EA6CA3100EA6153 /* Splash.swift */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		3C918FAB2E9ECE6100AF5DAF /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -27,6 +32,8 @@
 		3C918F9D2E9ECE5F00AF5DAF /* LookSeeProto.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LookSeeProto.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		3C918FAA2E9ECE6100AF5DAF /* LookSeeProtoTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LookSeeProtoTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		3C918FB42E9ECE6100AF5DAF /* LookSeeProtoUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LookSeeProtoUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		56C3FA052EA6CA3100EA6153 /* Settings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Settings.swift; sourceTree = "<group>"; };
+		56C3FA062EA6CA3100EA6153 /* Splash.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Splash.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -75,6 +82,7 @@
 		3C918F942E9ECE5F00AF5DAF = {
 			isa = PBXGroup;
 			children = (
+				56C3FA072EA6CA3100EA6153 /* UI Files */,
 				3C918F9F2E9ECE5F00AF5DAF /* LookSeeProto */,
 				3C918FAD2E9ECE6100AF5DAF /* LookSeeProtoTests */,
 				3C918FB72E9ECE6100AF5DAF /* LookSeeProtoUITests */,
@@ -90,6 +98,15 @@
 				3C918FB42E9ECE6100AF5DAF /* LookSeeProtoUITests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		56C3FA072EA6CA3100EA6153 /* UI Files */ = {
+			isa = PBXGroup;
+			children = (
+				56C3FA052EA6CA3100EA6153 /* Settings.swift */,
+				56C3FA062EA6CA3100EA6153 /* Splash.swift */,
+			);
+			path = "UI Files";
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -236,6 +253,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				56C3FA082EA6CA3100EA6153 /* Settings.swift in Sources */,
+				56C3FA092EA6CA3100EA6153 /* Splash.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

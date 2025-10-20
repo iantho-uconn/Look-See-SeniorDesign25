@@ -1,13 +1,13 @@
 //
-//  ContentView.swift
-//  Playaround
+//  Splash.swift
+//  LookSeeProto
 //
 //  Created by Christian Barbara on 10/8/25.
 //
 
 import SwiftUI
 
-struct ContentView: View {
+struct Splash: View {
     var body: some View {
         ZStack{
             LinearGradient(
@@ -33,7 +33,7 @@ struct ContentView: View {
                 }
                 .frame(maxHeight: .infinity)
                 Button("Get Started"){
-                            //
+                    //
                 }
                 .padding(.horizontal, 140)
                 .padding(.vertical, 20)
@@ -48,5 +48,5 @@ struct ContentView: View {
 }
 
 #Preview {
-    ContentView()
+    Splash()
 }
