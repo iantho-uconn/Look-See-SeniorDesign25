@@ -6,7 +6,7 @@ device = "mps"
 
 # runs on all images in the folder and saves outputs to runs/detect/predict*
 model.predict(
-    source="data/sample_photos",
+    source="data/JohnathanStatue",
     imgsz=640, conf=0.35, device=device,
     save=True, save_txt=True, save_conf=True
 )
