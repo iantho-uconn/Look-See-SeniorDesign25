@@ -11,7 +11,7 @@ import SwiftUI
 struct LookSeeProtoApp: App {
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            Settings()
         }
     }
 }

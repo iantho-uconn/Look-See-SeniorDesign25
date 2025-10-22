@@ -8,6 +8,9 @@
 import SwiftUI
 
 struct Settings: View {
+    @State private var onlineMode = true
+    @State private var offlineMode = false
+    @State private var popUp = false
     var body: some View {
         VStack{
             HStack{
@@ -18,15 +21,21 @@ struct Settings: View {
                 Spacer()
             }
             ScrollView {
-                Button("Get Started"){
-                            //
-                }
-                .padding(.horizontal, 140)
-                .padding(.vertical, 20)
-                .background(.white)
-                .foregroundStyle(Color(red: 0.60, green: 0.06, blue: 0.98))
-                .cornerRadius(8)
-                .padding()
+                Button(action: {
+                    print("Button tapped!")
+                }, label: {
+                    HStack {
+                        Image(systemName: "person.crop.circle")
+                            .font(.system(size: 50))
+                        VStack{
+                            Text("Guest User")
+                            Text("guest@looksee.app")
+                        }
+                        
+                        Image(systemName: "chevron.right")
+                    }
+                })
+                .buttonStyle(.bordered)
                 
                 Divider()
                 
@@ -37,6 +46,34 @@ struct Settings: View {
                         .padding()
                     Spacer()
                 }
+                Toggle(isOn: $onlineMode){
+                    HStack{
+                        Image(systemName: "wifi")
+                            .padding(5)
+                        VStack(alignment: .leading){
+                            Text("Online Recognition")
+                            Text("More accurate, requires internet")
+                                .font(.subheadline)
+                                .foregroundStyle(.gray)
+                        }
+                    }
+                }
+                .padding()
+                
+                Toggle(isOn: $offlineMode){
+                    HStack{
+                        Image(systemName: "wifi.slash")
+                            .padding(5)
+                        VStack(alignment: .leading){
+                            Text("Offline Mode")
+                            Text("Works without internet")
+                                .font(.subheadline)
+                                .foregroundStyle(.gray)
+                        }
+                        
+                    }
+                }
+                .padding()
                 
                 Divider()
                 
@@ -48,6 +85,7 @@ struct Settings: View {
                     Spacer()
                 }
                 
+                
                 Divider()
                 
                 HStack{
@@ -57,6 +95,32 @@ struct Settings: View {
                         .padding()
                     Spacer()
                 }
+                Button(action: {
+                    print("Button tapped!")
+                },
+                    label: {
+                        HStack{
+                            Image(systemName: "xmark.bin")
+                                .padding(5)
+                            VStack(alignment: .leading){
+                                Text("Clear cache")
+                                Text("Free up 124 MB")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.gray)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                        }
+                    }
+                )
+//                .confirmationDialogue(
+//                    "Test",
+//                    isPresented: $popUp,
+//                    titleVisibility: .visible
+//                ) {
+//                    Button("Yes", role: .destructive) {}
+//                }
+                .padding()
                 
                 Divider()
                 
