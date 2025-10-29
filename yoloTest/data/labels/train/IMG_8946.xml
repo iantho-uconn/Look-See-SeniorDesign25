@@ -1,0 +1,26 @@
+<annotation>
+	<folder>train</folder>
+	<filename>IMG_8946.jpeg</filename>
+	<path>/Users/ian/Desktop/LookSeeSD/yoloTest/data/CokeCan/train/IMG_8946.jpeg</path>
+	<source>
+		<database>Unknown</database>
+	</source>
+	<size>
+		<width>2268</width>
+		<height>4032</height>
+		<depth>3</depth>
+	</size>
+	<segmented>0</segmented>
+	<object>
+		<name>Coke Zero</name>
+		<pose>Unspecified</pose>
+		<truncated>0</truncated>
+		<difficult>0</difficult>
+		<bndbox>
+			<xmin>595</xmin>
+			<ymin>1165</ymin>
+			<xmax>1517</xmax>
+			<ymax>2871</ymax>
+		</bndbox>
+	</object>
+</annotation>

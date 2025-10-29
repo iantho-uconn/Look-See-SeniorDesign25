@@ -1,0 +1,6 @@
+path: ./dataset
+train: images/train
+val: images/val
+
+names:
+  15: Coke Can
