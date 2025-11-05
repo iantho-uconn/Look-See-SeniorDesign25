@@ -19,3 +19,11 @@ def check(split):
     print(f"{split}: {'OK ✓' if not miss else 'Missing labels for: '+', '.join(sorted(list(miss))[:8])+' ...'}")
 check("train"); check("val")
 PY
+
+
+opening labelimg with proper classes set:
+
+python labelImg.py \
+  /Users/ian/Desktop/LookSeeSD/yoloTest/data/images/val \
+  /Users/ian/Desktop/LookSeeSD/yoloTest/data/labels/val/classes.txt
+

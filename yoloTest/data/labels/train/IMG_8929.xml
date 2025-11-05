@@ -1,7 +1,7 @@
 <annotation>
 	<folder>train</folder>
 	<filename>IMG_8929.jpeg</filename>
-	<path>/Users/ian/Desktop/LookSeeSD/yoloTest/data/CokeCan/train/IMG_8929.jpeg</path>
+	<path>/Users/ian/Desktop/LookSeeSD/yoloTest/data/images/train/IMG_8929.jpeg</path>
 	<source>
 		<database>Unknown</database>
 	</source>
@@ -17,9 +17,9 @@
 		<truncated>0</truncated>
 		<difficult>0</difficult>
 		<bndbox>
-			<xmin>711</xmin>
-			<ymin>1343</ymin>
-			<xmax>1656</xmax>
+			<xmin>740</xmin>
+			<ymin>1285</ymin>
+			<xmax>1590</xmax>
 			<ymax>3060</ymax>
 		</bndbox>
 	</object>
