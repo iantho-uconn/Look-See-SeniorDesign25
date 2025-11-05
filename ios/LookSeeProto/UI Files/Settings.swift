@@ -11,6 +11,7 @@ struct Settings: View {
     @State private var onlineMode = true
     @State private var offlineMode = false
     @State private var popUp = false
+    @State private var cache = 0
     var body: some View {
         VStack{
             HStack{
@@ -85,6 +86,68 @@ struct Settings: View {
                     Spacer()
                 }
                 
+                Button(action: {
+                    print("Button tapped!")
+                },
+                    label: {
+                        HStack{
+                            Image(systemName: "camera")
+                                .padding(5)
+                            VStack(alignment: .leading){
+                                Text("Camera access")
+                                Text("Required for AR detection")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.gray)
+                            }
+                            Spacer()
+                            Text("Granted")
+                                .foregroundStyle(.green)
+                        }
+                    }
+                )
+                .padding()
+                
+                Button(action: {
+                    print("Button tapped!")
+                },
+                    label: {
+                        HStack{
+                            Image(systemName: "mappin")
+                                .padding(5)
+                            VStack(alignment: .leading){
+                                Text("Location access")
+                                Text("For landmark positioning")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.gray)
+                            }
+                            Spacer()
+                            Text("Granted")
+                                .foregroundStyle(.green)
+                        }
+                    }
+                )
+                .padding()
+                
+                Button(action: {
+                    print("Button tapped!")
+                },
+                    label: {
+                        HStack{
+                            Image(systemName: "mappin")
+                                .padding(5)
+                            VStack(alignment: .leading){
+                                Text("Storage access")
+                                Text("For saving landmarks")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.gray)
+                            }
+                            Spacer()
+                            Text("Granted")
+                                .foregroundStyle(.green)
+                        }
+                    }
+                )
+                .padding()
                 
                 Divider()
                 
@@ -100,11 +163,11 @@ struct Settings: View {
                 },
                     label: {
                         HStack{
-                            Image(systemName: "xmark.bin")
+                            Image(systemName: "externaldrive")
                                 .padding(5)
                             VStack(alignment: .leading){
                                 Text("Clear cache")
-                                Text("Free up 124 MB")
+                                Text("Free up \(cache) MB")
                                     .font(.subheadline)
                                     .foregroundStyle(.gray)
                             }
