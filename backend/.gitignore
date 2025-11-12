@@ -1,0 +1,9 @@
+# ignore virtual enviroment
+venv/
+
+# ignore this hidden file used by mac for styling in finder
+.DS_Store
+
+__pycache__/
+
+instance/
