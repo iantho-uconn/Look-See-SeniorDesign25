@@ -6,6 +6,11 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		3CF7EA842EC43550001EAC66 /* CokeCanDetect.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3CF7EA832EC43550001EAC66 /* CokeCanDetect.mlpackage */; };
+		3CF7EA852EC43583001EAC66 /* CokeCanDetect.mlpackage in Resources */ = {isa = PBXBuildFile; fileRef = 3CF7EA832EC43550001EAC66 /* CokeCanDetect.mlpackage */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		3C918FAB2E9ECE6100AF5DAF /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -27,6 +32,7 @@
 		3C918F9D2E9ECE5F00AF5DAF /* LookSeeProto.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LookSeeProto.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		3C918FAA2E9ECE6100AF5DAF /* LookSeeProtoTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LookSeeProtoTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		3C918FB42E9ECE6100AF5DAF /* LookSeeProtoUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LookSeeProtoUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		3CF7EA832EC43550001EAC66 /* CokeCanDetect.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = CokeCanDetect.mlpackage; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -38,11 +44,6 @@
 		3C918FAD2E9ECE6100AF5DAF /* LookSeeProtoTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = LookSeeProtoTests;
-			sourceTree = "<group>";
-		};
-		3C918FB72E9ECE6100AF5DAF /* LookSeeProtoUITests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = LookSeeProtoUITests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -75,9 +76,9 @@
 		3C918F942E9ECE5F00AF5DAF = {
 			isa = PBXGroup;
 			children = (
+				3CF7EA822EC43510001EAC66 /* MLModels */,
 				3C918F9F2E9ECE5F00AF5DAF /* LookSeeProto */,
 				3C918FAD2E9ECE6100AF5DAF /* LookSeeProtoTests */,
-				3C918FB72E9ECE6100AF5DAF /* LookSeeProtoUITests */,
 				3C918F9E2E9ECE5F00AF5DAF /* Products */,
 			);
 			sourceTree = "<group>";
@@ -90,6 +91,14 @@
 				3C918FB42E9ECE6100AF5DAF /* LookSeeProtoUITests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		3CF7EA822EC43510001EAC66 /* MLModels */ = {
+			isa = PBXGroup;
+			children = (
+				3CF7EA832EC43550001EAC66 /* CokeCanDetect.mlpackage */,
+			);
+			path = MLModels;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -153,9 +162,6 @@
 			dependencies = (
 				3C918FB62E9ECE6100AF5DAF /* PBXTargetDependency */,
 			);
-			fileSystemSynchronizedGroups = (
-				3C918FB72E9ECE6100AF5DAF /* LookSeeProtoUITests */,
-			);
 			name = LookSeeProtoUITests;
 			packageProductDependencies = (
 			);
@@ -212,6 +218,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				3CF7EA852EC43583001EAC66 /* CokeCanDetect.mlpackage in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -236,6 +243,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				3CF7EA842EC43550001EAC66 /* CokeCanDetect.mlpackage in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
