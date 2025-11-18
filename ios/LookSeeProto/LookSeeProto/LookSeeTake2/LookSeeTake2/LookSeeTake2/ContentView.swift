@@ -6,52 +6,56 @@
 //
 
 import SwiftUI
+import Combine
 import SwiftData
 
 struct ContentView: View {
-    @Environment(\.modelContext) private var modelContext
-    @Query private var items: [Item]
+    @EnvironmentObject var locationManager: LocationManager
+    @StateObject private var detector = Detector()
 
     var body: some View {
-        NavigationSplitView {
-            List {
-                ForEach(items) { item in
-                    NavigationLink {
-                        Text("Item at \(item.timestamp, format: Date.FormatStyle(date: .numeric, time: .standard))")
-                    } label: {
-                        Text(item.timestamp, format: Date.FormatStyle(date: .numeric, time: .standard))
-                    }
-                }
-                .onDelete(perform: deleteItems)
+        ZStack(alignment: .bottomLeading) {
+            // Live camera + boxes
+            CameraPreview(detector: detector)
+                .ignoresSafeArea()
+
+            // Model/inference status (tiny HUD)
+            VStack(alignment: .leading, spacing: 8) {
+                statusRow(title: "Model", value: detector.isModelLoaded ? "Loaded" : "Loading…")
+                statusRow(title: "Detections", value: "\(detector.detections.count)")
+                statusRow(title: "Latency", value: String(format: "%.1f ms", detector.lastInferenceMS))
             }
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    EditButton()
-                }
-                ToolbarItem {
-                    Button(action: addItem) {
-                        Label("Add Item", systemImage: "plus")
-                    }
-                }
+            .padding(10)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+            .padding(.bottom, 140)
+            .padding(.leading, 20)
+
+            // Location panel (keeps original functionality)
+            VStack(alignment: .leading) {
+                Text("Location")
+                    .font(.headline)
+                Text("Lat: \(locationManager.latitude ?? 0)")
+                Text("Lon: \(locationManager.longitude ?? 0)")
+                Text("± \(Int(locationManager.horizontalAccuracy ?? 0)) m")
             }
-        } detail: {
-            Text("Select an item")
+            .padding(14)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+            .padding()
+        }
+        .onAppear {
+            // Ensures permissions prompts
+            _ = locationManager.latitude
         }
     }
 
-    private func addItem() {
-        withAnimation {
-            let newItem = Item(timestamp: Date())
-            modelContext.insert(newItem)
+    private func statusRow(title: String, value: String) -> some View {
+        HStack {
+            Text(title + ":")
+                .foregroundStyle(.secondary)
+            Text(value)
+                .fontWeight(.semibold)
         }
-    }
-
-    private func deleteItems(offsets: IndexSet) {
-        withAnimation {
-            for index in offsets {
-                modelContext.delete(items[index])
-            }
-        }
+        .font(.caption)
     }
 }
 
