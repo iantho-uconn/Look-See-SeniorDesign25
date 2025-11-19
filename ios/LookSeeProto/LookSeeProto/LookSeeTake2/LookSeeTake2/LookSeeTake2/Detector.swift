@@ -37,7 +37,7 @@ final class Detector: NSObject, ObservableObject {
     /// Try to load the generated class from your .mlpackage first, then fall back to bundle search.
     private func loadModel() {
         do {
-            // 1) Try the auto-generated class (rename "CokeCanDetect" if Xcode generated a different name)
+            // 1) Searching for our model specifically
             if let model = try? CokeCanDetect(configuration: MLModelConfiguration()).model {
                 vnModel = try VNCoreMLModel(for: model)
                 isModelLoaded = true

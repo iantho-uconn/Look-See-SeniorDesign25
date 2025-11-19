@@ -61,5 +61,6 @@ struct ContentView: View {
 
 #Preview {
     ContentView()
-        .modelContainer(for: Item.self, inMemory: true)
+        .environmentObject(LocationManager())
+    // .modelContainer(for: Item.self, inMemory: true) // remove if you’re not using SwiftData
 }

@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		3CF2C7492ECCE71C003F7DF3 /* CokeCanDetect.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3CF2C7482ECCE71C003F7DF3 /* CokeCanDetect.mlpackage */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		3CF2C7232ECCE58F003F7DF3 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -27,6 +31,7 @@
 		3CF2C7132ECCE58D003F7DF3 /* LookSeeTake2.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LookSeeTake2.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		3CF2C7222ECCE58F003F7DF3 /* LookSeeTake2Tests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LookSeeTake2Tests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		3CF2C72C2ECCE58F003F7DF3 /* LookSeeTake2UITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LookSeeTake2UITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		3CF2C7482ECCE71C003F7DF3 /* CokeCanDetect.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = CokeCanDetect.mlpackage; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -75,6 +80,7 @@
 		3CF2C70A2ECCE58D003F7DF3 = {
 			isa = PBXGroup;
 			children = (
+				3CF2C7472ECCE6E5003F7DF3 /* MachineLearningModels */,
 				3CF2C7152ECCE58D003F7DF3 /* LookSeeTake2 */,
 				3CF2C7252ECCE58F003F7DF3 /* LookSeeTake2Tests */,
 				3CF2C72F2ECCE58F003F7DF3 /* LookSeeTake2UITests */,
@@ -90,6 +96,14 @@
 				3CF2C72C2ECCE58F003F7DF3 /* LookSeeTake2UITests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		3CF2C7472ECCE6E5003F7DF3 /* MachineLearningModels */ = {
+			isa = PBXGroup;
+			children = (
+				3CF2C7482ECCE71C003F7DF3 /* CokeCanDetect.mlpackage */,
+			);
+			path = MachineLearningModels;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -236,6 +250,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				3CF2C7492ECCE71C003F7DF3 /* CokeCanDetect.mlpackage in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -400,11 +415,14 @@
 				DEVELOPMENT_TEAM = C66T6ZH83N;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Camera is used to recognize objects";
+				INFOPLIST_KEY_NSLocationUsageDescription = "Location is shown with detections.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -432,11 +450,14 @@
 				DEVELOPMENT_TEAM = C66T6ZH83N;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Camera is used to recognize objects";
+				INFOPLIST_KEY_NSLocationUsageDescription = "Location is shown with detections.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
