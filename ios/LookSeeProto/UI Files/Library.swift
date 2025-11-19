@@ -8,9 +8,10 @@ import Combine
 import SwiftUI
 
 struct Library: View {
-    @State private var locations = Location.sample
+    
     @State private var searchText = ""
     @State private var searchIsActive = false
+    var locations: [Landmark]
     var body: some View {
         VStack{
             HStack{
@@ -39,38 +40,16 @@ struct Library: View {
         }
         
     }
-    var filter: [Location]{
+    var filter: [Landmark]{
         if searchText.isEmpty{
-            return Location.sample
+            return locations
         }
         else{
-            return Location.sample.filter{$0.name.localizedCaseInsensitiveContains(searchText)}
+            return locations.filter{$0.name.localizedCaseInsensitiveContains(searchText)}
         }
     }
-}
-
-struct Location: Identifiable{
-    let id = UUID()
-    var name: String
-    var img: String
-    var date: String
-    var time: String
-    var confidence: String
-    
-    init(_ name: String, img: String, date: String, time: String, confidence: String){
-        self.name = name
-        self.img = img
-        self.date = date
-        self.time = time
-        self.confidence = confidence
-    }
-    
-    static let sample = [
-        Location("Empire State Building", img: "🏢", date: "Today", time: "2:30 PM", confidence: "94"),
-        Location("Brooklyn Bridge", img: "🌉", date: "Today", time: "1:15 PM", confidence: "98")
-    ]
 }
 
 #Preview {
-    Library()
+    Library(locations: landmarks)
 }
