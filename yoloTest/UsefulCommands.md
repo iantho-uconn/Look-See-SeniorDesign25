@@ -41,3 +41,9 @@ yolo task=detect mode=train \
   epochs=40 imgsz=640 batch=16 device=mps workers=0 \
   name=train_fruits_coke_mix
 
+packaging:
+
+(.venv311) ian@Ians-MacBook-Pro yoloTest % yolo export \
+  model="/Users/ian/Desktop/LookSeeSD/runs/detect/train_fruits_coke_mix/weights/best.pt" \ 
+  format=coreml imgsz=640 nms=True half=False \
+  project="/Users/ian/Desktop/LookSeeSD/exports" name="fruits_coke_coreml"
