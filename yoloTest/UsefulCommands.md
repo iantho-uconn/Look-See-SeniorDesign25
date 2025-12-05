@@ -35,3 +35,9 @@ yolo task=detect mode=train \
   imgsz=640 \
   project=runs/train \
   name=looksee-v1
+
+  yolo task=detect mode=train model=yolo11n.pt \
+  data=/Users/ian/Desktop/LookSeeSD/yoloTest/data/data.yaml \
+  epochs=40 imgsz=640 batch=16 device=mps workers=0 \
+  name=train_fruits_coke_mix
+
