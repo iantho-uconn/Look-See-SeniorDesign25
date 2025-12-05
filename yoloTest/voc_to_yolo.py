@@ -5,10 +5,10 @@ from PIL import Image
 # We keep Coke as class 0 from your existing dataset.
 # Fruits from Kaggle get 1..3 as agreed.
 NAME2ID = {
-    "Coke Can": 0,
-    "apple": 1,
-    "banana": 2,
-    "orange": 3,
+    "Coke Can": 15,
+    "apple": 16,
+    "banana": 17,
+    "orange": 18,
 }
 
 def voc_box_to_yolo(xmin, ymin, xmax, ymax, img_w, img_h):
