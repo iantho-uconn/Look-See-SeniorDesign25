@@ -26,3 +26,12 @@ python labelImg.py \
   /Users/ian/Desktop/LookSeeSD/yoloTest/data/images/val \
   /Users/ian/Desktop/LookSeeSD/yoloTest/data/labels/val/classes.txt
 
+training time:
+
+yolo task=detect mode=train \
+  model=yolo11n.pt \
+  data=data/data.yaml \
+  epochs=50 \
+  imgsz=640 \
+  project=runs/train \
+  name=looksee-v1
