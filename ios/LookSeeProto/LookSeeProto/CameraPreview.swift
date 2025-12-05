@@ -5,8 +5,8 @@
 
 import SwiftUI
 import AVFoundation
-import Vision   // ✅ needed
-import CoreML   // ✅ needed
+import Vision
+import CoreML
 
 final class CameraSessionCoordinator: NSObject {
     let session = AVCaptureSession()
