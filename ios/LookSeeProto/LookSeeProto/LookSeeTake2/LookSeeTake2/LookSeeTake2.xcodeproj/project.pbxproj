@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		3C117AE42EE388D3004B6DEA /* fruits_and_cans_2.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3C117AE32EE388D3004B6DEA /* fruits_and_cans_2.mlpackage */; };
+		3C117AE52EE388D3004B6DEA /* fruits_and_cans_2.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3C117AE32EE388D3004B6DEA /* fruits_and_cans_2.mlpackage */; };
+		3C117AE62EE388D3004B6DEA /* fruits_and_cans_2.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3C117AE32EE388D3004B6DEA /* fruits_and_cans_2.mlpackage */; };
 		3CF2C7492ECCE71C003F7DF3 /* CokeCanDetect.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3CF2C7482ECCE71C003F7DF3 /* CokeCanDetect.mlpackage */; };
 /* End PBXBuildFile section */
 
@@ -28,6 +31,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		3C117AE32EE388D3004B6DEA /* fruits_and_cans_2.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = fruits_and_cans_2.mlpackage; sourceTree = "<group>"; };
 		3CF2C7132ECCE58D003F7DF3 /* LookSeeTake2.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LookSeeTake2.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		3CF2C7222ECCE58F003F7DF3 /* LookSeeTake2Tests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LookSeeTake2Tests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		3CF2C72C2ECCE58F003F7DF3 /* LookSeeTake2UITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LookSeeTake2UITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -102,6 +106,7 @@
 			isa = PBXGroup;
 			children = (
 				3CF2C7482ECCE71C003F7DF3 /* CokeCanDetect.mlpackage */,
+				3C117AE32EE388D3004B6DEA /* fruits_and_cans_2.mlpackage */,
 			);
 			path = MachineLearningModels;
 			sourceTree = "<group>";
@@ -250,6 +255,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				3C117AE52EE388D3004B6DEA /* fruits_and_cans_2.mlpackage in Sources */,
 				3CF2C7492ECCE71C003F7DF3 /* CokeCanDetect.mlpackage in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -258,6 +264,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				3C117AE62EE388D3004B6DEA /* fruits_and_cans_2.mlpackage in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -265,6 +272,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				3C117AE42EE388D3004B6DEA /* fruits_and_cans_2.mlpackage in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -38,10 +38,10 @@ final class Detector: NSObject, ObservableObject {
     private func loadModel() {
         do {
             // 1) Searching for our model specifically
-            if let model = try? CokeCanDetect(configuration: MLModelConfiguration()).model {
+            if let model = try? fruits_and_cans_2(configuration: MLModelConfiguration()).model {
                 vnModel = try VNCoreMLModel(for: model)
                 isModelLoaded = true
-                print("✅ Loaded VNCoreMLModel from CokeCanDetect class")
+                print("✅ Loaded VNCoreMLModel from fruits+cans class")
                 return
             }
 

@@ -1,0 +1,19 @@
+{
+  "MLModelVersionStringKey" : "8.3.218",
+  "MLModelDescriptionKey" : "Ultralytics YOLO11n model trained on \/Users\/ian\/Desktop\/LookSeeSD\/yoloTest\/data\/data.yaml",
+  "MLModelCreatorDefinedKey" : {
+    "stride" : "32",
+    "Confidence threshold" : "0.25",
+    "IoU threshold" : "0.7",
+    "docs" : "https:\/\/docs.ultralytics.com",
+    "channels" : "3",
+    "task" : "detect",
+    "date" : "2025-12-05T16:24:08.289262",
+    "imgsz" : "[640, 640]",
+    "args" : "{'batch': 1, 'half': False, 'int8': False, 'dynamic': False, 'nms': True}",
+    "batch" : "1",
+    "names" : "{0: 'dog', 1: 'person', 2: 'cat', 3: 'tv', 4: 'car', 5: 'meatballs', 6: 'marinara sauce', 7: 'tomato soup', 8: 'chicken noodle soup', 9: 'french onion soup', 10: 'chicken breast', 11: 'ribs', 12: 'pulled pork', 13: 'hamburger', 14: 'cavity', 15: 'Coke Can', 16: 'apple', 17: 'banana', 18: 'orange'}"
+  },
+  "MLModelAuthorKey" : "Ultralytics",
+  "MLModelLicenseKey" : "AGPL-3.0 License (https:\/\/ultralytics.com\/license)"
+}
