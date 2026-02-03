@@ -9,8 +9,8 @@ import Foundation
 import SwiftUI
 
 struct LoginCredentials: Hashable, Codable, Identifiable {
-    var id: Int
+    var id: Int?
     var username: String
-    var email: String
+    var email: String?
     var password: String
 }

@@ -10,16 +10,15 @@ import SwiftUI
 struct Library: View {
     
     @State private var searchText = ""
-    @State private var searchIsActive = false
     var locations: [Landmark]
     var body: some View {
         VStack{
-            HStack{
-                Button("Library & History", systemImage:"arrow.backward"){
-                }
-                .padding()
-                Spacer()
-            }
+//            HStack{
+//                Button("Library & History", systemImage:"arrow.backward"){
+//                }
+//                .padding()
+//                Spacer()
+//            }
             NavigationStack {
                 List{
                     ForEach(filter) { item in
@@ -38,7 +37,6 @@ struct Library: View {
                 .navigationTitle("Previous locations")
             }
         }
-        
     }
     var filter: [Landmark]{
         if searchText.isEmpty{

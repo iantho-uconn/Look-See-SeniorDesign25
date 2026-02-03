@@ -6,14 +6,16 @@
 //
 
 import SwiftUI
+import Foundation
 
 struct Settings: View {
-    @State private var onlineMode = true
-    @State private var offlineMode = false
-    @State private var permissionCamera = true
-    @State private var permissionLocation = true
-    @State private var permissionStorage = true
+    @AppStorage("onlineMode") var onlineMode = true
+    @AppStorage("permissionCamera") var permissionCamera = true
+    @AppStorage("permissionLocation") var permissionLocation = true
+    @AppStorage("permissionStorage") var permissionStorage = true
     @State private var modal = false
+    @State private var showAlertAll = false
+    @State private var showAlertCache = false
     @State private var cache = 0
     var body: some View {
         NavigationStack{
@@ -48,20 +50,34 @@ struct Settings: View {
                 }
                 Section{
                     Button("Clear Cache",
-                           systemImage: "externaldrive",
-                           role: .destructive) {}
+                            systemImage: "externaldrive"){showAlertCache = true}
+                        .alert("Are you sure? This will delete all temporary data, including images.", isPresented: $showAlertCache){
+                            Button("Cancel", role: .cancel) {}
+                            Button("Yes", role: .destructive) {}
+                        }
+                    Button("Delete All Data",
+                           systemImage: "externaldrive.badge.exclamationmark",
+                           role: .destructive) {showAlertAll = true}
+                        .alert("Are you sure? This will delete all stored data, including stored models and your landmark history.", isPresented: $showAlertAll){
+                            Button("Cancel", role: .cancel) {}
+                            Button("Yes", role: .destructive) {}
+                        }
+                    
                 } header: {Text("Data Management")}
                 footer: {Text("Current cache size: \(cache) MB")}
                 
                 Section("Support & Info"){
-                    Button("Help & Tutorial",
-                           systemImage: "questionmark.circle") {}
-                    Button("About Looksee",
+                    NavigationLink(){ Help()
+                    } label: {
+                        Label("Help & Tutorial", systemImage: "questionmark.circle")
+                            .foregroundColor(.blue)
+                    }
+                    Button("About LookSee",
                            systemImage: "info.circle") {
                         modal = true
                     }
                            .sheet(isPresented: $modal){
-                               Text("Test")
+                               Text("Looksee is an application designed to help you identify local landmarks with ease.")
                            }
                 }
             }

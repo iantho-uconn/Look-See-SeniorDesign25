@@ -15,8 +15,4 @@ struct Landmark: Hashable, Codable, Identifiable {
     var date: String
     var time: String
     var confidence: String
-    
-//    static let sample = [
-//        Landmark(id: 0, name: "NULL", img: "🏢", date: "January 1, 1970", time: "12:00 AM", confidence: "0")
-//    ]
 }

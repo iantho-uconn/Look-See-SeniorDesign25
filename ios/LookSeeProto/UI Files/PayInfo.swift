@@ -15,7 +15,6 @@ struct PayInfo: View {
     @State private var expireYear: Int = Calendar.current.component(.year, from: .now)
     @State private var cvv: String = ""
     let cvvLimit = 3
-    
     let cardProviders = ["Visa", "Mastercard"]
     
     //Billing
@@ -28,7 +27,7 @@ struct PayInfo: View {
     @State private var address2: String = ""
     @State private var phone: String = ""
     
-    let stateArray = ["Alabama", "Alaska", "Arizona", "Arkansas", "California", "Colorado", "Connecticut", "Delaware"]
+    let stateArray = ["Alabama", "Alaska", "Arizona", "Arkansas", "California", "Colorado", "Connecticut", "Delaware", "Florida", "Georgia", "Hawaii", "Idaho", "Illinois", "Indiana", "Iowa", "Kansas", "Kentucky", "Louisiana", "Maine", "Maryland", "Massachusetts", "Michigan", "Minnesota", "Mississippi", "Missouri", "Montana", "Nebraska", "Nevada", "New Hampshire", "New Jersey", "New Mexico", "New York", "North Carolina", "North Dakota", "Ohio", "Oklahoma", "Oregon", "Pennsylvania", "Rhode Island", "South Carolina", "South Dakota", "Tennessee", "Texas", "Utah", "Vermont", "Virginia", "Washington", "West Virginia", "Wisconsin", "Wyoming"]
 
     var body: some View {
         VStack{
@@ -71,7 +70,9 @@ struct PayInfo: View {
                         .autocorrectionDisabled(true)
                 }
             }
-            Button("Submit"){}
+            Button("Submit"){
+                var info = Payment(cardProvider:cardProvider, cardNum:cardNum, expireMonth:expireMonth, expireYear:expireYear, cvv:Int(cvv) ?? 000, firstName:firstName, lastName:lastName, state:state, city:city, postCode:postCode, address1:address1, address2:address2, phone:phone)
+            }
                 .buttonStyle(.bordered)
         }
     }

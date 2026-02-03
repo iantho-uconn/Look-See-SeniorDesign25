@@ -19,7 +19,9 @@ struct Login: View {
                     SecureField(text: $password, prompt: Text("Password")) {}
                         .autocorrectionDisabled(true)
                 }
-                Button("Sign in") {}
+                Button("Sign in") {
+                    var info = LoginCredentials(username:username, password:password)
+                }
                     .buttonStyle(BorderlessButtonStyle())
             }
             

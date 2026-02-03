@@ -9,7 +9,11 @@
 /* Begin PBXBuildFile section */
 		561FF74B2EB258D400411CF8 /* Library.swift in Sources */ = {isa = PBXBuildFile; fileRef = 561FF74A2EB258CC00411CF8 /* Library.swift */; };
 		562AD38C2ECBAF1B00D5144C /* Login.swift in Sources */ = {isa = PBXBuildFile; fileRef = 562AD38B2ECBAF1800D5144C /* Login.swift */; };
+		562DAAAD2F2A71750083A71E /* Main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 562DAAAC2F2A71740083A71E /* Main.swift */; };
+		562DAAAF2F2A85B40083A71E /* Help.swift in Sources */ = {isa = PBXBuildFile; fileRef = 562DAAAE2F2A85B20083A71E /* Help.swift */; };
+		562DAAB32F2A89600083A71E /* LandmarkScan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 562DAAB22F2A895B0083A71E /* LandmarkScan.swift */; };
 		56432A372EBBBF70006B6E49 /* LandmarkRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56432A362EBBBF6D006B6E49 /* LandmarkRecord.swift */; };
+		568B4A5A2F294DDA002BCA3D /* Buttons.swift in Sources */ = {isa = PBXBuildFile; fileRef = 568B4A592F294DD4002BCA3D /* Buttons.swift */; };
 		56BDFD612EC63B52006D1B84 /* PayInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56BDFD602EC63B46006D1B84 /* PayInfo.swift */; };
 		56C3FA082EA6CA3100EA6153 /* Settings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56C3FA052EA6CA3100EA6153 /* Settings.swift */; };
 		56C3FA092EA6CA3100EA6153 /* Splash.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56C3FA062EA6CA3100EA6153 /* Splash.swift */; };
@@ -38,7 +42,11 @@
 		3C918FB42E9ECE6100AF5DAF /* LookSeeProtoUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LookSeeProtoUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		561FF74A2EB258CC00411CF8 /* Library.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Library.swift; sourceTree = "<group>"; };
 		562AD38B2ECBAF1800D5144C /* Login.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Login.swift; sourceTree = "<group>"; };
+		562DAAAC2F2A71740083A71E /* Main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Main.swift; sourceTree = "<group>"; };
+		562DAAAE2F2A85B20083A71E /* Help.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Help.swift; sourceTree = "<group>"; };
+		562DAAB22F2A895B0083A71E /* LandmarkScan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LandmarkScan.swift; sourceTree = "<group>"; };
 		56432A362EBBBF6D006B6E49 /* LandmarkRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LandmarkRecord.swift; sourceTree = "<group>"; };
+		568B4A592F294DD4002BCA3D /* Buttons.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Buttons.swift; sourceTree = "<group>"; };
 		56BDFD602EC63B46006D1B84 /* PayInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PayInfo.swift; sourceTree = "<group>"; };
 		56C3FA052EA6CA3100EA6153 /* Settings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Settings.swift; sourceTree = "<group>"; };
 		56C3FA062EA6CA3100EA6153 /* Splash.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Splash.swift; sourceTree = "<group>"; };
@@ -123,11 +131,15 @@
 		56C3FA072EA6CA3100EA6153 /* UI Files */ = {
 			isa = PBXGroup;
 			children = (
-				56C3FA052EA6CA3100EA6153 /* Settings.swift */,
+				568B4A592F294DD4002BCA3D /* Buttons.swift */,
+				562DAAAE2F2A85B20083A71E /* Help.swift */,
 				562AD38B2ECBAF1800D5144C /* Login.swift */,
-				56BDFD602EC63B46006D1B84 /* PayInfo.swift */,
+				562DAAB22F2A895B0083A71E /* LandmarkScan.swift */,
 				56432A362EBBBF6D006B6E49 /* LandmarkRecord.swift */,
 				561FF74A2EB258CC00411CF8 /* Library.swift */,
+				562DAAAC2F2A71740083A71E /* Main.swift */,
+				56BDFD602EC63B46006D1B84 /* PayInfo.swift */,
+				56C3FA052EA6CA3100EA6153 /* Settings.swift */,
 				56C3FA062EA6CA3100EA6153 /* Splash.swift */,
 			);
 			path = "UI Files";
@@ -279,11 +291,15 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				562DAAAD2F2A71750083A71E /* Main.swift in Sources */,
+				562DAAB32F2A89600083A71E /* LandmarkScan.swift in Sources */,
 				562AD38C2ECBAF1B00D5144C /* Login.swift in Sources */,
 				56BDFD612EC63B52006D1B84 /* PayInfo.swift in Sources */,
+				568B4A5A2F294DDA002BCA3D /* Buttons.swift in Sources */,
 				561FF74B2EB258D400411CF8 /* Library.swift in Sources */,
 				56C3FA082EA6CA3100EA6153 /* Settings.swift in Sources */,
 				56C3FA092EA6CA3100EA6153 /* Splash.swift in Sources */,
+				562DAAAF2F2A85B40083A71E /* Help.swift in Sources */,
 				56432A372EBBBF70006B6E49 /* LandmarkRecord.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

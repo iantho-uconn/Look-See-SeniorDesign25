@@ -8,7 +8,7 @@ import Foundation
 import SwiftUI
 
 struct Payment: Hashable, Codable, Identifiable {
-    var id: Int
+    var id: Int?
     var cardProvider: String
     var cardNum: String
     var expireMonth: Int
@@ -21,7 +21,7 @@ struct Payment: Hashable, Codable, Identifiable {
     var city: String
     var postCode: String
     var address1: String
-    var address2: String
+    var address2: String?
     var phone: String
     
 }
