@@ -6,22 +6,20 @@
 //
 
 import SwiftUI
+import Foundation
 
 struct Settings: View {
-    @State private var onlineMode = true
-    @State private var offlineMode = false
-    @State private var popUp = false
+    @AppStorage("onlineMode") var onlineMode = true
+    @AppStorage("permissionCamera") var permissionCamera = true
+    @AppStorage("permissionLocation") var permissionLocation = true
+    @AppStorage("permissionStorage") var permissionStorage = true
+    @State private var modal = false
+    @State private var showAlertAll = false
+    @State private var showAlertCache = false
     @State private var cache = 0
     var body: some View {
-        VStack{
-            HStack{
-                Button("Settings", systemImage:"arrow.backward"){
-                    //person.crop.circle
-                }
-                .padding()
-                Spacer()
-            }
-            ScrollView {
+        NavigationStack{
+            Form {
                 Button(action: {
                     print("Button tapped!")
                 }, label: {
@@ -32,169 +30,58 @@ struct Settings: View {
                             Text("Guest User")
                             Text("guest@looksee.app")
                         }
-                        
-                        Image(systemName: "chevron.right")
                     }
+                    
                 })
-                .buttonStyle(.bordered)
-                
-                Divider()
-                
-                HStack{
-                    Text("Recognition Mode")
-                        .font(.subheadline)
-                        .foregroundStyle(.gray)
-                        .padding()
-                    Spacer()
+                Section{
+                    Toggle("Online Recognition", isOn: $onlineMode)
+                } header: {Text("Recognition Mode")}
+                footer: {Text("Keeping Online Recognition on allows the app to be more accurate. Turning it off limits the range of landmark recognition.")}
+                Section("App Permissions"){
+                    Toggle("Camera access",
+                           systemImage: "camera",
+                            isOn: $permissionCamera)
+                    Toggle("Location access",
+                           systemImage: "mappin",
+                           isOn: $permissionLocation)
+                    Toggle("Storage access",
+                           systemImage: "externaldrive",
+                           isOn: $permissionStorage)
                 }
-                Toggle(isOn: $onlineMode){
-                    HStack{
-                        Image(systemName: "wifi")
-                            .padding(5)
-                        VStack(alignment: .leading){
-                            Text("Online Recognition")
-                            Text("More accurate, requires internet")
-                                .font(.subheadline)
-                                .foregroundStyle(.gray)
+                Section{
+                    Button("Clear Cache",
+                            systemImage: "externaldrive"){showAlertCache = true}
+                        .alert("Are you sure? This will delete all temporary data, including images.", isPresented: $showAlertCache){
+                            Button("Cancel", role: .cancel) {}
+                            Button("Yes", role: .destructive) {}
                         }
-                    }
-                }
-                .padding()
-                
-                Toggle(isOn: $offlineMode){
-                    HStack{
-                        Image(systemName: "wifi.slash")
-                            .padding(5)
-                        VStack(alignment: .leading){
-                            Text("Offline Mode")
-                            Text("Works without internet")
-                                .font(.subheadline)
-                                .foregroundStyle(.gray)
+                    Button("Delete All Data",
+                           systemImage: "externaldrive.badge.exclamationmark",
+                           role: .destructive) {showAlertAll = true}
+                        .alert("Are you sure? This will delete all stored data, including stored models and your landmark history.", isPresented: $showAlertAll){
+                            Button("Cancel", role: .cancel) {}
+                            Button("Yes", role: .destructive) {}
                         }
-                        
+                    
+                } header: {Text("Data Management")}
+                footer: {Text("Current cache size: \(cache) MB")}
+                
+                Section("Support & Info"){
+                    NavigationLink(){ Help()
+                    } label: {
+                        Label("Help & Tutorial", systemImage: "questionmark.circle")
+                            .foregroundColor(.blue)
                     }
-                }
-                .padding()
-                
-                Divider()
-                
-                HStack{
-                    Text("App Permissions")
-                        .font(.subheadline)
-                        .foregroundStyle(.gray)
-                        .padding()
-                    Spacer()
-                }
-                
-                Button(action: {
-                    print("Button tapped!")
-                },
-                    label: {
-                        HStack{
-                            Image(systemName: "camera")
-                                .padding(5)
-                            VStack(alignment: .leading){
-                                Text("Camera access")
-                                Text("Required for AR detection")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.gray)
-                            }
-                            Spacer()
-                            Text("Granted")
-                                .foregroundStyle(.green)
-                        }
+                    Button("About LookSee",
+                           systemImage: "info.circle") {
+                        modal = true
                     }
-                )
-                .padding()
-                
-                Button(action: {
-                    print("Button tapped!")
-                },
-                    label: {
-                        HStack{
-                            Image(systemName: "mappin")
-                                .padding(5)
-                            VStack(alignment: .leading){
-                                Text("Location access")
-                                Text("For landmark positioning")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.gray)
-                            }
-                            Spacer()
-                            Text("Granted")
-                                .foregroundStyle(.green)
-                        }
-                    }
-                )
-                .padding()
-                
-                Button(action: {
-                    print("Button tapped!")
-                },
-                    label: {
-                        HStack{
-                            Image(systemName: "mappin")
-                                .padding(5)
-                            VStack(alignment: .leading){
-                                Text("Storage access")
-                                Text("For saving landmarks")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.gray)
-                            }
-                            Spacer()
-                            Text("Granted")
-                                .foregroundStyle(.green)
-                        }
-                    }
-                )
-                .padding()
-                
-                Divider()
-                
-                HStack{
-                    Text("Data Management")
-                        .font(.subheadline)
-                        .foregroundStyle(.gray)
-                        .padding()
-                    Spacer()
-                }
-                Button(action: {
-                    print("Button tapped!")
-                },
-                    label: {
-                        HStack{
-                            Image(systemName: "externaldrive")
-                                .padding(5)
-                            VStack(alignment: .leading){
-                                Text("Clear cache")
-                                Text("Free up \(cache) MB")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.gray)
-                            }
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                        }
-                    }
-                )
-//                .confirmationDialogue(
-//                    "Test",
-//                    isPresented: $popUp,
-//                    titleVisibility: .visible
-//                ) {
-//                    Button("Yes", role: .destructive) {}
-//                }
-                .padding()
-                
-                Divider()
-                
-                HStack{
-                    Text("Support & Info")
-                        .font(.subheadline)
-                        .foregroundStyle(.gray)
-                        .padding()
-                    Spacer()
+                           .sheet(isPresented: $modal){
+                               Text("Looksee is an application designed to help you identify local landmarks with ease.")
+                           }
                 }
             }
+            .navigationTitle("Settings")
         }
     }
 }

@@ -1,0 +1,26 @@
+[
+    {
+        "id": 1,
+        "name": "Empire State Building",
+        "img": "🏢",
+        "date": "Today",
+        "time": "2:30 PM",
+        "confidence": "94"
+    },
+    {
+        "id": 2,
+        "name": "Brooklyn Bridge",
+        "img": "🌉",
+        "date": "Today",
+        "time": "1:15 PM",
+        "confidence": "98"
+    },
+    {
+        "id": 3,
+        "name": "Apollo Theater",
+        "img": "🎭",
+        "date": "Today",
+        "time": "12:45 PM",
+        "confidence": "70"
+        }
+]
