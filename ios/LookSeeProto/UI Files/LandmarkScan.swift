@@ -10,6 +10,10 @@ import SwiftUI
 struct LandmarkScan: View {
     var body: some View {
         ZStack {
+            
+            CameraPreview(detector: Detector)
+                .ignoresSafeArea()
+            
             LinearGradient(
                 gradient: Gradient(colors:[
                     Color(red: 1.0, green: 1.0, blue: 1.00),

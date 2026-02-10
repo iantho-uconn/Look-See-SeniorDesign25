@@ -60,10 +60,15 @@ final class Detector: NSObject, ObservableObject {
         }
     }
 
+    private var isAttached = false
+
     // Attach to camera output
     func attach(to videoOutput: AVCaptureVideoDataOutput) {
+        guard !isAttached else { return }
+        isAttached = true
         videoOutput.setSampleBufferDelegate(self, queue: visionQueue)
     }
+
 
     private func handle(pixelBuffer: CVPixelBuffer, orientation: CGImagePropertyOrientation) {
         guard vnModel != nil else { return }
