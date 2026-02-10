@@ -7,6 +7,15 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		3C90209E2F3ABCD300EE30BF /* CameraPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C90209D2F3ABCD300EE30BF /* CameraPreview.swift */; };
+		3C90209F2F3ABCD300EE30BF /* CameraPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C90209D2F3ABCD300EE30BF /* CameraPreview.swift */; };
+		3C9020A02F3ABCD300EE30BF /* CameraPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C90209D2F3ABCD300EE30BF /* CameraPreview.swift */; };
+		3C9020A22F3ABCE200EE30BF /* Detector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C9020A12F3ABCE200EE30BF /* Detector.swift */; };
+		3C9020A32F3ABCE200EE30BF /* Detector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C9020A12F3ABCE200EE30BF /* Detector.swift */; };
+		3C9020A42F3ABCE200EE30BF /* Detector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C9020A12F3ABCE200EE30BF /* Detector.swift */; };
+		3C9020A62F3ABCE900EE30BF /* LocationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C9020A52F3ABCE900EE30BF /* LocationManager.swift */; };
+		3C9020A72F3ABCE900EE30BF /* LocationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C9020A52F3ABCE900EE30BF /* LocationManager.swift */; };
+		3C9020A82F3ABCE900EE30BF /* LocationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C9020A52F3ABCE900EE30BF /* LocationManager.swift */; };
 		561FF74B2EB258D400411CF8 /* Library.swift in Sources */ = {isa = PBXBuildFile; fileRef = 561FF74A2EB258CC00411CF8 /* Library.swift */; };
 		562AD38C2ECBAF1B00D5144C /* Login.swift in Sources */ = {isa = PBXBuildFile; fileRef = 562AD38B2ECBAF1800D5144C /* Login.swift */; };
 		562DAAAD2F2A71750083A71E /* Main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 562DAAAC2F2A71740083A71E /* Main.swift */; };
@@ -37,6 +46,9 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		3C90209D2F3ABCD300EE30BF /* CameraPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPreview.swift; sourceTree = "<group>"; };
+		3C9020A12F3ABCE200EE30BF /* Detector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Detector.swift; sourceTree = "<group>"; };
+		3C9020A52F3ABCE900EE30BF /* LocationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationManager.swift; sourceTree = "<group>"; };
 		3C918F9D2E9ECE5F00AF5DAF /* LookSeeProto.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LookSeeProto.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		3C918FAA2E9ECE6100AF5DAF /* LookSeeProtoTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LookSeeProtoTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		3C918FB42E9ECE6100AF5DAF /* LookSeeProtoUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LookSeeProtoUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -105,9 +117,20 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		3C90209B2F3ABC8B00EE30BF /* Detection */ = {
+			isa = PBXGroup;
+			children = (
+				3C90209D2F3ABCD300EE30BF /* CameraPreview.swift */,
+				3C9020A12F3ABCE200EE30BF /* Detector.swift */,
+				3C9020A52F3ABCE900EE30BF /* LocationManager.swift */,
+			);
+			path = Detection;
+			sourceTree = "<group>";
+		};
 		3C918F942E9ECE5F00AF5DAF = {
 			isa = PBXGroup;
 			children = (
+				3C90209B2F3ABC8B00EE30BF /* Detection */,
 				565542BF2EBD8384007DBA98 /* Models */,
 				565542B22EBD02DF007DBA98 /* Resources */,
 				56C3FA072EA6CA3100EA6153 /* UI Files */,
@@ -294,12 +317,15 @@
 				562DAAAD2F2A71750083A71E /* Main.swift in Sources */,
 				562DAAB32F2A89600083A71E /* LandmarkScan.swift in Sources */,
 				562AD38C2ECBAF1B00D5144C /* Login.swift in Sources */,
+				3C9020A02F3ABCD300EE30BF /* CameraPreview.swift in Sources */,
 				56BDFD612EC63B52006D1B84 /* PayInfo.swift in Sources */,
 				568B4A5A2F294DDA002BCA3D /* Buttons.swift in Sources */,
 				561FF74B2EB258D400411CF8 /* Library.swift in Sources */,
 				56C3FA082EA6CA3100EA6153 /* Settings.swift in Sources */,
 				56C3FA092EA6CA3100EA6153 /* Splash.swift in Sources */,
+				3C9020A82F3ABCE900EE30BF /* LocationManager.swift in Sources */,
 				562DAAAF2F2A85B40083A71E /* Help.swift in Sources */,
+				3C9020A32F3ABCE200EE30BF /* Detector.swift in Sources */,
 				56432A372EBBBF70006B6E49 /* LandmarkRecord.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -308,6 +334,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				3C9020A62F3ABCE900EE30BF /* LocationManager.swift in Sources */,
+				3C90209F2F3ABCD300EE30BF /* CameraPreview.swift in Sources */,
+				3C9020A22F3ABCE200EE30BF /* Detector.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -315,6 +344,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				3C90209E2F3ABCD300EE30BF /* CameraPreview.swift in Sources */,
+				3C9020A72F3ABCE900EE30BF /* LocationManager.swift in Sources */,
+				3C9020A42F3ABCE200EE30BF /* Detector.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -468,6 +500,8 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Camera is used to scan objects in real time.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Location services are used to tags scans made in app and help strengthen model data.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -501,6 +535,8 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Camera is used to scan objects in real time.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Location services are used to tags scans made in app and help strengthen model data.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
