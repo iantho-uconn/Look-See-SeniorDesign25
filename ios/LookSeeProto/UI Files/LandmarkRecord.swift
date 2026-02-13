@@ -9,6 +9,10 @@ import SwiftUI
 
 struct LandmarkRecord: View {
     @State private var landmark: String = ""
+    @State private var pickedVideoURL: URL? = nil
+    @State private var showVideoPicker: Bool = false
+    @State private var statusText: String = "No Video Selected."
+    
     var body: some View {
         VStack{
             RoundedRectangle(cornerRadius: 25)
@@ -20,18 +24,26 @@ struct LandmarkRecord: View {
                     .foregroundStyle(Color(red: 0.11, green: 0.22, blue: 0.55))
                 )
             Spacer()
-                .frame(height: 50)
+                .frame(height: 30)
             HStack{
                 Text("Landmark name")
                     .padding([.leading, .trailing])
                 Spacer()
             }
-            TextField("e.g., Brooklyn Bridge, City Museum...", text: $landmark)
+            TextField("e.g., Johnathan Statue, Gampel Pavillion...", text: $landmark)
                 .textFieldStyle(.roundedBorder)
                 .padding([.bottom, .leading, .trailing])
+            
             Divider()
+            
+            Text(statusText)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .padding(.bottom,10)
+            
             Button("Start Recording", systemImage:"camera"){
                 //
+                showVideoPicker = true
             }
                 .foregroundStyle(Color.white)
                 .padding(.horizontal, 100)

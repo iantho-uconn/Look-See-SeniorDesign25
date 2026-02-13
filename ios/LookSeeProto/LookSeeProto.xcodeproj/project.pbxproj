@@ -522,6 +522,7 @@
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Camera is used to scan objects in real time.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Location services are used to tags scans made in app and help strengthen model data.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Microphone is used in video recordings for training data";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -557,6 +558,7 @@
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Camera is used to scan objects in real time.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Location services are used to tags scans made in app and help strengthen model data.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Microphone is used in video recordings for training data";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
