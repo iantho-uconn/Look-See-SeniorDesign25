@@ -18,6 +18,7 @@
 		3C9020A82F3ABCE900EE30BF /* LocationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C9020A52F3ABCE900EE30BF /* LocationManager.swift */; };
 		3C9020C02F3AC88600EE30BF /* CokeCanDetect.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3C9020BD2F3AC88600EE30BF /* CokeCanDetect.mlpackage */; };
 		3C9020C12F3AC88600EE30BF /* fruits_and_cans_2.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3C9020BE2F3AC88600EE30BF /* fruits_and_cans_2.mlpackage */; };
+		3CE8899C2F3FEE2B00B66044 /* VideoPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CE8899B2F3FEE2300B66044 /* VideoPicker.swift */; };
 		561FF74B2EB258D400411CF8 /* Library.swift in Sources */ = {isa = PBXBuildFile; fileRef = 561FF74A2EB258CC00411CF8 /* Library.swift */; };
 		562AD38C2ECBAF1B00D5144C /* Login.swift in Sources */ = {isa = PBXBuildFile; fileRef = 562AD38B2ECBAF1800D5144C /* Login.swift */; };
 		562DAAAD2F2A71750083A71E /* Main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 562DAAAC2F2A71740083A71E /* Main.swift */; };
@@ -56,6 +57,7 @@
 		3C918F9D2E9ECE5F00AF5DAF /* LookSeeProto.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LookSeeProto.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		3C918FAA2E9ECE6100AF5DAF /* LookSeeProtoTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LookSeeProtoTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		3C918FB42E9ECE6100AF5DAF /* LookSeeProtoUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LookSeeProtoUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		3CE8899B2F3FEE2300B66044 /* VideoPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoPicker.swift; sourceTree = "<group>"; };
 		561FF74A2EB258CC00411CF8 /* Library.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Library.swift; sourceTree = "<group>"; };
 		562AD38B2ECBAF1800D5144C /* Login.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Login.swift; sourceTree = "<group>"; };
 		562DAAAC2F2A71740083A71E /* Main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Main.swift; sourceTree = "<group>"; };
@@ -173,6 +175,7 @@
 				562AD38B2ECBAF1800D5144C /* Login.swift */,
 				562DAAB22F2A895B0083A71E /* LandmarkScan.swift */,
 				56432A362EBBBF6D006B6E49 /* LandmarkRecord.swift */,
+				3CE8899B2F3FEE2300B66044 /* VideoPicker.swift */,
 				561FF74A2EB258CC00411CF8 /* Library.swift */,
 				562DAAAC2F2A71740083A71E /* Main.swift */,
 				56BDFD602EC63B46006D1B84 /* PayInfo.swift */,
@@ -336,6 +339,7 @@
 				568B4A5A2F294DDA002BCA3D /* Buttons.swift in Sources */,
 				561FF74B2EB258D400411CF8 /* Library.swift in Sources */,
 				56C3FA082EA6CA3100EA6153 /* Settings.swift in Sources */,
+				3CE8899C2F3FEE2B00B66044 /* VideoPicker.swift in Sources */,
 				56C3FA092EA6CA3100EA6153 /* Splash.swift in Sources */,
 				3C9020A82F3ABCE900EE30BF /* LocationManager.swift in Sources */,
 				3C9020C02F3AC88600EE30BF /* CokeCanDetect.mlpackage in Sources */,
