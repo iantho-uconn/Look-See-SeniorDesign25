@@ -48,9 +48,18 @@ struct LandmarkRecord: View {
                 .foregroundStyle(Color.white)
                 .padding(.horizontal, 100)
                 .padding(.vertical, 15)
-                .background(.gray)
+                .background(landmark.isEmpty ? .gray : Color(red:0.11, green:0.22, blue:0.55))
                 .cornerRadius(15)
+                .disabled(landmark.isEmpty)
+            
+                Spacer()
                 
+        }
+        .sheet(isPresented: $showVideoPicker) {
+            VideoPicker(useCamera: true) {url in
+                pickedVideoURL = url
+                statusText = "Selected video: \(url.lastPathComponent)"
+            }
         }
     }
 }
