@@ -8,6 +8,7 @@
 import SwiftUI
 
 struct Buttons: View {
+    @Binding var loggedIn: Bool
     var body: some View {
         NavigationStack {
             ZStack{
@@ -25,7 +26,7 @@ struct Buttons: View {
                             .scaleEffect(2)
                     }
                     Spacer()
-                    NavigationLink(){ Settings()
+                    NavigationLink(){ Settings(loggedIn: $loggedIn)
                     } label: {
                         Label("Settings", systemImage: "gearshape")
                             .labelStyle(.iconOnly)
@@ -41,5 +42,6 @@ struct Buttons: View {
 }
 
 #Preview {
-    Buttons()
+    @Previewable @State var loggedIn = false
+    Buttons(loggedIn: $loggedIn)
 }

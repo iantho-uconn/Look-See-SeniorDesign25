@@ -13,12 +13,6 @@ struct Library: View {
     var locations: [Landmark]
     var body: some View {
         VStack{
-//            HStack{
-//                Button("Library & History", systemImage:"arrow.backward"){
-//                }
-//                .padding()
-//                Spacer()
-//            }
             NavigationStack {
                 List{
                     ForEach(filter) { item in

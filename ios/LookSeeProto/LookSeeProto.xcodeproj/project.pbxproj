@@ -15,6 +15,7 @@
 		56432A372EBBBF70006B6E49 /* LandmarkRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56432A362EBBBF6D006B6E49 /* LandmarkRecord.swift */; };
 		568B4A5A2F294DDA002BCA3D /* Buttons.swift in Sources */ = {isa = PBXBuildFile; fileRef = 568B4A592F294DD4002BCA3D /* Buttons.swift */; };
 		56BDFD612EC63B52006D1B84 /* PayInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56BDFD602EC63B46006D1B84 /* PayInfo.swift */; };
+		56C05BF52F3BD50D00A2ADE0 /* SignIn.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56C05BF42F3BD50400A2ADE0 /* SignIn.swift */; };
 		56C3FA082EA6CA3100EA6153 /* Settings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56C3FA052EA6CA3100EA6153 /* Settings.swift */; };
 		56C3FA092EA6CA3100EA6153 /* Splash.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56C3FA062EA6CA3100EA6153 /* Splash.swift */; };
 /* End PBXBuildFile section */
@@ -48,6 +49,7 @@
 		56432A362EBBBF6D006B6E49 /* LandmarkRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LandmarkRecord.swift; sourceTree = "<group>"; };
 		568B4A592F294DD4002BCA3D /* Buttons.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Buttons.swift; sourceTree = "<group>"; };
 		56BDFD602EC63B46006D1B84 /* PayInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PayInfo.swift; sourceTree = "<group>"; };
+		56C05BF42F3BD50400A2ADE0 /* SignIn.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignIn.swift; sourceTree = "<group>"; };
 		56C3FA052EA6CA3100EA6153 /* Settings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Settings.swift; sourceTree = "<group>"; };
 		56C3FA062EA6CA3100EA6153 /* Splash.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Splash.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -140,6 +142,7 @@
 				562DAAAC2F2A71740083A71E /* Main.swift */,
 				56BDFD602EC63B46006D1B84 /* PayInfo.swift */,
 				56C3FA052EA6CA3100EA6153 /* Settings.swift */,
+				56C05BF42F3BD50400A2ADE0 /* SignIn.swift */,
 				56C3FA062EA6CA3100EA6153 /* Splash.swift */,
 			);
 			path = "UI Files";
@@ -292,6 +295,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				562DAAAD2F2A71750083A71E /* Main.swift in Sources */,
+				56C05BF52F3BD50D00A2ADE0 /* SignIn.swift in Sources */,
 				562DAAB32F2A89600083A71E /* LandmarkScan.swift in Sources */,
 				562AD38C2ECBAF1B00D5144C /* Login.swift in Sources */,
 				56BDFD612EC63B52006D1B84 /* PayInfo.swift in Sources */,
@@ -468,6 +472,8 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
+				INFOPLIST_KEY_NSCameraUsageDescription = "LookSee uses your camera to identify landmarks.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "LookSee uses your location to more accurately identify landmarks.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -501,6 +507,8 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
+				INFOPLIST_KEY_NSCameraUsageDescription = "LookSee uses your camera to identify landmarks.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "LookSee uses your location to more accurately identify landmarks.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

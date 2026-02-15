@@ -8,8 +8,10 @@
 import SwiftUI
 
 struct Main: View {
+    @State private var loggedIn = false
     var body: some View {
-        Buttons()
+        if loggedIn{Buttons(loggedIn: $loggedIn)}
+        else{Login(loggedIn: $loggedIn)}
     }
 }
 
