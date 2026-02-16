@@ -127,6 +127,8 @@ struct LandmarkRecord: View {
                 pickedVideoURL = url
                 pickedImage = nil
                 statusText = "Selected video: \(url.lastPathComponent)"
+                uploadService.status = "Idle"
+                uploadService.progress = 0
             }
         }
         .sheet(isPresented: $showPhotoPicker) {
@@ -134,6 +136,8 @@ struct LandmarkRecord: View {
                 pickedImage = image
                 pickedVideoURL = nil
                 statusText = "Selected photo."
+                uploadService.status = "Idle"
+                uploadService.progress = 0
             }
         }
     }
