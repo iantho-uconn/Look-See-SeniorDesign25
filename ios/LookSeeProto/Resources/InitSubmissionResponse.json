@@ -1,6 +1,0 @@
-{
-  "submissionId": "abc123",
-  "uploadUrl": "https://<bucket>.s3....(presigned)",
-  "s3Key": "uploads/user123/abc123/video.mov"
-}
-
