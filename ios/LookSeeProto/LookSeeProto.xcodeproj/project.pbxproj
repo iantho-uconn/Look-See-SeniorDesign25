@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		3C1FC9CC2F42C9E70006C1D3 /* PhotoPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C1FC9CB2F42C9DA0006C1D3 /* PhotoPicker.swift */; };
 		3C90209E2F3ABCD300EE30BF /* CameraPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C90209D2F3ABCD300EE30BF /* CameraPreview.swift */; };
 		3C90209F2F3ABCD300EE30BF /* CameraPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C90209D2F3ABCD300EE30BF /* CameraPreview.swift */; };
 		3C9020A02F3ABCD300EE30BF /* CameraPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C90209D2F3ABCD300EE30BF /* CameraPreview.swift */; };
@@ -49,6 +50,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		3C1FC9CB2F42C9DA0006C1D3 /* PhotoPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoPicker.swift; sourceTree = "<group>"; };
 		3C90209D2F3ABCD300EE30BF /* CameraPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPreview.swift; sourceTree = "<group>"; };
 		3C9020A12F3ABCE200EE30BF /* Detector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Detector.swift; sourceTree = "<group>"; };
 		3C9020A52F3ABCE900EE30BF /* LocationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationManager.swift; sourceTree = "<group>"; };
@@ -175,6 +177,7 @@
 				562AD38B2ECBAF1800D5144C /* Login.swift */,
 				562DAAB22F2A895B0083A71E /* LandmarkScan.swift */,
 				56432A362EBBBF6D006B6E49 /* LandmarkRecord.swift */,
+				3C1FC9CB2F42C9DA0006C1D3 /* PhotoPicker.swift */,
 				3CE8899B2F3FEE2300B66044 /* VideoPicker.swift */,
 				561FF74A2EB258CC00411CF8 /* Library.swift */,
 				562DAAAC2F2A71740083A71E /* Main.swift */,
@@ -345,6 +348,7 @@
 				3C9020C02F3AC88600EE30BF /* CokeCanDetect.mlpackage in Sources */,
 				3C9020C12F3AC88600EE30BF /* fruits_and_cans_2.mlpackage in Sources */,
 				562DAAAF2F2A85B40083A71E /* Help.swift in Sources */,
+				3C1FC9CC2F42C9E70006C1D3 /* PhotoPicker.swift in Sources */,
 				3C9020A32F3ABCE200EE30BF /* Detector.swift in Sources */,
 				56432A372EBBBF70006B6E49 /* LandmarkRecord.swift in Sources */,
 			);

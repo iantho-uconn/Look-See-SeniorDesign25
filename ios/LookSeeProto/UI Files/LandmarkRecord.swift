@@ -24,7 +24,7 @@ struct LandmarkRecord: View {
                     .foregroundStyle(Color(red: 0.11, green: 0.22, blue: 0.55))
                 )
             Spacer()
-                .frame(height: 30)
+                .frame(height: 50)
             HStack{
                 Text("Landmark name")
                     .padding([.leading, .trailing])
@@ -55,10 +55,12 @@ struct LandmarkRecord: View {
                 Spacer()
                 
         }
+        .safeAreaInset(edge: .top) {Color.clear.frame(height: 80)}
         .sheet(isPresented: $showVideoPicker) {
             VideoPicker(useCamera: true) {url in
                 pickedVideoURL = url
                 statusText = "Selected video: \(url.lastPathComponent)"
+        
             }
         }
     }
