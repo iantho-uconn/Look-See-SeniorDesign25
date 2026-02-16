@@ -83,6 +83,34 @@ struct LandmarkRecord: View {
                         TextField("e.g., Gampel Pavilion, Johnathan Statue, The Dairy Bar...", text: $labelText)
                             .textFieldStyle(.roundedBorder)
                             .padding(.horizontal)
+                        
+                        Button {
+                            Task {
+                                await uploadService.upload(
+                                    label: labelText,
+                                    videoURL: pickedVideoURL,
+                                    image: pickedImage
+                                )
+                            }
+                            } label: {
+                            Label("Upload Submission", systemImage: "icloud.and.arrow.up")
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 14)
+                        }
+                        .padding(.horizontal)
+                        .foregroundStyle(.white)
+                        .background(canUpload ? Color(red: 0.11, green: 0.22, blue: 0.55) : .gray)
+                        .cornerRadius(15)
+                        .disabled(!canUpload)
+
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(uploadService.status)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+
+                            ProgressView(value: uploadService.progress)
+                        }
+                        .padding(.horizontal)
                     }
                 }
 
