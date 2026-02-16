@@ -42,24 +42,39 @@ final class UploadService: ObservableObject {
             }
 
         // Decide media + filename + contentType + size
-        if let videoURL {
-            let filename = videoURL.lastPathComponent.isEmpty ? "submission.mov" : videoURL.lastPathComponent
-            let contentType = "video/quicktime" // if your device outputs .mov
-            let size = (try? FileManager.default.attributesOfItem(atPath: videoURL.path)[.size] as? NSNumber)?.intValue ?? -1
-            status = "Ready (video). Size: \(size) bytes. Label: \(label)"
-            print("STUB init request:", InitSubmissionRequest(label: label, mediaKind: .video, filename: filename, contentType: contentType))
-            return
-        }
+        let req: InitSubmissionRequest
+            if let videoURL {
+                let filename = videoURL.lastPathComponent.isEmpty ? "submission.mov" : videoURL.lastPathComponent
+                req = InitSubmissionRequest(
+                    label: trimmed,
+                    mediaKind: .video,
+                    filename: filename,
+                    contentType: "video/quicktime"
+                )
+            } else if image != nil {
+                req = InitSubmissionRequest(
+                    label: trimmed,
+                    mediaKind: .photo,
+                    filename: "submission.jpg",
+                    contentType: "image/jpeg"
+                )
+            } else {
+                status = "No media selected."
+                return
+            }
 
-        if let image {
-            let filename = "submission.jpg"
-            let contentType = "image/jpeg"
-            let jpeg = image.jpegData(compressionQuality: 0.9)
-            status = "Ready (photo). Bytes: \(jpeg?.count ?? 0). Label: \(label)"
-            print("STUB init request:", InitSubmissionRequest(label: label, mediaKind: .photo, filename: filename, contentType: contentType))
-            return
-        }
+            do {
+                status = "Calling /submissions/init…"
+                let initResp = try await InitSubmissionResponse(req)
 
-        status = "No media to upload."
-    }
+                // ✅ This is the A2 “success” signal
+                status = "Init OK. submissionId=\(initResp.submissionId)"
+                print("✅ INIT response:", initResp)
+
+                // Next checkpoint A3 will use initResp.uploadUrl to PUT to S3
+            } catch {
+                status = "Init failed: \(error.localizedDescription)"
+                print("❌ INIT failed:", error)
+            }
+        }
 }
