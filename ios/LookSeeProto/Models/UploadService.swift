@@ -65,7 +65,7 @@ final class UploadService: ObservableObject {
 
         do {
             status = "Calling /submissions/init…"
-            let initResp = try await InitSubmissionResponse(req)
+            let initResp = try await initSubmission(req)
 
             // ✅ This is the A2 “success” signal
             status = "Init OK. submissionId=\(initResp.submissionId)"
@@ -77,6 +77,8 @@ final class UploadService: ObservableObject {
             print("❌ INIT failed:", error)
         }
     }
+    
+    
     private func initSubmission(_ reqBody: InitSubmissionRequest) async throws -> InitSubmissionResponse {
             let url = baseURL.appendingPathComponent("submissions/init")
 
