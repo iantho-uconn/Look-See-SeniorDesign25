@@ -3,6 +3,7 @@
 //  LookSeeProto
 //
 //  Created by Christian Barbara on 11/5/25.
+//  Updated by Ian T on 1/31/26
 //
 
 import SwiftUI
@@ -17,6 +18,15 @@ struct LandmarkRecord: View {
     @State private var showPhotoPicker = false
 
     @State private var statusText: String = "No media selected."
+    
+    //Test outputs to confirm aws uploads
+    @StateObject private var uploadService = UploadService()
+
+    private var canUpload: Bool {
+        let hasMedia = (pickedVideoURL != nil) || (pickedImage != nil)
+        return hasMedia && !labelText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
 
     var body: some View {
         ScrollView {
@@ -77,12 +87,11 @@ struct LandmarkRecord: View {
                 }
 
                 // (Later) Upload button would be enabled when media + label exists
-                // For now, you can leave it out or keep it disabled until we add AWS.
+                
                 Spacer(minLength: 20)
             }
             .padding(.top, 8)
         }
-        // This is what “lowers” the content to avoid overlap with top UI
         .safeAreaInset(edge: .top) { Color.clear.frame(height: 50) }
 
         .sheet(isPresented: $showVideoPicker) {
