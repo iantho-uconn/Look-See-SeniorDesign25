@@ -15,11 +15,12 @@ struct Detection: Identifiable {
     let id = UUID()
     let label: String
     let confidence: Float
-    /// Vision’s normalized bounding box (origin at bottom-left, [0,1] coords)
+    
+    //Vision’s normalized bounding box (origin at bottom-left, [0,1] coords)
     let bbox: CGRect
 }
 
-/// Manages Vision + CoreML against camera frames.
+// Manages Vision + CoreML against camera frames.
 final class Detector: NSObject, ObservableObject {
     @Published var detections: [Detection] = []
     @Published var isModelLoaded: Bool = false
@@ -34,7 +35,7 @@ final class Detector: NSObject, ObservableObject {
         loadModel()
     }
 
-    /// Try to load the generated class from your .mlpackage first, then fall back to bundle search.
+    // Try to load the generated class from your .mlpackage first, then fall back to bundle search.
     private func loadModel() {
         do {
             // 1) Searching for our model specifically
