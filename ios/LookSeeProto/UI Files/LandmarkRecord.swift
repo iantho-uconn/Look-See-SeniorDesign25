@@ -88,7 +88,7 @@ struct LandmarkRecord: View {
                                 await uploadService.upload(label: labelText, videoURL: pickedVideoURL, image: pickedImage)
                             }
                         } label: {
-                            Label("Init Upload (A2)", systemImage: "arrow.up.circle")
+                            Label("Upload Media", systemImage: "arrow.up.circle")
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 14)
                         }
@@ -98,7 +98,7 @@ struct LandmarkRecord: View {
                         .cornerRadius(15)
                         .disabled(!canInit)
 
-                        // A2 debug output
+                        // debug output
                         Text(uploadService.status)
                             .font(.footnote)
                             .foregroundStyle(.secondary)
