@@ -1,0 +1,45 @@
+name: iOS CI (Build)
+
+on:
+  pull_request:
+    branches: [dev, main]
+  push:
+    branches: [dev]
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Optional: pin Xcode if you want consistency (recommended).
+      # If we remove this step, macos-latest will use its default Xcode.
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: "15.4"
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      # Build the app for iOS Simulator (no signing needed).
+      - name: Build (Simulator)
+        run: |
+          xcodebuild \
+            -project LookSeeProto.xcodeproj \
+            -scheme LookSeeProto \
+            -destination 'platform=iOS Simulator,name=iPhone 15,OS=latest' \
+            -configuration Debug \
+            clean build
+
+      # Uncomment if/when you have unit tests and the scheme runs them.
+      # - name: Test (Simulator)
+      #   run: |
+      #     xcodebuild \
+      #       -project LookSeeProto.xcodeproj \
+      #       -scheme LookSeeProto \
+      #       -destination 'platform=iOS Simulator,name=iPhone 15,OS=latest' \
+      #       -configuration Debug \
+      #       test
