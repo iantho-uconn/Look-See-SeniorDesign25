@@ -28,7 +28,7 @@ jobs:
       - name: Build (Simulator)
         run: |
           xcodebuild \
-            -project LookSeeProto.xcodeproj \
+            -project ios/LookSeeProto/LookSeeProto.xcodeproj \
             -scheme LookSeeProto \
             -destination 'platform=iOS Simulator,name=iPhone 15,OS=latest' \
             -configuration Debug \
