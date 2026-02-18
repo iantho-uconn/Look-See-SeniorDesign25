@@ -3,7 +3,7 @@
 //  LookSeeProto
 //
 //  Created by Christian Barbara on 11/5/25.
-//  Updated by Ian T on 1/31/26
+//  Updated by Ian T on 02/13/26
 //
 
 import SwiftUI
@@ -18,15 +18,14 @@ struct LandmarkRecord: View {
     @State private var showPhotoPicker = false
 
     @State private var statusText: String = "No media selected."
-    
-    //Test outputs to confirm aws uploads
+
+    // A2: init submission call
     @StateObject private var uploadService = UploadService()
 
-    private var canUpload: Bool {
+    private var canInit: Bool {
         let hasMedia = (pickedVideoURL != nil) || (pickedImage != nil)
         return hasMedia && !labelText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
-
 
     var body: some View {
         ScrollView {
@@ -42,7 +41,7 @@ struct LandmarkRecord: View {
                     )
                     .padding(.horizontal)
 
-                // Always available capture buttons
+                // Capture buttons (always available)
                 HStack(spacing: 12) {
                     Button {
                         showVideoPicker = true
@@ -68,58 +67,50 @@ struct LandmarkRecord: View {
                 }
                 .padding(.horizontal)
 
-                // Status
+                // Selected media status
                 Text(statusText)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal)
 
-                // Show label field ONLY after media exists
+                // Label + init upload (shown once media exists)
                 if pickedVideoURL != nil || pickedImage != nil {
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 10) {
                         Text("Label (required)")
                             .padding(.horizontal)
 
-                        TextField("e.g., Gampel Pavilion, Johnathan Statue, The Dairy Bar...", text: $labelText)
+                        TextField("e.g., Gampel Pavilion, Jonathan Statue, The Dairy Bar…", text: $labelText)
                             .textFieldStyle(.roundedBorder)
                             .padding(.horizontal)
-                        
+
                         Button {
                             Task {
-                                await uploadService.upload(
-                                    label: labelText,
-                                    videoURL: pickedVideoURL,
-                                    image: pickedImage
-                                )
+                                await uploadService.upload(label: labelText, videoURL: pickedVideoURL, image: pickedImage)
                             }
-                            } label: {
-                            Label("Upload Submission", systemImage: "icloud.and.arrow.up")
+                        } label: {
+                            Label("Init Upload (A2)", systemImage: "arrow.up.circle")
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 14)
                         }
                         .padding(.horizontal)
                         .foregroundStyle(.white)
-                        .background(canUpload ? Color(red: 0.11, green: 0.22, blue: 0.55) : .gray)
+                        .background(canInit ? Color(red: 0.11, green: 0.22, blue: 0.55) : .gray)
                         .cornerRadius(15)
-                        .disabled(!canUpload)
+                        .disabled(!canInit)
 
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text(uploadService.status)
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-
-                            ProgressView(value: uploadService.progress)
-                        }
-                        .padding(.horizontal)
+                        // A2 debug output
+                        Text(uploadService.status)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal)
                     }
                 }
 
-                // (Later) Upload button would be enabled when media + label exists
-                
                 Spacer(minLength: 20)
             }
             .padding(.top, 8)
         }
+        // Push content below the top nav/gear area in your UI shell
         .safeAreaInset(edge: .top) { Color.clear.frame(height: 50) }
 
         .sheet(isPresented: $showVideoPicker) {

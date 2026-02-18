@@ -15,7 +15,7 @@ final class UploadService: ObservableObject {
     @Published var progress: Double = 0.0  // 0..1
 
     // Later set this to our API Gateway base URL
-    private let baseURL = URL(string: "https://YOUR_API_ID.execute-api.YOUR_REGION.amazonaws.com")!
+    private let baseURL = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev")!
 
     enum UploadError: LocalizedError {
             case invalidURL
