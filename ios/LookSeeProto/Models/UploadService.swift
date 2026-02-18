@@ -55,11 +55,11 @@ final class UploadService: ObservableObject {
 
         if let videoURL {
             mediaKind = .video
-            filename = videoURL.lastPathComponent.isEmpty ? "submission.mov" : videoURL.lastPathComponent
+            filename = "video.mov"
             contentType = "video/quicktime"
         } else if image != nil {
             mediaKind = .photo
-            filename = "submission.jpg"
+            filename = "photo.jpg"
             contentType = "image/jpeg"
         } else {
             status = "No media selected."
