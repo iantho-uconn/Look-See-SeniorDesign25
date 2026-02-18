@@ -19,6 +19,7 @@ struct LandmarkScan: View {
             CameraPreview(detector: detector)
                 .ignoresSafeArea()
             
+            /*
             LinearGradient(
                 gradient: Gradient(colors:[
                     Color(red: 1.0, green: 1.0, blue: 1.00),
@@ -30,6 +31,9 @@ struct LandmarkScan: View {
             .opacity(0.20)
             .ignoresSafeArea()
             
+             */
+             
+            /*
             //temp hud for testing
             VStack(alignment: .leading, spacing: 6) {
                             Text(detector.isModelLoaded ? "Model: Loaded" : "Model: Loading…")
@@ -43,6 +47,7 @@ struct LandmarkScan: View {
                         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                         .padding()
+             */
         }
     }
 }
