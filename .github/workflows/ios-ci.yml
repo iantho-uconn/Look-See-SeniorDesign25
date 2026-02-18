@@ -24,6 +24,11 @@ jobs:
       - name: Show Xcode version
         run: xcodebuild -version
 
+      - name: List destinations
+        run: |
+          xcodebuild -project ios/LookSeeProto/LookSeeProto.xcodeproj -scheme LookSeeProto -showdestinations
+
+
       # Build the app for iOS Simulator (no signing needed).
       - name: Build (Simulator)
         run: |
