@@ -1,0 +1,73 @@
+{
+  "Comment": "LookSee pipeline skeleton: mark started -> branch -> placeholders -> ready for label",
+  "StartAt": "MarkPipelineStarted",
+  "States": {
+    "MarkPipelineStarted": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "LookSeePipelineUpdateStatus",
+        "Payload": {
+          "submissionId.$": "$.submissionId",
+          "status": "PIPELINE_STARTED"
+        }
+      },
+      "OutputPath": "$.Payload",
+      "Next": "BranchOnMediaKind"
+    },
+    "BranchOnMediaKind": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.mediaKind",
+          "StringEquals": "video",
+          "Next": "VideoPlaceholder"
+        }
+      ],
+      "Default": "ImagePlaceholder"
+    },
+    "VideoPlaceholder": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "LookSeePipelineUpdateStatus",
+        "Payload": {
+          "submissionId.$": "$.submissionId",
+          "status": "FRAMES_PENDING",
+          "statusReason": "Placeholder: frame extraction not implemented yet"
+        }
+      },
+      "OutputPath": "$.Payload",
+      "Next": "ReadyForLabel"
+    },
+    "ImagePlaceholder": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "LookSeePipelineUpdateStatus",
+        "Payload": {
+          "submissionId.$": "$.submissionId",
+          "status": "READY_FOR_LABEL"
+        }
+      },
+      "OutputPath": "$.Payload",
+      "Next": "Done"
+    },
+    "ReadyForLabel": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "LookSeePipelineUpdateStatus",
+        "Payload": {
+          "submissionId.$": "$.submissionId",
+          "status": "READY_FOR_LABEL"
+        }
+      },
+      "OutputPath": "$.Payload",
+      "Next": "Done"
+    },
+    "Done": {
+      "Type": "Succeed"
+    }
+  }
+}
