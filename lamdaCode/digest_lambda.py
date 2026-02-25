@@ -72,6 +72,22 @@ def digest_lambda_handler(event, context):
         stateMachineArn=SM_ARN,
         input=json.dumps(inp)
     )
+    
+    from botocore.exceptions import ClientError
+
+    try:
+        ddb.update_item(
+            TableName=TABLE,
+            Key={"submissionId": {"S": submission_id}},
+            UpdateExpression="SET pipelineExecutionArn = :a",
+            ExpressionAttributeValues={":a": {"S": execution_arn}},
+            ConditionExpression="attribute_not_exists(pipelineExecutionArn)"
+        )
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+            # Someone already started it; don't start another
+            return {"skipped": True, "reason": "already_started", "submissionId": submission_id}
+        raise
 
     # store pipelineExecutionArn for easy debugging
     ddb.update_item(
