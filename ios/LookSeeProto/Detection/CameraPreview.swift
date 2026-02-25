@@ -59,20 +59,29 @@ final class CameraSessionCoordinator {
 
 /// CoreAnimation overlay view that draws detection boxes.
 final class OverlayView: UIView {
+    weak var previewLayer: AVCaptureVideoPreviewLayer?
     var detections: [Detection] = [] { didSet { setNeedsDisplay() } }
 
     override func draw(_ rect: CGRect) {
         guard let ctx = UIGraphicsGetCurrentContext() else { return }
+        guard let previewLayer = previewLayer else { return }
+
         ctx.setLineWidth(2)
 
         for det in detections {
-            // Convert Vision normalized bbox (origin bottom-left) to UIKit coords (origin top-left)
-            let vnRect = det.bbox
-            let box = VNImageRectForNormalizedRect(vnRect, Int(bounds.width), Int(bounds.height))
-            let converted = CGRect(x: box.origin.x,
-                                   y: bounds.height - box.origin.y - box.height,
-                                   width: box.width,
-                                   height: box.height)
+            // Vision bbox is normalized, origin bottom-left.
+            let vb = det.bbox
+
+            // Convert to metadata-output normalized rect (origin top-left).
+            let metadataRect = CGRect(
+                x: vb.origin.x,
+                y: 1.0 - vb.origin.y - vb.size.height,
+                width: vb.size.width,
+                height: vb.size.height
+            )
+
+            // Convert to layer/view coordinates (accounts for resizeAspectFill cropping).
+            let converted = previewLayer.layerRectConverted(fromMetadataOutputRect: metadataRect)
 
             // Box
             UIColor.systemGreen.setStroke()
@@ -85,17 +94,18 @@ final class OverlayView: UIView {
                 .foregroundColor: UIColor.white
             ]
             let textSize = label.size(withAttributes: attrs)
-            let textBg = CGRect(x: converted.minX,
-                                y: max(converted.minY - textSize.height - 4, 0),
-                                width: textSize.width + 8,
-                                height: textSize.height + 4)
+            let textBg = CGRect(
+                x: converted.minX,
+                y: max(converted.minY - textSize.height - 4, 0),
+                width: textSize.width + 8,
+                height: textSize.height + 4
+            )
             UIColor.systemGreen.setFill()
             ctx.fill(textBg)
             label.draw(in: textBg.insetBy(dx: 4, dy: 2), withAttributes: attrs)
         }
     }
 }
-
 struct CameraPreview: UIViewRepresentable {
     @ObservedObject var detector: Detector
 
@@ -108,6 +118,7 @@ struct CameraPreview: UIViewRepresentable {
         // camera layer
         view.videoLayer.session = CameraPreview.sharedSession.session
         view.videoLayer.videoGravity = .resizeAspectFill
+        view.overlay.previewLayer = view.videoLayer
 
         // detector -> overlay binding
         context.coordinator.overlay = view.overlay

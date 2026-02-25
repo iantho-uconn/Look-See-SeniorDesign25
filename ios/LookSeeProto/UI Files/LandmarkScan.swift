@@ -33,7 +33,7 @@ struct LandmarkScan: View {
             
              */
              
-            
+            /*
             //temp hud for testing
             VStack(alignment: .leading, spacing: 6) {
                             Text(detector.isModelLoaded ? "Model: Loaded" : "Model: Loading…")
@@ -47,7 +47,7 @@ struct LandmarkScan: View {
                         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                         .padding()
-             
+             */
         }
     }
 }
