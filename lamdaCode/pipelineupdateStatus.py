@@ -4,7 +4,7 @@ import boto3
 ddb = boto3.client("dynamodb")
 TABLE = os.environ["TABLE_NAME"]
 
-def digest_lambda_handler(event, context):
+def pipelineupdateStatus_handler(event, context):
     # expects: {"submissionId": "...", "status": "...", "statusReason": "...optional...", "extra": {...optional...}}
     submission_id = event["submissionId"]
     status = event["status"]
