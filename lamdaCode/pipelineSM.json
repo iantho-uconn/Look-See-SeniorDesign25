@@ -13,7 +13,20 @@
         }
       },
       "OutputPath": "$.Payload",
-      "Next": "BranchOnMediaKind"
+      "Next": "BranchOnMediaKind",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.TooManyRequestsException",
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException"
+          ],
+          "IntervalSeconds": 2,
+          "BackoffRate": 2.0,
+          "MaxAttempts": 6
+        }
+      ]
     },
     "BranchOnMediaKind": {
       "Type": "Choice",
