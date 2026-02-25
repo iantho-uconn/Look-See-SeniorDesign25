@@ -1,5 +1,6 @@
 import os, json, time
 import boto3
+from botocore.exceptions import ClientError
 
 ddb = boto3.client("dynamodb")
 sfn = boto3.client("stepfunctions")
@@ -17,7 +18,6 @@ def parse_submission_id(key: str) -> str | None:
         return None
 
 def media_kind_from_key(key: str) -> str:
-    # key contains uploads/raw/images/... or uploads/raw/videos/...
     if "/videos/" in key:
         return "video"
     return "photo"
@@ -46,7 +46,7 @@ def digest_lambda_handler(event, context):
     status = item.get("status", {}).get("S", "")
     media_kind = item.get("mediaKind", {}).get("S", media_kind_from_key(key))
 
-    # Update ingestedAt (always)
+    # Always update ingestedAt
     now = int(time.time())
     ddb.update_item(
         TableName=TABLE,
@@ -60,6 +60,12 @@ def digest_lambda_handler(event, context):
         print(f"Skip pipeline start: status={status} submissionId={submission_id}")
         return {"skipped": True, "reason": "not_complete", "status": status, "submissionId": submission_id}
 
+    # If pipeline already started, don’t start again
+    if "pipelineExecutionArn" in item:
+        existing = item["pipelineExecutionArn"].get("S", "")
+        print("Skip: pipeline already started:", existing)
+        return {"skipped": True, "reason": "already_started", "submissionId": submission_id, "executionArn": existing}
+
     # Start Step Functions
     inp = {
         "submissionId": submission_id,
@@ -72,9 +78,9 @@ def digest_lambda_handler(event, context):
         stateMachineArn=SM_ARN,
         input=json.dumps(inp)
     )
-    
-    from botocore.exceptions import ClientError
+    execution_arn = resp["executionArn"]
 
+    # Store pipelineExecutionArn (idempotent)
     try:
         ddb.update_item(
             TableName=TABLE,
@@ -85,17 +91,9 @@ def digest_lambda_handler(event, context):
         )
     except ClientError as e:
         if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
-            # Someone already started it; don't start another
-            return {"skipped": True, "reason": "already_started", "submissionId": submission_id}
+            print("Skip: another trigger already wrote pipelineExecutionArn")
+            return {"skipped": True, "reason": "already_started_race", "submissionId": submission_id}
         raise
 
-    # store pipelineExecutionArn for easy debugging
-    ddb.update_item(
-        TableName=TABLE,
-        Key={"submissionId": {"S": submission_id}},
-        UpdateExpression="SET pipelineExecutionArn = :a",
-        ExpressionAttributeValues={":a": {"S": resp["executionArn"]}}
-    )
-
-    print("Started pipeline:", resp["executionArn"])
-    return {"started": True, "executionArn": resp["executionArn"], "submissionId": submission_id}
+    print("Started pipeline:", execution_arn)
+    return {"started": True, "executionArn": execution_arn, "submissionId": submission_id}
