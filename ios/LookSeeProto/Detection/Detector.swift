@@ -111,7 +111,7 @@ final class Detector: NSObject, ObservableObject {
                     let conf: Float = top?.confidence ?? 0
 
                     // TEMP: lower threshold to see anything
-                    if conf >= 0.20 {
+                    if conf >= 0.90 {
                         found.append(Detection(label: label, confidence: conf, bbox: obs.boundingBox))
                     }
                 }
