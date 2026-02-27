@@ -9,6 +9,7 @@ import SwiftUI
 import Foundation
 
 struct Settings: View {
+    @EnvironmentObject var vm: AuthViewModel
     @AppStorage("onlineMode") var onlineMode = true
     @AppStorage("permissionCamera") var permissionCamera = true
     @AppStorage("permissionLocation") var permissionLocation = true
@@ -16,6 +17,7 @@ struct Settings: View {
     @State private var modal = false
     @State private var showAlertAll = false
     @State private var showAlertCache = false
+    @State private var showAlertSignOut = false
     @State private var cache = 0
     var body: some View {
         NavigationStack{
@@ -27,12 +29,14 @@ struct Settings: View {
                         Image(systemName: "person.crop.circle")
                             .font(.system(size: 50))
                         VStack{
-                            Text("Guest User")
-                            Text("guest@looksee.app")
+                            Text(vm.userEmail.isEmpty ? "Loading..." : vm.userEmail)
                         }
                     }
                     
                 })
+                .task {
+                    await vm.fetchUserEmail()
+                }
                 Section{
                     Toggle("Online Recognition", isOn: $onlineMode)
                 } header: {Text("Recognition Mode")}
@@ -79,6 +83,19 @@ struct Settings: View {
                            .sheet(isPresented: $modal){
                                Text("Looksee is an application designed to help you identify local landmarks with ease.")
                            }
+                }
+                Section {
+                    Button(role: .destructive) {
+                        showAlertSignOut = true
+                    } label: {
+                        Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
+                    }
+                    .alert("Are you sure you want to sign out?", isPresented: $showAlertSignOut) {
+                        Button("Cancel", role: .cancel) {}
+                        Button("Sign Out", role: .destructive) {
+                            vm.signOut()
+                        }
+                    }
                 }
             }
             .navigationTitle("Settings")
