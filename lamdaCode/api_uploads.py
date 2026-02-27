@@ -80,23 +80,103 @@ def handle_init(event):
         "s3Key": s3_key
     })
 
+def _s(val):
+    """Convert Python value to DynamoDB String AttributeValue or None."""
+    if val is None:
+        return None
+    if isinstance(val, str):
+        v = val.strip()
+        return {"S": v} if v else None
+    # for non-strings, stringify
+    return {"S": str(val)}
+
+def _n(val):
+    """Convert Python value to DynamoDB Number AttributeValue or None."""
+    if val is None:
+        return None
+    try:
+        return {"N": str(float(val))}
+    except Exception:
+        return None
+
 def handle_complete(event):
     try:
         body = json.loads(event.get("body") or "{}")
+
         submission_id = body["submissionId"]
         s3_key = body["s3Key"]
+
+        # Optional metadata coming from iOS
+        label = body.get("label")
+        media_kind = body.get("mediaKind")
+        short_desc = body.get("shortDescription")
+        user_desc = body.get("userDescription")
+
+        lat = body.get("latitude")
+        lon = body.get("longitude")
+        acc = body.get("horizontalAccuracy")
+
     except Exception as e:
         return _resp(400, {"error": "bad request", "detail": str(e)})
+
+    # Build a DynamoDB UpdateExpression dynamically so optional fields don’t overwrite with null
+    update_expr_parts = ["SET #s = :s", "s3Key = :k"]
+    expr_names = {"#s": "status"}
+    expr_values = {
+        ":s": {"S": "COMPLETE"},
+        ":k": {"S": s3_key},
+    }
+
+    # Optional string fields
+    label_av = _s(label)
+    if label_av:
+        update_expr_parts.append("label = :label")
+        expr_values[":label"] = label_av
+
+    media_av = _s(media_kind)
+    if media_av:
+        update_expr_parts.append("mediaKind = :mk")
+        expr_values[":mk"] = media_av
+
+    short_av = _s(short_desc)
+    if short_av:
+        update_expr_parts.append("shortDescription = :sd")
+        expr_values[":sd"] = short_av
+
+    user_av = _s(user_desc)
+    if user_av:
+        update_expr_parts.append("userDescription = :ud")
+        expr_values[":ud"] = user_av
+
+    # Optional numeric fields
+    lat_av = _n(lat)
+    if lat_av:
+        update_expr_parts.append("latitude = :lat")
+        expr_values[":lat"] = lat_av
+
+    lon_av = _n(lon)
+    if lon_av:
+        update_expr_parts.append("longitude = :lon")
+        expr_values[":lon"] = lon_av
+
+    acc_av = _n(acc)
+    if acc_av:
+        update_expr_parts.append("horizontalAccuracy = :acc")
+        expr_values[":acc"] = acc_av
+
+    # Timestamp for debugging
+    now = int(time.time())
+    update_expr_parts.append("completedAt = :t")
+    expr_values[":t"] = {"N": str(now)}
+
+    update_expr = ", ".join(update_expr_parts)
 
     ddb.update_item(
         TableName=TABLE,
         Key={"submissionId": {"S": submission_id}},
-        UpdateExpression="SET #s = :s, s3Key = :k",
-        ExpressionAttributeNames={"#s": "status"},
-        ExpressionAttributeValues={
-            ":s": {"S": "COMPLETE"},
-            ":k": {"S": s3_key},
-        },
+        UpdateExpression=update_expr,
+        ExpressionAttributeNames=expr_names,
+        ExpressionAttributeValues=expr_values,
     )
 
     return _resp(200, {"ok": True, "submissionId": submission_id})

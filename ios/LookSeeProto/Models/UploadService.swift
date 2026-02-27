@@ -3,6 +3,7 @@
 //  LookSeeProto
 //
 //  Created by Ian Thompson on 2/15/26.
+//  Updated: include metadata in /submissions/complete
 //
 
 import Foundation
@@ -36,24 +37,36 @@ final class UploadService: ObservableObject {
     // End-to-end:
     // 1) POST /submissions/init
     // 2) PUT to S3 presigned URL
-    // 3) POST /submissions/complete
-    
-    func upload(label: String, videoURL: URL?, image: UIImage?) async {
+    // 3) POST /submissions/complete (with metadata)
+
+    func upload(
+        label: String,
+        shortDescription: String?,
+        userDescription: String?,
+        latitude: Double?,
+        longitude: Double?,
+        horizontalAccuracy: Double?,
+        videoURL: URL?,
+        image: UIImage?
+    ) async {
         progress = 0
         status = "Preparing…"
 
-        let trimmed = label.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
+        let trimmedLabel = label.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedLabel.isEmpty else {
             status = "Label is required."
             return
         }
+
+        let trimmedShort = shortDescription?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedUser = userDescription?.trimmingCharacters(in: .whitespacesAndNewlines)
 
         // Decide media + filename + contentType
         let mediaKind: MediaKind
         let filename: String
         let contentType: String
 
-        if let videoURL {
+        if videoURL != nil {
             mediaKind = .video
             filename = "video.mov"
             contentType = "video/quicktime"
@@ -66,8 +79,8 @@ final class UploadService: ObservableObject {
             return
         }
 
-        let req = InitSubmissionRequest(
-            label: trimmed,
+        let initReq = InitSubmissionRequest(
+            label: trimmedLabel,
             mediaKind: mediaKind,
             filename: filename,
             contentType: contentType
@@ -76,12 +89,12 @@ final class UploadService: ObservableObject {
         do {
             // ---- Init Submission ----
             status = "Calling /submissions/init…"
-            let initResp = try await initSubmission(req)
+            let initResp = try await initSubmission(initReq)
             progress = 0.15
             status = "Init OK. submissionId=\(initResp.submissionId)"
             print("✅ INIT response:", initResp)
 
-            // ---- PUT req to S3 ----
+            // ---- PUT to S3 ----
             status = "Uploading to S3…"
             try await putToS3(
                 presignedUrl: initResp.uploadUrl,
@@ -92,8 +105,20 @@ final class UploadService: ObservableObject {
             progress = 0.85
             status = "Uploaded to S3. Finalizing…"
 
-            // ---- Complete upload ----
-            try await completeSubmission(submissionId: initResp.submissionId, s3Key: initResp.s3Key)
+            // ---- Complete (attach metadata) ----
+            let completeReq = CompleteSubmissionRequest(
+                submissionId: initResp.submissionId,
+                s3Key: initResp.s3Key,
+                label: trimmedLabel,
+                mediaKind: mediaKind,
+                shortDescription: (trimmedShort?.isEmpty == true ? nil : trimmedShort),
+                userDescription: (trimmedUser?.isEmpty == true ? nil : trimmedUser),
+                latitude: latitude,
+                longitude: longitude,
+                horizontalAccuracy: horizontalAccuracy
+            )
+
+            try await completeSubmission(completeReq)
             progress = 1.0
             status = "Complete ✅ (submissionId=\(initResp.submissionId))"
 
@@ -103,7 +128,7 @@ final class UploadService: ObservableObject {
         }
     }
 
-    // Init Submission code to endpoint helper func
+    // MARK: - Init Submission
 
     private func initSubmission(_ reqBody: InitSubmissionRequest) async throws -> InitSubmissionResponse {
         let url = baseURL.appendingPathComponent("submissions/init")
@@ -112,48 +137,42 @@ final class UploadService: ObservableObject {
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        let encoder = JSONEncoder()
-        req.httpBody = try encoder.encode(reqBody)
+        req.httpBody = try JSONEncoder().encode(reqBody)
 
         let (data, resp) = try await URLSession.shared.data(for: req)
         guard let http = resp as? HTTPURLResponse else { throw UploadError.noData }
 
         let bodyStr = String(data: data, encoding: .utf8) ?? ""
-
         guard (200...299).contains(http.statusCode) else {
             throw UploadError.badStatus(http.statusCode, bodyStr)
         }
 
-        let decoder = JSONDecoder()
-        return try decoder.decode(InitSubmissionResponse.self, from: data)
+        return try JSONDecoder().decode(InitSubmissionResponse.self, from: data)
     }
 
-    // PUT req to S3 code helper func
+    // MARK: - PUT to S3
 
-    private func putToS3(presignedUrl: String,
-                         contentType: String,
-                         videoURL: URL?,
-                         image: UIImage?) async throws {
-
+    private func putToS3(
+        presignedUrl: String,
+        contentType: String,
+        videoURL: URL?,
+        image: UIImage?
+    ) async throws {
         guard let url = URL(string: presignedUrl) else { throw UploadError.invalidURL }
 
         var req = URLRequest(url: url)
         req.httpMethod = "PUT"
         req.setValue(contentType, forHTTPHeaderField: "Content-Type")
 
-        // NOTE: do NOT add Authorization headers; presigned URL already contains auth.
-
         if let videoURL {
             let (_, resp) = try await URLSession.shared.upload(for: req, fromFile: videoURL)
             try validateS3PutResponse(resp)
-
         } else if let image {
             guard let data = image.jpegData(compressionQuality: 0.9) else {
                 throw UploadError.missingImageData
             }
             let (_, resp) = try await URLSession.shared.upload(for: req, from: data)
             try validateS3PutResponse(resp)
-
         } else {
             throw UploadError.noData
         }
@@ -161,37 +180,25 @@ final class UploadService: ObservableObject {
 
     private func validateS3PutResponse(_ resp: URLResponse) throws {
         guard let http = resp as? HTTPURLResponse else { throw UploadError.noData }
-
-        // S3 commonly returns 200 or 204 on PUT
-        if http.statusCode == 200 || http.statusCode == 204 {
-            return
-        }
-
+        if http.statusCode == 200 || http.statusCode == 204 { return }
         throw UploadError.badStatus(http.statusCode, "S3 PUT failed")
     }
 
-    // Complete upload code func
+    // MARK: - Complete Submission (metadata)
 
-    private func completeSubmission(submissionId: String, s3Key: String) async throws {
+    private func completeSubmission(_ body: CompleteSubmissionRequest) async throws {
         let url = baseURL.appendingPathComponent("submissions/complete")
 
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        // Send minimal body (matches our lambda expectation)
-        let body: [String: String] = [
-            "submissionId": submissionId,
-            "s3Key": s3Key
-        ]
-
-        req.httpBody = try JSONSerialization.data(withJSONObject: body, options: [])
+        req.httpBody = try JSONEncoder().encode(body)
 
         let (data, resp) = try await URLSession.shared.data(for: req)
         guard let http = resp as? HTTPURLResponse else { throw UploadError.noData }
 
         let bodyStr = String(data: data, encoding: .utf8) ?? ""
-
         guard (200...299).contains(http.statusCode) else {
             throw UploadError.badStatus(http.statusCode, bodyStr)
         }
