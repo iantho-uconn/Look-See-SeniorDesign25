@@ -24,6 +24,9 @@ struct LookSeeProtoApp: App {
             print("✅ Amplify configured")
         } catch {
             print("❌ Failed to configure Amplify:", error)
+    var body: some Scene {
+        WindowGroup {
+            Main()
         }
     }
     var body: some Scene {
