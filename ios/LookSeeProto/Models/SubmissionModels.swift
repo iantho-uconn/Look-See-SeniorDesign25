@@ -3,6 +3,7 @@
 //  LookSeeProto
 //
 //  Created by Ian Thompson on 2/15/26.
+//  Updated to include upload metadata (location + descriptions).
 //
 
 import Foundation
@@ -25,9 +26,19 @@ struct InitSubmissionResponse: Codable {
     let s3Key: String
 }
 
+// Sent on /submissions/complete after PUT upload succeeds.
+// This is where we attach metadata so the backend has everything it needs for downstream pipeline steps.
 struct CompleteSubmissionRequest: Codable {
     let submissionId: String
     let s3Key: String
+
     let label: String
     let mediaKind: MediaKind
+
+    let shortDescription: String?
+    let userDescription: String?
+
+    let latitude: Double?
+    let longitude: Double?
+    let horizontalAccuracy: Double?
 }
