@@ -3,11 +3,11 @@
 //  LookSeeProto
 //
 //  Created by Christian Barbara on 1/25/26.
-//
 
 import SwiftUI
 
 struct Buttons: View {
+    @EnvironmentObject var vm: AuthViewModel
     var body: some View {
         NavigationStack {
             ZStack{
@@ -25,7 +25,9 @@ struct Buttons: View {
                             .scaleEffect(2)
                     }
                     Spacer()
-                    NavigationLink(){ Settings()
+                    NavigationLink(){
+                        Settings()
+                            .environmentObject(vm)
                     } label: {
                         Label("Settings", systemImage: "gearshape")
                             .labelStyle(.iconOnly)

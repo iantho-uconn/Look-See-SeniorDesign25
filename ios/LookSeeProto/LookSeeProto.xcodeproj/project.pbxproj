@@ -17,6 +17,12 @@
 		56BDFD612EC63B52006D1B84 /* PayInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56BDFD602EC63B46006D1B84 /* PayInfo.swift */; };
 		56C3FA082EA6CA3100EA6153 /* Settings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56C3FA052EA6CA3100EA6153 /* Settings.swift */; };
 		56C3FA092EA6CA3100EA6153 /* Splash.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56C3FA062EA6CA3100EA6153 /* Splash.swift */; };
+		B02344EB2F46355C00F4230E /* Amplify in Frameworks */ = {isa = PBXBuildFile; productRef = B02344EA2F46355C00F4230E /* Amplify */; };
+		B02344ED2F46356400F4230E /* AWSCognitoAuthPlugin in Frameworks */ = {isa = PBXBuildFile; productRef = B02344EC2F46356400F4230E /* AWSCognitoAuthPlugin */; };
+		B0DC9CA62F4F849A004A9452 /* AuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0DC9CA42F4F849A004A9452 /* AuthService.swift */; };
+		B0DC9CA92F4F84B2004A9452 /* AuthViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0DC9CA72F4F84B2004A9452 /* AuthViewModel.swift */; };
+		B0DE8C0D2F516FDD008E1512 /* Signup.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0DE8C0C2F516FD3008E1512 /* Signup.swift */; };
+		B0DE8C0F2F517138008E1512 /* ConfirmSignup.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0DE8C0E2F51712F008E1512 /* ConfirmSignup.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -50,6 +56,10 @@
 		56BDFD602EC63B46006D1B84 /* PayInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PayInfo.swift; sourceTree = "<group>"; };
 		56C3FA052EA6CA3100EA6153 /* Settings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Settings.swift; sourceTree = "<group>"; };
 		56C3FA062EA6CA3100EA6153 /* Splash.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Splash.swift; sourceTree = "<group>"; };
+		B0DC9CA42F4F849A004A9452 /* AuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthService.swift; sourceTree = "<group>"; };
+		B0DC9CA72F4F84B2004A9452 /* AuthViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthViewModel.swift; sourceTree = "<group>"; };
+		B0DE8C0C2F516FD3008E1512 /* Signup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Signup.swift; sourceTree = "<group>"; };
+		B0DE8C0E2F51712F008E1512 /* ConfirmSignup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfirmSignup.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -85,6 +95,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B02344EB2F46355C00F4230E /* Amplify in Frameworks */,
+				B02344ED2F46356400F4230E /* AWSCognitoAuthPlugin in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -114,7 +126,10 @@
 				3C918F9F2E9ECE5F00AF5DAF /* LookSeeProto */,
 				3C918FAD2E9ECE6100AF5DAF /* LookSeeProtoTests */,
 				3C918FB72E9ECE6100AF5DAF /* LookSeeProtoUITests */,
+				B02344E92F46355C00F4230E /* Frameworks */,
 				3C918F9E2E9ECE5F00AF5DAF /* Products */,
+				B0DC9CA52F4F849A004A9452 /* Services */,
+				B0DC9CA82F4F84B2004A9452 /* ViewModels */,
 			);
 			sourceTree = "<group>";
 		};
@@ -131,6 +146,8 @@
 		56C3FA072EA6CA3100EA6153 /* UI Files */ = {
 			isa = PBXGroup;
 			children = (
+				B0DE8C0E2F51712F008E1512 /* ConfirmSignup.swift */,
+				B0DE8C0C2F516FD3008E1512 /* Signup.swift */,
 				568B4A592F294DD4002BCA3D /* Buttons.swift */,
 				562DAAAE2F2A85B20083A71E /* Help.swift */,
 				562AD38B2ECBAF1800D5144C /* Login.swift */,
@@ -143,6 +160,29 @@
 				56C3FA062EA6CA3100EA6153 /* Splash.swift */,
 			);
 			path = "UI Files";
+			sourceTree = "<group>";
+		};
+		B02344E92F46355C00F4230E /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		B0DC9CA52F4F849A004A9452 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				B0DC9CA42F4F849A004A9452 /* AuthService.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		B0DC9CA82F4F84B2004A9452 /* ViewModels */ = {
+			isa = PBXGroup;
+			children = (
+				B0DC9CA72F4F84B2004A9452 /* AuthViewModel.swift */,
+			);
+			path = ViewModels;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -167,6 +207,8 @@
 			);
 			name = LookSeeProto;
 			packageProductDependencies = (
+				B02344EA2F46355C00F4230E /* Amplify */,
+				B02344EC2F46356400F4230E /* AWSCognitoAuthPlugin */,
 			);
 			productName = LookSeeProto;
 			productReference = 3C918F9D2E9ECE5F00AF5DAF /* LookSeeProto.app */;
@@ -250,6 +292,9 @@
 			);
 			mainGroup = 3C918F942E9ECE5F00AF5DAF;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				B03AD91D2F462B2B0009E3AE /* XCRemoteSwiftPackageReference "amplify-swift" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 3C918F9E2E9ECE5F00AF5DAF /* Products */;
 			projectDirPath = "";
@@ -292,13 +337,17 @@
 			buildActionMask = 2147483647;
 			files = (
 				562DAAAD2F2A71750083A71E /* Main.swift in Sources */,
+				B0DE8C0D2F516FDD008E1512 /* Signup.swift in Sources */,
 				562DAAB32F2A89600083A71E /* LandmarkScan.swift in Sources */,
 				562AD38C2ECBAF1B00D5144C /* Login.swift in Sources */,
+				B0DC9CA62F4F849A004A9452 /* AuthService.swift in Sources */,
 				56BDFD612EC63B52006D1B84 /* PayInfo.swift in Sources */,
 				568B4A5A2F294DDA002BCA3D /* Buttons.swift in Sources */,
+				B0DC9CA92F4F84B2004A9452 /* AuthViewModel.swift in Sources */,
 				561FF74B2EB258D400411CF8 /* Library.swift in Sources */,
 				56C3FA082EA6CA3100EA6153 /* Settings.swift in Sources */,
 				56C3FA092EA6CA3100EA6153 /* Splash.swift in Sources */,
+				B0DE8C0F2F517138008E1512 /* ConfirmSignup.swift in Sources */,
 				562DAAAF2F2A85B40083A71E /* Help.swift in Sources */,
 				56432A372EBBBF70006B6E49 /* LandmarkRecord.swift in Sources */,
 			);
@@ -647,6 +696,30 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		B03AD91D2F462B2B0009E3AE /* XCRemoteSwiftPackageReference "amplify-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/aws-amplify/amplify-swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.53.3;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		B02344EA2F46355C00F4230E /* Amplify */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B03AD91D2F462B2B0009E3AE /* XCRemoteSwiftPackageReference "amplify-swift" */;
+			productName = Amplify;
+		};
+		B02344EC2F46356400F4230E /* AWSCognitoAuthPlugin */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B03AD91D2F462B2B0009E3AE /* XCRemoteSwiftPackageReference "amplify-swift" */;
+			productName = AWSCognitoAuthPlugin;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 3C918F952E9ECE5F00AF5DAF /* Project object */;
 }
