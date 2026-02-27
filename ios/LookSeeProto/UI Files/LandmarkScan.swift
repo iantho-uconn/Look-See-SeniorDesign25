@@ -32,8 +32,8 @@ struct LandmarkScan: View {
             .ignoresSafeArea()
             
              */
-             
-            /*
+             /*
+            
             //temp hud for testing
             VStack(alignment: .leading, spacing: 6) {
                             Text(detector.isModelLoaded ? "Model: Loaded" : "Model: Loading…")

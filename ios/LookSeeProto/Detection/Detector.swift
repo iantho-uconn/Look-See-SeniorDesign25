@@ -39,10 +39,10 @@ final class Detector: NSObject, ObservableObject {
     private func loadModel() {
         do {
             // 1) Try the generated model class for your new model
-            if let model = try? best(configuration: MLModelConfiguration()).model {
+            if let model = try? again(configuration: MLModelConfiguration()).model {
                 vnModel = try VNCoreMLModel(for: model)
                 isModelLoaded = true
-                print("✅ Loaded VNCoreMLModel from: best.mlpackage (generated class: best)")
+                print("✅ Loaded VNCoreMLModel from: again.mlpackage (generated class: best)")
                 return
             }
 
