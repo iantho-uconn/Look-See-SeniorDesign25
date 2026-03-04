@@ -29,6 +29,9 @@
 		562DAAB32F2A89600083A71E /* LandmarkScan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 562DAAB22F2A895B0083A71E /* LandmarkScan.swift */; };
 		56432A372EBBBF70006B6E49 /* LandmarkRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56432A362EBBBF6D006B6E49 /* LandmarkRecord.swift */; };
 		568B4A5A2F294DDA002BCA3D /* Buttons.swift in Sources */ = {isa = PBXBuildFile; fileRef = 568B4A592F294DD4002BCA3D /* Buttons.swift */; };
+		568CE2CD2F5654F6009A8775 /* LandmarkInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 568CE2CC2F5654F6009A8775 /* LandmarkInfo.swift */; };
+		568CE2CF2F565512009A8775 /* PopUp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 568CE2CE2F565512009A8775 /* PopUp.swift */; };
+		568CE2D12F56554E009A8775 /* PromotionEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 568CE2D02F56554E009A8775 /* PromotionEditor.swift */; };
 		56BDFD612EC63B52006D1B84 /* PayInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56BDFD602EC63B46006D1B84 /* PayInfo.swift */; };
 		56C3FA082EA6CA3100EA6153 /* Settings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56C3FA052EA6CA3100EA6153 /* Settings.swift */; };
 		56C3FA092EA6CA3100EA6153 /* Splash.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56C3FA062EA6CA3100EA6153 /* Splash.swift */; };
@@ -77,6 +80,9 @@
 		562DAAB22F2A895B0083A71E /* LandmarkScan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LandmarkScan.swift; sourceTree = "<group>"; };
 		56432A362EBBBF6D006B6E49 /* LandmarkRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LandmarkRecord.swift; sourceTree = "<group>"; };
 		568B4A592F294DD4002BCA3D /* Buttons.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Buttons.swift; sourceTree = "<group>"; };
+		568CE2CC2F5654F6009A8775 /* LandmarkInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LandmarkInfo.swift; sourceTree = "<group>"; };
+		568CE2CE2F565512009A8775 /* PopUp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PopUp.swift; sourceTree = "<group>"; };
+		568CE2D02F56554E009A8775 /* PromotionEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PromotionEditor.swift; sourceTree = "<group>"; };
 		56BDFD602EC63B46006D1B84 /* PayInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PayInfo.swift; sourceTree = "<group>"; };
 		56C3FA052EA6CA3100EA6153 /* Settings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Settings.swift; sourceTree = "<group>"; };
 		56C3FA062EA6CA3100EA6153 /* Splash.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Splash.swift; sourceTree = "<group>"; };
@@ -195,17 +201,20 @@
 			children = (
 				B0DE8C0E2F51712F008E1512 /* ConfirmSignup.swift */,
 				B0DE8C0C2F516FD3008E1512 /* Signup.swift */,
-				568B4A592F294DD4002BCA3D /* Buttons.swift */,
 				562DAAAE2F2A85B20083A71E /* Help.swift */,
 				562AD38B2ECBAF1800D5144C /* Login.swift */,
 				562DAAB22F2A895B0083A71E /* LandmarkScan.swift */,
 				56432A362EBBBF6D006B6E49 /* LandmarkRecord.swift */,
 				3C1FC9CB2F42C9DA0006C1D3 /* PhotoPicker.swift */,
 				3CE8899B2F3FEE2300B66044 /* VideoPicker.swift */,
-				561FF74A2EB258CC00411CF8 /* Library.swift */,
 				562DAAAC2F2A71740083A71E /* Main.swift */,
 				56BDFD602EC63B46006D1B84 /* PayInfo.swift */,
 				56C3FA052EA6CA3100EA6153 /* Settings.swift */,
+				568B4A592F294DD4002BCA3D /* Buttons.swift */,
+				568CE2D02F56554E009A8775 /* PromotionEditor.swift */,
+				568CE2CC2F5654F6009A8775 /* LandmarkInfo.swift */,
+				568CE2CE2F565512009A8775 /* PopUp.swift */,
+				561FF74A2EB258CC00411CF8 /* Library.swift */,
 				56C3FA062EA6CA3100EA6153 /* Splash.swift */,
 			);
 			path = "UI Files";
@@ -390,6 +399,7 @@
 				562DAAB32F2A89600083A71E /* LandmarkScan.swift in Sources */,
 				562AD38C2ECBAF1B00D5144C /* Login.swift in Sources */,
 				B0DC9CA62F4F849A004A9452 /* AuthService.swift in Sources */,
+				568CE2D12F56554E009A8775 /* PromotionEditor.swift in Sources */,
 				3C9020A02F3ABCD300EE30BF /* CameraPreview.swift in Sources */,
 				56BDFD612EC63B52006D1B84 /* PayInfo.swift in Sources */,
 				568B4A5A2F294DDA002BCA3D /* Buttons.swift in Sources */,
@@ -399,6 +409,7 @@
 				56C3FA082EA6CA3100EA6153 /* Settings.swift in Sources */,
 				3CE8899C2F3FEE2B00B66044 /* VideoPicker.swift in Sources */,
 				56C3FA092EA6CA3100EA6153 /* Splash.swift in Sources */,
+				568CE2CD2F5654F6009A8775 /* LandmarkInfo.swift in Sources */,
 				B0DE8C0F2F517138008E1512 /* ConfirmSignup.swift in Sources */,
 				3C9020A82F3ABCE900EE30BF /* LocationManager.swift in Sources */,
 				3C9020C02F3AC88600EE30BF /* CokeCanDetect.mlpackage in Sources */,
@@ -406,6 +417,7 @@
 				3C9020C12F3AC88600EE30BF /* fruits_and_cans_2.mlpackage in Sources */,
 				562DAAAF2F2A85B40083A71E /* Help.swift in Sources */,
 				3C1FC9CC2F42C9E70006C1D3 /* PhotoPicker.swift in Sources */,
+				568CE2CF2F565512009A8775 /* PopUp.swift in Sources */,
 				3C9020A32F3ABCE200EE30BF /* Detector.swift in Sources */,
 				56432A372EBBBF70006B6E49 /* LandmarkRecord.swift in Sources */,
 			);

@@ -12,8 +12,8 @@ struct Buttons: View {
         NavigationStack {
             ZStack{
                 TabView{
-                    Tab("Scan", systemImage: "camera.aperture") {LandmarkScan()} // TODO: Replace with proper camera implementation
-                    Tab("Record", systemImage: "video") {LandmarkRecord()} // TODO: Replace with proper camera implementation
+                    Tab("Scan", systemImage: "camera.aperture") {LandmarkScan()}
+                    Tab("Record", systemImage: "video") {LandmarkRecord()} 
                 }
                 HStack{
                     Spacer()
@@ -42,6 +42,6 @@ struct Buttons: View {
     }
 }
 
-#Preview {
-    Buttons()
-}
+//#Preview {
+//    Buttons()
+//}

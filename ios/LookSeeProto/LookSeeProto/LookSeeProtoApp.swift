@@ -11,12 +11,12 @@ import AWSCognitoAuthPlugin
 
 @main
 struct LookSeeProtoApp: App {
-
+    
     init() {
         configureAmplify()
     }
-
-
+    
+    
     func configureAmplify() {
         do {
             try Amplify.add(plugin: AWSCognitoAuthPlugin())
@@ -24,16 +24,13 @@ struct LookSeeProtoApp: App {
             print("✅ Amplify configured")
         } catch {
             print("❌ Failed to configure Amplify:", error)
+        }
+    }
     var body: some Scene {
         WindowGroup {
             Main()
         }
     }
-    var body: some Scene {
-            WindowGroup {
-                Main()
-            }
-        }
 }
 //struct LookSeeProtoApp: App {
 //    var body: some Scene {

@@ -78,6 +78,6 @@ struct PayInfo: View {
     }
 }
 
-#Preview {
-    PayInfo()
-}
+//#Preview {
+//    PayInfo()
+//}

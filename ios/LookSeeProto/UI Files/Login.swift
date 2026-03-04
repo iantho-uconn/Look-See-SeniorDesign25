@@ -4,45 +4,7 @@
 //
 //  Created by Christian Barbara on 11/17/25.
 //
-//import SwiftUI
-//
-//struct Login: View {
-//    @StateObject var vm = AuthViewModel()
-//    @State private var username: String = ""
-//    @State private var password: String = ""
-//    var body: some View{
-//        VStack{
-//            Form {
-//                Section {
-//                    TextField(text: $username, prompt: Text("Username")) {}
-//                        .autocorrectionDisabled(true)
-//                        .textInputAutocapitalization(.never)
-//                    SecureField(text: $password, prompt: Text("Password")) {}
-//                        .autocorrectionDisabled(true)
-//                }
-//                Button("Sign in") {
-//                    Task {
-//                        do {
-//                            let result = try await AuthService.shared.signIn(
-//                                username: username,
-//                                password: password
-//                            )
-//                            print(result)
-//                        } catch {
-//                            print(error)
-//                        }
-//                    }
-//                }
-//                    .buttonStyle(BorderlessButtonStyle())
-//            }
-//            
-//        }
-//    }
-//}
-//
-//#Preview {
-//    Login()
-//}
+
 import SwiftUI
 
 struct Login: View {

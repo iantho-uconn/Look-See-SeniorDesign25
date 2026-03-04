@@ -41,17 +41,18 @@ struct Settings: View {
                     Toggle("Online Recognition", isOn: $onlineMode)
                 } header: {Text("Recognition Mode")}
                 footer: {Text("Keeping Online Recognition on allows the app to be more accurate. Turning it off limits the range of landmark recognition.")}
-                Section("App Permissions"){
-                    Toggle("Camera access",
-                           systemImage: "camera",
-                            isOn: $permissionCamera)
-                    Toggle("Location access",
-                           systemImage: "mappin",
-                           isOn: $permissionLocation)
-                    Toggle("Storage access",
-                           systemImage: "externaldrive",
-                           isOn: $permissionStorage)
-                }
+// Unnecessary, these permissions are accessible outside the app in the Settings app proper
+//                Section("App Permissions"){
+//                    Toggle("Camera access",
+//                           systemImage: "camera",
+//                            isOn: $permissionCamera)
+//                    Toggle("Location access",
+//                           systemImage: "mappin",
+//                           isOn: $permissionLocation)
+//                    Toggle("Storage access",
+//                           systemImage: "externaldrive",
+//                           isOn: $permissionStorage)
+//                }
                 Section{
                     Button("Clear Cache",
                             systemImage: "externaldrive"){showAlertCache = true}
@@ -103,7 +104,7 @@ struct Settings: View {
     }
 }
 
-#Preview {
-    Settings()
-}
+//#Preview {
+//    Settings()
+//}
 
