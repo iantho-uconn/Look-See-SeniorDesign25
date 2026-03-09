@@ -14,7 +14,9 @@ enum MediaKind: String, Codable {
 }
 
 struct InitSubmissionRequest: Codable {
-    let label: String
+    let label: String?
+    let landmarkId: String?
+    let landmarkLabel: String?
     let mediaKind: MediaKind
     let filename: String
     let contentType: String
@@ -26,13 +28,14 @@ struct InitSubmissionResponse: Codable {
     let s3Key: String
 }
 
-// Sent on /submissions/complete after PUT upload succeeds.
-// This is where we attach metadata so the backend has everything it needs for downstream pipeline steps.
 struct CompleteSubmissionRequest: Codable {
     let submissionId: String
     let s3Key: String
 
-    let label: String
+    let label: String?
+    let landmarkId: String?
+    let landmarkLabel: String?
+
     let mediaKind: MediaKind
 
     let shortDescription: String?
