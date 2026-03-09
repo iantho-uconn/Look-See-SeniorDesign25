@@ -14,6 +14,7 @@ struct Buttons: View {
                 TabView{
                     Tab("Scan", systemImage: "camera.aperture") {LandmarkScan()} // TODO: Replace with proper camera implementation
                     Tab("Record", systemImage: "video") {LandmarkRecord()} // TODO: Replace with proper camera implementation
+                    Tab("T2Record", systemImage: "video)"){Tier2LandmarkRecord()}
                 }
                 HStack{
                     Spacer()
