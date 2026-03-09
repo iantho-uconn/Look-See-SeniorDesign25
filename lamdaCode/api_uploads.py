@@ -31,14 +31,21 @@ def api_uploads_handler(event, context):
 def handle_init(event):
     try:
         body = json.loads(event.get("body") or "{}")
-        label = body["label"].strip()
+
+        label = (body.get("label") or "").strip()
+        landmark_id = (body.get("landmarkId") or "").strip()
+        landmark_label = (body.get("landmarkLabel") or "").strip()
+
         media_kind = body["mediaKind"]  # "video" or "photo"
         filename = body["filename"]
         content_type = body.get("contentType", "application/octet-stream")
-        if not label:
-            return _resp(400, {"error": "label required"})
+
+        if not label and not landmark_id:
+            return _resp(400, {"error": "label or landmarkId required"})
+
         if media_kind not in ("video", "photo"):
             return _resp(400, {"error": "mediaKind must be 'video' or 'photo'"})
+
     except Exception as e:
         return _resp(400, {"error": "bad request", "detail": str(e)})
 
@@ -48,7 +55,6 @@ def handle_init(event):
     # MVP: no auth yet
     user_id = "anonymous"
 
-    # Separate paths by kind
     kind_prefix = "videos" if media_kind == "video" else "images"
     s3_key = f"{PREFIX}/{kind_prefix}/{user_id}/{submission_id}/{filename}"
 
@@ -59,19 +65,29 @@ def handle_init(event):
             "Key": s3_key,
             "ContentType": content_type,
         },
-        ExpiresIn=900,  # 15 minutes
+        ExpiresIn=900,
     )
+
+    item = {
+        "submissionId": {"S": submission_id},
+        "mediaKind": {"S": media_kind},
+        "s3Key": {"S": s3_key},
+        "status": {"S": "INITIATED"},
+        "createdAt": {"N": str(created_at)},
+    }
+
+    if label:
+        item["label"] = {"S": label}
+
+    if landmark_id:
+        item["landmarkId"] = {"S": landmark_id}
+
+    if landmark_label:
+        item["landmarkLabel"] = {"S": landmark_label}
 
     ddb.put_item(
         TableName=TABLE,
-        Item={
-            "submissionId": {"S": submission_id},
-            "label": {"S": label},
-            "mediaKind": {"S": media_kind},
-            "s3Key": {"S": s3_key},
-            "status": {"S": "INITIATED"},
-            "createdAt": {"N": str(created_at)},
-        },
+        Item=item,
     )
 
     return _resp(200, {
@@ -81,17 +97,14 @@ def handle_init(event):
     })
 
 def _s(val):
-    """Convert Python value to DynamoDB String AttributeValue or None."""
     if val is None:
         return None
     if isinstance(val, str):
         v = val.strip()
         return {"S": v} if v else None
-    # for non-strings, stringify
     return {"S": str(val)}
 
 def _n(val):
-    """Convert Python value to DynamoDB Number AttributeValue or None."""
     if val is None:
         return None
     try:
@@ -106,8 +119,10 @@ def handle_complete(event):
         submission_id = body["submissionId"]
         s3_key = body["s3Key"]
 
-        # Optional metadata coming from iOS
         label = body.get("label")
+        landmark_id = body.get("landmarkId")
+        landmark_label = body.get("landmarkLabel")
+
         media_kind = body.get("mediaKind")
         short_desc = body.get("shortDescription")
         user_desc = body.get("userDescription")
@@ -119,7 +134,6 @@ def handle_complete(event):
     except Exception as e:
         return _resp(400, {"error": "bad request", "detail": str(e)})
 
-    # Build a DynamoDB UpdateExpression dynamically so optional fields don’t overwrite with null
     update_expr_parts = ["SET #s = :s", "s3Key = :k"]
     expr_names = {"#s": "status"}
     expr_values = {
@@ -127,11 +141,20 @@ def handle_complete(event):
         ":k": {"S": s3_key},
     }
 
-    # Optional string fields
     label_av = _s(label)
     if label_av:
         update_expr_parts.append("label = :label")
         expr_values[":label"] = label_av
+
+    landmark_id_av = _s(landmark_id)
+    if landmark_id_av:
+        update_expr_parts.append("landmarkId = :lid")
+        expr_values[":lid"] = landmark_id_av
+
+    landmark_label_av = _s(landmark_label)
+    if landmark_label_av:
+        update_expr_parts.append("landmarkLabel = :llabel")
+        expr_values[":llabel"] = landmark_label_av
 
     media_av = _s(media_kind)
     if media_av:
@@ -148,7 +171,6 @@ def handle_complete(event):
         update_expr_parts.append("userDescription = :ud")
         expr_values[":ud"] = user_av
 
-    # Optional numeric fields
     lat_av = _n(lat)
     if lat_av:
         update_expr_parts.append("latitude = :lat")
@@ -164,7 +186,6 @@ def handle_complete(event):
         update_expr_parts.append("horizontalAccuracy = :acc")
         expr_values[":acc"] = acc_av
 
-    # Timestamp for debugging
     now = int(time.time())
     update_expr_parts.append("completedAt = :t")
     expr_values[":t"] = {"N": str(now)}
