@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		3C1FC9CC2F42C9E70006C1D3 /* PhotoPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C1FC9CB2F42C9DA0006C1D3 /* PhotoPicker.swift */; };
+		3C432D3F2F5626B200466823 /* best_2.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3C432D3E2F5626B200466823 /* best_2.mlpackage */; };
 		3C72AA372F5141A000A90328 /* best.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3C72AA362F5141A000A90328 /* best.mlpackage */; };
 		3C72AA3B2F51570300A90328 /* again.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3C72AA3A2F51570300A90328 /* again.mlpackage */; };
 		3C90209E2F3ABCD300EE30BF /* CameraPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C90209D2F3ABCD300EE30BF /* CameraPreview.swift */; };
@@ -53,6 +54,7 @@
 
 /* Begin PBXFileReference section */
 		3C1FC9CB2F42C9DA0006C1D3 /* PhotoPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoPicker.swift; sourceTree = "<group>"; };
+		3C432D3E2F5626B200466823 /* best_2.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = best_2.mlpackage; sourceTree = "<group>"; };
 		3C72AA362F5141A000A90328 /* best.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = best.mlpackage; sourceTree = "<group>"; };
 		3C72AA3A2F51570300A90328 /* again.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = again.mlpackage; sourceTree = "<group>"; };
 		3C90209D2F3ABCD300EE30BF /* CameraPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPreview.swift; sourceTree = "<group>"; };
@@ -143,6 +145,7 @@
 			isa = PBXGroup;
 			children = (
 				3C9020BD2F3AC88600EE30BF /* CokeCanDetect.mlpackage */,
+				3C432D3E2F5626B200466823 /* best_2.mlpackage */,
 				3C72AA362F5141A000A90328 /* best.mlpackage */,
 				3C72AA3A2F51570300A90328 /* again.mlpackage */,
 				3C9020BE2F3AC88600EE30BF /* fruits_and_cans_2.mlpackage */,
@@ -357,6 +360,7 @@
 				3C9020C12F3AC88600EE30BF /* fruits_and_cans_2.mlpackage in Sources */,
 				562DAAAF2F2A85B40083A71E /* Help.swift in Sources */,
 				3C1FC9CC2F42C9E70006C1D3 /* PhotoPicker.swift in Sources */,
+				3C432D3F2F5626B200466823 /* best_2.mlpackage in Sources */,
 				3C9020A32F3ABCE200EE30BF /* Detector.swift in Sources */,
 				56432A372EBBBF70006B6E49 /* LandmarkRecord.swift in Sources */,
 			);
