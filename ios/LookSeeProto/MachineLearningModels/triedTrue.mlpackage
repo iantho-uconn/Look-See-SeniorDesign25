@@ -1,0 +1,4 @@
+<script>start("/Users/ian/Desktop/LookSeeSD/yoloTest/best-2.mlpackage/");</script>
+<script>onHasParentDirectory();</script>
+<script>addRow("Data","Data",1,96,"96 B",1772156580,"2/26/26, 8:43:00 PM");</script>
+<script>addRow("Manifest.json","Manifest.json",0,617,"617 B",1772156580,"2/26/26, 8:43:00 PM");</script>
