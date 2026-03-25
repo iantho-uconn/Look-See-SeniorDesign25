@@ -44,4 +44,7 @@ struct CompleteSubmissionRequest: Codable {
     let latitude: Double?
     let longitude: Double?
     let horizontalAccuracy: Double?
+
+    let promotionEnabled: Bool?
+    let promotion: String?
 }
