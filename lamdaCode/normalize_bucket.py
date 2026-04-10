@@ -44,6 +44,7 @@ def _list_objects(bucket: str, prefix: str):
 
 
 def _copy_object(bucket: str, src_key: str, dest_key: str, content_type: str | None = None):
+    print(f"Copying {src_key} -> {dest_key}")
     extra_args = {}
     if content_type:
         extra_args["ContentType"] = content_type
@@ -59,6 +60,7 @@ def _copy_object(bucket: str, src_key: str, dest_key: str, content_type: str | N
 
 
 def _put_json(bucket: str, key: str, payload: dict):
+    print(f"Writing JSON to {key}")
     s3.put_object(
         Bucket=bucket,
         Key=key,
@@ -81,10 +83,13 @@ def _normalize_image_name(submission_id: str, original_key: str) -> str:
 
 
 def process_metadata_object(bucket: str, metadata_key: str):
+    print(f"Processing metadata object: {metadata_key}")
     folder_prefix = metadata_key.rsplit("/", 1)[0] + "/"
+    print(f"Source folder prefix: {folder_prefix}")
 
     raw_obj = s3.get_object(Bucket=bucket, Key=metadata_key)
     meta = json.loads(raw_obj["Body"].read().decode("utf-8"))
+    print(f"Loaded metadata: {meta}")
 
     submission_id = str(meta["submissionId"])
     class_key = _derive_class_key(meta)
@@ -92,7 +97,10 @@ def process_metadata_object(bucket: str, metadata_key: str):
     dest_prefix = f"{DEST_ROOT}/{submission_id}/"
     dest_images_prefix = f"{dest_prefix}images/"
 
-    # Copy and normalize all jpg files from the source folder
+    print(f"Destination prefix: {dest_prefix}")
+    print(f"Destination images prefix: {dest_images_prefix}")
+    print(f"Derived class key: {class_key}")
+
     copied_files = []
     for key in _list_objects(bucket, folder_prefix):
         if not key.lower().endswith(".jpg"):
@@ -116,9 +124,10 @@ def process_metadata_object(bucket: str, metadata_key: str):
     normalized_meta["normalizedImageCount"] = len(copied_files)
     normalized_meta["normalizedImagesPrefix"] = dest_images_prefix
 
+    print("About to write normalized metadata.json")
     _put_json(bucket, f"{dest_prefix}metadata.json", normalized_meta)
 
-    # Optional marker file for debugging/idempotency
+    print("About to write _normalized.json")
     _put_json(bucket, f"{dest_prefix}_normalized.json", {
         "ok": True,
         "submissionId": submission_id,
@@ -138,29 +147,43 @@ def process_metadata_object(bucket: str, metadata_key: str):
 
 
 def normalize_bucket_handler(event, context):
+    print("Received event:")
+    print(json.dumps(event))
+
     results = []
 
-    for record in event.get("Records", []):
-        if record.get("eventSource") != "aws:s3":
-            continue
+    try:
+        for record in event.get("Records", []):
+            if record.get("eventSource") != "aws:s3":
+                continue
 
-        bucket = record["s3"]["bucket"]["name"]
-        key = urllib.parse.unquote_plus(record["s3"]["object"]["key"])
+            bucket = record["s3"]["bucket"]["name"]
+            key = urllib.parse.unquote_plus(record["s3"]["object"]["key"])
 
-        if bucket != MODEL_BUCKET:
-            continue
+            print(f"Bucket: {bucket}")
+            print(f"Key: {key}")
 
-        # Only normalize raw upload folders when metadata.json arrives
-        if not key.startswith(RAW_PREFIX_START):
-            continue
-        if not key.endswith("metadata.json"):
-            continue
+            if bucket != MODEL_BUCKET:
+                print("Skipping record because bucket does not match MODEL_BUCKET")
+                continue
 
-        result = process_metadata_object(bucket, key)
-        results.append(result)
+            if not key.startswith(RAW_PREFIX_START):
+                print("Skipping record because key does not start with raw prefix")
+                continue
 
-    return {
-        "ok": True,
-        "processed": len(results),
-        "results": results
-    }
+            if not key.endswith("metadata.json"):
+                print("Skipping record because key does not end with metadata.json")
+                continue
+
+            result = process_metadata_object(bucket, key)
+            results.append(result)
+
+        return {
+            "ok": True,
+            "processed": len(results),
+            "results": results
+        }
+
+    except Exception as e:
+        print(f"ERROR: {str(e)}")
+        raise
