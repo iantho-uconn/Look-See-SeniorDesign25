@@ -168,45 +168,70 @@ final class Detector: NSObject, ObservableObject {
         
         var results: [Detection] = []
         
-        let confPtr = confidenceArray.dataPointer.bindMemory(to: Float.self, capacity: confidenceArray.count)
-        let coordPtr = coordinatesArray.dataPointer.bindMemory(to: Float.self, capacity: coordinatesArray.count)
+        let confPtr = confidenceArray.dataPointer.bindMemory(to: Float.self,
+                                                             capacity: confidenceArray.count)
+        let coordPtr = coordinatesArray.dataPointer.bindMemory(to: Float.self,
+                                                               capacity: coordinatesArray.count)
         
         let numDetections = coordinatesArray.shape[0].intValue
         let numClasses = confidenceArray.shape[1].intValue
         
         for i in 0..<numDetections {
             
-            // Get top class
+            // -------------------------------------------------
+            // 1. Class selection
+            // -------------------------------------------------
             var bestScore: Float = 0
             var bestClass = 0
+            
             for c in 0..<numClasses {
                 let score = confPtr[i * numClasses + c]
-                if score > bestScore { bestScore = score; bestClass = c }
+                if score > bestScore {
+                    bestScore = score
+                    bestClass = c
+                }
             }
             
             if bestScore < confidenceThreshold { continue }
             
-            // Get bbox
-            let x = CGFloat(coordPtr[i * 4 + 0])
-            let y = CGFloat(coordPtr[i * 4 + 1])
-            let w = CGFloat(coordPtr[i * 4 + 2])
-            let h = CGFloat(coordPtr[i * 4 + 3])
+            // -------------------------------------------------
+            // 2. YOLO bbox (CENTER FORMAT)
+            // -------------------------------------------------
             
-            // Convert from letterbox → screen space
-            let bx = (x - padX) / scale
-            let by = (y - padY) / scale
-            let bw = w / scale
-            let bh = h / scale
+            let cx = CGFloat(coordPtr[i * 4 + 0])
+            let cy = CGFloat(coordPtr[i * 4 + 1])
+            let w  = CGFloat(coordPtr[i * 4 + 2])
+            let h  = CGFloat(coordPtr[i * 4 + 3])
             
-            let rect = CGRect(
-                x: max(0, bx),
-                y: max(0, by),
-                width: min(bw, originalSize.width),
-                height: min(bh, originalSize.height)
-            )
+            // Convert center → top-left (IMPORTANT FIX)
+            print("what is cx",cx)
+            print("waht is cy",cy)
+            
+            // -------------------------------------------------
+            // 3. Undo letterbox (correct order)
+            // -------------------------------------------------
+
+            
+            let x = cx - w / 2
+            let y = cy - h / 2
+
+            let rect = CGRect(x: x, y: y, width: w, height: h)
+            // 1. REMOVE PADDING (CRITICAL MISSING STEP)
+
+            
+
+           
+            // -------------------------------------------------
+            // 4. Clamp to original image space
+            // -------------------------------------------------
+            
             
             results.append(
-                Detection(label: "\(bestClass)", confidence: bestScore, bbox: rect)
+                Detection(
+                    label: "\(bestClass)",
+                    confidence: bestScore,
+                    bbox: rect
+                )
             )
         }
         

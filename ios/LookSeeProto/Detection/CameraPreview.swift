@@ -75,26 +75,48 @@ final class OverlayView: UIView {
     }
 
     override func draw(_ rect: CGRect) {
-        guard let ctx = UIGraphicsGetCurrentContext(), let previewLayer = previewLayer else { return }
+        guard let ctx = UIGraphicsGetCurrentContext(),
+        
+                let previewLayer = previewLayer else { return }
 
         ctx.clear(rect)
         ctx.setLineWidth(2.0)
 
-        // TODO: Possibly change this for AR support
         for det in detections {
-            var bbox = det.bbox
+            let bbox = det.bbox
+            
+            print("RAW:", bbox)
 
-            // Clamp bounding box to view
-            bbox.origin.x = max(0, min(bbox.origin.x, bounds.width))
-            bbox.origin.y = max(0, min(bbox.origin.y, bounds.height))
-            bbox.size.width = max(0, min(bbox.size.width, bounds.width - bbox.origin.x))
-            bbox.size.height = max(0, min(bbox.size.height, bounds.height - bbox.origin.y))
+            let rect = CGRect(
+                x: bbox.origin.x * bounds.width,
+                y: bbox.origin.y * bounds.height,
+                width: bbox.width * (bounds.width * 2),
+                height: bbox.height * bounds.height
+            )
 
-            if bbox.width <= 0 || bbox.height <= 0 { continue }
+            print("DRAW RECT:", rect)
 
-            // Draw bounding box
             UIColor.systemGreen.setStroke()
-            ctx.stroke(bbox)
+            ctx.stroke(rect)
+        
+//        // TODO: Possibly change this for AR support
+//        for det in detections {
+//            var bbox = det.bbox
+//            
+//            print("RAW:", bbox)
+////            // Clamp bounding box to view
+////            bbox.origin.x = max(0, min(bbox.origin.x, bounds.width))
+////            bbox.origin.y = max(0, min(bbox.origin.y, bounds.height))
+////            bbox.size.width = max(0, min(bbox.size.width, bounds.width - bbox.origin.x))
+////            bbox.size.height = max(0, min(bbox.size.height, bounds.height - bbox.origin.y))
+////            
+//            print("corr",bbox.origin.x,bbox.origin.y,bbox.size.width,bbox.size.height)
+//
+//            if bbox.width <= 0 || bbox.height <= 0 { continue }
+//
+//            // Draw bounding box
+//            UIColor.systemGreen.setStroke()
+//            ctx.stroke(bbox)
 
             // Draw label and confidence above the box
             let labelText = "\(det.label) \(Int(det.confidence * 100))%"
@@ -107,8 +129,8 @@ final class OverlayView: UIView {
             let textSize = labelText.size(withAttributes: attributes)
 
             // Put label inside top-left of box (clamped to view)
-            let textX = max(bbox.minX, 0)
-            let textY = max(bbox.minY, 0)
+            let textX = max(rect.minX, 0)
+            let textY = max(rect.minY, 0)
 
             let bgRect = CGRect(
                 x: textX,
