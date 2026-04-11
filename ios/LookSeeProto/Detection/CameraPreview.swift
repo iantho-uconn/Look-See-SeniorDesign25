@@ -58,51 +58,69 @@ final class CameraSessionCoordinator {
 }
 
 /// CoreAnimation overlay view that draws detection boxes.
+import UIKit
+import AVFoundation
+
+
 final class OverlayView: UIView {
     weak var previewLayer: AVCaptureVideoPreviewLayer?
-    var detections: [Detection] = [] { didSet { setNeedsDisplay() } }
+    var detections: [Detection] = [] {
+        didSet {
+            print("🟢 OverlayView received \(detections.count) detections")
+            for det in detections {
+                print("🔹 \(det.label) \(Int(det.confidence*100))% → \(det.bbox)")
+            }
+            setNeedsDisplay()
+        }
+    }
 
     override func draw(_ rect: CGRect) {
-        guard let ctx = UIGraphicsGetCurrentContext() else { return }
-        guard let previewLayer = previewLayer else { return }
+        guard let ctx = UIGraphicsGetCurrentContext(), let previewLayer = previewLayer else { return }
 
-        ctx.setLineWidth(2)
+        ctx.clear(rect)
+        ctx.setLineWidth(2.0)
 
+        // TODO: Possibly change this for AR support
         for det in detections {
-            // Vision bbox is normalized, origin bottom-left.
-            let vb = det.bbox
+            var bbox = det.bbox
 
-            // Convert to metadata-output normalized rect (origin top-left).
-            let metadataRect = CGRect(
-                x: vb.origin.x,
-                y: 1.0 - vb.origin.y - vb.size.height,
-                width: vb.size.width,
-                height: vb.size.height
-            )
+            // Clamp bounding box to view
+            bbox.origin.x = max(0, min(bbox.origin.x, bounds.width))
+            bbox.origin.y = max(0, min(bbox.origin.y, bounds.height))
+            bbox.size.width = max(0, min(bbox.size.width, bounds.width - bbox.origin.x))
+            bbox.size.height = max(0, min(bbox.size.height, bounds.height - bbox.origin.y))
 
-            // Convert to layer/view coordinates (accounts for resizeAspectFill cropping).
-            let converted = previewLayer.layerRectConverted(fromMetadataOutputRect: metadataRect)
+            if bbox.width <= 0 || bbox.height <= 0 { continue }
 
-            // Box
+            // Draw bounding box
             UIColor.systemGreen.setStroke()
-            ctx.stroke(converted)
+            ctx.stroke(bbox)
 
-            // Label
-            let label = "\(det.label) \(Int(det.confidence * 100))%"
-            let attrs: [NSAttributedString.Key: Any] = [
-                .font: UIFont.systemFont(ofSize: 14, weight: .semibold),
+            // Draw label and confidence above the box
+            let labelText = "\(det.label) \(Int(det.confidence * 100))%"
+            let font = UIFont.systemFont(ofSize: 14, weight: .semibold)
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: font,
                 .foregroundColor: UIColor.white
             ]
-            let textSize = label.size(withAttributes: attrs)
-            let textBg = CGRect(
-                x: converted.minX,
-                y: max(converted.minY - textSize.height - 4, 0),
+
+            let textSize = labelText.size(withAttributes: attributes)
+
+            // Put label inside top-left of box (clamped to view)
+            let textX = max(bbox.minX, 0)
+            let textY = max(bbox.minY, 0)
+
+            let bgRect = CGRect(
+                x: textX,
+                y: textY,
                 width: textSize.width + 8,
                 height: textSize.height + 4
             )
+
             UIColor.systemGreen.setFill()
-            ctx.fill(textBg)
-            label.draw(in: textBg.insetBy(dx: 4, dy: 2), withAttributes: attrs)
+            ctx.fill(bgRect)
+
+            labelText.draw(in: bgRect.insetBy(dx: 4, dy: 2), withAttributes: attributes)
         }
     }
 }
