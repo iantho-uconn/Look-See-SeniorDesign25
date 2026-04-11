@@ -101,6 +101,19 @@ def process_metadata_object(bucket: str, metadata_key: str):
     print(f"Destination images prefix: {dest_images_prefix}")
     print(f"Derived class key: {class_key}")
 
+    # Write metadata FIRST so the normalized folder is still useful
+    # even if the image-copy loop times out later.
+    normalized_meta = dict(meta)
+    normalized_meta["sourcePrefix"] = folder_prefix
+    normalized_meta["normalizedAt"] = _now_iso()
+    normalized_meta["classKey"] = class_key
+    normalized_meta["normalizedImageCount"] = 0
+    normalized_meta["normalizedImagesPrefix"] = dest_images_prefix
+    normalized_meta["normalizationStatus"] = "IN_PROGRESS"
+
+    print("Writing initial normalized metadata.json")
+    _put_json(bucket, f"{dest_prefix}metadata.json", normalized_meta)
+
     copied_files = []
     for key in _list_objects(bucket, folder_prefix):
         if not key.lower().endswith(".jpg"):
@@ -117,17 +130,15 @@ def process_metadata_object(bucket: str, metadata_key: str):
         )
         copied_files.append(dest_key)
 
-    normalized_meta = dict(meta)
-    normalized_meta["sourcePrefix"] = folder_prefix
-    normalized_meta["normalizedAt"] = _now_iso()
-    normalized_meta["classKey"] = class_key
+    # Update metadata AFTER copies finish
     normalized_meta["normalizedImageCount"] = len(copied_files)
-    normalized_meta["normalizedImagesPrefix"] = dest_images_prefix
+    normalized_meta["normalizationStatus"] = "COMPLETE"
+    normalized_meta["copiedFiles"] = copied_files
 
-    print("About to write normalized metadata.json")
+    print("Updating normalized metadata.json with final counts")
     _put_json(bucket, f"{dest_prefix}metadata.json", normalized_meta)
 
-    print("About to write _normalized.json")
+    print("Writing _normalized.json")
     _put_json(bucket, f"{dest_prefix}_normalized.json", {
         "ok": True,
         "submissionId": submission_id,
