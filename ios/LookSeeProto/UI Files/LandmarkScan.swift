@@ -12,13 +12,16 @@ struct LandmarkScan: View {
     //create detection object for camera preview
     @StateObject private var detector = Detector()
     
+    // Variable to allow the info pop-up to appear
+    @ObservedObject var infoView = VariableContainer.shared
+    
     var body: some View {
         ZStack {
             
             //initialize camera preview with detection object
             CameraPreview(detector: detector)
                 .ignoresSafeArea()
-            
+            if(infoView.infoView){PopUp()}
             /*
             LinearGradient(
                 gradient: Gradient(colors:[
