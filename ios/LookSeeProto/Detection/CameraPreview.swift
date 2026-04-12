@@ -66,9 +66,9 @@ final class OverlayView: UIView {
     weak var previewLayer: AVCaptureVideoPreviewLayer?
     var detections: [Detection] = [] {
         didSet {
-            print("🟢 OverlayView received \(detections.count) detections")
+            // print("🟢 OverlayView received \(detections.count) detections")
             for det in detections {
-                print("🔹 \(det.label) \(Int(det.confidence*100))% → \(det.bbox)")
+                //print("🔹 \(det.label) \(Int(det.confidence*100))% → \(det.bbox)")
             }
             setNeedsDisplay()
         }
@@ -146,6 +146,7 @@ final class OverlayView: UIView {
         }
     }
 }
+
 struct CameraPreview: UIViewRepresentable {
     @ObservedObject var detector: Detector
 
@@ -173,6 +174,10 @@ struct CameraPreview: UIViewRepresentable {
     func updateUIView(_ uiView: Preview, context: Context) {
         // push latest detections to overlay each update
         uiView.overlay.detections = detector.detections
+        
+        // Tap gesture recognizer
+        let tapGesture = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.bbClick(_:)))
+        uiView.addGestureRecognizer(tapGesture)
     }
 
     func makeCoordinator() -> Coordinator {
@@ -181,6 +186,16 @@ struct CameraPreview: UIViewRepresentable {
 
     final class Coordinator {
         weak var overlay: OverlayView?
+        var view: Preview?
+        
+        // Variable to allow the info pop-up to appear
+        @ObservedObject var infoView = VariableContainer.shared
+        
+        // Toggle the infobox to show
+        @objc
+        func bbClick(_ sender: Preview){
+            infoView.infoView.toggle()
+        }
     }
 
     final class Preview: UIView {
