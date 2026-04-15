@@ -9,4 +9,4 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 
 ENV PYTHONUNBUFFERED=1
 
-CMD ["python", "/app/train_yolo_sagemaker.py"]
+ENTRYPOINT ["python", "/app/train_yolo_sagemaker.py"]
