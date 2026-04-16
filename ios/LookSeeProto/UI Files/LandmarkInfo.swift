@@ -6,14 +6,16 @@
 //
 
 import SwiftUI
+import Foundation
 
 struct LandmarkInfo : View {
-    @Binding var info : ScannedLandmark
+    // Variable to allow the info pop-up to appear
+    @ObservedObject var infoView = VariableContainer.shared
     var body: some View {
         VStack {
-            Text(info.name)
+            Text(infoView.landmarkName)
                 .font(.title)
-            Text("\(info.description ?? "No description is available for this landmark.") \n \(info.url ?? "")")
+            Text("\(infoView.landmarkDescription) \n \(infoView.landmarkURL)")
                 .padding()
 //                .lineLimit(5)
             Button("**Report incorrect info**",
@@ -23,18 +25,19 @@ struct LandmarkInfo : View {
             HStack {
                 Text("Confidence")
                 Spacer()
-                Text("\(info.confidence)%")
+                Text("\(infoView.landmarkConfidence, specifier: "%.2f")%")
             }
             HStack {
                 Text("Category")
                 Spacer()
-                Text("\(info.category)")
+                Text("\(infoView.landmarkCategory)")
             }
-            HStack {
-                Text("Detection Time")
-                Spacer()
-                Text("\(info.detectionTime, specifier: "%.2f")s")
-            }
+//            // Don't find this necessary
+//            HStack {
+//                Text("Detection Time")
+//                Spacer()
+//                Text("\(info.detectionTime, specifier: "%.2f")s")
+//            }
         }
         
     }
