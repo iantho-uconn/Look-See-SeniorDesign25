@@ -64,6 +64,10 @@ import AVFoundation
 
 final class OverlayView: UIView {
     weak var previewLayer: AVCaptureVideoPreviewLayer?
+    
+    // Variable to allow the info pop-up to appear
+    @ObservedObject var infoView = VariableContainer.shared
+    
     var detections: [Detection] = [] {
         didSet {
             // print("🟢 OverlayView received \(detections.count) detections")
@@ -76,8 +80,7 @@ final class OverlayView: UIView {
 
     override func draw(_ rect: CGRect) {
         guard let ctx = UIGraphicsGetCurrentContext(),
-        
-                let previewLayer = previewLayer else { return }
+            let previewLayer = previewLayer else { return }
 
         ctx.clear(rect)
         ctx.setLineWidth(2.0)
@@ -86,14 +89,14 @@ final class OverlayView: UIView {
             let bbox = det.bbox
             
             print("RAW:", bbox)
-
+            
             let rect = CGRect(
                 x: bbox.origin.x * bounds.width,
                 y: bbox.origin.y * bounds.height,
                 width: bbox.width * (bounds.width * 2),
                 height: bbox.height * bounds.height
             )
-
+            
             print("DRAW RECT:", rect)
 
             UIColor.systemGreen.setStroke()
@@ -141,9 +144,17 @@ final class OverlayView: UIView {
 
             UIColor.systemGreen.setFill()
             ctx.fill(bgRect)
+            
+//            if(det.confidence > 0.90 && stableCounter != 5){stableCounter += 1}
+//            else{
+//                rect.size = CGSize(det.bbox.width * (bounds.width * 2), det.bbox.height * bounds.height)
+//            }
 
             labelText.draw(in: bgRect.insetBy(dx: 4, dy: 2), withAttributes: attributes)
         }
+//        if !detections.isEmpty{
+//            infoView.landmarkName = detections[0].label
+//        }
     }
 }
 
@@ -194,7 +205,12 @@ struct CameraPreview: UIViewRepresentable {
         // Toggle the infobox to show
         @objc
         func bbClick(_ sender: Preview){
-            infoView.infoView.toggle()
+            if !overlay!.detections.isEmpty {
+                //TODO: Add API calls to get landmark infomation from the database
+                infoView.landmarkName = overlay!.detections[0].label
+                infoView.landmarkConfidence = (overlay!.detections[0].confidence * 100)
+                infoView.infoView.toggle()
+            }
         }
     }
 
