@@ -40,7 +40,9 @@ final class UploadService: ObservableObject {
     // 3) POST /submissions/complete (with metadata)
 
     func upload(
-        label: String,
+        label: String?,          // also make this Optional to accept nil
+        landmarkId: String? = nil,     // add this
+        landmarkLabel: String? = nil,  // add this
         shortDescription: String?,
         userDescription: String?,
         latitude: Double?,
@@ -52,8 +54,8 @@ final class UploadService: ObservableObject {
         progress = 0
         status = "Preparing…"
 
-        let trimmedLabel = label.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedLabel.isEmpty else {
+        guard let trimmedLabel = label?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmedLabel.isEmpty else {
             status = "Label is required."
             return
         }
