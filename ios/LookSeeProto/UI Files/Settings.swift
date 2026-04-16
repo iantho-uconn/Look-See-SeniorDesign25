@@ -19,6 +19,11 @@ struct Settings: View {
     @State private var showAlertCache = false
     @State private var showAlertSignOut = false
     @State private var cache = 0
+
+    // Model Management state
+    @State private var showModelInfo = false
+    @State private var showDeleteModelAlert = false
+
     var body: some View {
         NavigationStack{
             Form {
@@ -41,18 +46,52 @@ struct Settings: View {
                     Toggle("Online Recognition", isOn: $onlineMode)
                 } header: {Text("Recognition Mode")}
                 footer: {Text("Keeping Online Recognition on allows the app to be more accurate. Turning it off limits the range of landmark recognition.")}
-// Unnecessary, these permissions are accessible outside the app in the Settings app proper
-//                Section("App Permissions"){
-//                    Toggle("Camera access",
-//                           systemImage: "camera",
-//                            isOn: $permissionCamera)
-//                    Toggle("Location access",
-//                           systemImage: "mappin",
-//                           isOn: $permissionLocation)
-//                    Toggle("Storage access",
-//                           systemImage: "externaldrive",
-//                           isOn: $permissionStorage)
-//                }
+
+                // MARK: - Model Management
+                Section {
+                    Button("Load Model", systemImage: "arrow.down.circle") {
+                        // TODO: call your ModelService to load model based on location
+                    }
+                    Button("Reload Model", systemImage: "arrow.clockwise.circle") {
+                        // TODO: call your ModelService to re-download current model
+                    }
+                    Button("Check for Updates", systemImage: "cloud.circle") {
+                        // TODO: ping AWS to check if a newer model is available
+                    }
+                    Button("Model Info", systemImage: "info.circle") {
+                        showModelInfo = true
+                    }
+                    .sheet(isPresented: $showModelInfo) {
+                        // TODO: replace placeholder text with real model metadata
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Model Info")
+                                .font(.headline)
+                            Text("Name: —")
+                            Text("Version: —")
+                            Text("Region: —")
+                            Text("Size: —")
+                            Text("Last Updated: —")
+                        }
+                        .padding()
+                        .presentationDetents([.medium])
+                    }
+                    Button("Delete Model", systemImage: "trash", role: .destructive) {
+                        showDeleteModelAlert = true
+                    }
+                    .alert("Delete Model?", isPresented: $showDeleteModelAlert) {
+                        Button("Cancel", role: .cancel) {}
+                        Button("Delete", role: .destructive) {
+                            // TODO: remove downloaded model from local storage
+                        }
+                    } message: {
+                        Text("This will remove the downloaded model from your device. You will need to reload it to use landmark recognition.")
+                    }
+                } header: {
+                    Text("Model Management")
+                } footer: {
+                    Text("Models are selected based on your current location and downloaded from AWS.")
+                }
+
                 Section{
                     Button("Clear Cache",
                             systemImage: "externaldrive"){showAlertCache = true}
@@ -107,4 +146,3 @@ struct Settings: View {
 //#Preview {
 //    Settings()
 //}
-
