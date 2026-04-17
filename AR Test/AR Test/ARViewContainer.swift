@@ -107,7 +107,7 @@ struct ARViewContainer : UIViewRepresentable {
             }
             else{print("Nah!")}
         }
-    
+    }
 }
 
 
