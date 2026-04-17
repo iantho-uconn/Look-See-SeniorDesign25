@@ -97,7 +97,7 @@ final class OverlayView: UIView {
                 height: bbox.height * bounds.height
             )
             
-            print("DRAW RECT:", rect)
+            // print("DRAW RECT:", rect)
 
             UIColor.systemGreen.setStroke()
             ctx.stroke(rect)
@@ -144,17 +144,9 @@ final class OverlayView: UIView {
 
             UIColor.systemGreen.setFill()
             ctx.fill(bgRect)
-            
-//            if(det.confidence > 0.90 && stableCounter != 5){stableCounter += 1}
-//            else{
-//                rect.size = CGSize(det.bbox.width * (bounds.width * 2), det.bbox.height * bounds.height)
-//            }
 
             labelText.draw(in: bgRect.insetBy(dx: 4, dy: 2), withAttributes: attributes)
         }
-//        if !detections.isEmpty{
-//            infoView.landmarkName = detections[0].label
-//        }
     }
 }
 
@@ -178,17 +170,29 @@ struct CameraPreview: UIViewRepresentable {
         // attach detector to video frames once
         detector.attach(to: CameraPreview.sharedSession.videoOutput)
         CameraPreview.sharedSession.start()
+        
+        // Tap gesture recognizer
+        let tapGesture = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.bbClick(_:)))
+//        tapGesture.delaysTouchesBegan = true
+        view.addGestureRecognizer(tapGesture)
 
         return view
     }
 
     func updateUIView(_ uiView: Preview, context: Context) {
+        // Variable to allow the info pop-up to appear
+        @ObservedObject var infoView = VariableContainer.shared
+        
+        
+        // Have a counter that counts how many conscutive rectangles have a confidence level of over some threshold
+        // Maybe start with not rendering any rectangles
+        // Once that counter reaches the threshold, render one rectangle and then stop
+        
         // push latest detections to overlay each update
         uiView.overlay.detections = detector.detections
         
-        // Tap gesture recognizer
-        let tapGesture = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.bbClick(_:)))
-        uiView.addGestureRecognizer(tapGesture)
+        // Stop rendering rectangles when the pop-up is open
+        if infoView.infoView{uiView.overlay.detections.removeAll()}
     }
 
     func makeCoordinator() -> Coordinator {
@@ -204,13 +208,28 @@ struct CameraPreview: UIViewRepresentable {
         
         // Toggle the infobox to show
         @objc
-        func bbClick(_ sender: Preview){
-            if !overlay!.detections.isEmpty {
+        func bbClick(_ recognizer: UITapGestureRecognizer? = nil){
+            // Ensure there is a view
+//            guard overlay != nil else {return}
+            // Tap location
+            let tapLocation = recognizer!.location(in: view)
+//            recognizer?.cancelsTouchesInView = true
+            
+            if overlay!.frame.contains(tapLocation) && !overlay!.detections.isEmpty{
                 //TODO: Add API calls to get landmark infomation from the database
+                print("Positive")
                 infoView.landmarkName = overlay!.detections[0].label
                 infoView.landmarkConfidence = (overlay!.detections[0].confidence * 100)
                 infoView.infoView.toggle()
             }
+            else { print("Negative")
+                return }
+            
+//            if !overlay!.detections.isEmpty {
+//                infoView.landmarkName = overlay!.detections[0].label
+//                infoView.landmarkConfidence = (overlay!.detections[0].confidence * 100)
+//                infoView.infoView.toggle()
+//            }
         }
     }
 
