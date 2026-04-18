@@ -31,7 +31,7 @@ struct Buttons: View {
                     HStack(spacing: 0) {
                         // Library
                         NavigationLink {
-                            Library(locations: landmarks)
+                            Library()
                         } label: {
                             NavButton(icon: "archivebox", label: "Library")
                         }

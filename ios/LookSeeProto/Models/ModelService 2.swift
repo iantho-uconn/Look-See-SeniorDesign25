@@ -77,14 +77,14 @@ class ModelService: ObservableObject {
         // GET https://your-api.amazonaws.com/prod/select-model?lat=\(latitude)&lng=\(longitude)
         let fakeModels: [ModelInfo] = [
             ModelInfo(
-                name: "yolo-model-0",
+                name: "yolo-model-1",
                 version: "1",
                 region: "Northeast",
                 fileSizeBytes: 24_000_000,
                 lastUpdated: Date()
             ),
             ModelInfo(
-                name: "yolo-model-1",
+                name: "yolo-model-0",
                 version: "1",
                 region: "Northeast",
                 fileSizeBytes: 18_500_000,
