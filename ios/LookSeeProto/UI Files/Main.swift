@@ -14,6 +14,9 @@ struct Main: View {
 }
 struct AuthFlowView: View {
     @StateObject private var vm = AuthViewModel()
+    
+    @EnvironmentObject var authState: AuthState
+    
     @State private var showConfirm = false
     @State private var showLogin = false
     @State private var pendingEmail = ""
@@ -21,12 +24,18 @@ struct AuthFlowView: View {
 
     var body: some View {
         NavigationStack {
-            if vm.isSignedIn {
+            if !authState.isReady {
+                // Sits here briefly on launch while checkSession + resolveTier run
+                ProgressView()
+            }
+            else if vm.isSignedIn {
                 Buttons()
                     .environmentObject(vm)
+                    .environmentObject(authState)
             }
             else if showLogin {
                 Login(vm: vm, onSignedIn: {
+                    Task { await authState.resolveTier() }   // resolve tier right after login
                     vm.isSignedIn = true
                 }, onGoToSignup: {
                     showLogin = false
@@ -49,6 +58,7 @@ struct AuthFlowView: View {
         }
         .task {
             await vm.checkSession()
+            await authState.resolveTier()   // runs once on launch alongside your existing check
         }
     }
 }

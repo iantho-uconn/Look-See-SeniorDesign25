@@ -41,7 +41,7 @@ final class Detector: NSObject, ObservableObject {
     // MARK: - LOAD MODEL
     // ---------------------------------------------------------
     private func loadModel() {
-        guard let url = Bundle.main.url(forResource: "final", withExtension: "mlmodelc") else {
+        guard let url = Bundle.main.url(forResource: "best", withExtension: "mlmodelc") else {
             print("❌ Model not found in bundle")
             return
         }

@@ -8,7 +8,9 @@ import SwiftUI
 
 struct Buttons: View {
     @EnvironmentObject var vm: AuthViewModel
+    @EnvironmentObject var authState: AuthState
     @State private var showPromotion = false
+    @State private var showBusinessAlert = false
 
     var body: some View {
         NavigationStack {
@@ -19,7 +21,9 @@ struct Buttons: View {
 
                 TabView {
                     Tab("Scan", systemImage: "camera.aperture") { LandmarkScan() }
-                    Tab("Record", systemImage: "video") { LandmarkRecord() }
+                    if authState.tier == .business {
+                            Tab("Record", systemImage: "video") { LandmarkRecord() }
+                        }
                 }
 
                 // Top nav bar
@@ -36,7 +40,11 @@ struct Buttons: View {
 
                         // LookSee wordmark — tapping opens PromotionEditor
                         Button {
-                            showPromotion = true
+                            if authState.tier == .business {
+                                showPromotion = true
+                            } else {
+                                showBusinessAlert = true
+                            }
                         } label: {
                             Text("LookSee")
                                 .font(.system(size: 18, weight: .bold, design: .rounded))
@@ -44,6 +52,11 @@ struct Buttons: View {
                         }
                         .sheet(isPresented: $showPromotion) {
                             PromotionEditor()
+                        }
+                        .alert("Business Account Required", isPresented: $showBusinessAlert) {
+                            Button("OK", role: .cancel) {}
+                        } message: {
+                            Text("You need a business account to access the Promotion Editor. Please contact us to upgrade your account.")
                         }
 
                         Spacer()
