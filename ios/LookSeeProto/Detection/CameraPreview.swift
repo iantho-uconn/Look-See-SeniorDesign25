@@ -64,6 +64,10 @@ import AVFoundation
 
 final class OverlayView: UIView {
     weak var previewLayer: AVCaptureVideoPreviewLayer?
+    
+    // Variable to allow the info pop-up to appear
+    @ObservedObject var infoView = VariableContainer.shared
+    
     var detections: [Detection] = [] {
         didSet {
             // print("🟢 OverlayView received \(detections.count) detections")
@@ -76,8 +80,7 @@ final class OverlayView: UIView {
 
     override func draw(_ rect: CGRect) {
         guard let ctx = UIGraphicsGetCurrentContext(),
-        
-                let previewLayer = previewLayer else { return }
+            let previewLayer = previewLayer else { return }
 
         ctx.clear(rect)
         ctx.setLineWidth(2.0)
@@ -85,18 +88,18 @@ final class OverlayView: UIView {
         for det in detections {
             let bbox = det.bbox
             
-            print("RAW:", bbox)
-
+            // print("RAW:", bbox)
+            
             let rect = CGRect(
                 x: bbox.origin.x * bounds.width,
                 y: bbox.origin.y * bounds.height,
                 width: bbox.width * (bounds.width * 2),
                 height: bbox.height * bounds.height
             )
+            
+            // print("DRAW RECT:", rect)
 
-            print("DRAW RECT:", rect)
-
-            UIColor.systemGreen.setStroke()
+            UIColor.systemRed.setStroke()
             ctx.stroke(rect)
         
 //        // TODO: Possibly change this for AR support
@@ -140,9 +143,32 @@ final class OverlayView: UIView {
             )
 
             UIColor.systemGreen.setFill()
-            ctx.fill(bgRect)
+            //ctx.fill(bgRect)
 
-            labelText.draw(in: bgRect.insetBy(dx: 4, dy: 2), withAttributes: attributes)
+            // labelText.draw(in: bgRect.insetBy(dx: 4, dy: 2), withAttributes: attributes)
+        }
+        
+        // Variable to count bounding boxes
+        @ObservedObject var infoView = VariableContainer.shared
+        
+        // Green bounding box
+        if infoView.bboxCounter >= 29 {
+            ctx.clear(rect)
+            ctx.setLineWidth(2.0)
+
+            for det in detections {
+                let bbox = det.bbox
+                
+                let rect = CGRect(
+                    x: bbox.origin.x * bounds.width,
+                    y: bbox.origin.y * bounds.height,
+                    width: bbox.width * (bounds.width * 2),
+                    height: bbox.height * bounds.height
+                )
+                UIColor.systemGreen.setStroke()
+                ctx.stroke(rect)
+            }
+            
         }
     }
 }
@@ -167,17 +193,52 @@ struct CameraPreview: UIViewRepresentable {
         // attach detector to video frames once
         detector.attach(to: CameraPreview.sharedSession.videoOutput)
         CameraPreview.sharedSession.start()
+        
+//        // Tap gesture recognizer
+//        let tapGesture = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.bbClick(_:)))
+////        tapGesture.delaysTouchesBegan = true
+//        view.addGestureRecognizer(tapGesture)
 
         return view
     }
 
     func updateUIView(_ uiView: Preview, context: Context) {
-        // push latest detections to overlay each update
-        uiView.overlay.detections = detector.detections
+        // Variable to count bounding boxes
+        @ObservedObject var infoView = VariableContainer.shared
         
-        // Tap gesture recognizer
         let tapGesture = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.bbClick(_:)))
-        uiView.addGestureRecognizer(tapGesture)
+        
+        // Stop rendering new bounding boxes when they appear for 30 consecutive frames and are above a certain threshold
+        if infoView.bboxCounter < 30 {
+            // push latest detections to overlay each update
+            uiView.overlay.detections = detector.detections
+            
+            DispatchQueue.main.async {
+                if !uiView.overlay.detections.isEmpty && uiView.overlay.detections[0].confidence > 0.10 {
+                    infoView.bboxCounter += 1
+                }
+                else { infoView.bboxCounter = 0 }
+            }
+        }
+        else {
+            // Add tap gesture
+            uiView.addGestureRecognizer(tapGesture)
+            DispatchQueue.main.async {
+                infoView.bboxCounter += 1
+            }
+            
+        }
+        
+        // Stop rendering rectangles when the pop-up is open or it's been appromixately three seconds after an item has been scanned
+        // Reset counter for halting bounding box rendering, remove tap gesture
+        if infoView.infoView || infoView.bboxCounter == 210{
+            uiView.removeGestureRecognizer(tapGesture)
+            uiView.overlay.detections.removeAll()
+            DispatchQueue.main.async {
+                infoView.bboxCounter = 0
+            }
+        }
+        print(infoView.bboxCounter)
     }
 
     func makeCoordinator() -> Coordinator {
@@ -193,8 +254,20 @@ struct CameraPreview: UIViewRepresentable {
         
         // Toggle the infobox to show
         @objc
-        func bbClick(_ sender: Preview){
-            infoView.infoView.toggle()
+        func bbClick(_ recognizer: UITapGestureRecognizer? = nil){
+
+            // Tap location
+            let tapLocation = recognizer!.location(in: view)
+            
+            if overlay!.frame.contains(tapLocation) && !overlay!.detections.isEmpty{
+                //TODO: Add API calls to get landmark infomation from the database
+                print("Positive")
+                infoView.landmarkName = overlay!.detections[0].label
+                infoView.landmarkConfidence = (overlay!.detections[0].confidence * 100)
+                infoView.infoView.toggle()
+            }
+            else { print("Negative")
+                return }
         }
     }
 

@@ -15,12 +15,15 @@ struct LandmarkScan: View {
     // Variable to allow the info pop-up to appear
     @ObservedObject var infoView = VariableContainer.shared
     
+    @State private var blurAmount : Float = 0.00
+    
     var body: some View {
         ZStack {
-            
+            let blurAmount = infoView.infoView ? 5.0 : 0.0
             //initialize camera preview with detection object
             CameraPreview(detector: detector)
                 .ignoresSafeArea()
+                .blur(radius: blurAmount)
             if(infoView.infoView){PopUp()}
             /*
             LinearGradient(
@@ -55,6 +58,6 @@ struct LandmarkScan: View {
     }
 }
 
-#Preview {
-    LandmarkScan()
-}
+//#Preview {
+//    LandmarkScan()
+//}

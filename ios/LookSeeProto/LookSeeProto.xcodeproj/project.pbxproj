@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		3C1FC9CC2F42C9E70006C1D3 /* PhotoPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C1FC9CB2F42C9DA0006C1D3 /* PhotoPicker.swift */; };
 		3C5FED6B2F907D270018FF06 /* Tier2LandmarkRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C5FED6A2F907D270018FF06 /* Tier2LandmarkRecord.swift */; };
+		3C63C8A82F91875E0006C5DD /* VariableContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C63C8A72F91875E0006C5DD /* VariableContainer.swift */; };
 		3C72AA372F5141A000A90328 /* best.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3C72AA362F5141A000A90328 /* best.mlpackage */; };
 		3C72AA3B2F51570300A90328 /* again.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3C72AA3A2F51570300A90328 /* again.mlpackage */; };
 		3C90209E2F3ABCD300EE30BF /* CameraPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C90209D2F3ABCD300EE30BF /* CameraPreview.swift */; };
@@ -67,6 +68,7 @@
 /* Begin PBXFileReference section */
 		3C1FC9CB2F42C9DA0006C1D3 /* PhotoPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoPicker.swift; sourceTree = "<group>"; };
 		3C5FED6A2F907D270018FF06 /* Tier2LandmarkRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tier2LandmarkRecord.swift; sourceTree = "<group>"; };
+		3C63C8A72F91875E0006C5DD /* VariableContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VariableContainer.swift; sourceTree = "<group>"; };
 		3C72AA362F5141A000A90328 /* best.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = best.mlpackage; sourceTree = "<group>"; };
 		3C72AA3A2F51570300A90328 /* again.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = again.mlpackage; sourceTree = "<group>"; };
 		3C90209D2F3ABCD300EE30BF /* CameraPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPreview.swift; sourceTree = "<group>"; };
@@ -217,6 +219,7 @@
 				3CE8899B2F3FEE2300B66044 /* VideoPicker.swift */,
 				562DAAAC2F2A71740083A71E /* Main.swift */,
 				3C5FED6A2F907D270018FF06 /* Tier2LandmarkRecord.swift */,
+				3C63C8A72F91875E0006C5DD /* VariableContainer.swift */,
 				56BDFD602EC63B46006D1B84 /* PayInfo.swift */,
 				56C3FA052EA6CA3100EA6153 /* Settings.swift */,
 				568B4A592F294DD4002BCA3D /* Buttons.swift */,
@@ -409,7 +412,7 @@
 				562DAAAD2F2A71750083A71E /* Main.swift in Sources */,
 				B0DE8C0D2F516FDD008E1512 /* Signup.swift in Sources */,
 				562DAAB32F2A89600083A71E /* LandmarkScan.swift in Sources */,
-				B002FA0F2F91815600120C4F /* VariableContainer.swift in Sources */,
+				3C63C8A82F91875E0006C5DD /* VariableContainer.swift in Sources */,
 				562AD38C2ECBAF1B00D5144C /* Login.swift in Sources */,
 				B0DC9CA62F4F849A004A9452 /* AuthService.swift in Sources */,
 				568CE2D12F56554E009A8775 /* PromotionEditor.swift in Sources */,
