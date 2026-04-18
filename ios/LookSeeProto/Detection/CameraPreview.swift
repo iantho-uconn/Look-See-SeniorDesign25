@@ -151,7 +151,7 @@ final class OverlayView: UIView {
         // Variable to count bounding boxes
         @ObservedObject var infoView = VariableContainer.shared
         
-        //TODO: Help!
+        // Green bounding box
         if infoView.bboxCounter >= 29 {
             ctx.clear(rect)
             ctx.setLineWidth(2.0)
@@ -223,17 +223,22 @@ struct CameraPreview: UIViewRepresentable {
         else {
             // Add tap gesture
             uiView.addGestureRecognizer(tapGesture)
+            DispatchQueue.main.async {
+                infoView.bboxCounter += 1
+            }
+            
         }
         
-        // Stop rendering rectangles when the pop-up is open, reset counter for halting bounding box rendering, remove tap gesture
-        if infoView.infoView{
+        // Stop rendering rectangles when the pop-up is open or it's been appromixately three seconds after an item has been scanned
+        // Reset counter for halting bounding box rendering, remove tap gesture
+        if infoView.infoView || infoView.bboxCounter == 210{
             uiView.removeGestureRecognizer(tapGesture)
             uiView.overlay.detections.removeAll()
             DispatchQueue.main.async {
                 infoView.bboxCounter = 0
             }
         }
-        //print(infoView.bboxCounter)
+        print(infoView.bboxCounter)
     }
 
     func makeCoordinator() -> Coordinator {
