@@ -16,6 +16,8 @@ struct Signup: View {
     @State private var isLoading = false
     @State private var didSignup = false
     
+    @State private var isBusinessAccount = false
+    
     var onSignupSuccess: (String) -> Void
     var onGoToLogin: () -> Void
 
@@ -27,16 +29,22 @@ struct Signup: View {
 
                 Section(header: Text("Create Account")) {
 
-//                    TextField("Username", text: $username)
-//                        .autocorrectionDisabled(true)
-//                        .textInputAutocapitalization(.never)
-
                     TextField("Email", text: $email)
                         .keyboardType(.emailAddress)
                         .autocorrectionDisabled(true)
                         .textInputAutocapitalization(.never)
 
                     SecureField("Password", text: $password)
+                    
+                    // Business account toggle
+                    Toggle(isOn: $isBusinessAccount) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Business Account")
+                            Text("Enables promotion management and video uploads")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
 
                 Button {
@@ -68,13 +76,15 @@ struct Signup: View {
     func signUp() {
         isLoading = true
         message = ""
+        let group = isBusinessAccount ? "business-users" : "authenticated-users"
 
         Task {
             do {
                 _ = try await AuthService.shared.signUp(
                     username: email,
                     password: password,
-                    email: email
+                    email: email,
+                    group: group
                 )
 
                 didSignup = true

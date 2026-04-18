@@ -31,9 +31,11 @@ class AuthViewModel: ObservableObject {
             }
         }
     }
-    func signOut() {
+    // Updated: accepts authState so tier resets cleanly on sign out
+    func signOut(authState: AuthState) {
         Task {
             await AuthService.shared.signOut()
+            await authState.signOut()   // resets tier to .guest
             isSignedIn = false
         }
     }

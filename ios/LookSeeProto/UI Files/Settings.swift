@@ -9,7 +9,9 @@ import SwiftUI
 import Foundation
 
 struct Settings: View {
+    @Environment(\.dismiss) var dismiss
     @EnvironmentObject var vm: AuthViewModel
+    @EnvironmentObject var authState: AuthState
     @AppStorage("onlineMode") var onlineMode = true
     @AppStorage("permissionCamera") var permissionCamera = true
     @AppStorage("permissionLocation") var permissionLocation = true
@@ -33,8 +35,13 @@ struct Settings: View {
                     HStack {
                         Image(systemName: "person.crop.circle")
                             .font(.system(size: 50))
-                        VStack{
+                        VStack(alignment: .leading) {
                             Text(vm.userEmail.isEmpty ? "Loading..." : vm.userEmail)
+                            if authState.tier == .business {
+                                Text("Business Account")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                     }
                     
@@ -133,12 +140,19 @@ struct Settings: View {
                     .alert("Are you sure you want to sign out?", isPresented: $showAlertSignOut) {
                         Button("Cancel", role: .cancel) {}
                         Button("Sign Out", role: .destructive) {
-                            vm.signOut()
+                            vm.signOut(authState: authState)
                         }
                     }
                 }
             }
             .navigationTitle("Settings")
+            .onChange(of: vm.isSignedIn) { _, isSignedIn in
+                // When signed out, AuthFlowView automatically shows login
+                // This dismisses Settings so the navigation stack is clean
+                if !isSignedIn {
+                    dismiss()
+                }
+            }
         }
     }
 }
