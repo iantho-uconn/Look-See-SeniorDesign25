@@ -5,6 +5,7 @@
 //  Created by Sheenan Ahsan on 2/25/26.
 //
 import Amplify
+import AWSCognitoAuthPlugin
 
 class AuthService {
 
@@ -14,10 +15,11 @@ class AuthService {
    
 
    // SIGN UP
-   func signUp(username: String, password: String, email: String) async throws -> AuthSignUpResult {
+    func signUp(username: String, password: String, email: String, group: String) async throws -> AuthSignUpResult {
        let options = AuthSignUpRequest.Options(
            userAttributes: [
-               AuthUserAttribute(.email, value: email)
+               AuthUserAttribute(.email, value: email),
+               AuthUserAttribute(AuthUserAttributeKey(rawValue: "custom:group"), value: group)  // store desired group
            ]
        )
        return try await Amplify.Auth.signUp(

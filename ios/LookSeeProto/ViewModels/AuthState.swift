@@ -31,23 +31,28 @@ class AuthState: ObservableObject {
         }
 
         // Use fetchUserAttributes instead of casting the session
+
         do {
+            // Force a fresh token so Pre Token Generation Lambda has run
+            _ = try await Amplify.Auth.fetchAuthSession(options: .forceRefresh())
+
             let attributes = try await Amplify.Auth.fetchUserAttributes()
+            print("🔍 All attributes: \(attributes)")
+
             if let groupAttr = attributes.first(where: { $0.key.rawValue == "custom:group" }) {
-                if groupAttr.value == "business-users" {
-                    tier = .business
-                } else {
-                    tier = .authenticated
-                }
+                print("🔍 Found group attribute: \(groupAttr.value)")
+                tier = groupAttr.value == "business-users" ? .business : .authenticated
             } else {
+                print("⚠️ No group attribute found")
                 tier = .authenticated
             }
         } catch {
-            print("❌ Failed to fetch user attributes: \(error)")
+            print("❌ resolveTier failed: \(error)")
             tier = .authenticated
         }
 
         isReady = true
+        
     }
 
     func signOut() async {
