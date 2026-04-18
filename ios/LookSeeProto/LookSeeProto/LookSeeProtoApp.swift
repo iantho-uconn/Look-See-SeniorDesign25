@@ -12,6 +12,7 @@ import AWSCognitoAuthPlugin
 @main
 struct LookSeeProtoApp: App {
     @StateObject private var authState = AuthState()
+    @StateObject private var authViewModel = AuthViewModel()
     
     init() {
         configureAmplify()
@@ -29,8 +30,9 @@ struct LookSeeProtoApp: App {
     }
     var body: some Scene {
         WindowGroup {
-            Main()
+            RootView()
                 .environmentObject(authState)
+                .environmentObject(authViewModel)
         }
     }
 }

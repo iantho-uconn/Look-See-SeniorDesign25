@@ -13,7 +13,7 @@ struct Main: View {
     }
 }
 struct AuthFlowView: View {
-    @StateObject private var vm = AuthViewModel()
+    @EnvironmentObject var vm: AuthViewModel
     
     @EnvironmentObject var authState: AuthState
     
@@ -65,4 +65,5 @@ struct AuthFlowView: View {
 
 #Preview {
     Main()
+        .environmentObject(AuthViewModel())
 }
