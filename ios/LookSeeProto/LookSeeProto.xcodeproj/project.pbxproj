@@ -37,7 +37,6 @@
 		56BDFD612EC63B52006D1B84 /* PayInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56BDFD602EC63B46006D1B84 /* PayInfo.swift */; };
 		56C3FA082EA6CA3100EA6153 /* Settings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56C3FA052EA6CA3100EA6153 /* Settings.swift */; };
 		56C3FA092EA6CA3100EA6153 /* Splash.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56C3FA062EA6CA3100EA6153 /* Splash.swift */; };
-		B002FA0F2F91815600120C4F /* VariableContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B002FA0E2F91815500120C4F /* VariableContainer.swift */; };
 		B002FA112F91D23700120C4F /* AuthState.swift in Sources */ = {isa = PBXBuildFile; fileRef = B002FA102F91D22F00120C4F /* AuthState.swift */; };
 		B00F16732F9328370057430F /* ModelLoadingScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00F16722F9328360057430F /* ModelLoadingScreen.swift */; };
 		B02344EB2F46355C00F4230E /* Amplify in Frameworks */ = {isa = PBXBuildFile; productRef = B02344EA2F46355C00F4230E /* Amplify */; };
@@ -609,7 +608,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = AWSV2AR8XC;
+				DEVELOPMENT_TEAM = C66T6ZH83N;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
@@ -626,7 +625,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = sheenan.lookseeproto;
+				PRODUCT_BUNDLE_IDENTIFIER = looksee.uconn.edu;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -647,7 +646,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = AWSV2AR8XC;
+				DEVELOPMENT_TEAM = C66T6ZH83N;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
@@ -664,7 +663,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = sheenan.lookseeproto;
+				PRODUCT_BUNDLE_IDENTIFIER = looksee.uconn.edu;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
