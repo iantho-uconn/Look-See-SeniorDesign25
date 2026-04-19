@@ -14,6 +14,7 @@ enum MediaKind: String, Codable {
 }
 
 struct InitSubmissionRequest: Codable {
+    let userEmail: String     // ← add this
     let label: String
     let mediaKind: MediaKind
     let filename: String
@@ -31,6 +32,7 @@ struct InitSubmissionResponse: Codable {
 struct CompleteSubmissionRequest: Codable {
     let submissionId: String
     let s3Key: String
+    let userEmail: String     // ← add this
 
     let label: String
     let mediaKind: MediaKind

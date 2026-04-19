@@ -10,6 +10,7 @@ import SwiftUI
 import CoreLocation
 
 struct LandmarkRecord: View {
+    @EnvironmentObject var vm: AuthViewModel   // ← add this
     @State private var labelText: String = ""
 
     @State private var pickedVideoURL: URL? = nil
@@ -127,7 +128,9 @@ struct LandmarkRecord: View {
 
                         Button {
                             Task {
+                                await vm.fetchUserEmail()   // ensure email is fresh before upload
                                 await uploadService.upload(
+                                    userEmail: vm.userEmail,   // ← add this
                                     label: labelText,
                                     shortDescription: shortDescription,
                                     userDescription: userDescription,

@@ -40,6 +40,7 @@ final class UploadService: ObservableObject {
     // 3) POST /submissions/complete (with metadata)
 
     func upload(
+        userEmail: String,
         label: String?,          // also make this Optional to accept nil
         landmarkId: String? = nil,     // add this
         landmarkLabel: String? = nil,  // add this
@@ -82,6 +83,7 @@ final class UploadService: ObservableObject {
         }
 
         let initReq = InitSubmissionRequest(
+            userEmail: userEmail,
             label: trimmedLabel,
             mediaKind: mediaKind,
             filename: filename,
@@ -111,6 +113,7 @@ final class UploadService: ObservableObject {
             let completeReq = CompleteSubmissionRequest(
                 submissionId: initResp.submissionId,
                 s3Key: initResp.s3Key,
+                userEmail: userEmail,
                 label: trimmedLabel,
                 mediaKind: mediaKind,
                 shortDescription: (trimmedShort?.isEmpty == true ? nil : trimmedShort),
