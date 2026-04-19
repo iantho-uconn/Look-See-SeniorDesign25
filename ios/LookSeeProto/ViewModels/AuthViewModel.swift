@@ -26,8 +26,11 @@ class AuthViewModel: ObservableObject {
                     password: password
                 )
                 isSignedIn = result.isSignedIn
+                errorMessage = ""
+            } catch let error as AuthError {
+                errorMessage = friendlyMessage(for: error)
             } catch {
-                errorMessage = error.localizedDescription
+                errorMessage = "Something went wrong. Please try again."
             }
         }
     }
@@ -47,6 +50,48 @@ class AuthViewModel: ObservableObject {
             }
         } catch {
             print("❌ Failed to fetch user email: \(error)")
+        }
+    }
+    // MARK: - Private
+
+    private func friendlyMessage(for error: AuthError) -> String {
+        switch error {
+        case .notAuthorized:
+            return "Incorrect email or password. Please try again."
+
+        case .service(_, _, let underlyingError):
+            let description = underlyingError.map { "\($0)" } ?? ""
+            if description.contains("UserNotFoundException") || description.contains("UserNotFound") {
+                return "No account found with that email. Please check your email or sign up."
+            }
+            if description.contains("UserNotConfirmedException") {
+                return "Please verify your email before signing in. Check your inbox for a confirmation link."
+            }
+            if description.contains("PasswordResetRequiredException") {
+                return "Your password needs to be reset. Please use the forgot password option."
+            }
+            if description.contains("TooManyRequestsException") || description.contains("LimitExceededException") {
+                return "Too many attempts. Please wait a moment and try again."
+            }
+            return "Something went wrong. Please try again."
+
+        case .validation(_, let description, _, _):
+            if description.lowercased().contains("username") || description.lowercased().contains("email") {
+                return "Please enter a valid email address."
+            }
+            if description.lowercased().contains("password") {
+                return "Please enter your password."
+            }
+            return "Please check your details and try again."
+
+//        case .network:
+//            return "Network error. Please check your internet connection and try again."
+
+        case .invalidState:
+            return "Something went wrong with your session. Please restart the app and try again."
+
+        default:
+            return "Something went wrong. Please try again."
         }
     }
 }

@@ -9,6 +9,7 @@ import SwiftUI
 import CoreLocation
 
 struct Tier2LandmarkRecord: View {
+    @EnvironmentObject var vm: AuthViewModel   // ← add this
     @State private var pickedVideoURL: URL? = nil
     @State private var pickedImage: UIImage? = nil
 
@@ -327,7 +328,9 @@ struct Tier2LandmarkRecord: View {
                 guard let selectedLandmark else { return }
 
                 Task {
+                    await vm.fetchUserEmail()   // ensure email is fresh
                     await uploadService.upload(
+                        userEmail: vm.userEmail,   // ← add this
                         label: nil,
                         landmarkId: selectedLandmark.landmarkId,
                         landmarkLabel: selectedLandmark.label,
