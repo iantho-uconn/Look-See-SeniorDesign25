@@ -2,15 +2,18 @@
 //  RootView.swift
 //  LookSeeProto
 //
-
 import SwiftUI
 
 struct RootView: View {
     @EnvironmentObject var vm: AuthViewModel
+    @EnvironmentObject var authState: AuthState
     @State private var appState: AppState = .login
+    @State private var pendingEmail = ""
 
     enum AppState {
         case login
+        case signup
+        case confirmSignup
         case loadingModel
         case main
     }
@@ -21,19 +24,42 @@ struct RootView: View {
             Login(
                 vm: vm,
                 onSignedIn: {
-                    appState = .loadingModel
+                    Task {
+                        await authState.resolveTier()
+                        appState = .loadingModel
+                    }
                 },
                 onGoToSignup: {
-                    // TODO: point this at your signup screen
+                    appState = .signup
+                },
+                onContinueAsGuest: {
+                    authState.tier = .guest
+                    appState = .loadingModel
                 }
             )
             .task {
-                // If already signed in from a previous session, skip login
                 await vm.checkSession()
                 if vm.isSignedIn {
+                    await authState.resolveTier()
                     appState = .loadingModel
                 }
             }
+
+        case .signup:
+            Signup(
+                onSignupSuccess: { email in
+                    pendingEmail = email
+                    appState = .confirmSignup
+                },
+                onGoToLogin: {
+                    appState = .login
+                }
+            )
+
+        case .confirmSignup:
+            ConfirmSignup(email: pendingEmail, onConfirmed: {
+                appState = .login
+            })
 
         case .loadingModel:
             ModelLoadingScreen {
@@ -43,7 +69,14 @@ struct RootView: View {
         case .main:
             Main()
                 .environmentObject(vm)
+                .environmentObject(authState)
                 .toolbarVisibility(.hidden)
+                .onChange(of: authState.didSignOut) { _, didSignOut in
+                    if didSignOut {
+                        authState.didSignOut = false
+                        appState = .login
+                    }
+                }
         }
     }
 }
