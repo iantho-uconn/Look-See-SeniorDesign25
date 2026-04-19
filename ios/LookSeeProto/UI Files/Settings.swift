@@ -21,38 +21,63 @@ struct Settings: View {
     @State private var showAlertCache = false
     @State private var showAlertSignOut = false
     @State private var cache = 0
-
-    // Model Management state
     @State private var showModelInfo = false
     @State private var showDeleteModelAlert = false
 
     var body: some View {
-        NavigationStack{
+        NavigationStack {
             Form {
-                Button(action: {
-                    print("Button tapped!")
-                }, label: {
-                    HStack {
-                        Image(systemName: "person.crop.circle")
-                            .font(.system(size: 50))
-                        VStack(alignment: .leading) {
-                            Text(vm.userEmail.isEmpty ? "Loading..." : vm.userEmail)
-                            if authState.tier == .business {
-                                Text("Business Account")
+                // MARK: - Profile
+                if authState.tier == .guest {
+                    // Guest profile — tap to go to signup
+                    Button {
+                        dismiss()
+                        authState.didSignOut = true
+                    } label: {
+                        HStack {
+                            Image(systemName: "person.crop.circle")
+                                .font(.system(size: 50))
+                                .foregroundStyle(.secondary)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Guest User")
+                                    .foregroundStyle(.primary)
+                                Text("Tap here to sign up")
                                     .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(Color(red: 0.22, green: 0.49, blue: 1.00))
                             }
                         }
                     }
-                    
-                })
-                .task {
-                    await vm.fetchUserEmail()
+                } else {
+                    Button(action: {
+                        print("Profile tapped")
+                    }, label: {
+                        HStack {
+                            Image(systemName: "person.crop.circle")
+                                .font(.system(size: 50))
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(vm.userEmail.isEmpty ? "Loading..." : vm.userEmail)
+                                    .foregroundStyle(.primary)
+                                if authState.tier == .business {
+                                    Text("Business Account")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                } else {
+                                    Text("Authenticated User")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    })
+                    .task {
+                        await vm.fetchUserEmail()
+                    }
                 }
-                Section{
+
+                Section {
                     Toggle("Online Recognition", isOn: $onlineMode)
-                } header: {Text("Recognition Mode")}
-                footer: {Text("Keeping Online Recognition on allows the app to be more accurate. Turning it off limits the range of landmark recognition.")}
+                } header: { Text("Recognition Mode") }
+                footer: { Text("Keeping Online Recognition on allows the app to be more accurate. Turning it off limits the range of landmark recognition.") }
 
                 // MARK: - Model Management
                 Section {
@@ -69,7 +94,6 @@ struct Settings: View {
                         showModelInfo = true
                     }
                     .sheet(isPresented: $showModelInfo) {
-                        // TODO: replace placeholder text with real model metadata
                         VStack(alignment: .leading, spacing: 12) {
                             Text("Model Info")
                                 .font(.headline)
@@ -93,63 +117,61 @@ struct Settings: View {
                     } message: {
                         Text("This will remove the downloaded model from your device. You will need to reload it to use landmark recognition.")
                     }
-                } header: {
-                    Text("Model Management")
-                } footer: {
-                    Text("Models are selected based on your current location and downloaded from AWS.")
-                }
+                } header: { Text("Model Management") }
+                footer: { Text("Models are selected based on your current location and downloaded from AWS.") }
 
-                Section{
-                    Button("Clear Cache",
-                            systemImage: "externaldrive"){showAlertCache = true}
-                        .alert("Are you sure? This will delete all temporary data, including images.", isPresented: $showAlertCache){
+                Section {
+                    Button("Clear Cache", systemImage: "externaldrive") { showAlertCache = true }
+                        .alert("Are you sure? This will delete all temporary data, including images.", isPresented: $showAlertCache) {
                             Button("Cancel", role: .cancel) {}
                             Button("Yes", role: .destructive) {}
                         }
                     Button("Delete All Data",
                            systemImage: "externaldrive.badge.exclamationmark",
-                           role: .destructive) {showAlertAll = true}
-                        .alert("Are you sure? This will delete all stored data, including stored models and your landmark history.", isPresented: $showAlertAll){
+                           role: .destructive) { showAlertAll = true }
+                        .alert("Are you sure? This will delete all stored data, including stored models and your landmark history.", isPresented: $showAlertAll) {
                             Button("Cancel", role: .cancel) {}
                             Button("Yes", role: .destructive) {}
                         }
-                    
-                } header: {Text("Data Management")}
-                footer: {Text("Current cache size: \(cache) MB")}
-                
-                Section("Support & Info"){
-                    NavigationLink(){ Help()
-                    } label: {
+                } header: { Text("Data Management") }
+                footer: { Text("Current cache size: \(cache) MB") }
+
+                Section("Support & Info") {
+                    NavigationLink { Help() } label: {
                         Label("Help & Tutorial", systemImage: "questionmark.circle")
                             .foregroundColor(.blue)
                     }
-                    Button("About LookSee",
-                           systemImage: "info.circle") {
+                    Button("About LookSee", systemImage: "info.circle") {
                         modal = true
                     }
-                           .sheet(isPresented: $modal){
-                               Text("Looksee is an application designed to help you identify local landmarks with ease.")
-                           }
-                }
-                Section {
-                    Button(role: .destructive) {
-                        showAlertSignOut = true
-                    } label: {
-                        Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
+                    .sheet(isPresented: $modal) {
+                        Text("Looksee is an application designed to help you identify local landmarks with ease.")
                     }
-                    .alert("Are you sure you want to sign out?", isPresented: $showAlertSignOut) {
-                        Button("Cancel", role: .cancel) {}
-                        Button("Sign Out", role: .destructive) {
-                            vm.signOut(authState: authState)
+                }
+
+                // MARK: - Sign Out (hidden for guests)
+                if authState.tier != .guest {
+                    Section {
+                        Button(role: .destructive) {
+                            showAlertSignOut = true
+                        } label: {
+                            Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
+                        }
+                        .alert("Are you sure you want to sign out?", isPresented: $showAlertSignOut) {
+                            Button("Cancel", role: .cancel) {}
+                            Button("Sign Out", role: .destructive) {
+                                Task {
+                                    await authState.signOut()
+                                    vm.isSignedIn = false
+                                }
+                            }
                         }
                     }
                 }
             }
             .navigationTitle("Settings")
-            .onChange(of: vm.isSignedIn) { _, isSignedIn in
-                // When signed out, AuthFlowView automatically shows login
-                // This dismisses Settings so the navigation stack is clean
-                if !isSignedIn {
+            .onChange(of: authState.didSignOut) { _, didSignOut in
+                if didSignOut {
                     dismiss()
                 }
             }
