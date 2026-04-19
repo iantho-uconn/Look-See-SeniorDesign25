@@ -262,8 +262,11 @@ struct CameraPreview: UIViewRepresentable {
             if overlay!.frame.contains(tapLocation) && !overlay!.detections.isEmpty{
                 //TODO: Add API calls to get landmark infomation from the database
                 print("Positive")
-                infoView.landmarkName = overlay!.detections[0].label
+//                infoView.landmarkName = overlay!.detections[0].label
+                infoView.landmarkName = "Husky Dog Statue"
+                infoView.landmarkDescription = "The Husky Dog Statue was completed in the spring of 1995. It was modeled after the then-current mascot of the University of Connecticut, Jonathan X."
                 infoView.landmarkConfidence = (overlay!.detections[0].confidence * 100)
+                infoView.landmarkCategory = "Statue"
                 infoView.infoView.toggle()
             }
             else { print("Negative")
