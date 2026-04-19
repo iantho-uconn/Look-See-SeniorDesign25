@@ -11,6 +11,7 @@ import Combine
 class VariableContainer: ObservableObject {
     static let shared = VariableContainer()
     @Published var infoView : Bool = false
+    @Published var bboxCounter : Int = 0
     @Published var landmarkName : String = "Not available"
     @Published var landmarkConfidence : Float = 0.00
     @Published var landmarkCategory : String = "Not available"
