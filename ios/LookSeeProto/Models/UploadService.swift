@@ -3,7 +3,7 @@
 //  LookSeeProto
 //
 //  Created by Ian Thompson on 2/15/26.
-//  Updated: include metadata in /submissions/complete
+//  Updated: include userEmail + landmarkId + landmarkLabel in init/complete
 //
 
 import Foundation
@@ -13,9 +13,8 @@ import Combine
 @MainActor
 final class UploadService: ObservableObject {
     @Published var status: String = "Idle"
-    @Published var progress: Double = 0.0  // 0..1
+    @Published var progress: Double = 0.0
 
-    // API Gateway invoke URL (includes /dev stage)
     private let baseURL = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev")!
 
     enum UploadError: LocalizedError {
@@ -34,16 +33,11 @@ final class UploadService: ObservableObject {
         }
     }
 
-    // End-to-end:
-    // 1) POST /submissions/init
-    // 2) PUT to S3 presigned URL
-    // 3) POST /submissions/complete (with metadata)
-
     func upload(
         userEmail: String,
-        label: String?,          // also make this Optional to accept nil
-        landmarkId: String? = nil,     // add this
-        landmarkLabel: String? = nil,  // add this
+        label: String,
+        landmarkId: String? = nil,
+        landmarkLabel: String? = nil,
         shortDescription: String?,
         userDescription: String?,
         latitude: Double?,
@@ -55,16 +49,21 @@ final class UploadService: ObservableObject {
         progress = 0
         status = "Preparing…"
 
-        guard let trimmedLabel = label?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !trimmedLabel.isEmpty else {
+        let trimmedLabel = label.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedLabel.isEmpty else {
             status = "Label is required."
+            return
+        }
+
+        let trimmedUserEmail = userEmail.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedUserEmail.isEmpty else {
+            status = "User email is required."
             return
         }
 
         let trimmedShort = shortDescription?.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedUser = userDescription?.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        // Decide media + filename + contentType
         let mediaKind: MediaKind
         let filename: String
         let contentType: String
@@ -83,7 +82,7 @@ final class UploadService: ObservableObject {
         }
 
         let initReq = InitSubmissionRequest(
-            userEmail: userEmail,
+            userEmail: trimmedUserEmail,
             label: trimmedLabel,
             mediaKind: mediaKind,
             filename: filename,
@@ -91,14 +90,12 @@ final class UploadService: ObservableObject {
         )
 
         do {
-            // ---- Init Submission ----
             status = "Calling /submissions/init…"
             let initResp = try await initSubmission(initReq)
             progress = 0.15
             status = "Init OK. submissionId=\(initResp.submissionId)"
             print("✅ INIT response:", initResp)
 
-            // ---- PUT to S3 ----
             status = "Uploading to S3…"
             try await putToS3(
                 presignedUrl: initResp.uploadUrl,
@@ -109,12 +106,13 @@ final class UploadService: ObservableObject {
             progress = 0.85
             status = "Uploaded to S3. Finalizing…"
 
-            // ---- Complete (attach metadata) ----
             let completeReq = CompleteSubmissionRequest(
                 submissionId: initResp.submissionId,
                 s3Key: initResp.s3Key,
-                userEmail: userEmail,
+                userEmail: trimmedUserEmail,
                 label: trimmedLabel,
+                landmarkId: landmarkId,
+                landmarkLabel: landmarkLabel,
                 mediaKind: mediaKind,
                 shortDescription: (trimmedShort?.isEmpty == true ? nil : trimmedShort),
                 userDescription: (trimmedUser?.isEmpty == true ? nil : trimmedUser),
@@ -133,15 +131,12 @@ final class UploadService: ObservableObject {
         }
     }
 
-    // MARK: - Init Submission
-
     private func initSubmission(_ reqBody: InitSubmissionRequest) async throws -> InitSubmissionResponse {
         let url = baseURL.appendingPathComponent("submissions/init")
 
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
         req.httpBody = try JSONEncoder().encode(reqBody)
 
         let (data, resp) = try await URLSession.shared.data(for: req)
@@ -154,8 +149,6 @@ final class UploadService: ObservableObject {
 
         return try JSONDecoder().decode(InitSubmissionResponse.self, from: data)
     }
-
-    // MARK: - PUT to S3
 
     private func putToS3(
         presignedUrl: String,
@@ -189,15 +182,12 @@ final class UploadService: ObservableObject {
         throw UploadError.badStatus(http.statusCode, "S3 PUT failed")
     }
 
-    // MARK: - Complete Submission (metadata)
-
     private func completeSubmission(_ body: CompleteSubmissionRequest) async throws {
         let url = baseURL.appendingPathComponent("submissions/complete")
 
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
         req.httpBody = try JSONEncoder().encode(body)
 
         let (data, resp) = try await URLSession.shared.data(for: req)
