@@ -2,16 +2,15 @@
 //  LandmarkRecord.swift
 //  LookSeeProto
 //
-//  Created by Christian Barbara on 11/5/25.
-//  Updated by Ian T on 02/13/26
-//
 
 import SwiftUI
 import CoreLocation
 
 struct LandmarkRecord: View {
-    @EnvironmentObject var vm: AuthViewModel   // ← add this
+    @EnvironmentObject var vm: AuthViewModel
+
     @State private var labelText: String = ""
+    @State private var businessLandmarkId: String? = nil
 
     @State private var pickedVideoURL: URL? = nil
     @State private var pickedImage: UIImage? = nil
@@ -21,13 +20,15 @@ struct LandmarkRecord: View {
 
     @State private var statusText: String = "No media selected."
 
-    // A2: init submission call
     @StateObject private var uploadService = UploadService()
+    @StateObject private var locationManager = LocationManager()
 
-    // Metadata fields
     @State private var shortDescription: String = ""
     @State private var userDescription: String = ""
-    @StateObject private var locationManager = LocationManager()
+
+    private func makeBusinessLandmarkId() -> String {
+        "landmark_" + UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(8)
+    }
 
     private var canInit: Bool {
         let hasMedia = (pickedVideoURL != nil) || (pickedImage != nil)
@@ -48,7 +49,6 @@ struct LandmarkRecord: View {
                     )
                     .padding(.horizontal)
 
-                // Capture buttons (always available)
                 HStack(spacing: 12) {
                     Button { showVideoPicker = true } label: {
                         Label("Record Video", systemImage: "video")
@@ -70,13 +70,11 @@ struct LandmarkRecord: View {
                 }
                 .padding(.horizontal)
 
-                // Selected media status
                 Text(statusText)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal)
 
-                // Location status + enable button
                 VStack(alignment: .leading, spacing: 4) {
                     if locationManager.isAuthorized,
                        let lat = locationManager.latitude,
@@ -101,7 +99,6 @@ struct LandmarkRecord: View {
                 }
                 .padding(.horizontal)
 
-                // Label + metadata + upload
                 if pickedVideoURL != nil || pickedImage != nil {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Label (required)")
@@ -111,27 +108,44 @@ struct LandmarkRecord: View {
                             .textFieldStyle(.roundedBorder)
                             .padding(.horizontal)
 
+                        if let businessLandmarkId {
+                            Text("Landmark ID: \(businessLandmarkId)")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal)
+                        }
+
                         Text("Short description (optional)")
                             .padding(.horizontal)
 
-                        TextField("e.g., ‘Front entrance’, ‘Scoreboard’, ‘Statue base’", text: $shortDescription)
+                        TextField("e.g., 'Front entrance', 'Scoreboard', 'Statue base'", text: $shortDescription)
                             .textFieldStyle(.roundedBorder)
                             .padding(.horizontal)
 
                         Text("What’s in the frame? (optional)")
                             .padding(.horizontal)
 
-                        TextField("e.g., ‘UConn logo, scoreboard, seats’", text: $userDescription, axis: .vertical)
+                        TextField("e.g., 'UConn logo, scoreboard, seats'", text: $userDescription, axis: .vertical)
                             .lineLimit(3, reservesSpace: true)
                             .textFieldStyle(.roundedBorder)
                             .padding(.horizontal)
 
                         Button {
                             Task {
-                                await vm.fetchUserEmail()   // ensure email is fresh before upload
+                                let trimmedLabel = labelText.trimmingCharacters(in: .whitespacesAndNewlines)
+                                guard !trimmedLabel.isEmpty else { return }
+
+                                await vm.fetchUserEmail()
+
+                                if businessLandmarkId == nil {
+                                    businessLandmarkId = makeBusinessLandmarkId()
+                                }
+
                                 await uploadService.upload(
-                                    userEmail: vm.userEmail,   // ← add this
-                                    label: labelText,
+                                    userEmail: vm.userEmail,
+                                    label: trimmedLabel,
+                                    landmarkId: businessLandmarkId,
+                                    landmarkLabel: trimmedLabel,
                                     shortDescription: shortDescription,
                                     userDescription: userDescription,
                                     latitude: locationManager.latitude,
@@ -164,17 +178,16 @@ struct LandmarkRecord: View {
             .padding(.top, 8)
         }
         .safeAreaInset(edge: .top) { Color.clear.frame(height: 50) }
-
         .sheet(isPresented: $showVideoPicker) {
             VideoPicker(useCamera: true) { url in
                 pickedVideoURL = url
                 pickedImage = nil
                 statusText = "Selected video: \(url.lastPathComponent)"
 
-                // optional: reset fields on new selection
                 labelText = ""
                 shortDescription = ""
                 userDescription = ""
+                businessLandmarkId = makeBusinessLandmarkId()
 
                 uploadService.status = "Idle"
                 uploadService.progress = 0
@@ -186,10 +199,10 @@ struct LandmarkRecord: View {
                 pickedVideoURL = nil
                 statusText = "Selected photo."
 
-                // optional: reset fields on new selection
                 labelText = ""
                 shortDescription = ""
                 userDescription = ""
+                businessLandmarkId = makeBusinessLandmarkId()
 
                 uploadService.status = "Idle"
                 uploadService.progress = 0

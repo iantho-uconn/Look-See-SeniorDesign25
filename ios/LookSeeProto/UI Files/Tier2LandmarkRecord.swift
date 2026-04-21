@@ -2,14 +2,13 @@
 //  Tier2LandmarkRecord.swift
 //  LookSeeProto
 //
-//  Created by Ian Thompson on 3/9/26.
-//
 
 import SwiftUI
 import CoreLocation
 
 struct Tier2LandmarkRecord: View {
-    @EnvironmentObject var vm: AuthViewModel   // ← add this
+    @EnvironmentObject var vm: AuthViewModel
+
     @State private var pickedVideoURL: URL? = nil
     @State private var pickedImage: UIImage? = nil
 
@@ -328,10 +327,10 @@ struct Tier2LandmarkRecord: View {
                 guard let selectedLandmark else { return }
 
                 Task {
-                    await vm.fetchUserEmail()   // ensure email is fresh
+                    await vm.fetchUserEmail()
                     await uploadService.upload(
-                        userEmail: vm.userEmail,   // ← add this
-                        label: nil,
+                        userEmail: vm.userEmail,
+                        label: selectedLandmark.label,
                         landmarkId: selectedLandmark.landmarkId,
                         landmarkLabel: selectedLandmark.label,
                         shortDescription: shortDescription,
