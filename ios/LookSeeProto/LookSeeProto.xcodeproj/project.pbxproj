@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		3C19EB412F981FA400D1AA43 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = 3C19EB402F981FA400D1AA43 /* ZIPFoundation */; };
 		3C1FC9CC2F42C9E70006C1D3 /* PhotoPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C1FC9CB2F42C9DA0006C1D3 /* PhotoPicker.swift */; };
 		3C5FED6B2F907D270018FF06 /* Tier2LandmarkRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C5FED6A2F907D270018FF06 /* Tier2LandmarkRecord.swift */; };
 		3C63C8A82F91875E0006C5DD /* VariableContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C63C8A72F91875E0006C5DD /* VariableContainer.swift */; };
@@ -136,6 +137,7 @@
 			files = (
 				B02344EB2F46355C00F4230E /* Amplify in Frameworks */,
 				B02344ED2F46356400F4230E /* AWSCognitoAuthPlugin in Frameworks */,
+				3C19EB412F981FA400D1AA43 /* ZIPFoundation in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -281,6 +283,7 @@
 			packageProductDependencies = (
 				B02344EA2F46355C00F4230E /* Amplify */,
 				B02344EC2F46356400F4230E /* AWSCognitoAuthPlugin */,
+				3C19EB402F981FA400D1AA43 /* ZIPFoundation */,
 			);
 			productName = LookSeeProto;
 			productReference = 3C918F9D2E9ECE5F00AF5DAF /* LookSeeProto.app */;
@@ -366,6 +369,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				B03AD91D2F462B2B0009E3AE /* XCRemoteSwiftPackageReference "amplify-swift" */,
+				3C19EB3F2F981FA400D1AA43 /* XCRemoteSwiftPackageReference "ZIPFoundation" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 3C918F9E2E9ECE5F00AF5DAF /* Products */;
@@ -802,6 +806,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		3C19EB3F2F981FA400D1AA43 /* XCRemoteSwiftPackageReference "ZIPFoundation" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/weichsel/ZIPFoundation.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.9.20;
+			};
+		};
 		B03AD91D2F462B2B0009E3AE /* XCRemoteSwiftPackageReference "amplify-swift" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/aws-amplify/amplify-swift";
@@ -813,6 +825,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		3C19EB402F981FA400D1AA43 /* ZIPFoundation */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 3C19EB3F2F981FA400D1AA43 /* XCRemoteSwiftPackageReference "ZIPFoundation" */;
+			productName = ZIPFoundation;
+		};
 		B02344EA2F46355C00F4230E /* Amplify */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = B03AD91D2F462B2B0009E3AE /* XCRemoteSwiftPackageReference "amplify-swift" */;
