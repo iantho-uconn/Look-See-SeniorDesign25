@@ -59,7 +59,9 @@ struct Buttons: View {
                     .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 60) }
                     .tag(authState.tier == .business ? 2 : 1)
                 }
-                .tabViewStyle(.page(indexDisplayMode: .never))
+                .scrollDismissesKeyboard(.immediately)
+                .defaultScrollAnchor(.bottom, for: .sizeChanges)
+//                .tabViewStyle(.page(indexDisplayMode: .never))
                 .ignoresSafeArea()
 
                 VStack {
