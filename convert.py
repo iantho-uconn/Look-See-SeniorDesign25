@@ -9,7 +9,7 @@ input_path = '/opt/ml/processing/input/weights/best.pt'
 output_dir = '/opt/ml/processing/output/'
 
 model = YOLO(input_path)
-export_path = model.export(format='coreml')
+export_path = model.export(format='coreml', nms = True, imgsz=640, int8=False, half=False, optimize=True)
 
 version_id = datetime.datetime.now().strftime("%Y%m%d_%H%M")
 final_filename = f"model_{version_id}.mlpackage.zip"
