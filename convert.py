@@ -1,35 +1,111 @@
 import os
-os.system('pip install ultralytics')
+import re
 import shutil
 import json
-from ultralytics import YOLO
+import subprocess
+from pathlib import Path
 
-input_path = '/opt/ml/processing/input/weights/best.pt'
-output_dir = '/opt/ml/processing/output/'
+INPUT_PT = "/opt/ml/processing/input/weights/best.pt"
+OUTPUT_DIR = "/opt/ml/processing/output/"
+WHEELHOUSE = "/opt/ml/processing/input/wheels"  # mounted from S3
 
-def sanitize(s: str) -> str:
-    return "".join(c if (c.isalnum() or c in "-_") else "_" for c in (s or "")) or "default_region"
+def extract_cluster_number(cluster_id: str) -> str:
+    """
+    Examples:
+      'ls-mtr010-c3' -> '3'
+      'ls-mtr007-c-3' -> '3'
+      '3' -> '3'
+    Fallback: any digits found, else '0'
+    """
+    s = (cluster_id or "").strip()
 
-cluster_id = sanitize(os.environ.get("CLUSTER_ID", "default_region"))
+    # Prefer trailing "-c3" or "-c-3"
+    m = re.search(r"-c-?(\d+)$", s)
+    if m:
+        return m.group(1)
 
-model = YOLO(input_path)
-export_path = model.export(format='coreml', nms=True, imgsz=640, int8=False, half=False, optimize=True)
+    # Else: if string is already digits
+    if s.isdigit():
+        return s
 
-# Name should be: <cluster_id>.mlpackage.zip
-base_name = f"{cluster_id}.mlpackage"
-final_filename = f"{base_name}.zip"
+    # Fallback: any digits anywhere
+    digits = "".join(ch for ch in s if ch.isdigit())
+    return digits if digits else "0"
 
-# Zip the .mlpackage folder correctly (keeps bundle structure)
-export_dir = os.path.dirname(export_path)
-export_name = os.path.basename(export_path)
 
-shutil.make_archive(base_name, "zip", root_dir=export_dir, base_dir=export_name)
-shutil.move(final_filename, os.path.join(output_dir, final_filename))
+def ensure_ultralytics():
+    try:
+        import ultralytics
+        import coremltools
+        return
+    except ImportError:
+        pass
 
-manifest_data = {
-    "clusterId": cluster_id,
-    "filename": final_filename
-}
+    print("Installing dependencies...")
+    # Step 1: upgrade typing_extensions first so cattrs can import NoDefault
+    subprocess.check_call([
+        "pip", "install", "-q", "--root-user-action=ignore",
+        "typing_extensions>=4.14.0"
+    ])
+    # Step 2: now install the rest
+    subprocess.check_call([
+        "pip", "install", "-q", "--root-user-action=ignore",
+        "coremltools>=7.0",
+        "ultralytics",
+    ])
 
-with open(os.path.join(output_dir, 'manifest.json'), 'w') as f:
-    json.dump(manifest_data, f)
+
+def main():
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+    raw_cluster = os.environ.get("CLUSTER_ID", "0")
+    cluster_num = extract_cluster_number(raw_cluster)
+    print("DEBUG CLUSTER_ID =", raw_cluster)
+    print("DEBUG CLUSTER_NUM =", cluster_num)
+
+    # then in main(), replace pip_install_offline_if_needed() with:
+    ensure_ultralytics()
+
+    from ultralytics import YOLO  # import AFTER offline install
+
+    # ---- Export CoreML (.mlpackage folder) ----
+    model = YOLO(INPUT_PT)
+    export_path = model.export(
+        format="coreml",
+        nms=True,
+        imgsz=640,
+        int8=False,
+        half=False,
+        optimize=True,
+    )
+
+    export_dir = os.path.dirname(export_path)
+    export_name = os.path.basename(export_path)  # e.g. "best.mlpackage"
+
+    # ---- Zip with desired name: <cluster_num>.mlpackage.zip ----
+    base_name = f"{cluster_num}.mlpackage"
+    zip_name = f"{base_name}.zip"
+
+    # make_archive writes to current working dir -> "<base_name>.zip"
+    shutil.make_archive(base_name, "zip", root_dir=export_dir, base_dir=export_name)
+    shutil.move(zip_name, os.path.join(OUTPUT_DIR, zip_name))
+
+    # ---- Also copy weights into output as <cluster_num>.pt ----
+    pt_out = f"{cluster_num}.pt"
+    shutil.copyfile(INPUT_PT, os.path.join(OUTPUT_DIR, pt_out))
+
+    # ---- manifest.json ----
+    manifest = {
+        "clusterId": raw_cluster,
+        "clusterNumber": cluster_num,
+        "coremlZip": zip_name,
+        "weightsPt": pt_out
+    }
+    with open(os.path.join(OUTPUT_DIR, "manifest.json"), "w") as f:
+        json.dump(manifest, f)
+
+    print("DONE. Wrote:", zip_name, "and", pt_out)
+
+
+if __name__ == "__main__":
+    main()
