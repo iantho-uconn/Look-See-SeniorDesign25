@@ -73,21 +73,23 @@ struct Settings: View {
                         await vm.fetchUserEmail()
                     }
                 }
-
+/*
                 Section {
                     Toggle("Online Recognition", isOn: $onlineMode)
                 } header: { Text("Recognition Mode") }
                 footer: { Text("Keeping Online Recognition on allows the app to be more accurate. Turning it off limits the range of landmark recognition.") }
-
+*/
                 // MARK: - Model Management
                 Section {
-                    Button("Load Model", systemImage: "arrow.down.circle") {
+                   /* Button("Load Model", systemImage: "arrow.down.circle") {
                         // TODO: call your ModelService to load model based on location
+                
                     }
+                    */
                     Button("Reload Model", systemImage: "arrow.clockwise.circle") {
                         // TODO: call your ModelService to re-download current model
                     }
-                    Button("Check for Updates", systemImage: "cloud.circle") {
+                   /* Button("Check for Updates", systemImage: "cloud.circle") {
                         // TODO: ping AWS to check if a newer model is available
                     }
                     Button("Model Info", systemImage: "info.circle") {
@@ -141,6 +143,7 @@ struct Settings: View {
                         Label("Help & Tutorial", systemImage: "questionmark.circle")
                             .foregroundColor(.blue)
                     }
+                    */
                     Button("About LookSee", systemImage: "info.circle") {
                         modal = true
                     }

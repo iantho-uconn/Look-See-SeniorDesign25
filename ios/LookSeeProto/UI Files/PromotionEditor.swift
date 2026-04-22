@@ -153,6 +153,7 @@ struct PromotionEditor: View {
                     DatePicker("End Date", selection: $endDate, in: startDate..., displayedComponents: [.date])
                 } header: { Text("Promotion Dates") }
 
+                
                 // MARK: - Media
                 Section {
                     PhotosPicker(selection: $selectedItems) {
