@@ -11,16 +11,25 @@ import Foundation
 struct LandmarkInfo : View {
     // Variable to allow the info pop-up to appear
     @ObservedObject var infoView = VariableContainer.shared
+    let img = UIImageView()
     var body: some View {
         VStack {
             Text(infoView.landmarkName)
                 .font(.title)
-            Text("\(infoView.landmarkDescription) \n \(infoView.landmarkURL)")
+            Text("\(infoView.landmarkDescription)")
                 .padding()
 //                .lineLimit(5)
-            Button("**Report incorrect info**",
-                   systemImage: "flag.fill",
-                   role: .destructive){}
+//            Button("**Report incorrect info**",
+//                   systemImage: "flag.fill",
+//                   role: .destructive){}
+            if infoView.landmarkURL != "" {
+                AsyncImage(url: URL(string: infoView.landmarkURL)) { image in
+                    image.resizable().aspectRatio(contentMode: .fit)
+                } placeholder: {
+                    ProgressView()
+                }
+            }
+            
             Divider().padding()
             HStack {
                 Text("Confidence")
