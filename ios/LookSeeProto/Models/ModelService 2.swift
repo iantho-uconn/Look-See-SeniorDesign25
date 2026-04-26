@@ -1,11 +1,19 @@
-
 //
 //  ModelService.swift
 //  LookSeeProto
 //
 
 import Foundation
+import CoreML
 import Combine
+
+// MARK: - Object Location
+// Represents a detectable object's GPS position and which model it belongs to
+struct ObjectLocation {
+    let clusterId: String
+    let lat: Double
+    let lon: Double
+}
 
 // MARK: - Model Info
 struct ModelInfo: Identifiable {
@@ -14,6 +22,9 @@ struct ModelInfo: Identifiable {
     let downloadURL: URL
     let reason: String
     let clusterID: String
+    var compiledModelURL: URL?
+    // TODO: backend dev — populate this from API response once object coordinates are returned
+    var objects: [ObjectLocation] = []
 }
 
 // MARK: - API Response Shape
@@ -21,6 +32,8 @@ private struct ModelsResponse: Decodable {
     let models: [ModelPayload]
     let reason: String
     let location: LocationResponse
+    // TODO: backend dev — add objects array to response and decode here
+    // let objects: [ObjectPayload]
 }
 
 private struct ModelPayload: Decodable {
@@ -29,6 +42,14 @@ private struct ModelPayload: Decodable {
 }
 
 private struct LocationResponse: Decodable {
+    let lat: Double
+    let lon: Double
+}
+
+// MARK: - Stubbed Object Payload (remove when backend is ready)
+// TODO: backend dev — replace this stub with real decoded data from API
+private struct ObjectPayload: Decodable {
+    let clusterId: String
     let lat: Double
     let lon: Double
 }
@@ -70,7 +91,14 @@ class ModelService: ObservableObject {
 
     private let apiURL = "https://o1ul6zexoj.execute-api.us-east-1.amazonaws.com/prod/discover"
 
-    private init() {}
+    private var modelsDirectory: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("LookSeeModels", isDirectory: true)
+    }
+
+    private init() {
+        try? FileManager.default.createDirectory(at: modelsDirectory, withIntermediateDirectories: true)
+    }
 
     // MARK: - Load Models
     func loadModels(latitude: Double, longitude: Double) async {
@@ -110,15 +138,42 @@ class ModelService: ObservableObject {
             }
 
             let parsed = try JSONDecoder().decode(ModelsResponse.self, from: data)
+            downloadProgress = 0.2
 
-            let models: [ModelInfo] = parsed.models.compactMap { payload in
-                guard let url = URL(string: payload.downloadUrl) else { return nil }
-                return ModelInfo(
+            // TODO: backend dev — decode real object coordinates from parsed response
+            // For now, stub objects are empty — ModelSelector will not switch models
+            // until this is populated. Replace the empty array below with:
+            // let allObjects = parsed.objects.map { ObjectLocation(clusterId: $0.clusterId, lat: $0.lat, lon: $0.lon) }
+            let allObjects: [ObjectLocation] = []
+
+            var models: [ModelInfo] = []
+            let progressPerModel = 0.8 / Double(max(parsed.models.count, 1))
+
+            for (index, payload) in parsed.models.enumerated() {
+                guard let remoteURL = URL(string: payload.downloadUrl) else { continue }
+
+                var info = ModelInfo(
                     name: payload.clusterId,
-                    downloadURL: url,
+                    downloadURL: remoteURL,
                     reason: parsed.reason,
-                    clusterID: payload.clusterId
+                    clusterID: payload.clusterId,
+                    // Assign objects that belong to this model's cluster
+                    objects: allObjects.filter { $0.clusterId == payload.clusterId }
                 )
+
+                do {
+                    let compiled = try await downloadAndCompile(
+                        remoteURL: remoteURL,
+                        clusterID: payload.clusterId
+                    )
+                    info.compiledModelURL = compiled
+                    print("✅ Model compiled: \(compiled.lastPathComponent)")
+                } catch {
+                    print("❌ Failed to download/compile \(payload.clusterId): \(error)")
+                }
+
+                models.append(info)
+                downloadProgress = 0.2 + progressPerModel * Double(index + 1)
             }
 
             pullReason = switch models.count {
@@ -139,8 +194,72 @@ class ModelService: ObservableObject {
         }
     }
 
+    // MARK: - Download + Unzip + Compile
+    private func downloadAndCompile(remoteURL: URL, clusterID: String) async throws -> URL {
+        let compiledDest = modelsDirectory.appendingPathComponent("\(clusterID).mlmodelc")
+
+        if FileManager.default.fileExists(atPath: compiledDest.path) {
+            print("♻️ Using cached model for cluster \(clusterID)")
+            return compiledDest
+        }
+
+        let (zipLocalURL, _) = try await URLSession.shared.download(from: remoteURL)
+
+        let unzipDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: unzipDir, withIntermediateDirectories: true)
+        try unzip(zipURL: zipLocalURL, to: unzipDir)
+
+        guard let mlpackageURL = findMLPackage(in: unzipDir) else {
+            throw NSError(domain: "ModelService", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "No .mlpackage found in zip"])
+        }
+
+        let tempCompiled = try await MLModel.compileModel(at: mlpackageURL)
+
+        if FileManager.default.fileExists(atPath: compiledDest.path) {
+            try FileManager.default.removeItem(at: compiledDest)
+        }
+        try FileManager.default.moveItem(at: tempCompiled, to: compiledDest)
+
+        try? FileManager.default.removeItem(at: unzipDir)
+        try? FileManager.default.removeItem(at: zipLocalURL)
+
+        return compiledDest
+    }
+
+    // MARK: - Unzip Helper
+    private func unzip(zipURL: URL, to destination: URL) throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
+        process.arguments = ["-o", zipURL.path, "-d", destination.path]
+        try process.run()
+        process.waitUntilExit()
+
+        guard process.terminationStatus == 0 else {
+            throw NSError(domain: "ModelService", code: 2,
+                          userInfo: [NSLocalizedDescriptionKey: "Unzip failed with status \(process.terminationStatus)"])
+        }
+    }
+
+    // MARK: - Find .mlpackage
+    private func findMLPackage(in directory: URL) -> URL? {
+        guard let enumerator = FileManager.default.enumerator(
+            at: directory,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else { return nil }
+
+        for case let url as URL in enumerator {
+            if url.pathExtension == "mlpackage" { return url }
+        }
+        return nil
+    }
+
     // MARK: - Reload Models
     func reloadModels(latitude: Double, longitude: Double) async {
+        try? FileManager.default.removeItem(at: modelsDirectory)
+        try? FileManager.default.createDirectory(at: modelsDirectory, withIntermediateDirectories: true)
         state = .notLoaded
         pullReason = .none
         downloadProgress = 0.0
@@ -155,8 +274,9 @@ class ModelService: ObservableObject {
     }
 
     // MARK: - Delete Models
-    // TODO: backend dev — delete downloaded .mlmodel files from device storage
     func deleteModels() throws {
+        try FileManager.default.removeItem(at: modelsDirectory)
+        try FileManager.default.createDirectory(at: modelsDirectory, withIntermediateDirectories: true)
         state = .notLoaded
         pullReason = .none
         updateAvailable = false
@@ -168,4 +288,3 @@ class ModelService: ObservableObject {
         await loadModels(latitude: latitude, longitude: longitude)
     }
 }
-
