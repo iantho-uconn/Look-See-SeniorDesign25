@@ -10,22 +10,24 @@ import Combine
 // Separate from the SwiftUI Promotion struct — this is what goes over the wire.
 
 struct PromotionPayload: Identifiable, Codable {
-    let id: String           // promotionId (UUID string)
-    let userEmail: String
-    let landmarkId: String
-    let landmarkLabel: String
-    let name: String
-    let description: String
-    let startDate: String    // ISO 8601: "2026-04-21"
-    let endDate: String
-    let enabled: Bool
-    let createdAt: String?
+    let id: String
+        let userEmail: String
+        let landmarkId: String
+        let landmarkLabel: String
+        let name: String
+        let description: String
+        let startDate: String
+        let endDate: String
+        let enabled: Bool
+        let createdAt: String?
 
     enum CodingKeys: String, CodingKey {
-        case id = "promotionId"
-        case userEmail, landmarkId, landmarkLabel
-        case name, description, startDate, endDate, enabled, createdAt
-    }
+            case id = "promotionId"
+            case userEmail
+            case landmarkId
+            case landmarkLabel
+            case name, description, startDate, endDate, enabled, createdAt
+        }
 }
 
 // MARK: - Request bodies
@@ -97,6 +99,41 @@ final class PromotionService: ObservableObject {
             promotions = decoded.items
         } catch {
             errorMessage = "Failed to load promotions: \(error.localizedDescription)"
+        }
+    }
+    // Add this inside the PromotionService class
+    // Backed by a GSI on landmarkId in your DynamoDB table
+    func fetchPromotionsForLandmark(landmarkId: String) async -> [PromotionPayload] {
+        var components = URLComponents(url: baseURL.appendingPathComponent("promotions/by-landmark"), resolvingAgainstBaseURL: false)!
+        components.queryItems = [URLQueryItem(name: "landmarkId", value: landmarkId)]
+        
+        guard let url = components.url else { return [] }
+
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            let decoded = try JSONDecoder().decode(PromotionListResponse.self, from: data)
+            return decoded.items
+        } catch {
+            print("❌ Failed to fetch promotions: \(error)")
+            return []
+        }
+    }
+
+    func fetchPromotionsByLabel(label: String) async -> [PromotionPayload] {
+        var components = URLComponents(url: baseURL.appendingPathComponent("promotions/by-label"), resolvingAgainstBaseURL: false)!
+        components.queryItems = [URLQueryItem(name: "landmarkLabel", value: label)]
+        
+        guard let url = components.url else { return [] }
+
+        do {
+            let (data, response) = try await URLSession.shared.data(from: url)
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return [] }
+            
+            let decoded = try JSONDecoder().decode(PromotionListResponse.self, from: data)
+            return decoded.items
+        } catch {
+            print("❌ Error fetching promotions by label: \(error)")
+            return []
         }
     }
 

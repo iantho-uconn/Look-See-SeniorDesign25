@@ -25,6 +25,8 @@ final class Detector: NSObject, ObservableObject {
     private var isAttached = false
     private var throttling = false
     
+    private var classLabels: [String] = []
+    
     // Model input size (must match export)
     private let inputSize = CGSize(width: 640, height: 640)
     
@@ -41,7 +43,7 @@ final class Detector: NSObject, ObservableObject {
     // MARK: - LOAD MODEL
     // ---------------------------------------------------------
     private func loadModel() {
-        guard let url = Bundle.main.url(forResource: "best", withExtension: "mlmodelc") else {
+        guard let url = Bundle.main.url(forResource: "final", withExtension: "mlmodelc") else {
             print("❌ Model not found in bundle")
             return
         }
@@ -49,8 +51,15 @@ final class Detector: NSObject, ObservableObject {
         do {
             model = try MLModel(contentsOf: url)
             print("✅ YOLO model loaded")
+            print("📋 Model metadata:", model.modelDescription.metadata)
             print("📥 Inputs:", model.modelDescription.inputDescriptionsByName.keys)
             print("📤 Outputs:", model.modelDescription.outputDescriptionsByName.keys)
+            
+            if let labels = model.modelDescription.classLabels as? [String] {
+                classLabels = labels
+                print("🏷 Loaded \(labels.count) class labels:", labels)
+            }
+            
         } catch {
             print("❌ Model load error:", error)
         }
@@ -228,7 +237,7 @@ final class Detector: NSObject, ObservableObject {
             
             results.append(
                 Detection(
-                    label: "\(bestClass)",
+                    label: bestClass < classLabels.count ? classLabels[bestClass] : "\(bestClass)",
                     confidence: bestScore,
                     bbox: rect
                 )

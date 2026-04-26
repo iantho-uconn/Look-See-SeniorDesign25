@@ -13,10 +13,12 @@ import Combine
 struct BusinessLocation: Identifiable, Decodable {
     let id: String
     let label: String
+    let shortDescription: String?
 
     enum CodingKeys: String, CodingKey {
         case id = "landmarkId"
         case label
+        case shortDescription
     }
 }
 
@@ -66,6 +68,37 @@ final class LandmarkService: ObservableObject {
             landmarks = decoded.items
         } catch {
             errorMessage = "Failed to load locations: \(error.localizedDescription)"
+        }
+    }
+    func fetchLandmarkById(landmarkId: String) async -> BusinessLocation? {
+        let url = baseURL.appendingPathComponent("landmarks/\(landmarkId)")
+        
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            // Adjust decoding based on your single-item API response shape
+            let decoded = try JSONDecoder().decode(BusinessLocation.self, from: data)
+            return decoded
+        } catch {
+            print("❌ Failed to fetch landmark: \(error)")
+            return nil
+        }
+    }
+    func fetchLandmarkByLabel(label: String) async -> BusinessLocation? {
+        var components = URLComponents(url: baseURL.appendingPathComponent("landmarks/by-label"), resolvingAgainstBaseURL: false)!
+        components.queryItems = [URLQueryItem(name: "label", value: label)]
+        
+        guard let url = components.url else { return nil }
+
+        do {
+            let (data, response) = try await URLSession.shared.data(from: url)
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return nil }
+            
+            // This assumes your API returns a list (items) even for single searches
+            let decoded = try JSONDecoder().decode(BusinessLocationListResponse.self, from: data)
+            return decoded.items.first
+        } catch {
+            print("❌ Error fetching landmark by label: \(error)")
+            return nil
         }
     }
 }
