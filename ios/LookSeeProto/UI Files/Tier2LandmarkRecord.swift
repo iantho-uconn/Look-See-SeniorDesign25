@@ -315,9 +315,6 @@ struct Tier2LandmarkRecord: View {
                 .textFieldStyle(.roundedBorder)
                 .padding(.horizontal)
 
-            Text("What’s in the frame? (optional)")
-                .padding(.horizontal)
-
             TextField("e.g., 'Doorway, UConn sign, benches'", text: $userDescription, axis: .vertical)
                 .lineLimit(3, reservesSpace: true)
                 .textFieldStyle(.roundedBorder)
