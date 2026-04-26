@@ -14,6 +14,7 @@ import Combine
 final class CameraSessionCoordinator {
     let session = AVCaptureSession()
     let videoOutput = AVCaptureVideoDataOutput()
+    private var videoDevice: AVCaptureDevice?
 
     init() {
         session.beginConfiguration()
@@ -28,6 +29,7 @@ final class CameraSessionCoordinator {
             session.commitConfiguration()
             return
         }
+        videoDevice = device
         session.addInput(input)
 
         // Output for frames
@@ -42,8 +44,22 @@ final class CameraSessionCoordinator {
                 conn.videoOrientation = .portrait
             }
         }
-
+        
         session.commitConfiguration()
+    }
+    
+    func setZoom(factor: CGFloat) {
+        guard let device = videoDevice else { return }
+        let maxZoom = min(device.activeFormat.videoMaxZoomFactor, 5.0) // cap at 5x
+        let clampedZoom = max(1.0, min(factor, maxZoom))
+        
+        do {
+            try device.lockForConfiguration()
+            device.videoZoomFactor = clampedZoom
+            device.unlockForConfiguration()
+        } catch {
+            print("❌ Zoom error: \(error)")
+        }
     }
 
     func start() {
@@ -175,6 +191,8 @@ final class OverlayView: UIView {
 
 struct CameraPreview: UIViewRepresentable {
     @ObservedObject var detector: Detector
+    @State private var currentZoom: CGFloat = 1.0
+    @Binding var zoomLevel: CGFloat
 
     static let sharedSession = CameraSessionCoordinator()
 
@@ -199,7 +217,10 @@ struct CameraPreview: UIViewRepresentable {
 //        let tapGesture = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.bbClick(_:)))
 ////        tapGesture.delaysTouchesBegan = true
 //        view.addGestureRecognizer(tapGesture)
-
+        
+        let pinchGesture = UIPinchGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handlePinch(_:)))
+        view.addGestureRecognizer(pinchGesture)
+        
         return view
     }
 
@@ -243,18 +264,45 @@ struct CameraPreview: UIViewRepresentable {
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator()
+        Coordinator(zoomLevel: $zoomLevel)
     }
 
     final class Coordinator {
         weak var overlay: OverlayView?
         var view: Preview?
+        var zoomLevel: Binding<CGFloat>
+        private var zoomFactorAtGestureStart: CGFloat = 1.0
         
         @ObservedObject var infoView = VariableContainer.shared
         
         // Initialize services
         private let landmarkService = LandmarkService()
         private let promotionService = PromotionService()
+        
+        init(zoomLevel: Binding<CGFloat>) {
+            self.zoomLevel = zoomLevel
+        }
+        
+        @objc func handlePinch(_ recognizer: UIPinchGestureRecognizer) {
+            guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) else { return }
+            
+            switch recognizer.state {
+            case .began:
+                zoomFactorAtGestureStart = device.videoZoomFactor
+            case .changed:
+                let newZoom = zoomFactorAtGestureStart * recognizer.scale
+                let maxZoom = min(device.activeFormat.videoMaxZoomFactor, 5.0)
+                let clampedZoom = max(1.0, min(newZoom, maxZoom))
+                CameraPreview.sharedSession.setZoom(factor: clampedZoom)
+                
+                // ← update the UI binding on main thread
+                DispatchQueue.main.async {
+                    self.zoomLevel.wrappedValue = clampedZoom
+                }
+            default:
+                break
+            }
+        }
 
         @objc func bbClick(_ recognizer: UITapGestureRecognizer? = nil) {
             let tapLocation = recognizer!.location(in: view)
