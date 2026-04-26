@@ -74,7 +74,6 @@ struct ModelLoadingScreen: View {
                             }
 
                             Button {
-                                // Skip model loading and continue anyway
                                 onComplete()
                             } label: {
                                 Text("Continue without model")
@@ -120,9 +119,9 @@ struct ModelLoadingScreen: View {
         statusMessage = "Getting your location…"
         var attempts = 0
         while !locationManager.isAuthorized || locationManager.latitude == nil {
-            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s
+            try? await Task.sleep(nanoseconds: 500_000_000)
             attempts += 1
-            if attempts > 20 { // 10 second timeout
+            if attempts > 20 {
                 failed = true
                 statusMessage = "Could not get your location. Make sure location access is enabled."
                 return
@@ -142,16 +141,35 @@ struct ModelLoadingScreen: View {
 
         // Step 3 — check result
         switch modelService.state {
-        case .loaded(let infos):
-            let names = infos.map { $0.name }.joined(separator: ", ")
-            statusMessage = "Loaded \(infos.count) model\(infos.count > 1 ? "s" : ""): \(names)"
-            try? await Task.sleep(nanoseconds: 800_000_000) // brief pause so user sees success
-            withAnimation(.easeOut(duration: 0.4)) { opacity = 0 }
-            try? await Task.sleep(nanoseconds: 400_000_000)
-            onComplete()
+        case .loaded(let models):
+            // Use pullReason to build a meaningful status message
+            switch modelService.pullReason {
+            case .none:
+                failed = true
+                statusMessage = "No models available for your area."
+
+            case .single(let reason):
+                let model = models[0]
+                statusMessage = "Loaded \(model.name) · Cluster \(model.clusterID)\n\(reason)"
+                try? await Task.sleep(nanoseconds: 800_000_000)
+                withAnimation(.easeOut(duration: 0.4)) { opacity = 0 }
+                try? await Task.sleep(nanoseconds: 400_000_000)
+                onComplete()
+
+            case .multiple(let reasons):
+                let names = models.map(\.name).joined(separator: ", ")
+                let clusterIDs = Set(models.map(\.clusterID)).sorted().joined(separator: ", ")
+                statusMessage = "Loaded \(models.count) models: \(names)\nClusters: \(clusterIDs)\n\(reasons.joined(separator: " · "))"
+                try? await Task.sleep(nanoseconds: 800_000_000)
+                withAnimation(.easeOut(duration: 0.4)) { opacity = 0 }
+                try? await Task.sleep(nanoseconds: 400_000_000)
+                onComplete()
+            }
+
         case .failed(let error):
             failed = true
             statusMessage = error
+
         default:
             break
         }

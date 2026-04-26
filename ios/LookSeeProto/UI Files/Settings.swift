@@ -2,8 +2,6 @@
 //  Settings.swift
 //  LookSeeProto
 //
-//  Created by Christian Barbara on 10/15/25.
-//
 
 import SwiftUI
 import Foundation
@@ -16,6 +14,8 @@ struct Settings: View {
     @AppStorage("permissionCamera") var permissionCamera = true
     @AppStorage("permissionLocation") var permissionLocation = true
     @AppStorage("permissionStorage") var permissionStorage = true
+    @ObservedObject var modelLoader = ModelService.shared
+    @StateObject private var locationManager = LocationManager()
     @State private var modal = false
     @State private var showAlertAll = false
     @State private var showAlertCache = false
@@ -23,13 +23,14 @@ struct Settings: View {
     @State private var cache = 0
     @State private var showModelInfo = false
     @State private var showDeleteModelAlert = false
+    @State private var isReloading = false
+    @State private var reloadMessage: String? = nil
 
     var body: some View {
         NavigationStack {
             Form {
                 // MARK: - Profile
                 if authState.tier == .guest {
-                    // Guest profile — tap to go to signup
                     Button {
                         dismiss()
                         authState.didSignOut = true
@@ -73,84 +74,68 @@ struct Settings: View {
                         await vm.fetchUserEmail()
                     }
                 }
-/*
-                Section {
-                    Toggle("Online Recognition", isOn: $onlineMode)
-                } header: { Text("Recognition Mode") }
-                footer: { Text("Keeping Online Recognition on allows the app to be more accurate. Turning it off limits the range of landmark recognition.") }
-*/
+
                 // MARK: - Model Management
                 Section {
-                   /* Button("Load Model", systemImage: "arrow.down.circle") {
-                        // TODO: call your ModelService to load model based on location
-                
-                    }
-                    */
-                    Button("Reload Model", systemImage: "arrow.clockwise.circle") {
-                        // TODO: call your ModelService to re-download current model
-                    }
-                   /* Button("Check for Updates", systemImage: "cloud.circle") {
-                        // TODO: ping AWS to check if a newer model is available
-                    }
-                    Button("Model Info", systemImage: "info.circle") {
-                        showModelInfo = true
-                    }
-                    .sheet(isPresented: $showModelInfo) {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("Model Info")
-                                .font(.headline)
-                            Text("Name: —")
-                            Text("Version: —")
-                            Text("Region: —")
-                            Text("Size: —")
-                            Text("Last Updated: —")
+                    // Reload button with inline loading indicator
+                    Button {
+                        guard !isReloading else { return }
+                        guard locationManager.isAuthorized,
+                              let lat = locationManager.latitude,
+                              let lon = locationManager.longitude else {
+                            reloadMessage = "Location unavailable. Enable location access and try again."
+                            return
                         }
-                        .padding()
-                        .presentationDetents([.medium])
-                    }
-                    Button("Delete Model", systemImage: "trash", role: .destructive) {
-                        showDeleteModelAlert = true
-                    }
-                    .alert("Delete Model?", isPresented: $showDeleteModelAlert) {
-                        Button("Cancel", role: .cancel) {}
-                        Button("Delete", role: .destructive) {
-                            // TODO: remove downloaded model from local storage
+                        isReloading = true
+                        reloadMessage = nil
+                        Task {
+                            await modelLoader.reloadModels(latitude: lat, longitude: lon)
+                            // Set feedback message based on result
+                            switch modelLoader.state {
+                            case .loaded(let models):
+                                switch modelLoader.pullReason {
+                                case .none:
+                                    reloadMessage = "No models found for your area."
+                                case .single(let reason):
+                                    reloadMessage = "Loaded \(models[0].name) · \(reason)"
+                                case .multiple(let reasons):
+                                    reloadMessage = "Loaded \(models.count) models · \(reasons.first ?? "")"
+                                }
+                            case .failed(let error):
+                                reloadMessage = "Failed: \(error)"
+                            default:
+                                break
+                            }
+                            isReloading = false
                         }
-                    } message: {
-                        Text("This will remove the downloaded model from your device. You will need to reload it to use landmark recognition.")
+                    } label: {
+                        HStack {
+                            Label("Reload Models", systemImage: "arrow.clockwise.circle")
+                            Spacer()
+                            if isReloading {
+                                ProgressView()
+                                    .progressViewStyle(.circular)
+                                    .scaleEffect(0.85)
+                            }
+                        }
                     }
+                    .disabled(isReloading)
+
+                    // Status message shown after reload attempt
+                    if let message = reloadMessage {
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: reloadFailed ? "exclamationmark.circle.fill" : "checkmark.circle.fill")
+                                .foregroundStyle(reloadFailed ? .orange : .green)
+                                .font(.footnote)
+                            Text(message)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.vertical, 2)
+                    }
+
                 } header: { Text("Model Management") }
                 footer: { Text("Models are selected based on your current location and downloaded from AWS.") }
-
-                Section {
-                    Button("Clear Cache", systemImage: "externaldrive") { showAlertCache = true }
-                        .alert("Are you sure? This will delete all temporary data, including images.", isPresented: $showAlertCache) {
-                            Button("Cancel", role: .cancel) {}
-                            Button("Yes", role: .destructive) {}
-                        }
-                    Button("Delete All Data",
-                           systemImage: "externaldrive.badge.exclamationmark",
-                           role: .destructive) { showAlertAll = true }
-                        .alert("Are you sure? This will delete all stored data, including stored models and your landmark history.", isPresented: $showAlertAll) {
-                            Button("Cancel", role: .cancel) {}
-                            Button("Yes", role: .destructive) {}
-                        }
-                } header: { Text("Data Management") }
-                footer: { Text("Current cache size: \(cache) MB") }
-
-                Section("Support & Info") {
-                    NavigationLink { Help() } label: {
-                        Label("Help & Tutorial", systemImage: "questionmark.circle")
-                            .foregroundColor(.blue)
-                    }
-                    */
-                    Button("About LookSee", systemImage: "info.circle") {
-                        modal = true
-                    }
-                    .sheet(isPresented: $modal) {
-                        Text("Looksee is an application designed to help you identify local landmarks with ease.")
-                    }
-                }
 
                 // MARK: - Sign Out (hidden for guests)
                 if authState.tier != .guest {
@@ -180,8 +165,12 @@ struct Settings: View {
             }
         }
     }
+
+    // MARK: - Helpers
+    private var reloadFailed: Bool {
+        if case .failed = modelLoader.state { return true }
+        if case .none = modelLoader.pullReason, reloadMessage != nil { return true }
+        return false
+    }
 }
 
-//#Preview {
-//    Settings()
-//}
