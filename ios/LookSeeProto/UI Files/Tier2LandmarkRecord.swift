@@ -315,11 +315,6 @@ struct Tier2LandmarkRecord: View {
                 .textFieldStyle(.roundedBorder)
                 .padding(.horizontal)
 
-            TextField("e.g., 'Doorway, UConn sign, benches'", text: $userDescription, axis: .vertical)
-                .lineLimit(3, reservesSpace: true)
-                .textFieldStyle(.roundedBorder)
-                .padding(.horizontal)
-
             Button {
                 guard let selectedLandmark else { return }
 
