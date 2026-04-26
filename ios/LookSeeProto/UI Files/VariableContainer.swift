@@ -18,6 +18,9 @@ class VariableContainer: ObservableObject {
     @Published var landmarkDescription : String = "No description is available for this landmark."
     @Published var landmarkURL : String = ""
     
+    @Published var promoName: String = "No active promotion"
+    @Published var promoDescription: String = ""
+    
     init() {
         self.infoView = false
         self.landmarkName = ""

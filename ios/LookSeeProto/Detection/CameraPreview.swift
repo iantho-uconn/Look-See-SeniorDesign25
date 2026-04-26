@@ -189,6 +189,7 @@ struct CameraPreview: UIViewRepresentable {
 
         // detector -> overlay binding
         context.coordinator.overlay = view.overlay
+        context.coordinator.view = view
 
         // attach detector to video frames once
         detector.attach(to: CameraPreview.sharedSession.videoOutput)
@@ -249,31 +250,62 @@ struct CameraPreview: UIViewRepresentable {
         weak var overlay: OverlayView?
         var view: Preview?
         
-        // Variable to allow the info pop-up to appear
         @ObservedObject var infoView = VariableContainer.shared
         
-        // Toggle the infobox to show
-        @objc
-        func bbClick(_ recognizer: UITapGestureRecognizer? = nil){
+        // Initialize services
+        private let landmarkService = LandmarkService()
+        private let promotionService = PromotionService()
 
-            // Tap location
+        @objc func bbClick(_ recognizer: UITapGestureRecognizer? = nil) {
             let tapLocation = recognizer!.location(in: view)
             
-            if overlay!.frame.contains(tapLocation) && !overlay!.detections.isEmpty{
-                //TODO: Add API calls to get landmark infomation from the database
-                print("Positive")
-                
-//                infoView.landmarkName = overlay!.detections[0].label
-                
-                infoView.landmarkName = "Husky Dog Statue"
-                infoView.landmarkDescription = "The Husky Dog Statue was completed in the spring of 1995. It was modeled after the then-current mascot of the University of Connecticut, Jonathan X."
-                infoView.landmarkConfidence = (overlay!.detections[0].confidence * 100)
-                infoView.landmarkCategory = "Statue"
-                infoView.landmarkURL = ""
-                infoView.infoView.toggle()
+            // Ensure there is a detection and the tap is within the overlay
+            guard let overlay = overlay,
+                  overlay.frame.contains(tapLocation),
+                  let detection = overlay.detections.first else {
+                return
             }
-            else { print("Negative")
-                return }
+
+            let detectionLabel = detection.label // This is "det.label"
+            
+            print("🔍 detectionLabel sent to API: '\(detectionLabel)'")
+
+            Task {
+                // 1. Fetch from both tables in parallel using the detection label
+                async let landmarkFetch = landmarkService.fetchLandmarkByLabel(label: detectionLabel)
+                async let promotionsFetch = promotionService.fetchPromotionsByLabel(label: detectionLabel)
+                
+                let (landmark, promotions) = await (landmarkFetch, promotionsFetch)
+                
+                print("🏛 Landmark returned: \(String(describing: landmark))")
+                print("🎯 Promotions returned: \(promotions)")
+                print("🎯 Promotions count: \(promotions.count)")
+                for promo in promotions {
+                    print("  - name: \(promo.name), label: \(promo.landmarkLabel)")
+                }
+
+                // 2. Update the UI on the Main Thread
+                await MainActor.run {
+                    if let landmark = landmark {
+                        infoView.landmarkName = landmark.label
+                        infoView.landmarkDescription = landmark.shortDescription ?? "No description available."
+                    } else {
+                        infoView.landmarkName = detectionLabel
+                        infoView.landmarkDescription = "No details found in database."
+                    }
+
+                    if let activePromo = promotions.first {
+                        infoView.promoName = activePromo.name
+                        infoView.promoDescription = activePromo.description
+                    } else {
+                        infoView.promoName = "No active promotion"
+                        infoView.promoDescription = ""
+                    }
+
+                    infoView.landmarkConfidence = (detection.confidence * 100)
+                    infoView.infoView = true
+                }
+            }
         }
     }
 
