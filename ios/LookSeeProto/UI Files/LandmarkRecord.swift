@@ -115,14 +115,14 @@ struct LandmarkRecord: View {
                                 .padding(.horizontal)
                         }
 
-                        Text("Short description (optional)")
+                        Text("Short description (required)")
                             .padding(.horizontal)
 
                         TextField("e.g., 'Front entrance', 'Scoreboard', 'Statue base'", text: $shortDescription)
                             .textFieldStyle(.roundedBorder)
                             .padding(.horizontal)
 
-                        Text("What’s in the frame? (optional)")
+                        Text("What’s in the frame? (required)")
                             .padding(.horizontal)
 
                         TextField("e.g., 'UConn logo, scoreboard, seats'", text: $userDescription, axis: .vertical)
