@@ -19,7 +19,7 @@ class ModelSelector: ObservableObject {
     @Published var activeClusterID: String? = nil
 
     // How close the user must be to an object to activate its model
-    private let activationRadiusMeters: Double = 10.0
+    private let activationRadiusMeters: Double = 50.0
 
     private var locationTask: Task<Void, Never>? = nil
     private var models: [ModelInfo] = []

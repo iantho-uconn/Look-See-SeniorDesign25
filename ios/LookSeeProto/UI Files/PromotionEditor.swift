@@ -155,7 +155,7 @@ struct PromotionEditor: View {
 
                 
                 // MARK: - Media
-                Section {
+                /* Section {
                     PhotosPicker(selection: $selectedItems) {
                         Text("Add media")
                     }
@@ -172,7 +172,7 @@ struct PromotionEditor: View {
                     }
                 } header: { Text("Promotion Media") }
 
-                MediaList(selectedItems: $selectedItems, media: $media)
+                MediaList(selectedItems: $selectedItems, media: $media) */
             }
 
             // MARK: - Submit / Save
