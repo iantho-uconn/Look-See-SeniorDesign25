@@ -194,65 +194,63 @@ class ModelService: ObservableObject {
     // MARK: - Download + Unzip + Compile
     private func downloadAndCompile(remoteURL: URL, clusterID: String) async throws -> URL {
         let compiledDest = modelsDirectory.appendingPathComponent("\(clusterID).mlmodelc")
-
+        
         // Return cached compiled model if it already exists
         if FileManager.default.fileExists(atPath: compiledDest.path) {
             print("♻️ Using cached model for cluster \(clusterID)")
             return compiledDest
         }
-
+        
         // Step 1 — download the zip from S3
         print("⬇️ Downloading model zip for cluster \(clusterID)...")
         let (zipLocalURL, _) = try await URLSession.shared.download(from: remoteURL)
-
+        
         // Step 2 — unzip into a temp directory
         let unzipDir = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: unzipDir, withIntermediateDirectories: true)
-
         print("📦 Unzipping to \(unzipDir.lastPathComponent)...")
         try unzip(zipURL: zipLocalURL, to: unzipDir)
-
-        // Step 3 — find {clusterID}.mlpackage inside unzipped contents
-        guard let mlpackageURL = findMLPackage(in: unzipDir, clusterID: clusterID) else {
+        
+        // Step 3 — find ANY .mlpackage inside unzipped contents (name varies per training session)
+        guard let mlpackageURL = findAnyMLPackage(in: unzipDir) else {
             throw NSError(domain: "ModelService", code: 1,
-                          userInfo: [NSLocalizedDescriptionKey: "No \(clusterID).mlpackage found in zip"])
+                          userInfo: [NSLocalizedDescriptionKey: "No .mlpackage found in zip for cluster \(clusterID)"])
         }
-
+        
         // Step 4 — compile .mlpackage → .mlmodelc
         print("⚙️ Compiling \(mlpackageURL.lastPathComponent)...")
         let tempCompiled = try await MLModel.compileModel(at: mlpackageURL)
-
-        // Step 5 — move compiled model to permanent app storage
+        
+        // Step 5 — move compiled model to permanent app storage (keyed by clusterID)
         if FileManager.default.fileExists(atPath: compiledDest.path) {
             try FileManager.default.removeItem(at: compiledDest)
         }
         try FileManager.default.moveItem(at: tempCompiled, to: compiledDest)
-
+        
         // Step 6 — clean up temp files
         try? FileManager.default.removeItem(at: unzipDir)
         try? FileManager.default.removeItem(at: zipLocalURL)
-
+        
         print("✅ Compiled model saved to \(compiledDest.lastPathComponent)")
         return compiledDest
     }
-
     // MARK: - Unzip Helper (iOS compatible via ZIPFoundation)
     private func unzip(zipURL: URL, to destination: URL) throws {
         try FileManager.default.unzipItem(at: zipURL, to: destination)
     }
 
-    // MARK: - Find .mlpackage by cluster ID
-    private func findMLPackage(in directory: URL, clusterID: String) -> URL? {
-        guard let enumerator = FileManager.default.enumerator(
+    // Finds the first .mlpackage in a directory tree, regardless of filename
+    private func findAnyMLPackage(in directory: URL) -> URL? {
+        let fm = FileManager.default
+        guard let enumerator = fm.enumerator(
             at: directory,
             includingPropertiesForKeys: [.isDirectoryKey],
             options: [.skipsHiddenFiles]
         ) else { return nil }
-
+    
         for case let url as URL in enumerator {
-            if url.pathExtension == "mlpackage" &&
-               url.deletingPathExtension().lastPathComponent == clusterID {
+            if url.pathExtension == "mlpackage" {
                 return url
             }
         }
