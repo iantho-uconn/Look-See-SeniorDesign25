@@ -3,9 +3,8 @@
 //  LookSeeProto
 //
 //  Continuously watches the user's location and picks the active model
-//  based on which loaded model has an object within 10 meters of the user.
+//  based on which loaded model has an object within the activation radius.
 //
-
 import Foundation
 import CoreLocation
 import Combine
@@ -21,7 +20,6 @@ class ModelSelector: ObservableObject {
     // How close the user must be to an object to activate its model
     private let activationRadiusMeters: Double = 50.0
 
-    private var locationTask: Task<Void, Never>? = nil
     private var models: [ModelInfo] = []
 
     private init() {
@@ -47,17 +45,17 @@ class ModelSelector: ObservableObject {
     }
 
     // MARK: - Update with user location
-    // Call this from LocationManager whenever user position changes
+    // Called by LocationManager whenever user position changes
     func updateUserLocation(latitude: Double, longitude: Double) {
         let userLocation = CLLocation(latitude: latitude, longitude: longitude)
-
-        // TODO: backend dev — once objects are populated in ModelInfo,
-        // this logic will automatically start working. No frontend changes needed.
 
         var closestClusterID: String? = nil
         var closestDistance: Double = .infinity
 
         for model in models {
+            // Skip models that haven't been compiled/loaded yet
+            guard model.compiledModelURL != nil else { continue }
+
             for object in model.objects {
                 let objectLocation = CLLocation(latitude: object.lat, longitude: object.lon)
                 let distance = userLocation.distance(from: objectLocation)
@@ -69,12 +67,15 @@ class ModelSelector: ObservableObject {
             }
         }
 
-        // Only switch if we found something within range,
-        // otherwise keep the current model active
-        if let newCluster = closestClusterID, newCluster != activeClusterID {
-            print("📍 Switching to model cluster \(newCluster) — object is \(String(format: "%.1f", closestDistance))m away")
-            activeClusterID = newCluster
+        if let newCluster = closestClusterID {
+            // Found a model with an object in range — switch if different
+            if newCluster != activeClusterID {
+                print("📍 Switching to cluster \(newCluster) — closest object is \(String(format: "%.1f", closestDistance))m away")
+                activeClusterID = newCluster
+            }
+        } else {
+            // No object in range — log but keep current model active
+            print("⚠️ No objects within \(activationRadiusMeters)m — keeping cluster \(activeClusterID ?? "none") active")
         }
     }
 }
-
