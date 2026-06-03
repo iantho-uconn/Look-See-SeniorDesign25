@@ -69,7 +69,7 @@ final class LibraryService: ObservableObject {
     }
 
     // MARK: - Fetch Landmarks
-    private func fetchLandmarks(clusterId: Int) async {
+    func fetchLandmarks(clusterId: Int) async {
         isLoading = true
         errorMessage = nil
         items = []

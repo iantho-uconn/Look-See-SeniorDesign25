@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct Library: View {
-    @StateObject private var libraryService = LibraryService()
+    @StateObject private var libraryService = LibraryService.shared
     @StateObject private var modelService = ModelService.shared
     @State private var searchText = ""
 
