@@ -25,6 +25,7 @@
 		3C9020A82F3ABCE900EE30BF /* LocationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C9020A52F3ABCE900EE30BF /* LocationManager.swift */; };
 		3C9020C02F3AC88600EE30BF /* CokeCanDetect.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3C9020BD2F3AC88600EE30BF /* CokeCanDetect.mlpackage */; };
 		3C9020C12F3AC88600EE30BF /* fruits_and_cans_2.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3C9020BE2F3AC88600EE30BF /* fruits_and_cans_2.mlpackage */; };
+		3CE8899C2F3FEE2B00B66044 /* VideoPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CE8899B2F3FEE2300B66044 /* VideoPicker.swift */; };
 		561FF74B2EB258D400411CF8 /* Library.swift in Sources */ = {isa = PBXBuildFile; fileRef = 561FF74A2EB258CC00411CF8 /* Library.swift */; };
 		562AD38C2ECBAF1B00D5144C /* Login.swift in Sources */ = {isa = PBXBuildFile; fileRef = 562AD38B2ECBAF1800D5144C /* Login.swift */; };
 		562DAAAD2F2A71750083A71E /* Main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 562DAAAC2F2A71740083A71E /* Main.swift */; };
@@ -80,6 +81,7 @@
 		3C918F9D2E9ECE5F00AF5DAF /* LookSeeProto.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LookSeeProto.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		3C918FAA2E9ECE6100AF5DAF /* LookSeeProtoTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LookSeeProtoTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		3C918FB42E9ECE6100AF5DAF /* LookSeeProtoUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LookSeeProtoUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		3CE8899B2F3FEE2300B66044 /* VideoPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoPicker.swift; sourceTree = "<group>"; };
 		561FF74A2EB258CC00411CF8 /* Library.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Library.swift; sourceTree = "<group>"; };
 		562AD38B2ECBAF1800D5144C /* Login.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Login.swift; sourceTree = "<group>"; };
 		562DAAAC2F2A71740083A71E /* Main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Main.swift; sourceTree = "<group>"; };
@@ -218,7 +220,7 @@
 				562DAAB22F2A895B0083A71E /* LandmarkScan.swift */,
 				56432A362EBBBF6D006B6E49 /* LandmarkRecord.swift */,
 				3C1FC9CB2F42C9DA0006C1D3 /* PhotoPicker.swift */,
-				3C5FEDBC2F917BD00018FF06 /* VariableContainer.swift */,
+				3CE8899B2F3FEE2300B66044 /* VideoPicker.swift */,
 				562DAAAC2F2A71740083A71E /* Main.swift */,
 				3C5FED6A2F907D270018FF06 /* Tier2LandmarkRecord.swift */,
 				3C63C8A72F91875E0006C5DD /* VariableContainer.swift */,
@@ -229,7 +231,6 @@
 				568CE2CC2F5654F6009A8775 /* LandmarkInfo.swift */,
 				568CE2CE2F565512009A8775 /* PopUp.swift */,
 				561FF74A2EB258CC00411CF8 /* Library.swift */,
-				3C5FEDBE2F917BEB0018FF06 /* VideoPicker.swift */,
 				56C3FA062EA6CA3100EA6153 /* Splash.swift */,
 				B002FA0E2F91815500120C4F /* VariableContainer.swift */,
 				B00F16722F9328360057430F /* ModelLoadingScreen.swift */,
@@ -430,7 +431,7 @@
 				561FF74B2EB258D400411CF8 /* Library.swift in Sources */,
 				3C72AA372F5141A000A90328 /* best.mlpackage in Sources */,
 				56C3FA082EA6CA3100EA6153 /* Settings.swift in Sources */,
-				3C5FEDBD2F917BD00018FF06 /* VariableContainer.swift in Sources */,
+				3CE8899C2F3FEE2B00B66044 /* VideoPicker.swift in Sources */,
 				3C5FED6B2F907D270018FF06 /* Tier2LandmarkRecord.swift in Sources */,
 				B002FA112F91D23700120C4F /* AuthState.swift in Sources */,
 				56C3FA092EA6CA3100EA6153 /* Splash.swift in Sources */,
@@ -439,7 +440,6 @@
 				3C9020A82F3ABCE900EE30BF /* LocationManager.swift in Sources */,
 				3C9020C02F3AC88600EE30BF /* CokeCanDetect.mlpackage in Sources */,
 				3C72AA3B2F51570300A90328 /* again.mlpackage in Sources */,
-				3C5FEDBF2F917BEB0018FF06 /* VideoPicker.swift in Sources */,
 				3C9020C12F3AC88600EE30BF /* fruits_and_cans_2.mlpackage in Sources */,
 				562DAAAF2F2A85B40083A71E /* Help.swift in Sources */,
 				3C1FC9CC2F42C9E70006C1D3 /* PhotoPicker.swift in Sources */,
