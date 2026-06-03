@@ -2,13 +2,13 @@
 //  Tier2LandmarkRecord.swift
 //  LookSeeProto
 //
-//  Created by Ian Thompson on 3/9/26.
-//
 
 import SwiftUI
 import CoreLocation
 
 struct Tier2LandmarkRecord: View {
+    @EnvironmentObject var vm: AuthViewModel
+
     @State private var pickedVideoURL: URL? = nil
     @State private var pickedImage: UIImage? = nil
 
@@ -315,20 +315,14 @@ struct Tier2LandmarkRecord: View {
                 .textFieldStyle(.roundedBorder)
                 .padding(.horizontal)
 
-            Text("What’s in the frame? (optional)")
-                .padding(.horizontal)
-
-            TextField("e.g., 'Doorway, UConn sign, benches'", text: $userDescription, axis: .vertical)
-                .lineLimit(3, reservesSpace: true)
-                .textFieldStyle(.roundedBorder)
-                .padding(.horizontal)
-
             Button {
                 guard let selectedLandmark else { return }
 
                 Task {
+                    await vm.fetchUserEmail()
                     await uploadService.upload(
-                        label: nil,
+                        userEmail: vm.userEmail,
+                        label: selectedLandmark.label,
                         landmarkId: selectedLandmark.landmarkId,
                         landmarkLabel: selectedLandmark.label,
                         shortDescription: shortDescription,

@@ -14,6 +14,7 @@ import Combine
 final class CameraSessionCoordinator {
     let session = AVCaptureSession()
     let videoOutput = AVCaptureVideoDataOutput()
+    private var videoDevice: AVCaptureDevice?
 
     init() {
         session.beginConfiguration()
@@ -28,6 +29,7 @@ final class CameraSessionCoordinator {
             session.commitConfiguration()
             return
         }
+        videoDevice = device
         session.addInput(input)
 
         // Output for frames
@@ -42,8 +44,22 @@ final class CameraSessionCoordinator {
                 conn.videoOrientation = .portrait
             }
         }
-
+        
         session.commitConfiguration()
+    }
+    
+    func setZoom(factor: CGFloat) {
+        guard let device = videoDevice else { return }
+        let maxZoom = min(device.activeFormat.videoMaxZoomFactor, 5.0) // cap at 5x
+        let clampedZoom = max(1.0, min(factor, maxZoom))
+        
+        do {
+            try device.lockForConfiguration()
+            device.videoZoomFactor = clampedZoom
+            device.unlockForConfiguration()
+        } catch {
+            print("❌ Zoom error: \(error)")
+        }
     }
 
     func start() {
@@ -64,6 +80,10 @@ import AVFoundation
 
 final class OverlayView: UIView {
     weak var previewLayer: AVCaptureVideoPreviewLayer?
+    
+    // Variable to allow the info pop-up to appear
+    @ObservedObject var infoView = VariableContainer.shared
+    
     var detections: [Detection] = [] {
         didSet {
             // print("🟢 OverlayView received \(detections.count) detections")
@@ -76,8 +96,7 @@ final class OverlayView: UIView {
 
     override func draw(_ rect: CGRect) {
         guard let ctx = UIGraphicsGetCurrentContext(),
-        
-                let previewLayer = previewLayer else { return }
+            let previewLayer = previewLayer else { return }
 
         ctx.clear(rect)
         ctx.setLineWidth(2.0)
@@ -85,18 +104,18 @@ final class OverlayView: UIView {
         for det in detections {
             let bbox = det.bbox
             
-            print("RAW:", bbox)
-
+            // print("RAW:", bbox)
+            
             let rect = CGRect(
                 x: bbox.origin.x * bounds.width,
                 y: bbox.origin.y * bounds.height,
                 width: bbox.width * (bounds.width * 2),
                 height: bbox.height * bounds.height
             )
+            
+            // print("DRAW RECT:", rect)
 
-            print("DRAW RECT:", rect)
-
-            UIColor.systemGreen.setStroke()
+            UIColor.systemRed.setStroke()
             ctx.stroke(rect)
         
 //        // TODO: Possibly change this for AR support
@@ -140,15 +159,40 @@ final class OverlayView: UIView {
             )
 
             UIColor.systemGreen.setFill()
-            ctx.fill(bgRect)
+            //ctx.fill(bgRect)
 
-            labelText.draw(in: bgRect.insetBy(dx: 4, dy: 2), withAttributes: attributes)
+            // labelText.draw(in: bgRect.insetBy(dx: 4, dy: 2), withAttributes: attributes)
+        }
+        
+        // Variable to count bounding boxes
+        @ObservedObject var infoView = VariableContainer.shared
+        
+        // Green bounding box
+        if infoView.bboxCounter >= 29 {
+            ctx.clear(rect)
+            ctx.setLineWidth(2.0)
+
+            for det in detections {
+                let bbox = det.bbox
+                
+                let rect = CGRect(
+                    x: bbox.origin.x * bounds.width,
+                    y: bbox.origin.y * bounds.height,
+                    width: bbox.width * (bounds.width * 2),
+                    height: bbox.height * bounds.height
+                )
+                UIColor.systemGreen.setStroke()
+                ctx.stroke(rect)
+            }
+            
         }
     }
 }
 
 struct CameraPreview: UIViewRepresentable {
     @ObservedObject var detector: Detector
+    @State private var currentZoom: CGFloat = 1.0
+    @Binding var zoomLevel: CGFloat
 
     static let sharedSession = CameraSessionCoordinator()
 
@@ -163,38 +207,153 @@ struct CameraPreview: UIViewRepresentable {
 
         // detector -> overlay binding
         context.coordinator.overlay = view.overlay
+        context.coordinator.view = view
 
         // attach detector to video frames once
         detector.attach(to: CameraPreview.sharedSession.videoOutput)
         CameraPreview.sharedSession.start()
-
+        
+//        // Tap gesture recognizer
+//        let tapGesture = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.bbClick(_:)))
+////        tapGesture.delaysTouchesBegan = true
+//        view.addGestureRecognizer(tapGesture)
+        
+        let pinchGesture = UIPinchGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handlePinch(_:)))
+        view.addGestureRecognizer(pinchGesture)
+        
         return view
     }
 
     func updateUIView(_ uiView: Preview, context: Context) {
-        // push latest detections to overlay each update
-        uiView.overlay.detections = detector.detections
+        // Variable to count bounding boxes
+        @ObservedObject var infoView = VariableContainer.shared
         
-        // Tap gesture recognizer
         let tapGesture = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.bbClick(_:)))
-        uiView.addGestureRecognizer(tapGesture)
+        
+        // Stop rendering new bounding boxes when they appear for 30 consecutive frames and are above a certain threshold
+        if infoView.bboxCounter < 30 {
+            // push latest detections to overlay each update
+            uiView.overlay.detections = detector.detections
+            
+            DispatchQueue.main.async {
+                if !uiView.overlay.detections.isEmpty && uiView.overlay.detections[0].confidence > 0.10 {
+                    infoView.bboxCounter += 1
+                }
+                else { infoView.bboxCounter = 0 }
+            }
+        }
+        else {
+            // Add tap gesture
+            uiView.addGestureRecognizer(tapGesture)
+            DispatchQueue.main.async {
+                infoView.bboxCounter += 1
+            }
+            
+        }
+        
+        // Stop rendering rectangles when the pop-up is open or it's been appromixately three seconds after an item has been scanned
+        // Reset counter for halting bounding box rendering, remove tap gesture
+        if infoView.infoView || infoView.bboxCounter == 210{
+            uiView.removeGestureRecognizer(tapGesture)
+            uiView.overlay.detections.removeAll()
+            DispatchQueue.main.async {
+                infoView.bboxCounter = 0
+            }
+        }
+        print(infoView.bboxCounter)
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator()
+        Coordinator(zoomLevel: $zoomLevel)
     }
 
     final class Coordinator {
         weak var overlay: OverlayView?
         var view: Preview?
+        var zoomLevel: Binding<CGFloat>
+        private var zoomFactorAtGestureStart: CGFloat = 1.0
         
-        // Variable to allow the info pop-up to appear
         @ObservedObject var infoView = VariableContainer.shared
         
-        // Toggle the infobox to show
-        @objc
-        func bbClick(_ sender: Preview){
-            infoView.infoView.toggle()
+        // Initialize services
+        private let landmarkService = LandmarkService()
+        private let promotionService = PromotionService()
+        
+        init(zoomLevel: Binding<CGFloat>) {
+            self.zoomLevel = zoomLevel
+        }
+        
+        @objc func handlePinch(_ recognizer: UIPinchGestureRecognizer) {
+            guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) else { return }
+            
+            switch recognizer.state {
+            case .began:
+                zoomFactorAtGestureStart = device.videoZoomFactor
+            case .changed:
+                let newZoom = zoomFactorAtGestureStart * recognizer.scale
+                let maxZoom = min(device.activeFormat.videoMaxZoomFactor, 5.0)
+                let clampedZoom = max(1.0, min(newZoom, maxZoom))
+                CameraPreview.sharedSession.setZoom(factor: clampedZoom)
+                
+                // ← update the UI binding on main thread
+                DispatchQueue.main.async {
+                    self.zoomLevel.wrappedValue = clampedZoom
+                }
+            default:
+                break
+            }
+        }
+
+        @objc func bbClick(_ recognizer: UITapGestureRecognizer? = nil) {
+            let tapLocation = recognizer!.location(in: view)
+            
+            // Ensure there is a detection and the tap is within the overlay
+            guard let overlay = overlay,
+                  overlay.frame.contains(tapLocation),
+                  let detection = overlay.detections.first else {
+                return
+            }
+
+            let detectionLabel = detection.label // This is "det.label"
+            
+            print("🔍 detectionLabel sent to API: '\(detectionLabel)'")
+
+            Task {
+                // 1. Fetch from both tables in parallel using the detection label
+                async let landmarkFetch = landmarkService.fetchLandmarkByLabel(label: detectionLabel)
+                async let promotionsFetch = promotionService.fetchPromotionsByLabel(label: detectionLabel)
+                
+                let (landmark, promotions) = await (landmarkFetch, promotionsFetch)
+                
+                print("🏛 Landmark returned: \(String(describing: landmark))")
+                print("🎯 Promotions returned: \(promotions)")
+                print("🎯 Promotions count: \(promotions.count)")
+                for promo in promotions {
+                    print("  - name: \(promo.name), label: \(promo.landmarkLabel)")
+                }
+
+                // 2. Update the UI on the Main Thread
+                await MainActor.run {
+                    if let landmark = landmark {
+                        infoView.landmarkName = landmark.label
+                        infoView.landmarkDescription = landmark.shortDescription ?? "No description available."
+                    } else {
+                        infoView.landmarkName = detectionLabel
+                        infoView.landmarkDescription = "No details found in database."
+                    }
+
+                    if let activePromo = promotions.first {
+                        infoView.promoName = activePromo.name
+                        infoView.promoDescription = activePromo.description
+                    } else {
+                        infoView.promoName = "No active promotion"
+                        infoView.promoDescription = ""
+                    }
+
+                    infoView.landmarkConfidence = (detection.confidence * 100)
+                    infoView.infoView = true
+                }
+            }
         }
     }
 

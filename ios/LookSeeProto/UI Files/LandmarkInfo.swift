@@ -1,46 +1,48 @@
-//
-//  LandmarkInfo.swift
-//  LookSeeProto
-//
-//  Created by Christian Barbara on 2/17/26.
-//
-
 import SwiftUI
+import Foundation
 
-struct LandmarkInfo : View {
-    @Binding var info : ScannedLandmark
+struct LandmarkInfo: View {
+    @ObservedObject var infoView = VariableContainer.shared
+    
     var body: some View {
         VStack {
-            Text(info.name)
+            Text(infoView.landmarkName)
                 .font(.title)
-            Text("\(info.description ?? "No description is available for this landmark.") \n \(info.url ?? "")")
+            
+            Text(infoView.landmarkDescription)
                 .padding()
-//                .lineLimit(5)
-            Button("**Report incorrect info**",
-                   systemImage: "flag.fill",
-                   role: .destructive){}
-            Divider().padding()
-            HStack {
-                Text("Confidence")
-                Spacer()
-                Text("\(info.confidence)%")
+            
+            if infoView.landmarkURL != "" {
+                AsyncImage(url: URL(string: infoView.landmarkURL)) { image in
+                    image.resizable().aspectRatio(contentMode: .fit)
+                } placeholder: {
+                    ProgressView()
+                }
             }
-            HStack {
-                Text("Category")
-                Spacer()
-                Text("\(info.category)")
+            
+            // Promotion section — only shown when an active promo exists
+            if infoView.promoName != "No active promotion" && !infoView.promoName.isEmpty {
+                Divider().padding()
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Label("Active Promotion", systemImage: "tag.fill")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(infoView.promoName)
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                    if !infoView.promoDescription.isEmpty {
+                        Text(infoView.promoDescription)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(10)
+                .background(.yellow.opacity(0.15), in: RoundedRectangle(cornerRadius: 6))
+                .padding(.horizontal)
             }
-            HStack {
-                Text("Detection Time")
-                Spacer()
-                Text("\(info.detectionTime, specifier: "%.2f")s")
-            }
+            
         }
-        
     }
 }
-
-//#Preview {
-//    @Previewable @State var info = ScannedLandmark(id: 5, name: "Westminister Building", description: "As of 2025, the building is the eighth-tallest building in New York City, the tenth-tallest completed skyscraper in the United States, and the 59th-tallest completed skyscraper in the world.", url:"example.com", category: "Building", confidence: "1", detectionTime: 0.0)
-//    LandmarkInfo(info: $info)
-//}

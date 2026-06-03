@@ -3,7 +3,7 @@
 //  LookSeeProto
 //
 //  Created by Ian Thompson on 2/15/26.
-//  Updated to include upload metadata (location + descriptions).
+//  Updated to include upload metadata (location + descriptions + userEmail + landmark tracking).
 //
 
 import Foundation
@@ -14,6 +14,7 @@ enum MediaKind: String, Codable {
 }
 
 struct InitSubmissionRequest: Codable {
+    let userEmail: String
     let label: String
     let mediaKind: MediaKind
     let filename: String
@@ -27,12 +28,14 @@ struct InitSubmissionResponse: Codable {
 }
 
 // Sent on /submissions/complete after PUT upload succeeds.
-// This is where we attach metadata so the backend has everything it needs for downstream pipeline steps.
 struct CompleteSubmissionRequest: Codable {
     let submissionId: String
     let s3Key: String
+    let userEmail: String
 
     let label: String
+    let landmarkId: String?
+    let landmarkLabel: String?
     let mediaKind: MediaKind
 
     let shortDescription: String?

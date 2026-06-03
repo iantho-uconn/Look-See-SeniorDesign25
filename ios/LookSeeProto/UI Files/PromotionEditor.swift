@@ -2,67 +2,40 @@
 //  PromotionEditor.swift
 //  LookSeeProto
 //
-//  Created by Christian Barbara on 2/25/26.
-//
+
 import SwiftUI
 import PhotosUI
-
-// MARK: - Promotion Model
-struct Promotion: Identifiable {
-    let id: UUID
-    var business: String
-    var name: String
-    var description: String
-    var startDate: Date
-    var endDate: Date
-    var mediaItems: [PhotosPickerItem]
-    var mediaImages: [Image]
-
-    init(
-        id: UUID = UUID(),
-        business: String = "",
-        name: String = "",
-        description: String = "",
-        startDate: Date = Date(),
-        endDate: Date = Date(),
-        mediaItems: [PhotosPickerItem] = [],
-        mediaImages: [Image] = []
-    ) {
-        self.id = id
-        self.business = business
-        self.name = name
-        self.description = description
-        self.startDate = startDate
-        self.endDate = endDate
-        self.mediaItems = mediaItems
-        self.mediaImages = mediaImages
-    }
-}
+import Amplify
 
 // MARK: - PromotionEditor
+
 struct PromotionEditor: View {
-    var existingPromotion: Promotion? = nil
+    var existingPromotion: PromotionPayload? = nil
 
-    @State private var savedPromotions: [Promotion] = [
-        // TODO: replace with API fetch of existing promotions
-        Promotion(business: "Dick's Automotive", name: "Summer Sale", description: "20% off all services.", startDate: Date(), endDate: Calendar.current.date(byAdding: .month, value: 1, to: Date()) ?? Date()),
-        Promotion(business: "Jerry's Bait Shop", name: "Weekend Special", description: "Buy 2 get 1 free on lures.", startDate: Date(), endDate: Calendar.current.date(byAdding: .weekOfYear, value: 1, to: Date()) ?? Date())
-    ]
-    @State private var promotionToDelete: Promotion? = nil
-    @State private var showDeleteAlert = false
+    @StateObject private var promotionService = PromotionService()
+    @StateObject private var landmarkService = LandmarkService()
 
-    @State private var businesses = ["Dick's Automotive", "Jerry's Bait Shop", "Hardware Store"]
-    @State private var selectedBusiness = String()
-    @State private var promoName = String()
-    @State private var promoDescription = String()
+    // Current user — resolved from Amplify on appear
+    @State private var userEmail = ""
+
+    // Form fields
+    @State private var selectedLandmark: BusinessLocation? = nil
+    @State private var showLandmarkPicker = false
+    @State private var promoName = ""
+    @State private var promoDescription = ""
     @State private var startDate = Date()
     @State private var endDate = Date()
+    @State private var enabled = true
     @State var selectedItems: [PhotosPickerItem] = []
     @State private var media: [Image] = []
-    @State private var submit = false
 
+    // Validation
     @State private var showValidationAlert = false
     @State private var validationMessage = ""
+
+    // Delete confirmation
+    @State private var promotionToDelete: PromotionPayload? = nil
+    @State private var showDeleteAlert = false
 
     var isEditing: Bool { existingPromotion != nil }
 
@@ -70,15 +43,15 @@ struct PromotionEditor: View {
         VStack {
             Form {
 
-                // MARK: - Saved Promotions
-                if !savedPromotions.isEmpty {
+                // MARK: - Active Promotions
+                if !promotionService.promotions.isEmpty {
                     Section {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 10) {
-                                ForEach(savedPromotions) { promo in
+                                ForEach(promotionService.promotions) { promo in
                                     PromoChip(
                                         name: promo.name,
-                                        business: promo.business,
+                                        business: promo.landmarkLabel,
                                         onDelete: {
                                             promotionToDelete = promo
                                             showDeleteAlert = true
@@ -94,8 +67,12 @@ struct PromotionEditor: View {
                     .alert("Remove Promotion?", isPresented: $showDeleteAlert, presenting: promotionToDelete) { promo in
                         Button("Cancel", role: .cancel) {}
                         Button("Remove", role: .destructive) {
-                            savedPromotions.removeAll { $0.id == promo.id }
-                            // TODO: DELETE /promotions/{promo.id}
+                            Task {
+                                await promotionService.deletePromotion(
+                                    promotionId: promo.id,
+                                    userEmail: userEmail
+                                )
+                            }
                         }
                     } message: { promo in
                         Text("\(promo.name) will be permanently removed.")
@@ -104,91 +81,173 @@ struct PromotionEditor: View {
 
                 // MARK: - Promotion Details
                 Section {
-                    Picker("Location", selection: $selectedBusiness){
-                        ForEach(businesses, id: \.self){ business in Text(business) }
+                    // Location picker — shows user's landmarks from LookSeeLandmarks
+                    Button {
+                        showLandmarkPicker = true
+                    } label: {
+                        HStack {
+                            Text("Location")
+                                .foregroundStyle(.primary)
+                            Spacer()
+                            if let landmark = selectedLandmark {
+                                Text(landmark.label)
+                                    .foregroundStyle(.secondary)
+                            } else if landmarkService.isLoading {
+                                ProgressView()
+                            } else {
+                                Text("Select a location")
+                                    .foregroundStyle(.secondary)
+                            }
+                            Image(systemName: "chevron.right")
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                        }
                     }
+                    .confirmationDialog(
+                        "Select Location",
+                        isPresented: $showLandmarkPicker,
+                        titleVisibility: .visible
+                    ) {
+                        ForEach(landmarkService.landmarks) { landmark in
+                            Button(landmark.label) {
+                                selectedLandmark = landmark
+                            }
+                        }
+                        Button("Cancel", role: .cancel) {}
+                    }
+
                     TextField(text: $promoName, prompt: Text("Promotion name")) {}
                         .autocorrectionDisabled(true)
                         .textInputAutocapitalization(.never)
+
                     TextField(text: $promoDescription, prompt: Text("Promotion description"), axis: .vertical) {}
                         .controlSize(.large)
                         .lineLimit(5, reservesSpace: true)
+
+                    Toggle("Enabled", isOn: $enabled)
+
                 } header: { Text("Promotion Details") }
                 footer: {
-                    if showValidationAlert {
-                        Text(validationMessage)
-                            .foregroundColor(.red)
-                            .font(.caption)
+                    VStack(alignment: .leading, spacing: 4) {
+                        if let error = landmarkService.errorMessage {
+                            Text(error)
+                                .foregroundColor(.red)
+                                .font(.caption)
+                        }
+                        if showValidationAlert {
+                            Text(validationMessage)
+                                .foregroundColor(.red)
+                                .font(.caption)
+                        }
+                        if let error = promotionService.errorMessage {
+                            Text(error)
+                                .foregroundColor(.red)
+                                .font(.caption)
+                        }
                     }
                 }
 
+                // MARK: - Promotion Dates
                 Section {
-                    DatePicker(
-                        "Start Date",
-                        selection: $startDate,
-                        displayedComponents: [.date]
-                    )
-                    DatePicker(
-                        "End Date",
-                        selection: $endDate,
-                        in: startDate...,
-                        displayedComponents: [.date]
-                    )
+                    DatePicker("Start Date", selection: $startDate, displayedComponents: [.date])
+                    DatePicker("End Date", selection: $endDate, in: startDate..., displayedComponents: [.date])
                 } header: { Text("Promotion Dates") }
 
-                Section {
+                
+                // MARK: - Media
+                /* Section {
                     PhotosPicker(selection: $selectedItems) {
                         Text("Add media")
                     }
                     .onChange(of: selectedItems) { _, newValue in
                         media.removeAll()
-                        newValue.forEach({ selectedItem in
+                        newValue.forEach { selectedItem in
                             Task {
                                 if let imageData = try? await selectedItem.loadTransferable(type: Data.self),
                                    let uiImage = UIImage(data: imageData) {
                                     media.append(Image(uiImage: uiImage))
-                                } else {
-                                    print("Image Error")
                                 }
                             }
-                        })
+                        }
                     }
                 } header: { Text("Promotion Media") }
 
-                MediaList(selectedItems: $selectedItems, media: $media)
+                MediaList(selectedItems: $selectedItems, media: $media) */
             }
 
+            // MARK: - Submit / Save
             Button(isEditing ? "Save Changes" : "Submit", role: .cancel) {
-                if validate() {
-                    let newPromo = Promotion(
-                        business: selectedBusiness,
-                        name: promoName,
-                        description: promoDescription,
-                        startDate: startDate,
-                        endDate: endDate,
-                        mediaItems: selectedItems,
-                        mediaImages: media
-                    )
-                    savedPromotions.append(newPromo)
-                    submit = true
-                    // TODO: POST /promotions or PATCH /promotions/{existingPromotion.id}
-                    resetForm()
+                guard validate() else { return }
+                guard let landmark = selectedLandmark else { return }
+
+                Task {
+                    if let existing = existingPromotion {
+                        await promotionService.updatePromotion(
+                            promotionId: existing.id,
+                            userEmail: userEmail,
+                            landmarkId: landmark.id,
+                            landmarkLabel: landmark.label,
+                            name: promoName,
+                            description: promoDescription,
+                            startDate: startDate,
+                            endDate: endDate,
+                            enabled: enabled
+                        )
+                    } else {
+                        await promotionService.createPromotion(
+                            userEmail: userEmail,
+                            landmarkId: landmark.id,
+                            landmarkLabel: landmark.label,
+                            name: promoName,
+                            description: promoDescription,
+                            startDate: startDate,
+                            endDate: endDate,
+                            enabled: enabled
+                        )
+                    }
+                    if promotionService.errorMessage == nil {
+                        resetForm()
+                    }
                 }
             }
             .buttonStyle(.bordered)
         }
         .onAppear {
-            prefillIfEditing()
+            Task {
+                await resolveUserEmail()
+                if !userEmail.isEmpty {
+                    async let landmarks: () = landmarkService.fetchLandmarks(userEmail: userEmail)
+                    async let promotions: () = promotionService.fetchPromotions(userEmail: userEmail)
+                    await landmarks
+                    await promotions
+                }
+                prefillIfEditing()
+            }
+        }
+    }
+
+    // MARK: - Resolve email from Amplify
+
+    private func resolveUserEmail() async {
+        do {
+            let attributes = try await Amplify.Auth.fetchUserAttributes()
+            if let emailAttr = attributes.first(where: { $0.key == .email }) {
+                userEmail = emailAttr.value
+            }
+        } catch {
+            print("❌ Failed to fetch user email: \(error)")
         }
     }
 
     // MARK: - Reset Form
+
     private func resetForm() {
-        selectedBusiness = ""
+        selectedLandmark = nil
         promoName = ""
         promoDescription = ""
         startDate = Date()
         endDate = Date()
+        enabled = true
         selectedItems = []
         media = []
         showValidationAlert = false
@@ -196,23 +255,29 @@ struct PromotionEditor: View {
     }
 
     // MARK: - Prefill for Edit Mode
+
     private func prefillIfEditing() {
         guard let promo = existingPromotion else { return }
-        selectedBusiness = promo.business
+        // Resolve the matching Landmark object from the already-fetched list
+        selectedLandmark = landmarkService.landmarks.first { $0.id == promo.landmarkId }
         promoName = promo.name
         promoDescription = promo.description
-        startDate = promo.startDate
-        endDate = promo.endDate
-        selectedItems = promo.mediaItems
-        media = promo.mediaImages
+        enabled = promo.enabled
+
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        startDate = formatter.date(from: promo.startDate) ?? Date()
+        endDate = formatter.date(from: promo.endDate) ?? Date()
     }
 
     // MARK: - Validation
+
     private func validate() -> Bool {
         var errors: [String] = []
 
-        if selectedBusiness.isEmpty {
-            errors.append("Business location is required.")
+        if selectedLandmark == nil {
+            errors.append("Please select a location.")
         }
         if promoName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             errors.append("Promotion name is required.")
@@ -236,7 +301,8 @@ struct PromotionEditor: View {
     }
 }
 
-// MARK: - Promo Chip
+// MARK: - PromoChip (unchanged)
+
 struct PromoChip: View {
     let name: String
     let business: String
@@ -273,7 +339,8 @@ struct PromoChip: View {
     }
 }
 
-// MARK: - MediaList
+// MARK: - MediaList (unchanged)
+
 struct MediaList: View {
     @Binding var selectedItems: [PhotosPickerItem]
     @Binding var media: [Image]
@@ -297,14 +364,4 @@ struct MediaList: View {
 
 #Preview {
     PromotionEditor()
-}
-
-#Preview("Edit Mode") {
-    PromotionEditor(existingPromotion: Promotion(
-        business: "Dick's Automotive",
-        name: "Summer Sale",
-        description: "20% off all services this summer.",
-        startDate: Date(),
-        endDate: Calendar.current.date(byAdding: .month, value: 1, to: Date()) ?? Date()
-    ))
 }

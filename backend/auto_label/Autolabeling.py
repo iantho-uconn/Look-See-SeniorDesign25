@@ -1,110 +1,105 @@
 import os
 import cv2
 import torch
-import shutil
+import boto3
+import json
 from autodistill_grounding_dino import GroundingDINO
 from autodistill.detection import CaptionOntology
 
 # -----------------------------------------
-# 1. DEFINE ALL CLASSES YOU WANT TO DETECT
+# AWS SETUP
 # -----------------------------------------
-# key = class folder name
-# value = GroundingDINO text prompt
-CLASSES = {
-    "UConn": "stone structure",
-    # Add more classes anytime...
-}
+s3 = boto3.client('s3')
+BUCKET_NAME = 'looksee-models'
+
+# Get the folder name passed from the Lambda override
+SUBMISSION_FOLDER = os.environ.get('SUBMISSION_FOLDER')
+INPUT_PREFIX = f"clean-frames/{SUBMISSION_FOLDER}/"
+
+if not SUBMISSION_FOLDER:
+    print("Error: No SUBMISSION_FOLDER environment variable found.")
+    exit(1)
 
 # -----------------------------------------
-# 3. DEVICE  this probably will change with AWS setup 
+# 1. LOAD SUBMISSION METADATA
+# -----------------------------------------
+metadata_key = f"{INPUT_PREFIX}metadata.json"
+local_metadata_path = "/tmp/metadata.json"
+
+print(f"Downloading metadata: {metadata_key}")
+s3.download_file(BUCKET_NAME, metadata_key, local_metadata_path)
+
+with open(local_metadata_path, 'r') as f:
+    metadata = json.load(f)
+
+class_name = metadata.get('class_name', 'UnknownObject').replace(" ", "_")
+prompt = metadata.get('prompt', class_name)
+
+print(f"Processing submission: {SUBMISSION_FOLDER}")
+print(f"Target Object: {class_name} | AI Prompt: {prompt}")
+
+# -----------------------------------------
+# 2. SETUP MODEL
 # -----------------------------------------
 device = "cuda" if torch.cuda.is_available() else "cpu"
-print(f"Using device: {device}")
+ontology = CaptionOntology({prompt: class_name})
+model = GroundingDINO(ontology=ontology)
 
 # -----------------------------------------
-# 4. PROCESS EACH CLASS SEPARATELY this is make sure that the dataset is created neatly. Find the format at the end of the file.
+# 3. PROCESS FOLDER
 # -----------------------------------------
-for class_name, prompt in CLASSES.items():
+response = s3.list_objects_v2(Bucket=BUCKET_NAME, Prefix=INPUT_PREFIX)
+if 'Contents' not in response:
+    print("No frames found in S3 folder.")
+    exit(0)
 
-    print(f"\n==============================")
-    print(f"Processing class: {class_name}")
-    print(f"Prompt: {prompt}")
-    unlabeled_dir = f"data\{class_name}"                       #NOTE: this is input folder aka S3 bucket folder where you put the unlabeled images for this class. You can change this to whatever you want, the path construction below should change accordingly. 
-    print(f"Unlabeled images folder: {unlabeled_dir}")
-    print("==============================")
+count = 0
+for obj in response['Contents']:
+    img_key = obj['Key']
+    if not img_key.lower().endswith((".jpg", ".png", ".jpeg")):
+        continue
 
-    # Build ontology for this class
-    ontology = CaptionOntology({prompt: class_name})
-    model = GroundingDINO(ontology=ontology)
+    img_name = os.path.basename(img_key)
+    local_img_path = f"/tmp/{img_name}"
+    
+    # Download image from S3
+    s3.download_file(BUCKET_NAME, img_key, local_img_path)
+    image = cv2.imread(local_img_path)
+    detections = model.predict(image)
 
-    # Output folders for this class
-    dataset_root = os.path.join("dataset", class_name)          #NOTE: this is output folder aka label/image S3 bucket folder where the labeled dataset for each classes will be saved.
-    images_out = os.path.join(dataset_root, "images")
-    labels_out = os.path.join(dataset_root, "labels")
+    # Skip frame if AI finds nothing
+    if len(detections.xyxy) == 0:
+        os.remove(local_img_path)
+        continue
 
-    os.makedirs(images_out, exist_ok=True)
-    os.makedirs(labels_out, exist_ok=True)
+    # Convert to YOLO format
+    h, w, _ = image.shape
+    yolo_lines = []
+    for box in detections.xyxy:
+        x_min, y_min, x_max, y_max = box
+        x_center = ((x_min + x_max) / 2) / w
+        y_center = ((y_min + y_max) / 2) / h
+        bw = (x_max - x_min) / w
+        bh = (y_max - y_min) / h
+        # Use '0' as class index for single-class training
+        yolo_lines.append(f"0 {x_center:.6f} {y_center:.6f} {bw:.6f} {bh:.6f}")
 
-    count = 0
+    # Save label file locally
+    label_name = os.path.splitext(img_name)[0] + ".txt"
+    local_label_path = f"/tmp/{label_name}"
+    with open(local_label_path, "w") as f:
+        f.write("\n".join(yolo_lines))
 
-    # -----------------------------------------
-    # 5. Iterate over unlabeled images         # this make the data yolo community standard ready. no need to change.
-    for img_name in os.listdir(unlabeled_dir):
-        if not img_name.lower().endswith((".jpg", ".png", ".jpeg")):
-            continue
+    # Upload to final dataset folders
+    s3_img_out = f"dataset/{class_name}/images/{img_name}"
+    s3_label_out = f"dataset/{class_name}/labels/{label_name}"
 
-        img_path = os.path.join(unlabeled_dir, img_name)
-        image = cv2.imread(img_path)
+    s3.upload_file(local_img_path, BUCKET_NAME, s3_img_out)
+    s3.upload_file(local_label_path, BUCKET_NAME, s3_label_out)
 
-        detections = model.predict(image)
+    # Clean up /tmp/
+    os.remove(local_img_path)
+    os.remove(local_label_path)
+    count += 1
 
-        h, w, _ = image.shape
-        yolo_lines = []
-
-        # Convert detections to YOLO format
-        for box, class_id in zip(detections.xyxy, detections.class_id):
-            x_min, y_min, x_max, y_max = box
-
-            x_center = ((x_min + x_max) / 2) / w
-            y_center = ((y_min + y_max) / 2) / h
-            width = (x_max - x_min) / w
-            height = (y_max - y_min) / h
-
-            yolo_lines.append(
-                f"{int(class_id)} {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}"
-            )
-
-        # Save image to dataset/<class>/images/
-        img_out_path = os.path.join(images_out, img_name)
-        shutil.copy(img_path, img_out_path)
-
-        # Save label file to dataset/<class>/labels/
-        label_out_path = os.path.join(labels_out, os.path.splitext(img_name)[0] + ".txt")
-        with open(label_out_path, "w") as f:
-            f.write("\n".join(yolo_lines))
-
-        count += 1
-
-    print(f" Saved {count} images + labels for class '{class_name}' into {dataset_root}")
-
-print("\n Multi-class dataset created successfully!")
-
-
-
-
-
-"""format of the dataset folder:
-dataset/
-    UConn/
-        images/
-        labels/
-    Gample/
-        images/
-        labels/
-    ITE/
-        images/
-        labels/
-
-Comments:
-- This can also handle multiple classes at once, just add more entries to the CLASSES dict. The code will automatically create separate folders for each class and save the corresponding images and labels in them.
-- We could delete the old unlabeled dataset folder. """
+print(f"DONE: Successfully labeled {count} images for {class_name}.")
