@@ -10,25 +10,25 @@ struct Login: View {
     @ObservedObject var vm: AuthViewModel
     @State private var username = ""
     @State private var password = ""
-
+    
     var onSignedIn: () -> Void
     var onGoToSignup: () -> Void
     var onContinueAsGuest: () -> Void
-
+    
     var body: some View {
         ZStack {
             Color(red: 0.06, green: 0.06, blue: 0.10)
                 .ignoresSafeArea()
-
+            
             Circle()
                 .fill(Color(red: 0.22, green: 0.49, blue: 1.00).opacity(0.12))
                 .frame(width: 300, height: 300)
                 .blur(radius: 60)
                 .offset(y: -100)
-
+            
             VStack(spacing: 0) {
                 Spacer()
-
+                
                 // Logo
                 VStack(spacing: 12) {
                     ZStack {
@@ -46,9 +46,9 @@ struct Login: View {
                         .font(.subheadline)
                         .foregroundStyle(Color.white.opacity(0.4))
                 }
-
+                
                 Spacer()
-
+                
                 VStack(spacing: 14) {
                     // Email
                     VStack(alignment: .leading, spacing: 6) {
@@ -69,7 +69,7 @@ struct Login: View {
                             )
                             .colorScheme(.dark)
                     }
-
+                    
                     // Password
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Password")
@@ -87,7 +87,7 @@ struct Login: View {
                             )
                             .colorScheme(.dark)
                     }
-
+                    
                     // Error / success
                     if !vm.errorMessage.isEmpty {
                         Text(vm.errorMessage)
@@ -101,7 +101,7 @@ struct Login: View {
                             .foregroundStyle(.green)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
-
+                    
                     // Sign in button
                     Button {
                         vm.signIn(username: username, password: password)
@@ -120,7 +120,7 @@ struct Login: View {
                     }
                     .disabled(username.isEmpty || password.isEmpty)
                     .opacity(username.isEmpty || password.isEmpty ? 0.5 : 1)
-
+                    
                     // Divider
                     HStack(spacing: 12) {
                         Rectangle()
@@ -133,7 +133,7 @@ struct Login: View {
                             .fill(Color.white.opacity(0.1))
                             .frame(height: 0.5)
                     }
-
+                    
                     // Continue as guest
                     Button {
                         onContinueAsGuest()
@@ -154,24 +154,26 @@ struct Login: View {
                                 .stroke(Color.white.opacity(0.1), lineWidth: 0.5)
                         )
                     }
-
+                    
                     // Go to signup
                     Button {
                         onGoToSignup()
                     } label: {
-                        Text("Don't have an account? ")
-                            .foregroundStyle(Color.white.opacity(0.4)) +
-                        Text("Sign up")
-                            .foregroundStyle(Color(red: 0.22, green: 0.49, blue: 1.00))
+                        HStack(spacing: 0) {
+                            Text("Don't have an account? ")
+                                .foregroundStyle(Color.white.opacity(0.4))
+                            Text("Sign up")
+                                .foregroundStyle(Color(red: 0.22, green: 0.49, blue: 1.00))
+                        }
+                        .font(.footnote)
                     }
-                    .font(.footnote)
+                    .padding(.horizontal, 28)
+                    .padding(.bottom, 52)
                 }
-                .padding(.horizontal, 28)
-                .padding(.bottom, 52)
             }
-        }
-        .onChange(of: vm.isSignedIn) { oldValue, newValue in
-            if newValue { onSignedIn() }
+            .onChange(of: vm.isSignedIn) { oldValue, newValue in
+                if newValue { onSignedIn() }
+            }
         }
     }
 }

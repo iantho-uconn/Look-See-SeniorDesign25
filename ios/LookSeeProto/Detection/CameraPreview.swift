@@ -40,8 +40,8 @@ final class CameraSessionCoordinator {
 
         // Portrait orientation if supported
         if let conn = videoOutput.connection(with: .video) {
-            if conn.isVideoOrientationSupported {
-                conn.videoOrientation = .portrait
+            if conn.isVideoRotationAngleSupported(90) {
+                conn.videoRotationAngle = 90
             }
         }
         
@@ -87,17 +87,18 @@ final class OverlayView: UIView {
     var detections: [Detection] = [] {
         didSet {
             // print("🟢 OverlayView received \(detections.count) detections")
-            for det in detections {
+           // for _ in detections {
                 //print("🔹 \(det.label) \(Int(det.confidence*100))% → \(det.bbox)")
-            }
+           // }
             setNeedsDisplay()
         }
     }
 
     override func draw(_ rect: CGRect) {
-        guard let ctx = UIGraphicsGetCurrentContext(),
+       /* guard let ctx = UIGraphicsGetCurrentContext(),
             let previewLayer = previewLayer else { return }
-
+*/
+        guard let ctx = UIGraphicsGetCurrentContext() else { return }
         ctx.clear(rect)
         ctx.setLineWidth(2.0)
 
@@ -151,7 +152,7 @@ final class OverlayView: UIView {
             let textX = max(rect.minX, 0)
             let textY = max(rect.minY, 0)
 
-            let bgRect = CGRect(
+            let _ = CGRect(                     //let bgRect = CGRect(
                 x: textX,
                 y: textY,
                 width: textSize.width + 8,
