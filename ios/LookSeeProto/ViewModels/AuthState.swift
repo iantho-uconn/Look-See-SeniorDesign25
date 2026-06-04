@@ -47,7 +47,7 @@ class AuthState: ObservableObject {
     }
 
     func signOut() async {
-        await Amplify.Auth.signOut()
+       _ = await Amplify.Auth.signOut()
         tier = .guest
         isReady = true
         didSignOut = true

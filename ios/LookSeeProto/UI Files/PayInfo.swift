@@ -71,7 +71,7 @@ struct PayInfo: View {
                 }
             }
             Button("Submit"){
-                var info = Payment(cardProvider:cardProvider, cardNum:cardNum, expireMonth:expireMonth, expireYear:expireYear, cvv:Int(cvv) ?? 000, firstName:firstName, lastName:lastName, state:state, city:city, postCode:postCode, address1:address1, address2:address2, phone:phone)
+               _ /*var info*/ = Payment(cardProvider:cardProvider, cardNum:cardNum, expireMonth:expireMonth, expireYear:expireYear, cvv:Int(cvv) ?? 000, firstName:firstName, lastName:lastName, state:state, city:city, postCode:postCode, address1:address1, address2:address2, phone:phone)
             }
                 .buttonStyle(.bordered)
         }

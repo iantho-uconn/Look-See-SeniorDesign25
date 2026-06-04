@@ -149,12 +149,14 @@ struct Signup: View {
                     Button {
                         onGoToLogin()
                     } label: {
-                        Text("Already have an account? ")
-                            .foregroundStyle(Color.white.opacity(0.4)) +
-                        Text("Sign in")
-                            .foregroundStyle(Color(red: 0.22, green: 0.49, blue: 1.00))
+                        HStack(spacing: 0) {
+                            Text("Already have an account? ")
+                                .foregroundStyle(Color.white.opacity(0.4))
+                            Text("Sign in")
+                                .foregroundStyle(Color(red: 0.22, green: 0.49, blue: 1.00))
+                        }
+                        .font(.footnote)
                     }
-                    .font(.footnote)
                 }
                 .padding(.horizontal, 28)
                 .padding(.bottom, 52)

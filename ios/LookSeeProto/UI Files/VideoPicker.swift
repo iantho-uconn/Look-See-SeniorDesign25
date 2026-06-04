@@ -2,16 +2,18 @@
 //  VideoPicker.swift
 //  LookSeeProto
 //
-//  Created by Ian Thompson on 2/13/26.
-//
 
 import SwiftUI
 import UIKit
+import AVFoundation
 
 struct VideoPicker: UIViewControllerRepresentable {
-    /// Set true to record using camera, false to pick from library
     var useCamera: Bool = true
     var onPicked: (URL) -> Void
+    var onInvalidDuration: (String) -> Void
+
+    private let minDuration: Double = 15
+    private let maxDuration: Double = 60
 
     func makeUIViewController(context: Context) -> UIImagePickerController {
         let picker = UIImagePickerController()
@@ -22,6 +24,7 @@ struct VideoPicker: UIViewControllerRepresentable {
         if useCamera, UIImagePickerController.isSourceTypeAvailable(.camera) {
             picker.sourceType = .camera
             picker.cameraCaptureMode = .video
+            picker.videoMaximumDuration = maxDuration
         } else {
             picker.sourceType = .photoLibrary
         }
@@ -32,14 +35,30 @@ struct VideoPicker: UIViewControllerRepresentable {
     func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onPicked: onPicked)
+        Coordinator(
+            minDuration: minDuration,
+            maxDuration: maxDuration,
+            onPicked: onPicked,
+            onInvalidDuration: onInvalidDuration
+        )
     }
 
     final class Coordinator: NSObject, UINavigationControllerDelegate, UIImagePickerControllerDelegate {
+        let minDuration: Double
+        let maxDuration: Double
         let onPicked: (URL) -> Void
+        let onInvalidDuration: (String) -> Void
 
-        init(onPicked: @escaping (URL) -> Void) {
+        init(
+            minDuration: Double,
+            maxDuration: Double,
+            onPicked: @escaping (URL) -> Void,
+            onInvalidDuration: @escaping (String) -> Void
+        ) {
+            self.minDuration = minDuration
+            self.maxDuration = maxDuration
             self.onPicked = onPicked
+            self.onInvalidDuration = onInvalidDuration
         }
 
         func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
@@ -52,10 +71,27 @@ struct VideoPicker: UIViewControllerRepresentable {
         ) {
             picker.dismiss(animated: true)
 
-            // For videos, the URL comes from .mediaURL
-            if let url = info[.mediaURL] as? URL {
-                onPicked(url)
+            guard let url = info[.mediaURL] as? URL else { return }
+
+            let asset = AVURLAsset(url: url)
+            let durationSeconds = CMTimeGetSeconds(asset.duration)
+
+            guard durationSeconds.isFinite else {
+                onInvalidDuration("Could not read video duration.")
+                return
             }
+
+            if durationSeconds < minDuration {
+                onInvalidDuration("Video must be at least 15 seconds long.")
+                return
+            }
+
+            if durationSeconds > maxDuration {
+                onInvalidDuration("Video must be 60 seconds or less.")
+                return
+            }
+
+            onPicked(url)
         }
     }
 }

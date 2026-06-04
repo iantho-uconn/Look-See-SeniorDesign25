@@ -29,6 +29,9 @@ struct Tier2LandmarkRecord: View {
     private let maxAllowedAccuracy: Double = 75
     private let radiusMeters: Double = 100
 
+    @State private var showVideoDurationAlert = false
+    @State private var videoDurationAlertMessage = ""
+    
     private var hasMedia: Bool {
         pickedVideoURL != nil || pickedImage != nil
     }
@@ -84,17 +87,33 @@ struct Tier2LandmarkRecord: View {
             Task { await refreshNearbyIfPossible() }
         }
         .sheet(isPresented: $showVideoPicker) {
-            VideoPicker(useCamera: true) { url in
-                pickedVideoURL = url
-                pickedImage = nil
-                statusText = "Selected video: \(url.lastPathComponent)"
+            VideoPicker(
+                useCamera: true,
+                onPicked: { url in
+                    pickedVideoURL = url
+                    pickedImage = nil
+                    statusText = "Selected video: \(url.lastPathComponent)"
 
-                shortDescription = ""
-                userDescription = ""
+                    shortDescription = ""
+                    userDescription = ""
 
-                uploadService.status = "Idle"
-                uploadService.progress = 0
-            }
+                    uploadService.status = "Idle"
+                    uploadService.progress = 0
+                },
+                onInvalidDuration: { message in
+                    pickedVideoURL = nil
+                    videoDurationAlertMessage = message
+                    showVideoDurationAlert = true
+                    statusText = message
+                    uploadService.status = "Idle"
+                    uploadService.progress = 0
+                }
+            )
+        }
+        .alert("Invalid Video Length", isPresented: $showVideoDurationAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(videoDurationAlertMessage)
         }
         .sheet(isPresented: $showPhotoPicker) {
             PhotoPicker { image in
