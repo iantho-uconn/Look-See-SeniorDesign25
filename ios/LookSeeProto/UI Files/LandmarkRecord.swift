@@ -25,7 +25,10 @@ struct LandmarkRecord: View {
 
     @State private var shortDescription: String = ""
     @State private var userDescription: String = ""
-
+    
+    @State private var showVideoDurationAlert = false
+    @State private var videoDurationAlertMessage = ""
+    
     private func makeBusinessLandmarkId() -> String {
         "landmark_" + UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(8)
     }
@@ -179,19 +182,35 @@ struct LandmarkRecord: View {
         }
         .safeAreaInset(edge: .top) { Color.clear.frame(height: 50) }
         .sheet(isPresented: $showVideoPicker) {
-            VideoPicker(useCamera: true) { url in
-                pickedVideoURL = url
-                pickedImage = nil
-                statusText = "Selected video: \(url.lastPathComponent)"
+            VideoPicker(
+                useCamera: true,
+                onPicked: { url in
+                    pickedVideoURL = url
+                    pickedImage = nil
+                    statusText = "Selected video: \(url.lastPathComponent)"
 
-                labelText = ""
-                shortDescription = ""
-                userDescription = ""
-                businessLandmarkId = makeBusinessLandmarkId()
+                    labelText = ""
+                    shortDescription = ""
+                    userDescription = ""
+                    businessLandmarkId = makeBusinessLandmarkId()
 
-                uploadService.status = "Idle"
-                uploadService.progress = 0
-            }
+                    uploadService.status = "Idle"
+                    uploadService.progress = 0
+                },
+                onInvalidDuration: { message in
+                    pickedVideoURL = nil
+                    videoDurationAlertMessage = message
+                    showVideoDurationAlert = true
+                    statusText = message
+                    uploadService.status = "Idle"
+                    uploadService.progress = 0
+                }
+            )
+        }
+        .alert("Invalid Video Length", isPresented: $showVideoDurationAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(videoDurationAlertMessage)
         }
         .sheet(isPresented: $showPhotoPicker) {
             PhotoPicker { image in
