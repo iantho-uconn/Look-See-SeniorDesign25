@@ -25,8 +25,9 @@ final class LocationManager: NSObject, ObservableObject {
         super.init()
 
         manager.delegate = self
-        manager.desiredAccuracy = kCLLocationAccuracyBest
-        manager.distanceFilter = 10 // meters
+        //manager.desiredAccuracy = kCLLocationAccuracyBest
+        manager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters
+        manager.distanceFilter = 15 // meters
         authorizationStatus = manager.authorizationStatus
 
         requestPermissionIfNeeded()
