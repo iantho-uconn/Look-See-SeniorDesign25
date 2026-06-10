@@ -4,7 +4,7 @@ import Combine
 import ZIPFoundation
 
 // MARK: - Object Location
-// Represents a detectable object's GPS position and which model/cluster it belongs to.
+
 struct ObjectLocation {
     let clusterId: String
     let lat: Double
@@ -12,12 +12,14 @@ struct ObjectLocation {
 }
 
 // MARK: - Model Info
+
 struct ModelInfo: Identifiable {
     let id = UUID()
     let name: String
     let downloadURL: URL
     let reason: String
     let clusterID: String
+    let modelKey: String?
     var compiledModelURL: URL?
     var objects: [ObjectLocation] = []
 }
@@ -28,7 +30,6 @@ private struct ModelsResponse: Decodable {
     let models: [ModelPayload]
     let reason: String
 
-    // These are optional so older/incomplete backend responses do not crash decoding.
     let location: LocationResponse?
     let objects: [ObjectPayload]?
     let radiusMeters: Double?
@@ -38,14 +39,9 @@ private struct ModelsResponse: Decodable {
 
 private struct ModelPayload: Decodable {
     let clusterId: String
-
-    // Important:
-    // These are optional because the backend may find a nearby cluster,
-    // but the model zip may not exist in S3 yet.
     let downloadUrl: String?
     let modelKey: String?
 
-    // Extra debug/context fields from the backend.
     let distanceMeters: Double?
     let closestLandmarkId: String?
     let closestObject: ClosestObjectPayload?
@@ -116,6 +112,8 @@ class ModelService: ObservableObject {
 
     private let apiURL = "https://o1ul6zexoj.execute-api.us-east-1.amazonaws.com/prod/discover"
 
+    private var isRefreshing = false
+
     private var modelsDirectory: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("LookSeeModels", isDirectory: true)
@@ -128,7 +126,7 @@ class ModelService: ObservableObject {
         )
     }
 
-    // MARK: - Load Models
+    // MARK: - Initial / User-Visible Load
 
     func loadModels(latitude: Double, longitude: Double) async {
         state = .loading
@@ -136,133 +134,13 @@ class ModelService: ObservableObject {
         downloadProgress = 0.0
 
         do {
-            guard let endpoint = URL(string: apiURL) else {
-                state = .failed("Invalid endpoint URL")
-                return
-            }
+            let models = try await fetchDownloadAndCompileModels(
+                latitude: latitude,
+                longitude: longitude,
+                shouldUpdateProgress: true
+            )
 
-            var request = URLRequest(url: endpoint)
-            request.httpMethod = "POST"
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
-            let body: [String: Double] = [
-                "latitude": latitude,
-                "longitude": longitude
-            ]
-
-            request.httpBody = try JSONSerialization.data(withJSONObject: body)
-
-            let (data, response) = try await URLSession.shared.data(for: request)
-
-            if let raw = String(data: data, encoding: .utf8) {
-                print("✅ Raw response: \(raw)")
-            }
-
-            guard let http = response as? HTTPURLResponse else {
-                state = .failed("Invalid response from server")
-                return
-            }
-
-            guard (200...299).contains(http.statusCode) else {
-                let raw = String(data: data, encoding: .utf8) ?? "no body"
-                print("❌ HTTP \(http.statusCode): \(raw)")
-                state = .failed("Server error: HTTP \(http.statusCode)")
-                return
-            }
-
-            let parsed = try JSONDecoder().decode(ModelsResponse.self, from: data)
-
-            print("📍 Discover reason: \(parsed.reason)")
-            print("📦 Returned model records: \(parsed.models.count)")
-            print("🧭 Returned object records: \(parsed.objects?.count ?? 0)")
-
-            downloadProgress = 0.2
-
-            let allObjects: [ObjectLocation] = (parsed.objects ?? []).map {
-                ObjectLocation(
-                    clusterId: $0.clusterId,
-                    lat: $0.lat,
-                    lon: $0.lon
-                )
-            }
-
-            // Only attempt to download models that actually have a usable URL.
-            // This prevents a valid backend response with downloadUrl: null from crashing the app.
-            let downloadablePayloads = parsed.models.filter { payload in
-                guard let urlString = payload.downloadUrl else {
-                    print("⚠️ Cluster \(payload.clusterId) has no downloadUrl. Skipping.")
-                    return false
-                }
-
-                guard URL(string: urlString) != nil else {
-                    print("⚠️ Cluster \(payload.clusterId) has invalid downloadUrl. Skipping.")
-                    return false
-                }
-
-                return true
-            }
-
-            guard !downloadablePayloads.isEmpty else {
-                print("⚠️ No downloadable models returned. Reason: \(parsed.reason)")
-                pullReason = .none
-                downloadProgress = 1.0
-                state = .loaded([])
-                return
-            }
-
-            var models: [ModelInfo] = []
-            let progressPerModel = 0.8 / Double(max(downloadablePayloads.count, 1))
-
-            for (index, payload) in downloadablePayloads.enumerated() {
-                guard let urlString = payload.downloadUrl,
-                      let remoteURL = URL(string: urlString) else {
-                    continue
-                }
-
-                let modelObjects = allObjects.filter {
-                    $0.clusterId == payload.clusterId
-                }
-
-                var info = ModelInfo(
-                    name: payload.clusterId,
-                    downloadURL: remoteURL,
-                    reason: parsed.reason,
-                    clusterID: payload.clusterId,
-                    objects: modelObjects
-                )
-
-                do {
-                    let compiled = try await downloadAndCompile(
-                        remoteURL: remoteURL,
-                        clusterID: payload.clusterId
-                    )
-
-                    info.compiledModelURL = compiled
-                    print("✅ Model compiled for cluster \(payload.clusterId): \(compiled.lastPathComponent)")
-                } catch {
-                    print("❌ Failed to download/compile cluster \(payload.clusterId): \(error.localizedDescription)")
-                }
-
-                // Keep the model info even if compile failed.
-                // ModelSelector will ignore it unless compiledModelURL is non-nil.
-                models.append(info)
-
-                downloadProgress = 0.2 + progressPerModel * Double(index + 1)
-            }
-
-            let successfullyCompiledModels = models.filter {
-                $0.compiledModelURL != nil
-            }
-
-            pullReason = switch successfullyCompiledModels.count {
-            case 0:
-                .none
-            case 1:
-                .single(reason: parsed.reason)
-            default:
-                .multiple(reasons: successfullyCompiledModels.map { _ in parsed.reason })
-            }
-
+            updatePullReason(from: models)
             downloadProgress = 1.0
             state = .loaded(models)
 
@@ -273,6 +151,190 @@ class ModelService: ObservableObject {
             print("❌ Request error: \(error)")
             state = .failed("Request failed: \(error.localizedDescription)")
         }
+    }
+
+    // MARK: - Silent Polling Refresh
+
+    /// Used by ModelAutoRefreshService.
+    /// This checks the backend again without putting the whole app back into `.loading`.
+    /// Returns true if the loaded model set changed.
+    @discardableResult
+    func refreshModelsSilentlyIfNeeded(latitude: Double, longitude: Double) async -> Bool {
+        guard !isRefreshing else {
+            print("⏳ Model silent refresh skipped: refresh already in progress")
+            return false
+        }
+
+        isRefreshing = true
+        defer { isRefreshing = false }
+
+        do {
+            let oldSignature = currentLoadedModelSignature()
+
+            let newModels = try await fetchDownloadAndCompileModels(
+                latitude: latitude,
+                longitude: longitude,
+                shouldUpdateProgress: false
+            )
+
+            let newSignature = modelSignature(for: newModels)
+
+            guard oldSignature != newSignature else {
+                print("✅ Model silent refresh complete: model set unchanged")
+                return false
+            }
+
+            print("🔁 Model silent refresh found updated model set")
+            print("   Old: \(oldSignature)")
+            print("   New: \(newSignature)")
+
+            updatePullReason(from: newModels)
+            state = .loaded(newModels)
+
+            return true
+
+        } catch {
+            print("⚠️ Model silent refresh failed, keeping existing models: \(error.localizedDescription)")
+            return false
+        }
+    }
+
+    // MARK: - Shared Fetch / Download / Compile Logic
+
+    private func fetchDownloadAndCompileModels(
+        latitude: Double,
+        longitude: Double,
+        shouldUpdateProgress: Bool
+    ) async throws -> [ModelInfo] {
+        guard let endpoint = URL(string: apiURL) else {
+            throw NSError(
+                domain: "ModelService",
+                code: 100,
+                userInfo: [NSLocalizedDescriptionKey: "Invalid endpoint URL"]
+            )
+        }
+
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let body: [String: Double] = [
+            "latitude": latitude,
+            "longitude": longitude
+        ]
+
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        if let raw = String(data: data, encoding: .utf8) {
+            print("✅ Raw response: \(raw)")
+        }
+
+        guard let http = response as? HTTPURLResponse else {
+            throw NSError(
+                domain: "ModelService",
+                code: 101,
+                userInfo: [NSLocalizedDescriptionKey: "Invalid response from server"]
+            )
+        }
+
+        guard (200...299).contains(http.statusCode) else {
+            let raw = String(data: data, encoding: .utf8) ?? "no body"
+            print("❌ HTTP \(http.statusCode): \(raw)")
+
+            throw NSError(
+                domain: "ModelService",
+                code: http.statusCode,
+                userInfo: [NSLocalizedDescriptionKey: "Server error: HTTP \(http.statusCode)"]
+            )
+        }
+
+        let parsed = try JSONDecoder().decode(ModelsResponse.self, from: data)
+
+        print("📍 Discover reason: \(parsed.reason)")
+        print("📦 Returned model records: \(parsed.models.count)")
+        print("🧭 Returned object records: \(parsed.objects?.count ?? 0)")
+
+        if shouldUpdateProgress {
+            downloadProgress = 0.2
+        }
+
+        let allObjects: [ObjectLocation] = (parsed.objects ?? []).map {
+            ObjectLocation(
+                clusterId: $0.clusterId,
+                lat: $0.lat,
+                lon: $0.lon
+            )
+        }
+
+        let downloadablePayloads = parsed.models.filter { payload in
+            guard let urlString = payload.downloadUrl else {
+                print("⚠️ Cluster \(payload.clusterId) has no downloadUrl. Skipping.")
+                return false
+            }
+
+            guard URL(string: urlString) != nil else {
+                print("⚠️ Cluster \(payload.clusterId) has invalid downloadUrl. Skipping.")
+                return false
+            }
+
+            return true
+        }
+
+        guard !downloadablePayloads.isEmpty else {
+            print("⚠️ No downloadable models returned. Reason: \(parsed.reason)")
+
+            if shouldUpdateProgress {
+                pullReason = .none
+                downloadProgress = 1.0
+            }
+
+            return []
+        }
+
+        var models: [ModelInfo] = []
+        let progressPerModel = 0.8 / Double(max(downloadablePayloads.count, 1))
+
+        for (index, payload) in downloadablePayloads.enumerated() {
+            guard let urlString = payload.downloadUrl,
+                  let remoteURL = URL(string: urlString) else {
+                continue
+            }
+
+            let modelObjects = allObjects.filter {
+                $0.clusterId == payload.clusterId
+            }
+
+            var info = ModelInfo(
+                name: payload.clusterId,
+                downloadURL: remoteURL,
+                reason: parsed.reason,
+                clusterID: payload.clusterId,
+                modelKey: payload.modelKey,
+                objects: modelObjects
+            )
+
+            do {
+                let compiled = try await downloadAndCompile(
+                    remoteURL: remoteURL,
+                    clusterID: payload.clusterId
+                )
+
+                info.compiledModelURL = compiled
+                print("✅ Model compiled for cluster \(payload.clusterId): \(compiled.lastPathComponent)")
+            } catch {
+                print("❌ Failed to download/compile cluster \(payload.clusterId): \(error.localizedDescription)")
+            }
+
+            models.append(info)
+
+            if shouldUpdateProgress {
+                downloadProgress = 0.2 + progressPerModel * Double(index + 1)
+            }
+        }
+
+        return models
     }
 
     // MARK: - Download + Unzip + Compile
@@ -328,13 +390,12 @@ class ModelService: ObservableObject {
         return compiledDest
     }
 
-    // MARK: - Unzip Helper
+    // MARK: - Helpers
 
     private func unzip(zipURL: URL, to destination: URL) throws {
         try FileManager.default.unzipItem(at: zipURL, to: destination)
     }
 
-    // Finds the first .mlpackage in a directory tree, regardless of filename.
     private func findAnyMLPackage(in directory: URL) -> URL? {
         let fm = FileManager.default
 
@@ -353,6 +414,39 @@ class ModelService: ObservableObject {
         }
 
         return nil
+    }
+
+    private func updatePullReason(from models: [ModelInfo]) {
+        let successfullyCompiledModels = models.filter {
+            $0.compiledModelURL != nil
+        }
+
+        pullReason = switch successfullyCompiledModels.count {
+        case 0:
+            .none
+        case 1:
+            .single(reason: successfullyCompiledModels[0].reason)
+        default:
+            .multiple(reasons: successfullyCompiledModels.map { $0.reason })
+        }
+    }
+
+    private func currentLoadedModelSignature() -> [String] {
+        switch state {
+        case .loaded(let models):
+            return modelSignature(for: models)
+        default:
+            return []
+        }
+    }
+
+    private func modelSignature(for models: [ModelInfo]) -> [String] {
+        models
+            .filter { $0.compiledModelURL != nil }
+            .map { model in
+                "\(model.clusterID)|\(model.modelKey ?? "no-key")|\(model.objects.count)"
+            }
+            .sorted()
     }
 
     // MARK: - Reload Models
@@ -375,11 +469,12 @@ class ModelService: ObservableObject {
     // MARK: - Check for Updates
 
     func checkForUpdates(latitude: Double, longitude: Double) async {
-        // Placeholder for later:
-        // Eventually this should call the backend and compare modelKey/version info
-        // against what is cached locally.
-        try? await Task.sleep(nanoseconds: 1_000_000_000)
-        updateAvailable = true
+        let changed = await refreshModelsSilentlyIfNeeded(
+            latitude: latitude,
+            longitude: longitude
+        )
+
+        updateAvailable = changed
     }
 
     // MARK: - Delete Models
@@ -401,6 +496,9 @@ class ModelService: ObservableObject {
     // MARK: - Movement Check
 
     func checkIfShouldReload(latitude: Double, longitude: Double) async {
-        await loadModels(latitude: latitude, longitude: longitude)
+        await refreshModelsSilentlyIfNeeded(
+            latitude: latitude,
+            longitude: longitude
+        )
     }
 }

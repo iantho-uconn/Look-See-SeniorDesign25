@@ -3,8 +3,9 @@
 //  LookSeeProto
 //
 //  Continuously watches the user's location and picks the active model
-//  based on which loaded model has an object within the activation radius.
+//  based on which loaded model has the closest object within the activation radius.
 //
+
 import Foundation
 import CoreLocation
 import Combine
@@ -13,51 +14,83 @@ import Combine
 class ModelSelector: ObservableObject {
     static let shared = ModelSelector()
 
-    // The cluster ID of the currently active model
-    // Detector observes this to know which MLModel to run
+    // Detector observes this to know which MLModel to run.
     @Published var activeClusterID: String? = nil
 
-    // How close the user must be to an object to activate its model
+    // How close the user must be to an object to activate its model.
     private let activationRadiusMeters: Double = 50.0
 
     private var models: [ModelInfo] = []
+    private var latestUserLocation: CLLocation?
 
     private init() {
         observeModelState()
     }
 
-    // MARK: - Watch ModelService state
+    // MARK: - Watch ModelService State
+
     private func observeModelState() {
         Task {
             for await state in ModelService.shared.$state.values {
-                if case .loaded(let loadedModels) = state {
+                switch state {
+                case .loaded(let loadedModels):
                     models = loadedModels
-                    // Default to first model with a compiled URL until location kicks in
-                    if activeClusterID == nil {
-                        activeClusterID = loadedModels.first(where: { $0.compiledModelURL != nil })?.clusterID
+
+                    print("🧠 ModelSelector received \(loadedModels.count) loaded model records")
+
+                    if let latestUserLocation {
+                        chooseBestCluster(for: latestUserLocation)
+                    } else {
+                        activeClusterID = loadedModels.first(where: {
+                            $0.compiledModelURL != nil
+                        })?.clusterID
+
+                        if let activeClusterID {
+                            print("🧠 ModelSelector defaulted to cluster \(activeClusterID)")
+                        }
                     }
-                } else if case .notLoaded = state {
+
+                case .notLoaded:
                     models = []
+                    latestUserLocation = nil
                     activeClusterID = nil
+
+                case .loading:
+                    // Keep current model active while a user-visible load happens.
+                    break
+
+                case .failed:
+                    // Keep current model active on failure.
+                    break
                 }
             }
         }
     }
 
-    // MARK: - Update with user location
-    // Called by LocationManager whenever user position changes
+    // MARK: - Update with User Location
+
     func updateUserLocation(latitude: Double, longitude: Double) {
         let userLocation = CLLocation(latitude: latitude, longitude: longitude)
+        latestUserLocation = userLocation
 
-        var closestClusterID: String? = nil
+        chooseBestCluster(for: userLocation)
+    }
+
+    // MARK: - Selection Logic
+
+    private func chooseBestCluster(for userLocation: CLLocation) {
+        var closestClusterID: String?
         var closestDistance: Double = .infinity
 
         for model in models {
-            // Skip models that haven't been compiled/loaded yet
             guard model.compiledModelURL != nil else { continue }
 
             for object in model.objects {
-                let objectLocation = CLLocation(latitude: object.lat, longitude: object.lon)
+                let objectLocation = CLLocation(
+                    latitude: object.lat,
+                    longitude: object.lon
+                )
+
                 let distance = userLocation.distance(from: objectLocation)
 
                 if distance <= activationRadiusMeters && distance < closestDistance {
@@ -68,14 +101,31 @@ class ModelSelector: ObservableObject {
         }
 
         if let newCluster = closestClusterID {
-            // Found a model with an object in range — switch if different
             if newCluster != activeClusterID {
                 print("📍 Switching to cluster \(newCluster) — closest object is \(String(format: "%.1f", closestDistance))m away")
                 activeClusterID = newCluster
             }
-        } else {
-            // No object in range — log but keep current model active
+
+            return
+        }
+
+        let activeStillLoaded = models.contains { model in
+            model.clusterID == activeClusterID && model.compiledModelURL != nil
+        }
+
+        if activeStillLoaded {
             print("⚠️ No objects within \(activationRadiusMeters)m — keeping cluster \(activeClusterID ?? "none") active")
+            return
+        }
+
+        activeClusterID = models.first(where: {
+            $0.compiledModelURL != nil
+        })?.clusterID
+
+        if let activeClusterID {
+            print("🧠 No object in activation range, defaulting to loaded cluster \(activeClusterID)")
+        } else {
+            print("⚠️ No compiled models available for selection")
         }
     }
 }
