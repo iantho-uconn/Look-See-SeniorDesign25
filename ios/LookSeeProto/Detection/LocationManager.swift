@@ -23,12 +23,13 @@ final class LocationManager: NSObject, ObservableObject {
 
     override init() {
         super.init()
+
         manager.delegate = self
-        manager.desiredAccuracy = kCLLocationAccuracyBest
-        manager.distanceFilter = 10 // meters (tweak as desired)
+        //manager.desiredAccuracy = kCLLocationAccuracyBest
+        manager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters
+        manager.distanceFilter = 15 // meters
         authorizationStatus = manager.authorizationStatus
 
-        // Don’t start updates until authorized.
         requestPermissionIfNeeded()
     }
 
@@ -39,19 +40,32 @@ final class LocationManager: NSObject, ObservableObject {
         switch status {
         case .notDetermined:
             manager.requestWhenInUseAuthorization()
+
         case .authorizedAlways, .authorizedWhenInUse:
             manager.startUpdatingLocation()
+
+            Task { @MainActor in
+                ModelAutoRefreshService.shared.start()
+            }
+
         case .denied, .restricted:
-            // Leave location nil; UI can show “Location off”
             manager.stopUpdatingLocation()
+
+            Task { @MainActor in
+                ModelAutoRefreshService.shared.stop()
+            }
+
         @unknown default:
             break
         }
     }
 
-    /// Optional: call this to stop updates after you have a fix (battery friendly).
     func stop() {
         manager.stopUpdatingLocation()
+
+        Task { @MainActor in
+            ModelAutoRefreshService.shared.stop()
+        }
     }
 }
 
@@ -68,14 +82,25 @@ extension LocationManager: CLLocationManagerDelegate {
         longitude = last.coordinate.longitude
         horizontalAccuracy = last.horizontalAccuracy
 
-        // Optional: stop once we have a reasonable fix
-        // if last.horizontalAccuracy > 0 && last.horizontalAccuracy <= 50 {
-        //     manager.stopUpdatingLocation()
-        // }
+        guard last.horizontalAccuracy > 0 else {
+            return
+        }
+
+        // Ignore very rough fixes so we do not refresh models based on bad GPS data.
+        guard last.horizontalAccuracy <= 100 else {
+            print("⚠️ Ignoring rough location fix: \(String(format: "%.1f", last.horizontalAccuracy))m accuracy")
+            return
+        }
+
+        Task { @MainActor in
+            ModelAutoRefreshService.shared.updateLocation(
+                latitude: last.coordinate.latitude,
+                longitude: last.coordinate.longitude
+            )
+        }
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        // Leave values as-is; could optionally set an error string
         print("Location error:", error.localizedDescription)
     }
 }
