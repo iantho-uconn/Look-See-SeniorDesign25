@@ -2,91 +2,175 @@
 //  Settings.swift
 //  LookSeeProto
 //
-//  Created by Christian Barbara on 10/15/25.
-//
 
 import SwiftUI
 import Foundation
 
 struct Settings: View {
+    @Environment(\.dismiss) var dismiss
+    @EnvironmentObject var vm: AuthViewModel
+    @EnvironmentObject var authState: AuthState
     @AppStorage("onlineMode") var onlineMode = true
     @AppStorage("permissionCamera") var permissionCamera = true
     @AppStorage("permissionLocation") var permissionLocation = true
     @AppStorage("permissionStorage") var permissionStorage = true
+    @ObservedObject var modelLoader = ModelService.shared
+    @StateObject private var locationManager = LocationManager()
     @State private var modal = false
     @State private var showAlertAll = false
     @State private var showAlertCache = false
+    @State private var showAlertSignOut = false
     @State private var cache = 0
+    @State private var showModelInfo = false
+    @State private var showDeleteModelAlert = false
+    @State private var isReloading = false
+    @State private var reloadMessage: String? = nil
+
     var body: some View {
-        NavigationStack{
+        NavigationStack {
             Form {
-                Button(action: {
-                    print("Button tapped!")
-                }, label: {
-                    HStack {
-                        Image(systemName: "person.crop.circle")
-                            .font(.system(size: 50))
-                        VStack{
-                            Text("Guest User")
-                            Text("guest@looksee.app")
-                        }
-                    }
-                    
-                })
-                Section{
-                    Toggle("Online Recognition", isOn: $onlineMode)
-                } header: {Text("Recognition Mode")}
-                footer: {Text("Keeping Online Recognition on allows the app to be more accurate. Turning it off limits the range of landmark recognition.")}
-                Section("App Permissions"){
-                    Toggle("Camera access",
-                           systemImage: "camera",
-                            isOn: $permissionCamera)
-                    Toggle("Location access",
-                           systemImage: "mappin",
-                           isOn: $permissionLocation)
-                    Toggle("Storage access",
-                           systemImage: "externaldrive",
-                           isOn: $permissionStorage)
-                }
-                Section{
-                    Button("Clear Cache",
-                            systemImage: "externaldrive"){showAlertCache = true}
-                        .alert("Are you sure? This will delete all temporary data, including images.", isPresented: $showAlertCache){
-                            Button("Cancel", role: .cancel) {}
-                            Button("Yes", role: .destructive) {}
-                        }
-                    Button("Delete All Data",
-                           systemImage: "externaldrive.badge.exclamationmark",
-                           role: .destructive) {showAlertAll = true}
-                        .alert("Are you sure? This will delete all stored data, including stored models and your landmark history.", isPresented: $showAlertAll){
-                            Button("Cancel", role: .cancel) {}
-                            Button("Yes", role: .destructive) {}
-                        }
-                    
-                } header: {Text("Data Management")}
-                footer: {Text("Current cache size: \(cache) MB")}
-                
-                Section("Support & Info"){
-                    NavigationLink(){ Help()
+                // MARK: - Profile
+                if authState.tier == .guest {
+                    Button {
+                        dismiss()
+                        authState.didSignOut = true
                     } label: {
-                        Label("Help & Tutorial", systemImage: "questionmark.circle")
-                            .foregroundColor(.blue)
+                        HStack {
+                            Image(systemName: "person.crop.circle")
+                                .font(.system(size: 50))
+                                .foregroundStyle(.secondary)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Guest User")
+                                    .foregroundStyle(.primary)
+                                Text("Tap here to sign up")
+                                    .font(.caption)
+                                    .foregroundStyle(Color(red: 0.22, green: 0.49, blue: 1.00))
+                            }
+                        }
                     }
-                    Button("About LookSee",
-                           systemImage: "info.circle") {
-                        modal = true
+                } else {
+                    Button(action: {
+                        print("Profile tapped")
+                    }, label: {
+                        HStack {
+                            Image(systemName: "person.crop.circle")
+                                .font(.system(size: 50))
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(vm.userEmail.isEmpty ? "Loading..." : vm.userEmail)
+                                    .foregroundStyle(.primary)
+                                if authState.tier == .business {
+                                    Text("Business Account")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                } else {
+                                    Text("Authenticated User")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    })
+                    .task {
+                        await vm.fetchUserEmail()
                     }
-                           .sheet(isPresented: $modal){
-                               Text("Looksee is an application designed to help you identify local landmarks with ease.")
-                           }
+                }
+
+                // MARK: - Model Management
+                Section {
+                    // Reload button with inline loading indicator
+                    Button {
+                        guard !isReloading else { return }
+                        guard locationManager.isAuthorized,
+                              let lat = locationManager.latitude,
+                              let lon = locationManager.longitude else {
+                            reloadMessage = "Location unavailable. Enable location access and try again."
+                            return
+                        }
+                        isReloading = true
+                        reloadMessage = nil
+                        Task {
+                            await modelLoader.reloadModels(latitude: lat, longitude: lon)
+                            // Set feedback message based on result
+                            switch modelLoader.state {
+                            case .loaded(let models):
+                                switch modelLoader.pullReason {
+                                case .none:
+                                    reloadMessage = "No models found for your area."
+                                case .single(let reason):
+                                    reloadMessage = "Loaded \(models[0].name) · \(reason)"
+                                case .multiple(let reasons):
+                                    reloadMessage = "Loaded \(models.count) models · \(reasons.first ?? "")"
+                                }
+                            case .failed(let error):
+                                reloadMessage = "Failed: \(error)"
+                            default:
+                                break
+                            }
+                            isReloading = false
+                        }
+                    } label: {
+                        HStack {
+                            Label("Reload Models", systemImage: "arrow.clockwise.circle")
+                            Spacer()
+                            if isReloading {
+                                ProgressView()
+                                    .progressViewStyle(.circular)
+                                    .scaleEffect(0.85)
+                            }
+                        }
+                    }
+                    .disabled(isReloading)
+
+                    // Status message shown after reload attempt
+                    if let message = reloadMessage {
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: reloadFailed ? "exclamationmark.circle.fill" : "checkmark.circle.fill")
+                                .foregroundStyle(reloadFailed ? .orange : .green)
+                                .font(.footnote)
+                            Text(message)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.vertical, 2)
+                    }
+
+                } header: { Text("Model Management") }
+                footer: { Text("Models are selected based on your current location and downloaded from AWS.") }
+
+                // MARK: - Sign Out (hidden for guests)
+                if authState.tier != .guest {
+                    Section {
+                        Button(role: .destructive) {
+                            showAlertSignOut = true
+                        } label: {
+                            Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
+                        }
+                        .alert("Are you sure you want to sign out?", isPresented: $showAlertSignOut) {
+                            Button("Cancel", role: .cancel) {}
+                            Button("Sign Out", role: .destructive) {
+                                Task {
+                                    await authState.signOut()
+                                    vm.isSignedIn = false
+                                }
+                            }
+                        }
+                    }
                 }
             }
             .navigationTitle("Settings")
+            .onChange(of: authState.didSignOut) { _, didSignOut in
+                if didSignOut {
+                    dismiss()
+                }
+            }
         }
     }
-}
 
-#Preview {
-    Settings()
+    // MARK: - Helpers
+    private var reloadFailed: Bool {
+        if case .failed = modelLoader.state { return true }
+        if case .none = modelLoader.pullReason, reloadMessage != nil { return true }
+        return false
+    }
 }
 

@@ -1,0 +1,132 @@
+{
+  "Comment": "LookSee pipeline skeleton (DynamoDB-native): mark started -> branch -> placeholders -> ready for label",
+  "StartAt": "InitialJitter",
+  "States": {
+    "InitialJitter": {
+      "Type": "Wait",
+      "Seconds": 2,
+      "Next": "MarkPipelineStarted"
+    },
+    "MarkPipelineStarted": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "Parameters": {
+        "TableName": "LookSeeSubmissions",
+        "Key": {
+          "submissionId": {
+            "S.$": "$.submissionId"
+          }
+        },
+        "UpdateExpression": "SET #s = :s, pipelineUpdatedAt = :t",
+        "ExpressionAttributeNames": {
+          "#s": "status"
+        },
+        "ExpressionAttributeValues": {
+          ":s": {
+            "S": "PIPELINE_STARTED"
+          },
+          ":t": {
+            "S.$": "$$.State.EnteredTime"
+          }
+        }
+      },
+      "ResultPath": null,
+      "Next": "BranchOnMediaKind"
+    },
+    "BranchOnMediaKind": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.mediaKind",
+          "StringEquals": "video",
+          "Next": "VideoPlaceholder"
+        }
+      ],
+      "Default": "ImagePlaceholder"
+    },
+    "VideoPlaceholder": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "Parameters": {
+        "TableName": "LookSeeSubmissions",
+        "Key": {
+          "submissionId": {
+            "S.$": "$.submissionId"
+          }
+        },
+        "UpdateExpression": "SET #s = :s, statusReason = :r, pipelineUpdatedAt = :t",
+        "ExpressionAttributeNames": {
+          "#s": "status"
+        },
+        "ExpressionAttributeValues": {
+          ":s": {
+            "S": "FRAMES_PENDING"
+          },
+          ":r": {
+            "S": "Placeholder: frame extraction not implemented yet"
+          },
+          ":t": {
+            "S.$": "$$.State.EnteredTime"
+          }
+        }
+      },
+      "ResultPath": null,
+      "Next": "ReadyForLabel"
+    },
+    "ImagePlaceholder": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "Parameters": {
+        "TableName": "LookSeeSubmissions",
+        "Key": {
+          "submissionId": {
+            "S.$": "$.submissionId"
+          }
+        },
+        "UpdateExpression": "SET #s = :s, pipelineUpdatedAt = :t",
+        "ExpressionAttributeNames": {
+          "#s": "status"
+        },
+        "ExpressionAttributeValues": {
+          ":s": {
+            "S": "READY_FOR_LABEL"
+          },
+          ":t": {
+            "S.$": "$$.State.EnteredTime"
+          }
+        }
+      },
+      "ResultPath": null,
+      "Next": "Done"
+    },
+    "ReadyForLabel": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "Parameters": {
+        "TableName": "LookSeeSubmissions",
+        "Key": {
+          "submissionId": {
+            "S.$": "$.submissionId"
+          }
+        },
+        "UpdateExpression": "SET #s = :s, pipelineUpdatedAt = :t",
+        "ExpressionAttributeNames": {
+          "#s": "status"
+        },
+        "ExpressionAttributeValues": {
+          ":s": {
+            "S": "READY_FOR_LABEL"
+          },
+          ":t": {
+            "S.$": "$$.State.EnteredTime"
+          }
+        }
+      },
+      "ResultPath": null,
+      "Next": "Done"
+    },
+    "Done": {
+      "Type": "Succeed"
+    }
+  }
+}

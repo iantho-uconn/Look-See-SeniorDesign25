@@ -1,0 +1,10 @@
+{
+  "MLModelVersionStringKey" : "--",
+  "MLModelDescriptionKey" : "--",
+  "MLModelCreatorDefinedKey" : {
+    "Confidence threshold" : "0.60",
+    "IoU threshold" : "0.7"
+  },
+  "MLModelAuthorKey" : "--",
+  "MLModelLicenseKey" : "--"
+}

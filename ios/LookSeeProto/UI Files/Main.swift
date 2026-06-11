@@ -4,7 +4,6 @@
 //
 //  Created by Christian Barbara on 1/28/26.
 //
-
 import SwiftUI
 
 struct Main: View {
@@ -15,4 +14,6 @@ struct Main: View {
 
 #Preview {
     Main()
+        .environmentObject(AuthViewModel())
+        .environmentObject(AuthState())
 }
