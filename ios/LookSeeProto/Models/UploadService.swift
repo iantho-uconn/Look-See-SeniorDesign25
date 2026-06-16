@@ -3,13 +3,18 @@
 //  LookSeeProto
 //
 //  Created by Ian Thompson on 2/15/26.
-//  Updated to return positive upload results and provide
-//  user-friendly upload progress.
+//  Updated to:
+//  - Return positive submission results
+//  - Propagate upload errors
+//  - Prevent duplicate uploads
+//  - Provide user-friendly progress messages
 //
 
 import Foundation
 import UIKit
 import Combine
+
+// MARK: - User-facing upload stage
 
 enum PositiveUploadStage: Equatable {
     case idle
@@ -46,19 +51,43 @@ enum PositiveUploadStage: Equatable {
     }
 }
 
+// MARK: - Successful positive-upload result
+
+struct PositiveSubmissionResult {
+    let submissionId: String
+    let landmarkId: String?
+    let mediaKind: MediaKind
+    let s3Key: String
+}
+
+// MARK: - Upload service
+
 @MainActor
 final class UploadService: ObservableObject {
+
+    // MARK: Published state
+
     @Published private(set) var status: String = "Ready to upload"
+
     @Published private(set) var detail: String =
         "Your landmark media has not been uploaded yet."
 
     @Published private(set) var progress: Double = 0
-    @Published private(set) var isUploading = false
+
+    @Published private(set) var isUploading: Bool = false
+
     @Published private(set) var stage: PositiveUploadStage = .idle
+
+    // MARK: API configuration
 
     private let baseURL = URL(
         string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev"
     )!
+
+    private let apiTimeout: TimeInterval = 60
+    private let mediaUploadTimeout: TimeInterval = 300
+
+    // MARK: Errors
 
     enum UploadError: LocalizedError {
         case uploadAlreadyInProgress
@@ -102,6 +131,22 @@ final class UploadService: ObservableObject {
                     return "Your session is no longer authorized. Please sign in again."
                 }
 
+                if code == 404 {
+                    return "The upload service could not find the requested resource."
+                }
+
+                if code == 408 {
+                    return "The upload request timed out. Please try again."
+                }
+
+                if code == 413 {
+                    return "The selected media file is too large to upload."
+                }
+
+                if code == 429 {
+                    return "Too many upload attempts were made. Please wait a moment and try again."
+                }
+
                 if code >= 500 {
                     return "The LookSee service is temporarily unavailable. Please try again shortly."
                 }
@@ -111,7 +156,7 @@ final class UploadService: ObservableObject {
         }
     }
 
-    // MARK: - Public upload flow
+    // MARK: - Main upload flow
 
     func upload(
         userEmail: String,
@@ -126,11 +171,16 @@ final class UploadService: ObservableObject {
         videoURL: URL?,
         image: UIImage?
     ) async throws -> PositiveSubmissionResult {
+
         guard !isUploading else {
             throw UploadError.uploadAlreadyInProgress
         }
 
         isUploading = true
+
+        defer {
+            isUploading = false
+        }
 
         do {
             updateStage(
@@ -167,11 +217,15 @@ final class UploadService: ObservableObject {
                 throw UploadError.multipleMediaSelected
             }
 
-            let trimmedShort = shortDescription?
-                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let trimmedShortDescription = shortDescription?
+                .trimmingCharacters(
+                    in: .whitespacesAndNewlines
+                )
 
-            let trimmedUser = userDescription?
-                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let trimmedUserDescription = userDescription?
+                .trimmingCharacters(
+                    in: .whitespacesAndNewlines
+                )
 
             let mediaKind: MediaKind
             let filename: String
@@ -206,14 +260,17 @@ final class UploadService: ObservableObject {
                 initRequest
             )
 
-            print("✅ Positive init response:", initResponse)
+            print(
+                "✅ Positive init completed:",
+                initResponse.submissionId
+            )
 
             if mediaKind == .video {
                 updateStage(
                     .uploadingMedia,
                     progress: 0.20,
                     status: "Uploading your landmark video",
-                    detail: "Videos may take up to a minute. Keep LookSee open until the upload finishes."
+                    detail: "Videos can take a little longer. Keep LookSee open until the upload finishes."
                 )
             } else {
                 updateStage(
@@ -238,6 +295,24 @@ final class UploadService: ObservableObject {
                 detail: "Your media is uploaded. We’re attaching its information and location."
             )
 
+            let normalizedShortDescription: String?
+
+            if let trimmedShortDescription,
+               !trimmedShortDescription.isEmpty {
+                normalizedShortDescription = trimmedShortDescription
+            } else {
+                normalizedShortDescription = nil
+            }
+
+            let normalizedUserDescription: String?
+
+            if let trimmedUserDescription,
+               !trimmedUserDescription.isEmpty {
+                normalizedUserDescription = trimmedUserDescription
+            } else {
+                normalizedUserDescription = nil
+            }
+
             let completeRequest = CompleteSubmissionRequest(
                 submissionId: initResponse.submissionId,
                 s3Key: initResponse.s3Key,
@@ -246,14 +321,8 @@ final class UploadService: ObservableObject {
                 landmarkId: landmarkId,
                 landmarkLabel: landmarkLabel,
                 mediaKind: mediaKind,
-                shortDescription:
-                    trimmedShort?.isEmpty == true
-                    ? nil
-                    : trimmedShort,
-                userDescription:
-                    trimmedUser?.isEmpty == true
-                    ? nil
-                    : trimmedUser,
+                shortDescription: normalizedShortDescription,
+                userDescription: normalizedUserDescription,
                 latitude: latitude,
                 longitude: longitude,
                 horizontalAccuracy: horizontalAccuracy
@@ -270,7 +339,10 @@ final class UploadService: ObservableObject {
                 detail: "Your positive landmark media was saved successfully."
             )
 
-            isUploading = false
+            print(
+                "✅ Positive upload completed:",
+                initResponse.submissionId
+            )
 
             return PositiveSubmissionResult(
                 submissionId: initResponse.submissionId,
@@ -289,10 +361,11 @@ final class UploadService: ObservableObject {
                 detail: userFriendlyMessage(for: error)
             )
 
-            isUploading = false
             throw error
         }
     }
+
+    // MARK: - Reset state
 
     func reset() {
         guard !isUploading else {
@@ -305,7 +378,7 @@ final class UploadService: ObservableObject {
         detail = "Your landmark media has not been uploaded yet."
     }
 
-    // MARK: - Status helpers
+    // MARK: - State helpers
 
     private func updateStage(
         _ newStage: PositiveUploadStage,
@@ -314,7 +387,10 @@ final class UploadService: ObservableObject {
         detail newDetail: String
     ) {
         stage = newStage
-        progress = min(max(newProgress, 0), 1)
+        progress = min(
+            max(newProgress, 0),
+            1
+        )
         status = newStatus
         detail = newDetail
     }
@@ -322,6 +398,10 @@ final class UploadService: ObservableObject {
     private func userFriendlyMessage(
         for error: Error
     ) -> String {
+        if let uploadError = error as? UploadError {
+            return uploadError.localizedDescription
+        }
+
         if let urlError = error as? URLError {
             switch urlError.code {
             case .notConnectedToInternet:
@@ -332,6 +412,14 @@ final class UploadService: ObservableObject {
 
             case .networkConnectionLost:
                 return "The connection was interrupted. Your information is still on this screen, so you can retry."
+
+            case .cannotConnectToHost,
+                 .cannotFindHost,
+                 .dnsLookupFailed:
+                return "LookSee could not connect to the upload service. Please check your connection and try again."
+
+            case .cancelled:
+                return "The upload was cancelled."
 
             default:
                 return "A network problem interrupted the upload. Please check your connection and try again."
@@ -352,9 +440,14 @@ final class UploadService: ObservableObject {
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
+        request.timeoutInterval = apiTimeout
         request.setValue(
             "application/json",
             forHTTPHeaderField: "Content-Type"
+        )
+        request.setValue(
+            "application/json",
+            forHTTPHeaderField: "Accept"
         )
         request.httpBody = try JSONEncoder().encode(
             requestBody
@@ -369,13 +462,22 @@ final class UploadService: ObservableObject {
             data: data
         )
 
-        return try JSONDecoder().decode(
-            InitSubmissionResponse.self,
-            from: data
-        )
+        do {
+            return try JSONDecoder().decode(
+                InitSubmissionResponse.self,
+                from: data
+            )
+        } catch {
+            print(
+                "❌ Could not decode init response:",
+                String(data: data, encoding: .utf8) ?? "<empty>"
+            )
+
+            throw UploadError.invalidResponse
+        }
     }
 
-    // MARK: - Upload media to S3
+    // MARK: - Upload positive media to S3
 
     private func putToS3(
         presignedURL: String,
@@ -383,18 +485,30 @@ final class UploadService: ObservableObject {
         videoURL: URL?,
         image: UIImage?
     ) async throws {
-        guard let url = URL(string: presignedURL) else {
+        guard let url = URL(
+            string: presignedURL
+        ) else {
             throw UploadError.invalidURL
         }
 
         var request = URLRequest(url: url)
         request.httpMethod = "PUT"
+        request.timeoutInterval = mediaUploadTimeout
+
+        // This must exactly match the content type used when the
+        // backend generated the presigned URL.
         request.setValue(
             contentType,
             forHTTPHeaderField: "Content-Type"
         )
 
         if let videoURL {
+            guard FileManager.default.fileExists(
+                atPath: videoURL.path
+            ) else {
+                throw UploadError.noMediaSelected
+            }
+
             let (_, response) = try await URLSession.shared.upload(
                 for: request,
                 fromFile: videoURL
@@ -430,10 +544,12 @@ final class UploadService: ObservableObject {
             throw UploadError.invalidResponse
         }
 
-        guard (200...299).contains(httpResponse.statusCode) else {
+        guard (200...299).contains(
+            httpResponse.statusCode
+        ) else {
             throw UploadError.badStatus(
                 httpResponse.statusCode,
-                "S3 media upload failed."
+                "The S3 media upload failed."
             )
         }
     }
@@ -449,9 +565,14 @@ final class UploadService: ObservableObject {
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
+        request.timeoutInterval = apiTimeout
         request.setValue(
             "application/json",
             forHTTPHeaderField: "Content-Type"
+        )
+        request.setValue(
+            "application/json",
+            forHTTPHeaderField: "Accept"
         )
         request.httpBody = try JSONEncoder().encode(
             requestBody
@@ -467,7 +588,7 @@ final class UploadService: ObservableObject {
         )
     }
 
-    // MARK: - Response validation
+    // MARK: - API response validation
 
     private func validateAPIResponse(
         _ response: URLResponse,
@@ -477,11 +598,18 @@ final class UploadService: ObservableObject {
             throw UploadError.invalidResponse
         }
 
-        guard (200...299).contains(httpResponse.statusCode) else {
+        guard (200...299).contains(
+            httpResponse.statusCode
+        ) else {
             let body = String(
                 data: data,
                 encoding: .utf8
             ) ?? ""
+
+            print(
+                "❌ API error \(httpResponse.statusCode):",
+                body
+            )
 
             throw UploadError.badStatus(
                 httpResponse.statusCode,
