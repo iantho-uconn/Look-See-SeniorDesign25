@@ -51,15 +51,6 @@ enum PositiveUploadStage: Equatable {
     }
 }
 
-// MARK: - Successful positive-upload result
-
-struct PositiveSubmissionResult {
-    let submissionId: String
-    let landmarkId: String?
-    let mediaKind: MediaKind
-    let s3Key: String
-}
-
 // MARK: - Upload service
 
 @MainActor
