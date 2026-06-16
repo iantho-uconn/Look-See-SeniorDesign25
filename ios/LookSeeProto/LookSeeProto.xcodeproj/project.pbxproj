@@ -26,6 +26,7 @@
 		3C9020C02F3AC88600EE30BF /* CokeCanDetect.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3C9020BD2F3AC88600EE30BF /* CokeCanDetect.mlpackage */; };
 		3C9020C12F3AC88600EE30BF /* fruits_and_cans_2.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3C9020BE2F3AC88600EE30BF /* fruits_and_cans_2.mlpackage */; };
 		3CE8899C2F3FEE2B00B66044 /* VideoPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CE8899B2F3FEE2300B66044 /* VideoPicker.swift */; };
+		3CF188BE2FE19AAD00FED231 /* CapturedNegativePhoto.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CF188BC2FE19AA300FED231 /* CapturedNegativePhoto.swift */; };
 		561FF74B2EB258D400411CF8 /* Library.swift in Sources */ = {isa = PBXBuildFile; fileRef = 561FF74A2EB258CC00411CF8 /* Library.swift */; };
 		562AD38C2ECBAF1B00D5144C /* Login.swift in Sources */ = {isa = PBXBuildFile; fileRef = 562AD38B2ECBAF1800D5144C /* Login.swift */; };
 		562DAAAD2F2A71750083A71E /* Main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 562DAAAC2F2A71740083A71E /* Main.swift */; };
@@ -82,6 +83,7 @@
 		3C918FAA2E9ECE6100AF5DAF /* LookSeeProtoTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LookSeeProtoTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		3C918FB42E9ECE6100AF5DAF /* LookSeeProtoUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LookSeeProtoUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		3CE8899B2F3FEE2300B66044 /* VideoPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoPicker.swift; sourceTree = "<group>"; };
+		3CF188BC2FE19AA300FED231 /* CapturedNegativePhoto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CapturedNegativePhoto.swift; sourceTree = "<group>"; };
 		561FF74A2EB258CC00411CF8 /* Library.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Library.swift; sourceTree = "<group>"; };
 		562AD38B2ECBAF1800D5144C /* Login.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Login.swift; sourceTree = "<group>"; };
 		562DAAAC2F2A71740083A71E /* Main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Main.swift; sourceTree = "<group>"; };
@@ -215,6 +217,7 @@
 			children = (
 				B0DE8C0E2F51712F008E1512 /* ConfirmSignup.swift */,
 				B0DE8C0C2F516FD3008E1512 /* Signup.swift */,
+				3CF188BC2FE19AA300FED231 /* CapturedNegativePhoto.swift */,
 				562DAAAE2F2A85B20083A71E /* Help.swift */,
 				562AD38B2ECBAF1800D5144C /* Login.swift */,
 				562DAAB22F2A895B0083A71E /* LandmarkScan.swift */,
@@ -419,6 +422,7 @@
 				B0DE8C0D2F516FDD008E1512 /* Signup.swift in Sources */,
 				562DAAB32F2A89600083A71E /* LandmarkScan.swift in Sources */,
 				3C63C8A82F91875E0006C5DD /* VariableContainer.swift in Sources */,
+				3CF188BE2FE19AAD00FED231 /* CapturedNegativePhoto.swift in Sources */,
 				562AD38C2ECBAF1B00D5144C /* Login.swift in Sources */,
 				B0DC9CA62F4F849A004A9452 /* AuthService.swift in Sources */,
 				568CE2D12F56554E009A8775 /* PromotionEditor.swift in Sources */,
