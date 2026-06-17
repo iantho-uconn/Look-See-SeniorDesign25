@@ -144,7 +144,7 @@ struct LandmarkRecord: View {
 
         return hasPositiveMedia &&
                hasLabel &&
-               hasRequiredDescriptions &&
+               hasRequiredShortDescription &&
                hasRequiredNegativePhotos
     }
 
@@ -434,21 +434,6 @@ struct LandmarkRecord: View {
             .padding(.horizontal)
             .disabled(arePositiveDetailsLocked)
 
-            Text("What’s in the frame? (required)")
-                .padding(.horizontal)
-
-            TextField(
-                "e.g., UConn logo, scoreboard, blue seats",
-                text: $userDescription,
-                axis: .vertical
-            )
-            .lineLimit(
-                3,
-                reservesSpace: true
-            )
-            .textFieldStyle(.roundedBorder)
-            .padding(.horizontal)
-            .disabled(arePositiveDetailsLocked)
 
             if completedPositiveResult != nil &&
                 !isFullSubmissionComplete {
@@ -801,7 +786,7 @@ struct LandmarkRecord: View {
                             shortDescription:
                                 shortDescription,
                             userDescription:
-                                userDescription,
+                                nil,
                             latitude:
                                 locationManager.latitude,
                             longitude:
@@ -1215,7 +1200,7 @@ struct LandmarkRecord: View {
 
                 labelText = ""
                 shortDescription = ""
-                userDescription = ""
+               // userDescription = ""
 
                 businessLandmarkId =
                     makeBusinessLandmarkId()
@@ -1254,7 +1239,7 @@ struct LandmarkRecord: View {
 
             labelText = ""
             shortDescription = ""
-            userDescription = ""
+           // userDescription = ""
 
             businessLandmarkId =
                 makeBusinessLandmarkId()
@@ -1289,7 +1274,7 @@ struct LandmarkRecord: View {
         businessLandmarkId = nil
 
         shortDescription = ""
-        userDescription = ""
+        //userDescription = ""
 
         pickedVideoURL = nil
         pickedImage = nil
