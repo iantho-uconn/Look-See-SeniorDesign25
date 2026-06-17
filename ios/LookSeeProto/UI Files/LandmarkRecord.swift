@@ -25,7 +25,7 @@ struct LandmarkRecord: View {
     @State private var businessLandmarkId: String?
 
     @State private var shortDescription = ""
-    @State private var userDescription = ""
+    //@State private var userDescription = ""
 
     // MARK: - Positive media
 
@@ -105,19 +105,12 @@ struct LandmarkRecord: View {
             .isEmpty
     }
 
-    private var hasRequiredDescriptions: Bool {
-        let trimmedShort = shortDescription
+    private var hasRequiredShortDescription: Bool {
+        !shortDescription
             .trimmingCharacters(
                 in: .whitespacesAndNewlines
             )
-
-        let trimmedFrame = userDescription
-            .trimmingCharacters(
-                in: .whitespacesAndNewlines
-            )
-
-        return !trimmedShort.isEmpty &&
-               !trimmedFrame.isEmpty
+            .isEmpty
     }
 
     private var hasRequiredNegativePhotos: Bool {

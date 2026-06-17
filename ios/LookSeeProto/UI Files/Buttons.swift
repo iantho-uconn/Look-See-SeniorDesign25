@@ -61,7 +61,13 @@ struct Buttons: View {
                     // Tab 2 (or 1 for non-business) — Upload
                     Group {
                         if authState.tier == .authenticated || authState.tier == .business {
-                            Tier2LandmarkRecord()
+                            Tier2LandmarkRecord(
+                                initialLandmarkId:
+                                    pendingUploadLandmarkId,
+                                onInitialLandmarkConsumed: {
+                                    pendingUploadLandmarkId = nil
+                                }
+                            )
                         } else {
                             // Guest sees a blank page — prompt handled by button tap
                             Color(red: 0.06, green: 0.06, blue: 0.10)

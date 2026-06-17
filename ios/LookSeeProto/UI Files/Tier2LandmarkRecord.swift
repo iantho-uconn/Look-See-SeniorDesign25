@@ -8,6 +8,21 @@ import CoreLocation
 import UIKit
 
 struct Tier2LandmarkRecord: View {
+    private let initialLandmarkId: String?
+    private let onInitialLandmarkConsumed: () -> Void
+
+    init(
+        initialLandmarkId: String? = nil,
+        onInitialLandmarkConsumed:
+            @escaping () -> Void = { }
+    ) {
+        self.initialLandmarkId =
+            initialLandmarkId
+
+        self.onInitialLandmarkConsumed =
+            onInitialLandmarkConsumed
+    }
+    
     @EnvironmentObject var vm: AuthViewModel
 
     // MARK: - Positive media
@@ -29,7 +44,8 @@ struct Tier2LandmarkRecord: View {
     // MARK: - Landmark selection
 
     @State private var selectedLandmark: NearbyLandmark?
-
+    @State private var hasAppliedInitialLandmark = false
+    
     @State private var shortDescription = ""
     @State private var userDescription = ""
 
@@ -92,6 +108,21 @@ struct Tier2LandmarkRecord: View {
             }
             .task {
                 await refreshNearbyIfPossible()
+            }
+            .onChange(of: initialLandmarkId) {
+                _, newLandmarkId in
+
+                guard newLandmarkId != nil else {
+                    return
+                }
+
+                hasAppliedInitialLandmark = false
+
+                Task {
+                    await refreshNearbyIfPossible(
+                        force: true
+                    )
+                }
             }
             .onChange(of: locationManager.latitude) { _, _ in
                 Task {
@@ -368,6 +399,13 @@ struct Tier2LandmarkRecord: View {
 
         return Button {
             selectedLandmark = landmark
+            
+            if initialLandmarkId != nil &&
+                !hasAppliedInitialLandmark {
+
+                hasAppliedInitialLandmark = true
+                onInitialLandmarkConsumed()
+            }
 
             if shortDescription
                 .trimmingCharacters(
@@ -729,6 +767,43 @@ struct Tier2LandmarkRecord: View {
         }
     }
 
+    private func applyInitialLandmarkSelectionIfAvailable() {
+        guard !hasAppliedInitialLandmark,
+              let initialLandmarkId else {
+            return
+        }
+
+        guard let matchingLandmark =
+                nearbyService.items.first(
+                    where: {
+                        $0.landmarkId ==
+                        initialLandmarkId
+                    }
+                ) else {
+            return
+        }
+
+        selectedLandmark = matchingLandmark
+
+        // Clear any old media that may still be present
+        // from a previous visit to the Upload tab.
+        pickedVideoURL = nil
+        pickedImage = nil
+
+        statusText = "No media selected."
+
+        shortDescription =
+            matchingLandmark.shortDescription
+
+        userDescription = ""
+
+        uploadService.reset()
+
+        hasAppliedInitialLandmark = true
+        onInitialLandmarkConsumed()
+    }
+    
+    
     // MARK: - Nearby landmark refresh
 
     private func refreshNearbyIfPossible(
@@ -767,6 +842,7 @@ struct Tier2LandmarkRecord: View {
             longitude: longitude,
             radiusMeters: radiusMeters
         )
+        applyInitialLandmarkSelectionIfAvailable()
 
         if let selectedLandmark,
            !nearbyService.items.contains(
