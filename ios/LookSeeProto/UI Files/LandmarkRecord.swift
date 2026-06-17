@@ -9,6 +9,15 @@ import UIKit
 
 struct LandmarkRecord: View {
     @EnvironmentObject var vm: AuthViewModel
+    
+
+    private let onAddMoreMedia: (String) -> Void
+
+    init(
+        onAddMoreMedia: @escaping (String) -> Void = { _ in }
+    ) {
+        self.onAddMoreMedia = onAddMoreMedia
+    }
 
     // MARK: - Landmark information
 
@@ -54,6 +63,9 @@ struct LandmarkRecord: View {
         PositiveSubmissionResult?
 
     @State private var isFullSubmissionComplete = false
+    
+    @State private var showCompletionPopup = false
+    @State private var completedLandmarkId: String?
 
     // MARK: - Video validation
 
@@ -249,6 +261,22 @@ struct LandmarkRecord: View {
             Button("OK", role: .cancel) { }
         } message: {
             Text(videoDurationAlertMessage)
+        }
+        .alert(
+            "Landmark Uploaded!",
+            isPresented: $showCompletionPopup
+        ) {
+            Button("Create Another Landmark") {
+                resetForAnotherLandmark()
+            }
+
+            Button("Add More Photos or Videos") {
+                openAdditionalMediaUpload()
+            }
+        } message: {
+            Text(
+                "Your landmark media and negative reference photos were uploaded successfully. What would you like to do next?"
+            )
         }
     }
 
@@ -805,7 +833,7 @@ struct LandmarkRecord: View {
                  Prefer the ID returned by the positive result.
                  The locally generated ID remains the fallback.
                  */
-                let completedLandmarkId =
+                let finalLandmarkId =
                     positiveResult.landmarkId ??
                     generatedLandmarkId
 
@@ -813,7 +841,7 @@ struct LandmarkRecord: View {
                     try await hardNegativeUploadService
                         .upload(
                             landmarkId:
-                                completedLandmarkId,
+                                finalLandmarkId,
                             photos:
                                 capturedNegativePhotos
                         )
@@ -824,10 +852,13 @@ struct LandmarkRecord: View {
                     negativeResult.processedCount
                 )
 
+                completedLandmarkId = finalLandmarkId
                 isFullSubmissionComplete = true
 
                 statusText =
                     "Landmark and reference photos uploaded successfully."
+
+                showCompletionPopup = true
 
             } catch {
                 print(
@@ -1244,6 +1275,77 @@ struct LandmarkRecord: View {
     }
 
     // MARK: - Helpers
+    
+    private func openAdditionalMediaUpload() {
+        guard let landmarkId = completedLandmarkId else {
+            return
+        }
+
+        resetForAnotherLandmark()
+        onAddMoreMedia(landmarkId)
+    }
+
+    private func resetForAnotherLandmark() {
+        deleteTemporaryPositiveVideo()
+
+        for photo in capturedNegativePhotos {
+            photo.deleteLocalFile()
+        }
+
+        labelText = ""
+        businessLandmarkId = nil
+
+        shortDescription = ""
+        userDescription = ""
+
+        pickedVideoURL = nil
+        pickedImage = nil
+
+        capturedNegativePhotos = []
+
+        completedPositiveResult = nil
+        completedLandmarkId = nil
+
+        isFullSubmissionComplete = false
+        showCompletionPopup = false
+
+        showVideoPicker = false
+        showPhotoPicker = false
+        showNegativeCamera = false
+
+        showVideoDurationAlert = false
+        videoDurationAlertMessage = ""
+
+        statusText = "No landmark media selected."
+
+        uploadService.reset()
+        hardNegativeUploadService.reset()
+    }
+
+    private func deleteTemporaryPositiveVideo() {
+        guard let videoURL = pickedVideoURL else {
+            return
+        }
+
+        let temporaryDirectory =
+            FileManager.default
+                .temporaryDirectory
+                .standardizedFileURL
+                .path
+
+        let videoPath =
+            videoURL
+                .standardizedFileURL
+                .path
+
+        guard videoPath.hasPrefix(temporaryDirectory) else {
+            return
+        }
+
+        try? FileManager.default.removeItem(
+            at: videoURL
+        )
+    }
 
     private func makeBusinessLandmarkId() -> String {
         let suffix = UUID()
