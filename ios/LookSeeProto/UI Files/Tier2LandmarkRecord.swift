@@ -5,15 +5,34 @@
 
 import SwiftUI
 import CoreLocation
+import Photos
+
+enum Tier2ActiveMediaSheet: Identifiable {
+    case recordVideo
+    case galleryVideo
+    case takePhoto
+    case scanText 
+
+    var id: String {
+        switch self {
+        case .recordVideo: return "recordVideo"
+        case .galleryVideo: return "galleryVideo"
+        case .takePhoto: return "takePhoto"
+        case .scanText: return "scanText"
+        }
+    }
+}
 
 struct Tier2LandmarkRecord: View {
     @EnvironmentObject var vm: AuthViewModel
 
     @State private var pickedVideoURL: URL? = nil
     @State private var pickedImage: UIImage? = nil
+    
+    @State private var extractedLatitude: Double? = nil
+    @State private var extractedLongitude: Double? = nil
 
-    @State private var showVideoPicker = false
-    @State private var showPhotoPicker = false
+    @State private var activeSheet: Tier2ActiveMediaSheet? = nil
 
     @State private var statusText: String = "No media selected."
 
@@ -86,47 +105,43 @@ struct Tier2LandmarkRecord: View {
         .onChange(of: locationManager.horizontalAccuracy) { _, _ in
             Task { await refreshNearbyIfPossible() }
         }
-        .sheet(isPresented: $showVideoPicker) {
-            VideoPicker(
-                useCamera: true,
-                onPicked: { url in
-                    pickedVideoURL = url
-                    pickedImage = nil
-                    statusText = "Selected video: \(url.lastPathComponent)"
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .recordVideo:
+                VideoPicker(
+                    useCamera: true,
+                    onPicked: handleVideoPicked,
+                    onInvalidDuration: handleInvalidVideo
+                )
+            case .galleryVideo:
+                VideoPicker(
+                    useCamera: false,
+                    onPicked: handleVideoPicked,
+                    onInvalidDuration: handleInvalidVideo
+                )
+            case .takePhoto:
+                PhotoPicker { image in
+                    pickedImage = image
+                    pickedVideoURL = nil
+                    statusText = "Selected photo."
+                    
+                    extractedLatitude = nil
+                    extractedLongitude = nil
 
                     shortDescription = ""
                     userDescription = ""
 
                     uploadService.status = "Idle"
                     uploadService.progress = 0
-                },
-                onInvalidDuration: { message in
-                    pickedVideoURL = nil
-                    videoDurationAlertMessage = message
-                    showVideoDurationAlert = true
-                    statusText = message
-                    uploadService.status = "Idle"
-                    uploadService.progress = 0
                 }
-            )
+            case .scanText: // NEW: The scanner target
+                ScannerSheet(scannedText: $userDescription)
+            }
         }
         .alert("Invalid Video Length", isPresented: $showVideoDurationAlert) {
             Button("OK", role: .cancel) { }
         } message: {
             Text(videoDurationAlertMessage)
-        }
-        .sheet(isPresented: $showPhotoPicker) {
-            PhotoPicker { image in
-                pickedImage = image
-                pickedVideoURL = nil
-                statusText = "Selected photo."
-
-                shortDescription = ""
-                userDescription = ""
-
-                uploadService.status = "Idle"
-                uploadService.progress = 0
-            }
         }
     }
 
@@ -145,8 +160,10 @@ struct Tier2LandmarkRecord: View {
 
     private var captureButtons: some View {
         HStack(spacing: 12) {
-            Button { showVideoPicker = true } label: {
-                Label("Record Video", systemImage: "video")
+            Button {
+                activeSheet = .recordVideo
+            } label: {
+                Label("Record", systemImage: "video")
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
             }
@@ -154,8 +171,25 @@ struct Tier2LandmarkRecord: View {
             .background(Color(red: 0.11, green: 0.22, blue: 0.55))
             .cornerRadius(15)
 
-            Button { showPhotoPicker = true } label: {
-                Label("Take Photo", systemImage: "camera")
+            Button {
+                PHPhotoLibrary.requestAuthorization(for: .readWrite) { status in
+                    DispatchQueue.main.async {
+                        activeSheet = .galleryVideo
+                    }
+                }
+            } label: {
+                Label("Gallery", systemImage: "photo.on.rectangle")
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+            }
+            .foregroundStyle(.white)
+            .background(Color(red: 0.11, green: 0.22, blue: 0.55))
+            .cornerRadius(15)
+
+            Button {
+                activeSheet = .takePhoto
+            } label: {
+                Label("Photo", systemImage: "camera")
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
             }
@@ -334,6 +368,28 @@ struct Tier2LandmarkRecord: View {
                 .textFieldStyle(.roundedBorder)
                 .padding(.horizontal)
 
+            // NEW: Custom ZStack UI to hold the scan button inside the text box
+            ZStack(alignment: .bottomTrailing) {
+                TextField("e.g., 'UConn logo, scoreboard, seats'", text: $userDescription, axis: .vertical)
+                    .lineLimit(4...8) // Expand box to give more room for plaques
+                    .textFieldStyle(.roundedBorder)
+
+                Button {
+                    activeSheet = .scanText
+                } label: {
+                    Image(systemName: "text.viewfinder")
+                        .font(.system(size: 18))
+                        .foregroundColor(.white)
+                        .padding(8)
+                        .background(Color(red: 0.11, green: 0.22, blue: 0.55))
+                        .clipShape(Circle())
+                        .shadow(radius: 2)
+                }
+                .padding(.trailing, 8)
+                .padding(.bottom, 8)
+            }
+            .padding(.horizontal)
+
             Button {
                 guard let selectedLandmark else { return }
 
@@ -346,8 +402,8 @@ struct Tier2LandmarkRecord: View {
                         landmarkLabel: selectedLandmark.label,
                         shortDescription: shortDescription,
                         userDescription: userDescription,
-                        latitude: locationManager.latitude,
-                        longitude: locationManager.longitude,
+                        latitude: extractedLatitude ?? locationManager.latitude,
+                        longitude: extractedLongitude ?? locationManager.longitude,
                         horizontalAccuracy: locationManager.horizontalAccuracy,
                         videoURL: pickedVideoURL,
                         image: pickedImage
@@ -401,6 +457,35 @@ struct Tier2LandmarkRecord: View {
            !nearbyService.items.contains(where: { $0.landmarkId == selected.landmarkId }) {
             selectedLandmark = nil
         }
+    }
+    
+    private func handleVideoPicked(url: URL, location: CLLocationCoordinate2D?) {
+        pickedVideoURL = url
+        pickedImage = nil
+        statusText = "Selected video: \(url.lastPathComponent)"
+        
+        if let loc = location {
+            extractedLatitude = loc.latitude
+            extractedLongitude = loc.longitude
+        } else {
+            extractedLatitude = nil
+            extractedLongitude = nil
+        }
+
+        shortDescription = ""
+        userDescription = ""
+
+        uploadService.status = "Idle"
+        uploadService.progress = 0
+    }
+    
+    private func handleInvalidVideo(message: String) {
+        pickedVideoURL = nil
+        videoDurationAlertMessage = message
+        showVideoDurationAlert = true
+        statusText = message
+        uploadService.status = "Idle"
+        uploadService.progress = 0
     }
 }
 

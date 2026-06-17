@@ -9,6 +9,7 @@ import CoreML
 import SwiftUI
 import Combine
 import CoreImage
+import Vision
 
 struct Detection: Identifiable {
     let id = UUID()
@@ -40,13 +41,11 @@ final class Detector: NSObject, ObservableObject {
     }
 
     // MARK: - Observe Active Cluster
-    // Whenever ModelSelector switches clusters, load the matching compiled model
     private func observeActiveCluster() {
         Task { @MainActor in
             for await clusterID in ModelSelector.shared.$activeClusterID.values {
                 guard let clusterID else { continue }
 
-                // Find the ModelInfo whose clusterID matches
                 if case .loaded(let models) = ModelService.shared.state,
                    let match = models.first(where: { $0.clusterID == clusterID }),
                    let compiledURL = match.compiledModelURL {
@@ -64,8 +63,6 @@ final class Detector: NSObject, ObservableObject {
                 DispatchQueue.main.async {
                     self.model = loaded
                     print("✅ Detector switched to cluster \(clusterID)")
-                    print("📥 Inputs:", loaded.modelDescription.inputDescriptionsByName.keys)
-                    print("📤 Outputs:", loaded.modelDescription.outputDescriptionsByName.keys)
                 }
             } catch {
                 print("❌ Model load error for cluster \(clusterID): \(error)")
@@ -82,6 +79,7 @@ final class Detector: NSObject, ObservableObject {
 
     // MARK: - Process Frame
     private func process(pixelBuffer: CVPixelBuffer) {
+        // Ensure a real model is loaded before processing
         guard let model = model else {
             print("⚠️ No model loaded yet — skipping frame")
             return
@@ -107,18 +105,18 @@ final class Detector: NSObject, ObservableObject {
         }
 
         do {
+            // Run the actual YOLO model prediction
             let result = try model.prediction(from: input)
 
-            guard
-                let confidenceArray = result.featureValue(for: "confidence")?.multiArrayValue,
-                let coordinatesArray = result.featureValue(for: "coordinates")?.multiArrayValue
-            else {
+            guard let confidenceArray = result.featureValue(for: "confidence")?.multiArrayValue,
+                  let coordinatesArray = result.featureValue(for: "coordinates")?.multiArrayValue else {
                 print("❌ Missing model outputs")
                 throttling = false
                 return
             }
 
-            let detections = parseDetections(
+            // Extract bounding boxes from CoreML output
+            var finalDetections = parseDetections(
                 confidenceArray: confidenceArray,
                 coordinatesArray: coordinatesArray,
                 scale: scale,
@@ -127,9 +125,44 @@ final class Detector: NSObject, ObservableObject {
                 originalSize: CGSize(width: originalWidth, height: originalHeight)
             )
 
+            // --- ON-DEVICE OCR TEXT RECOGNITION ---
+            // If YOLO found an object, scan the frame for text
+            if !finalDetections.isEmpty {
+                let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
+                if let cgImage = self.ciContext.createCGImage(ciImage, from: ciImage.extent) {
+                    
+                    let request = VNRecognizeTextRequest { (request, error) in
+                        guard let observations = request.results as? [VNRecognizedTextObservation], error == nil else { return }
+                        
+                        // Combine text and replace spaces with underscores
+                        let extractedText = observations.compactMap { $0.topCandidates(1).first?.string }
+                            .joined(separator: "_")
+                            .replacingOccurrences(of: " ", with: "_")
+                        
+                        if !extractedText.isEmpty {
+                            for i in 0..<finalDetections.count {
+                                let oldLabel = finalDetections[i].label
+                                finalDetections[i] = Detection(
+                                    label: "\(oldLabel)_\(extractedText)",
+                                    confidence: finalDetections[i].confidence,
+                                    bbox: finalDetections[i].bbox
+                                )
+                            }
+                            print("📝 Vision OCR Extracted: \(extractedText)")
+                        }
+                    }
+                    
+                    request.recognitionLevel = .accurate
+                    
+                    let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+                    try? handler.perform([request])
+                }
+            }
+            // -------------------------------------------
+
             let end = CFAbsoluteTimeGetCurrent()
             DispatchQueue.main.async {
-                self.detections = detections
+                self.detections = finalDetections
                 self.lastInferenceMS = (end - start) * 1000
             }
 
@@ -143,8 +176,7 @@ final class Detector: NSObject, ObservableObject {
     }
 
     // MARK: - Letterbox
-    private func letterbox(pixelBuffer: CVPixelBuffer)
-    -> (CVPixelBuffer, CGFloat, CGFloat, CGFloat) {
+    private func letterbox(pixelBuffer: CVPixelBuffer) -> (CVPixelBuffer, CGFloat, CGFloat, CGFloat) {
         let width = CGFloat(CVPixelBufferGetWidth(pixelBuffer))
         let height = CGFloat(CVPixelBufferGetHeight(pixelBuffer))
         let scale = min(inputSize.width / width, inputSize.height / height)
@@ -176,13 +208,14 @@ final class Detector: NSObject, ObservableObject {
                                  originalSize: CGSize) -> [Detection] {
         var results: [Detection] = []
 
-        let confPtr = confidenceArray.dataPointer.bindMemory(to: Float.self,
-                                                             capacity: confidenceArray.count)
-        let coordPtr = coordinatesArray.dataPointer.bindMemory(to: Float.self,
-                                                               capacity: coordinatesArray.count)
+        let confPtr = confidenceArray.dataPointer.bindMemory(to: Float.self, capacity: confidenceArray.count)
+        let coordPtr = coordinatesArray.dataPointer.bindMemory(to: Float.self, capacity: coordinatesArray.count)
 
         let numDetections = coordinatesArray.shape[0].intValue
         let numClasses = confidenceArray.shape[1].intValue
+
+        // Optional: Add your YOLO class names here if you want clean text on screen
+        let classNames = ["structure", "sign", "plaque", "statue"]
 
         for i in 0..<numDetections {
             var bestScore: Float = 0
@@ -205,9 +238,22 @@ final class Detector: NSObject, ObservableObject {
 
             let x = cx - w / 2
             let y = cy - h / 2
-            let rect = CGRect(x: x, y: y, width: w, height: h)
+            
+            // Apply scale normalizations
+            let correctedX = (x - padX) / scale
+            let correctedY = (y - padY) / scale
+            let correctedW = w / scale
+            let correctedH = h / scale
+            
+            let normalizedRect = CGRect(
+                x: correctedX / originalSize.width,
+                y: correctedY / originalSize.height,
+                width: correctedW / originalSize.width,
+                height: correctedH / originalSize.height
+            )
 
-            results.append(Detection(label: "\(bestClass)", confidence: bestScore, bbox: rect))
+            let cleanLabel = classNames.indices.contains(bestClass) ? classNames[bestClass] : "\(bestClass)"
+            results.append(Detection(label: cleanLabel, confidence: bestScore, bbox: normalizedRect))
         }
 
         return results

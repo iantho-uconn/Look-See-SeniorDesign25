@@ -77,7 +77,6 @@ final class CameraSessionCoordinator {
 import UIKit
 import AVFoundation
 
-
 final class OverlayView: UIView {
     weak var previewLayer: AVCaptureVideoPreviewLayer?
     
@@ -86,57 +85,28 @@ final class OverlayView: UIView {
     
     var detections: [Detection] = [] {
         didSet {
-            // print("🟢 OverlayView received \(detections.count) detections")
-           // for _ in detections {
-                //print("🔹 \(det.label) \(Int(det.confidence*100))% → \(det.bbox)")
-           // }
             setNeedsDisplay()
         }
     }
 
     override func draw(_ rect: CGRect) {
-       /* guard let ctx = UIGraphicsGetCurrentContext(),
-            let previewLayer = previewLayer else { return }
-*/
         guard let ctx = UIGraphicsGetCurrentContext() else { return }
         ctx.clear(rect)
         ctx.setLineWidth(2.0)
 
+        // DRAW RED BOXES (Scanning)
         for det in detections {
             let bbox = det.bbox
-            
-            // print("RAW:", bbox)
             
             let rect = CGRect(
                 x: bbox.origin.x * bounds.width,
                 y: bbox.origin.y * bounds.height,
-                width: bbox.width * (bounds.width * 2),
+                width: bbox.width * bounds.width,
                 height: bbox.height * bounds.height
             )
             
-            // print("DRAW RECT:", rect)
-
             UIColor.systemRed.setStroke()
             ctx.stroke(rect)
-        
-//        // TODO: Possibly change this for AR support
-//        for det in detections {
-//            var bbox = det.bbox
-//            
-//            print("RAW:", bbox)
-////            // Clamp bounding box to view
-////            bbox.origin.x = max(0, min(bbox.origin.x, bounds.width))
-////            bbox.origin.y = max(0, min(bbox.origin.y, bounds.height))
-////            bbox.size.width = max(0, min(bbox.size.width, bounds.width - bbox.origin.x))
-////            bbox.size.height = max(0, min(bbox.size.height, bounds.height - bbox.origin.y))
-////            
-//            print("corr",bbox.origin.x,bbox.origin.y,bbox.size.width,bbox.size.height)
-//
-//            if bbox.width <= 0 || bbox.height <= 0 { continue }
-//
-//            // Draw bounding box
-//            UIColor.systemGreen.setStroke()
-//            ctx.stroke(bbox)
 
             // Draw label and confidence above the box
             let labelText = "\(det.label) \(Int(det.confidence * 100))%"
@@ -152,7 +122,7 @@ final class OverlayView: UIView {
             let textX = max(rect.minX, 0)
             let textY = max(rect.minY, 0)
 
-            let _ = CGRect(                     //let bgRect = CGRect(
+            let _ = CGRect(
                 x: textX,
                 y: textY,
                 width: textSize.width + 8,
@@ -160,15 +130,12 @@ final class OverlayView: UIView {
             )
 
             UIColor.systemGreen.setFill()
-            //ctx.fill(bgRect)
-
-            // labelText.draw(in: bgRect.insetBy(dx: 4, dy: 2), withAttributes: attributes)
         }
         
         // Variable to count bounding boxes
         @ObservedObject var infoView = VariableContainer.shared
         
-        // Green bounding box
+        // DRAW GREEN BOX (Locked)
         if infoView.bboxCounter >= 29 {
             ctx.clear(rect)
             ctx.setLineWidth(2.0)
@@ -179,13 +146,12 @@ final class OverlayView: UIView {
                 let rect = CGRect(
                     x: bbox.origin.x * bounds.width,
                     y: bbox.origin.y * bounds.height,
-                    width: bbox.width * (bounds.width * 2),
+                    width: bbox.width * bounds.width,
                     height: bbox.height * bounds.height
                 )
                 UIColor.systemGreen.setStroke()
                 ctx.stroke(rect)
             }
-            
         }
     }
 }
@@ -213,11 +179,6 @@ struct CameraPreview: UIViewRepresentable {
         // attach detector to video frames once
         detector.attach(to: CameraPreview.sharedSession.videoOutput)
         CameraPreview.sharedSession.start()
-        
-//        // Tap gesture recognizer
-//        let tapGesture = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.bbClick(_:)))
-////        tapGesture.delaysTouchesBegan = true
-//        view.addGestureRecognizer(tapGesture)
         
         let pinchGesture = UIPinchGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handlePinch(_:)))
         view.addGestureRecognizer(pinchGesture)
@@ -261,7 +222,6 @@ struct CameraPreview: UIViewRepresentable {
                 infoView.bboxCounter = 0
             }
         }
-        print(infoView.bboxCounter)
     }
 
     func makeCoordinator() -> Coordinator {

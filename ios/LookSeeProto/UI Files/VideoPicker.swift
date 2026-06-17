@@ -6,10 +6,14 @@
 import SwiftUI
 import UIKit
 import AVFoundation
+import Photos
+import CoreLocation
+import UniformTypeIdentifiers
 
 struct VideoPicker: UIViewControllerRepresentable {
     var useCamera: Bool = true
-    var onPicked: (URL) -> Void
+    
+    var onPicked: (URL, CLLocationCoordinate2D?) -> Void
     var onInvalidDuration: (String) -> Void
 
     private let minDuration: Double = 15
@@ -18,7 +22,9 @@ struct VideoPicker: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> UIImagePickerController {
         let picker = UIImagePickerController()
         picker.delegate = context.coordinator
-        picker.mediaTypes = ["public.movie"]
+        
+        // Strict filtering to ensure only videos appear, not photos
+        picker.mediaTypes = [UTType.movie.identifier]
         picker.videoQuality = .typeHigh
 
         if useCamera, UIImagePickerController.isSourceTypeAvailable(.camera) {
@@ -46,13 +52,13 @@ struct VideoPicker: UIViewControllerRepresentable {
     final class Coordinator: NSObject, UINavigationControllerDelegate, UIImagePickerControllerDelegate {
         let minDuration: Double
         let maxDuration: Double
-        let onPicked: (URL) -> Void
+        let onPicked: (URL, CLLocationCoordinate2D?) -> Void
         let onInvalidDuration: (String) -> Void
 
         init(
             minDuration: Double,
             maxDuration: Double,
-            onPicked: @escaping (URL) -> Void,
+            onPicked: @escaping (URL, CLLocationCoordinate2D?) -> Void,
             onInvalidDuration: @escaping (String) -> Void
         ) {
             self.minDuration = minDuration
@@ -72,26 +78,36 @@ struct VideoPicker: UIViewControllerRepresentable {
             picker.dismiss(animated: true)
 
             guard let url = info[.mediaURL] as? URL else { return }
-
             let asset = AVURLAsset(url: url)
-            let durationSeconds = CMTimeGetSeconds(asset.duration)
 
-            guard durationSeconds.isFinite else {
-                onInvalidDuration("Could not read video duration.")
-                return
+            Task {
+                do {
+                    let duration = try await asset.load(.duration)
+                    let durationSeconds = CMTimeGetSeconds(duration)
+                    
+                    await MainActor.run {
+                        guard durationSeconds.isFinite, durationSeconds >= minDuration, durationSeconds <= maxDuration else {
+                            onInvalidDuration("Video must be between 15 and 60 seconds.")
+                            return
+                        }
+
+                        var extractedLocation: CLLocationCoordinate2D? = nil
+
+                        if let phAsset = info[.phAsset] as? PHAsset, let location = phAsset.location {
+                            extractedLocation = location.coordinate
+                            print("📍 Extracted Location from Library: \(location.coordinate.latitude), \(location.coordinate.longitude)")
+                        } else {
+                            print("⚠️ No PHAsset found. Must be a live camera recording.")
+                        }
+
+                        onPicked(url, extractedLocation)
+                    }
+                } catch {
+                    await MainActor.run {
+                        onInvalidDuration("Could not read video duration.")
+                    }
+                }
             }
-
-            if durationSeconds < minDuration {
-                onInvalidDuration("Video must be at least 15 seconds long.")
-                return
-            }
-
-            if durationSeconds > maxDuration {
-                onInvalidDuration("Video must be 60 seconds or less.")
-                return
-            }
-
-            onPicked(url)
         }
     }
 }
