@@ -13,26 +13,20 @@ struct Tier2LandmarkRecord: View {
 
     init(
         initialLandmarkId: String? = nil,
-        onInitialLandmarkConsumed:
-            @escaping () -> Void = { }
+        onInitialLandmarkConsumed: @escaping () -> Void = { }
     ) {
-        self.initialLandmarkId =
-            initialLandmarkId
-
-        self.onInitialLandmarkConsumed =
-            onInitialLandmarkConsumed
+        self.initialLandmarkId = initialLandmarkId
+        self.onInitialLandmarkConsumed = onInitialLandmarkConsumed
     }
-    
+
     @EnvironmentObject var vm: AuthViewModel
 
     // MARK: - Positive media
 
     @State private var pickedVideoURL: URL?
     @State private var pickedImage: UIImage?
-
     @State private var showVideoPicker = false
     @State private var showPhotoPicker = false
-
     @State private var statusText = "No media selected."
 
     // MARK: - Services
@@ -45,9 +39,6 @@ struct Tier2LandmarkRecord: View {
 
     @State private var selectedLandmark: NearbyLandmark?
     @State private var hasAppliedInitialLandmark = false
-    
-    @State private var shortDescription = ""
-    @State private var userDescription = ""
 
     // MARK: - Location configuration
 
@@ -81,20 +72,12 @@ struct Tier2LandmarkRecord: View {
             return false
         }
 
-        return accuracy > 0 &&
-               accuracy <= maxAllowedAccuracy
-    }
-
-    private var hasRequiredShortDescription: Bool {
-        !shortDescription
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .isEmpty
+        return accuracy > 0 && accuracy <= maxAllowedAccuracy
     }
 
     private var canSubmitUpload: Bool {
         hasMedia &&
         selectedLandmark != nil &&
-        hasRequiredShortDescription &&
         !uploadService.isUploading
     }
 
@@ -103,15 +86,12 @@ struct Tier2LandmarkRecord: View {
     var body: some View {
         mainContent
             .safeAreaInset(edge: .top) {
-                Color.clear
-                    .frame(height: 50)
+                Color.clear.frame(height: 50)
             }
             .task {
                 await refreshNearbyIfPossible()
             }
-            .onChange(of: initialLandmarkId) {
-                _, newLandmarkId in
-
+            .onChange(of: initialLandmarkId) { _, newLandmarkId in
                 guard newLandmarkId != nil else {
                     return
                 }
@@ -119,9 +99,7 @@ struct Tier2LandmarkRecord: View {
                 hasAppliedInitialLandmark = false
 
                 Task {
-                    await refreshNearbyIfPossible(
-                        force: true
-                    )
+                    await refreshNearbyIfPossible(force: true)
                 }
             }
             .onChange(of: locationManager.latitude) { _, _ in
@@ -159,7 +137,6 @@ struct Tier2LandmarkRecord: View {
         ScrollView {
             VStack(spacing: 18) {
                 instructionCard
-
                 captureButtons
 
                 Text(statusText)
@@ -168,7 +145,6 @@ struct Tier2LandmarkRecord: View {
                     .padding(.horizontal)
 
                 locationSection
-
                 nearbyLandmarksSection
 
                 if hasMedia {
@@ -187,18 +163,10 @@ struct Tier2LandmarkRecord: View {
     private var instructionCard: some View {
         RoundedRectangle(cornerRadius: 25)
             .stroke(
-                Color(
-                    red: 0.75,
-                    green: 0.85,
-                    blue: 1.00
-                )
+                Color(red: 0.75, green: 0.85, blue: 1.00)
             )
             .fill(
-                Color(
-                    red: 0.94,
-                    green: 0.96,
-                    blue: 1.00
-                )
+                Color(red: 0.94, green: 0.96, blue: 1.00)
             )
             .frame(height: 140)
             .overlay {
@@ -219,36 +187,26 @@ struct Tier2LandmarkRecord: View {
             Button {
                 showVideoPicker = true
             } label: {
-                Label(
-                    "Record Video",
-                    systemImage: "video"
-                )
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
+                Label("Record Video", systemImage: "video")
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
             }
             .foregroundStyle(.white)
             .background(primaryColor)
-            .clipShape(
-                RoundedRectangle(cornerRadius: 15)
-            )
+            .clipShape(RoundedRectangle(cornerRadius: 15))
             .disabled(uploadService.isUploading)
             .opacity(uploadService.isUploading ? 0.6 : 1)
 
             Button {
                 showPhotoPicker = true
             } label: {
-                Label(
-                    "Take Photo",
-                    systemImage: "camera"
-                )
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
+                Label("Take Photo", systemImage: "camera")
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
             }
             .foregroundStyle(.white)
             .background(primaryColor)
-            .clipShape(
-                RoundedRectangle(cornerRadius: 15)
-            )
+            .clipShape(RoundedRectangle(cornerRadius: 15))
             .disabled(uploadService.isUploading)
             .opacity(uploadService.isUploading ? 0.6 : 1)
         }
@@ -278,7 +236,6 @@ struct Tier2LandmarkRecord: View {
                     )
                     .font(.footnote)
                     .foregroundStyle(.orange)
-
                 } else {
                     Text(
                         "Location is accurate enough to search for nearby landmarks."
@@ -315,9 +272,7 @@ struct Tier2LandmarkRecord: View {
 
                 Button("Refresh Nearby") {
                     Task {
-                        await refreshNearbyIfPossible(
-                            force: true
-                        )
+                        await refreshNearbyIfPossible(force: true)
                     }
                 }
                 .font(.footnote)
@@ -341,9 +296,7 @@ struct Tier2LandmarkRecord: View {
             nearbyLandmarkResults
 
             if let selectedLandmark {
-                selectedLandmarkCard(
-                    selectedLandmark
-                )
+                selectedLandmarkCard(selectedLandmark)
             }
         }
     }
@@ -351,18 +304,14 @@ struct Tier2LandmarkRecord: View {
     @ViewBuilder
     private var nearbyLandmarkResults: some View {
         if nearbyService.isLoading {
-            ProgressView(
-                "Looking for nearby landmarks…"
-            )
-            .padding(.horizontal)
+            ProgressView("Looking for nearby landmarks…")
+                .padding(.horizontal)
 
         } else if let errorMessage = nearbyService.errorMessage {
-            Text(
-                "Could not load nearby landmarks: \(errorMessage)"
-            )
-            .font(.footnote)
-            .foregroundStyle(.red)
-            .padding(.horizontal)
+            Text("Could not load nearby landmarks: \(errorMessage)")
+                .font(.footnote)
+                .foregroundStyle(.red)
+                .padding(.horizontal)
 
         } else if !hasUsableLocation {
             Text(
@@ -373,12 +322,10 @@ struct Tier2LandmarkRecord: View {
             .padding(.horizontal)
 
         } else if nearbyService.items.isEmpty {
-            Text(
-                "No landmarks found within \(Int(radiusMeters)) meters."
-            )
-            .font(.footnote)
-            .foregroundStyle(.secondary)
-            .padding(.horizontal)
+            Text("No landmarks found within \(Int(radiusMeters)) meters.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal)
 
         } else {
             VStack(spacing: 10) {
@@ -393,38 +340,24 @@ struct Tier2LandmarkRecord: View {
     private func nearbyLandmarkButton(
         _ landmark: NearbyLandmark
     ) -> some View {
-        let isSelected =
-            selectedLandmark?.landmarkId ==
-            landmark.landmarkId
+        let isSelected = selectedLandmark?.landmarkId == landmark.landmarkId
 
         return Button {
             selectedLandmark = landmark
-            
+
             if initialLandmarkId != nil &&
                 !hasAppliedInitialLandmark {
-
                 hasAppliedInitialLandmark = true
                 onInitialLandmarkConsumed()
             }
 
-            if shortDescription
-                .trimmingCharacters(
-                    in: .whitespacesAndNewlines
-                )
-                .isEmpty {
-
-                shortDescription =
-                    landmark.shortDescription
-            }
-
             uploadService.reset()
-
         } label: {
             HStack(alignment: .top, spacing: 12) {
                 Image(
                     systemName: isSelected
-                    ? "largecircle.fill.circle"
-                    : "circle"
+                        ? "largecircle.fill.circle"
+                        : "circle"
                 )
                 .foregroundStyle(primaryColor)
                 .padding(.top, 2)
@@ -436,11 +369,9 @@ struct Tier2LandmarkRecord: View {
 
                         Spacer()
 
-                        Text(
-                            "\(Int(landmark.distanceMeters))m"
-                        )
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                        Text("\(Int(landmark.distanceMeters))m")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
                     }
 
                     Text(landmark.shortDescription)
@@ -450,30 +381,19 @@ struct Tier2LandmarkRecord: View {
                 }
             }
             .padding()
-            .frame(
-                maxWidth: .infinity,
-                alignment: .leading
-            )
+            .frame(maxWidth: .infinity, alignment: .leading)
             .background {
                 RoundedRectangle(cornerRadius: 16)
                     .fill(
                         isSelected
-                        ? Color(
-                            red: 0.90,
-                            green: 0.94,
-                            blue: 1.00
-                        )
-                        : Color(
-                            uiColor: .systemGray6
-                        )
+                            ? Color(red: 0.90, green: 0.94, blue: 1.00)
+                            : Color(uiColor: .systemGray6)
                     )
             }
             .overlay {
                 RoundedRectangle(cornerRadius: 16)
                     .stroke(
-                        isSelected
-                        ? primaryColor
-                        : Color.clear,
+                        isSelected ? primaryColor : Color.clear,
                         lineWidth: 1.5
                     )
             }
@@ -497,23 +417,14 @@ struct Tier2LandmarkRecord: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
 
-            Text(
-                "Distance: \(Int(landmark.distanceMeters)) meters"
-            )
-            .font(.footnote)
-            .foregroundStyle(.secondary)
+            Text("Distance: \(Int(landmark.distanceMeters)) meters")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
         }
         .padding()
-        .frame(
-            maxWidth: .infinity,
-            alignment: .leading
-        )
-        .background(
-            Color(uiColor: .systemGray6)
-        )
-        .clipShape(
-            RoundedRectangle(cornerRadius: 16)
-        )
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(uiColor: .systemGray6))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
         .padding(.horizontal)
     }
 
@@ -521,19 +432,7 @@ struct Tier2LandmarkRecord: View {
 
     private var uploadDetailsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Short description (required)")
-                .padding(.horizontal)
-
-            TextField(
-                "e.g., Main entrance, statue base, north side of building",
-                text: $shortDescription
-            )
-            .textFieldStyle(.roundedBorder)
-            .padding(.horizontal)
-            .disabled(uploadService.isUploading)
-
             uploadButton
-
             uploadStatusCard
         }
     }
@@ -550,11 +449,8 @@ struct Tier2LandmarkRecord: View {
                     Text("Uploading…")
                         .fontWeight(.semibold)
                 } else {
-                    Label(
-                        "Upload Media",
-                        systemImage: "arrow.up.circle"
-                    )
-                    .fontWeight(.semibold)
+                    Label("Upload Media", systemImage: "arrow.up.circle")
+                        .fontWeight(.semibold)
                 }
             }
             .frame(maxWidth: .infinity)
@@ -562,18 +458,12 @@ struct Tier2LandmarkRecord: View {
         }
         .padding(.horizontal)
         .foregroundStyle(.white)
-        .background(
-            canSubmitUpload
-            ? primaryColor
-            : Color.gray
-        )
-        .clipShape(
-            RoundedRectangle(cornerRadius: 15)
-        )
+        .background(canSubmitUpload ? primaryColor : Color.gray)
+        .clipShape(RoundedRectangle(cornerRadius: 15))
         .disabled(!canSubmitUpload)
     }
 
-    // MARK: - Upload status card
+    // MARK: - Upload status
 
     @ViewBuilder
     private var uploadStatusCard: some View {
@@ -584,14 +474,9 @@ struct Tier2LandmarkRecord: View {
                         ProgressView()
                             .padding(.top, 2)
                     } else {
-                        Image(
-                            systemName:
-                                uploadService.stage.systemImage
-                        )
-                        .font(.title3)
-                        .foregroundStyle(
-                            uploadStatusColor
-                        )
+                        Image(systemName: uploadService.stage.systemImage)
+                            .font(.title3)
+                            .foregroundStyle(uploadStatusColor)
                     }
 
                     VStack(alignment: .leading, spacing: 4) {
@@ -601,61 +486,40 @@ struct Tier2LandmarkRecord: View {
                         Text(uploadService.detail)
                             .font(.footnote)
                             .foregroundStyle(.secondary)
-                            .fixedSize(
-                                horizontal: false,
-                                vertical: true
-                            )
+                            .fixedSize(horizontal: false, vertical: true)
                     }
 
                     Spacer()
                 }
 
                 if uploadService.isUploading {
-                    ProgressView(
-                        value: uploadService.progress,
-                        total: 1
-                    )
-                    .progressViewStyle(.linear)
+                    ProgressView(value: uploadService.progress, total: 1)
+                        .progressViewStyle(.linear)
 
-                    Text(
-                        "\(Int(uploadService.progress * 100))% complete"
-                    )
-                    .font(.caption.bold())
-                    .foregroundStyle(.secondary)
+                    Text("\(Int(uploadService.progress * 100))% complete")
+                        .font(.caption.bold())
+                        .foregroundStyle(.secondary)
 
-                    Text(
-                        "Please keep LookSee open until the upload finishes."
-                    )
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    Text("Please keep LookSee open until the upload finishes.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
 
                 if uploadService.stage == .failed {
                     Button {
                         uploadService.reset()
                     } label: {
-                        Label(
-                            "Dismiss Error",
-                            systemImage: "xmark.circle"
-                        )
+                        Label("Dismiss Error", systemImage: "xmark.circle")
                     }
                     .font(.footnote.bold())
                 }
             }
             .padding()
-            .background(
-                Color(
-                    uiColor: .secondarySystemBackground
-                )
-            )
-            .clipShape(
-                RoundedRectangle(cornerRadius: 16)
-            )
+            .background(Color(uiColor: .secondarySystemBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 16))
             .overlay {
                 RoundedRectangle(cornerRadius: 16)
-                    .stroke(
-                        uploadStatusColor.opacity(0.3)
-                    )
+                    .stroke(uploadStatusColor.opacity(0.3))
             }
             .padding(.horizontal)
         }
@@ -665,10 +529,8 @@ struct Tier2LandmarkRecord: View {
         switch uploadService.stage {
         case .complete:
             return .green
-
         case .failed:
             return .red
-
         default:
             return primaryColor
         }
@@ -680,24 +542,18 @@ struct Tier2LandmarkRecord: View {
         VideoPicker(
             useCamera: true,
             onPicked: { url in
+                deleteTemporaryVideoIfNeeded(pickedVideoURL)
+
                 pickedVideoURL = url
                 pickedImage = nil
-
-                statusText =
-                    "Selected video: \(url.lastPathComponent)"
-
-                shortDescription = ""
-                userDescription = ""
-
+                statusText = "Selected video: \(url.lastPathComponent)"
                 uploadService.reset()
             },
             onInvalidDuration: { message in
                 pickedVideoURL = nil
-
                 videoDurationAlertMessage = message
                 showVideoDurationAlert = true
                 statusText = message
-
                 uploadService.reset()
             }
         )
@@ -705,14 +561,11 @@ struct Tier2LandmarkRecord: View {
 
     private var photoPicker: some View {
         PhotoPicker { image in
+            deleteTemporaryVideoIfNeeded(pickedVideoURL)
+
             pickedImage = image
             pickedVideoURL = nil
-
             statusText = "Selected photo."
-
-            shortDescription = ""
-            userDescription = ""
-
             uploadService.reset()
         }
     }
@@ -731,31 +584,23 @@ struct Tier2LandmarkRecord: View {
                 let result = try await uploadService.upload(
                     userEmail: vm.userEmail,
                     label: selectedLandmark.label,
-                    landmarkId:
-                        selectedLandmark.landmarkId,
-                    landmarkLabel:
-                        selectedLandmark.label,
-                    shortDescription:
-                        shortDescription,
-                    userDescription:
-                        userDescription,
-                    latitude:
-                        locationManager.latitude,
-                    longitude:
-                        locationManager.longitude,
-                    horizontalAccuracy:
-                        locationManager.horizontalAccuracy,
-                    videoURL:
-                        pickedVideoURL,
-                    image:
-                        pickedImage
+                    landmarkId: selectedLandmark.landmarkId,
+                    landmarkLabel: selectedLandmark.label,
+                    // Preserve the description created with the landmark.
+                    shortDescription: selectedLandmark.shortDescription,
+                    // Autolabeling now generates frame-level descriptions.
+                    userDescription: nil,
+                    latitude: locationManager.latitude,
+                    longitude: locationManager.longitude,
+                    horizontalAccuracy: locationManager.horizontalAccuracy,
+                    videoURL: pickedVideoURL,
+                    image: pickedImage
                 )
 
                 print(
                     "✅ Tier-2 upload completed:",
                     result.submissionId,
-                    result.landmarkId ??
-                    "no-landmark-id"
+                    result.landmarkId ?? "no-landmark-id"
                 )
 
             } catch {
@@ -767,59 +612,18 @@ struct Tier2LandmarkRecord: View {
         }
     }
 
-    private func applyInitialLandmarkSelectionIfAvailable() {
-        guard !hasAppliedInitialLandmark,
-              let initialLandmarkId else {
-            return
-        }
-
-        guard let matchingLandmark =
-                nearbyService.items.first(
-                    where: {
-                        $0.landmarkId ==
-                        initialLandmarkId
-                    }
-                ) else {
-            return
-        }
-
-        selectedLandmark = matchingLandmark
-
-        // Clear any old media that may still be present
-        // from a previous visit to the Upload tab.
-        pickedVideoURL = nil
-        pickedImage = nil
-
-        statusText = "No media selected."
-
-        shortDescription =
-            matchingLandmark.shortDescription
-
-        userDescription = ""
-
-        uploadService.reset()
-
-        hasAppliedInitialLandmark = true
-        onInitialLandmarkConsumed()
-    }
-    
-    
     // MARK: - Nearby landmark refresh
 
     private func refreshNearbyIfPossible(
         force: Bool = false
     ) async {
         guard locationManager.isAuthorized,
-              let latitude =
-                locationManager.latitude,
-              let longitude =
-                locationManager.longitude,
-              let accuracy =
-                locationManager.horizontalAccuracy else {
+              let latitude = locationManager.latitude,
+              let longitude = locationManager.longitude,
+              let accuracy = locationManager.horizontalAccuracy else {
 
             if force {
-                nearbyService.errorMessage =
-                    "Location is not available yet."
+                nearbyService.errorMessage = "Location is not available yet."
             }
 
             return
@@ -842,17 +646,64 @@ struct Tier2LandmarkRecord: View {
             longitude: longitude,
             radiusMeters: radiusMeters
         )
+
         applyInitialLandmarkSelectionIfAvailable()
 
         if let selectedLandmark,
            !nearbyService.items.contains(
                 where: {
-                    $0.landmarkId ==
-                    selectedLandmark.landmarkId
+                    $0.landmarkId == selectedLandmark.landmarkId
                 }
            ) {
             self.selectedLandmark = nil
         }
+    }
+
+    private func applyInitialLandmarkSelectionIfAvailable() {
+        guard !hasAppliedInitialLandmark,
+              let initialLandmarkId else {
+            return
+        }
+
+        guard let matchingLandmark = nearbyService.items.first(
+            where: {
+                $0.landmarkId == initialLandmarkId
+            }
+        ) else {
+            return
+        }
+
+        selectedLandmark = matchingLandmark
+
+        deleteTemporaryVideoIfNeeded(pickedVideoURL)
+        pickedVideoURL = nil
+        pickedImage = nil
+        statusText = "No media selected."
+        uploadService.reset()
+
+        hasAppliedInitialLandmark = true
+        onInitialLandmarkConsumed()
+    }
+
+    private func deleteTemporaryVideoIfNeeded(_ videoURL: URL?) {
+        guard let videoURL else {
+            return
+        }
+
+        let temporaryDirectory = FileManager.default
+            .temporaryDirectory
+            .standardizedFileURL
+            .path
+
+        let videoPath = videoURL
+            .standardizedFileURL
+            .path
+
+        guard videoPath.hasPrefix(temporaryDirectory) else {
+            return
+        }
+
+        try? FileManager.default.removeItem(at: videoURL)
     }
 }
 
