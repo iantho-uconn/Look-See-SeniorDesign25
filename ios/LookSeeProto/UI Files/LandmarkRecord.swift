@@ -12,30 +12,48 @@ struct LandmarkRecord: View {
 
     // MARK: - Landmark information
 
-    @State private var labelText: String = ""
-    @State private var businessLandmarkId: String? = nil
+    @State private var labelText = ""
+    @State private var businessLandmarkId: String?
 
-    @State private var shortDescription: String = ""
-    @State private var userDescription: String = ""
+    @State private var shortDescription = ""
+    @State private var userDescription = ""
 
     // MARK: - Positive media
 
-    // Exactly one positive media item may be selected.
-    @State private var pickedVideoURL: URL? = nil
-    @State private var pickedImage: UIImage? = nil
+    // Exactly one positive item is allowed.
+    @State private var pickedVideoURL: URL?
+    @State private var pickedImage: UIImage?
 
     @State private var showVideoPicker = false
     @State private var showPhotoPicker = false
 
-    @State private var statusText: String = "No landmark media selected."
+    @State private var statusText =
+        "No landmark media selected."
 
-    // MARK: - Required hard-negative photos
+    // MARK: - Negative reference photos
 
-    @State private var capturedNegativePhotos: [CapturedNegativePhoto] = []
+    @State private var capturedNegativePhotos:
+        [CapturedNegativePhoto] = []
+
     @State private var showNegativeCamera = false
 
     private let minimumNegativePhotoCount = 5
     private let maximumNegativePhotoCount = 10
+
+    // MARK: - Upload workflow state
+
+    /*
+     Once this is non-nil, the positive landmark submission has
+     already succeeded.
+
+     If the negative upload later fails, we retain this result so
+     that retrying does not create another landmark or upload the
+     positive media again.
+     */
+    @State private var completedPositiveResult:
+        PositiveSubmissionResult?
+
+    @State private var isFullSubmissionComplete = false
 
     // MARK: - Video validation
 
@@ -44,8 +62,14 @@ struct LandmarkRecord: View {
 
     // MARK: - Services
 
-    @StateObject private var uploadService = UploadService()
-    @StateObject private var locationManager = LocationManager()
+    @StateObject private var uploadService =
+        UploadService()
+
+    @StateObject private var hardNegativeUploadService =
+        HardNegativeUploadService()
+
+    @StateObject private var locationManager =
+        LocationManager()
 
     // MARK: - Appearance
 
@@ -63,43 +87,94 @@ struct LandmarkRecord: View {
 
     private var hasLabel: Bool {
         !labelText
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(
+                in: .whitespacesAndNewlines
+            )
             .isEmpty
     }
 
     private var hasRequiredDescriptions: Bool {
-        let trimmedShortDescription = shortDescription
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedShort = shortDescription
+            .trimmingCharacters(
+                in: .whitespacesAndNewlines
+            )
 
-        let trimmedUserDescription = userDescription
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedFrame = userDescription
+            .trimmingCharacters(
+                in: .whitespacesAndNewlines
+            )
 
-        return !trimmedShortDescription.isEmpty &&
-               !trimmedUserDescription.isEmpty
+        return !trimmedShort.isEmpty &&
+               !trimmedFrame.isEmpty
     }
 
     private var hasRequiredNegativePhotos: Bool {
-        capturedNegativePhotos.count >= minimumNegativePhotoCount &&
-        capturedNegativePhotos.count <= maximumNegativePhotoCount
+        capturedNegativePhotos.count >=
+            minimumNegativePhotoCount
+        &&
+        capturedNegativePhotos.count <=
+            maximumNegativePhotoCount
     }
 
+    private var isSubmissionRunning: Bool {
+        uploadService.isUploading ||
+        hardNegativeUploadService.isUploading
+    }
+
+    /*
+     Before the positive submission succeeds, all landmark fields
+     are required.
+
+     After it succeeds, a retry only needs the negative photos.
+     */
     private var canUpload: Bool {
-        hasPositiveMedia &&
-        hasLabel &&
-        hasRequiredDescriptions &&
-        hasRequiredNegativePhotos &&
-        !uploadService.isUploading
+        guard !isSubmissionRunning,
+              !isFullSubmissionComplete else {
+            return false
+        }
+
+        if completedPositiveResult != nil {
+            return hasRequiredNegativePhotos
+        }
+
+        return hasPositiveMedia &&
+               hasLabel &&
+               hasRequiredDescriptions &&
+               hasRequiredNegativePhotos
+    }
+
+    /*
+     Landmark details must not change after the positive submission
+     succeeds, because those details have already been written to
+     the backend.
+
+     Negative photos may still be adjusted if their upload fails.
+     */
+    private var arePositiveDetailsLocked: Bool {
+        isSubmissionRunning ||
+        completedPositiveResult != nil ||
+        isFullSubmissionComplete
+    }
+
+    private var areNegativePhotosLocked: Bool {
+        isSubmissionRunning ||
+        isFullSubmissionComplete
     }
 
     private var negativePhotoStatusText: String {
-        if capturedNegativePhotos.count < minimumNegativePhotoCount {
+        if capturedNegativePhotos.count <
+            minimumNegativePhotoCount {
+
             let remaining =
-                minimumNegativePhotoCount - capturedNegativePhotos.count
+                minimumNegativePhotoCount -
+                capturedNegativePhotos.count
 
             return "\(remaining) more negative photo\(remaining == 1 ? "" : "s") required."
         }
 
-        if capturedNegativePhotos.count >= maximumNegativePhotoCount {
+        if capturedNegativePhotos.count >=
+            maximumNegativePhotoCount {
+
             return "Maximum of \(maximumNegativePhotoCount) negative photos captured."
         }
 
@@ -122,7 +197,9 @@ struct LandmarkRecord: View {
 
                 locationSection
 
-                if hasPositiveMedia {
+                if hasPositiveMedia ||
+                    completedPositiveResult != nil {
+
                     landmarkForm
                 }
 
@@ -141,18 +218,33 @@ struct LandmarkRecord: View {
         .sheet(isPresented: $showPhotoPicker) {
             photoPicker
         }
-        .fullScreenCover(isPresented: $showNegativeCamera) {
+        .fullScreenCover(
+            isPresented: $showNegativeCamera
+        ) {
             MultiPhotoCameraView(
-                existingPhotos: capturedNegativePhotos,
-                minimumPhotoCount: minimumNegativePhotoCount,
-                maximumPhotoCount: maximumNegativePhotoCount
+                existingPhotos:
+                    capturedNegativePhotos,
+                minimumPhotoCount:
+                    minimumNegativePhotoCount,
+                maximumPhotoCount:
+                    maximumNegativePhotoCount
             ) { photos in
                 capturedNegativePhotos = photos
+
+                /*
+                 Changing the photo selection after a failed
+                 negative upload should clear the old negative
+                 service message before retrying.
+                 */
+                if !hardNegativeUploadService.isUploading {
+                    hardNegativeUploadService.reset()
+                }
             }
         }
         .alert(
             "Invalid Video Length",
-            isPresented: $showVideoDurationAlert
+            isPresented:
+                $showVideoDurationAlert
         ) {
             Button("OK", role: .cancel) { }
         } message: {
@@ -207,8 +299,10 @@ struct LandmarkRecord: View {
             .clipShape(
                 RoundedRectangle(cornerRadius: 15)
             )
-            .disabled(uploadService.isUploading)
-            .opacity(uploadService.isUploading ? 0.6 : 1)
+            .disabled(arePositiveDetailsLocked)
+            .opacity(
+                arePositiveDetailsLocked ? 0.6 : 1
+            )
 
             Button {
                 showPhotoPicker = true
@@ -225,8 +319,10 @@ struct LandmarkRecord: View {
             .clipShape(
                 RoundedRectangle(cornerRadius: 15)
             )
-            .disabled(uploadService.isUploading)
-            .opacity(uploadService.isUploading ? 0.6 : 1)
+            .disabled(arePositiveDetailsLocked)
+            .opacity(
+                arePositiveDetailsLocked ? 0.6 : 1
+            )
         }
         .padding(.horizontal)
     }
@@ -236,8 +332,10 @@ struct LandmarkRecord: View {
     private var locationSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             if locationManager.isAuthorized,
-               let latitude = locationManager.latitude,
-               let longitude = locationManager.longitude {
+               let latitude =
+                    locationManager.latitude,
+               let longitude =
+                    locationManager.longitude {
 
                 Text(
                     "Location: \(latitude), \(longitude) " +
@@ -246,24 +344,33 @@ struct LandmarkRecord: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
 
-            } else if locationManager.authorizationStatus == .denied ||
-                        locationManager.authorizationStatus == .restricted {
+            } else if
+                locationManager.authorizationStatus ==
+                    .denied
+                ||
+                locationManager.authorizationStatus ==
+                    .restricted {
 
-                Text("Location: Off — permission denied")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                Text(
+                    "Location: Off — permission denied"
+                )
+                .font(.footnote)
+                .foregroundStyle(.secondary)
 
             } else {
-                Text("Location: Requesting permission…")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                Text(
+                    "Location: Requesting permission…"
+                )
+                .font(.footnote)
+                .foregroundStyle(.secondary)
             }
 
             Button("Enable Location") {
-                locationManager.requestPermissionIfNeeded()
+                locationManager
+                    .requestPermissionIfNeeded()
             }
             .font(.footnote)
-            .disabled(uploadService.isUploading)
+            .disabled(arePositiveDetailsLocked)
         }
         .padding(.horizontal)
     }
@@ -271,7 +378,10 @@ struct LandmarkRecord: View {
     // MARK: - Landmark form
 
     private var landmarkForm: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(
+            alignment: .leading,
+            spacing: 12
+        ) {
             Text("Label (required)")
                 .padding(.horizontal)
 
@@ -281,13 +391,15 @@ struct LandmarkRecord: View {
             )
             .textFieldStyle(.roundedBorder)
             .padding(.horizontal)
-            .disabled(uploadService.isUploading)
+            .disabled(arePositiveDetailsLocked)
 
             if let businessLandmarkId {
-                Text("Landmark ID: \(businessLandmarkId)")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal)
+                Text(
+                    "Landmark ID: \(businessLandmarkId)"
+                )
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal)
             }
 
             Text("Short description (required)")
@@ -299,7 +411,7 @@ struct LandmarkRecord: View {
             )
             .textFieldStyle(.roundedBorder)
             .padding(.horizontal)
-            .disabled(uploadService.isUploading)
+            .disabled(arePositiveDetailsLocked)
 
             Text("What’s in the frame? (required)")
                 .padding(.horizontal)
@@ -309,20 +421,72 @@ struct LandmarkRecord: View {
                 text: $userDescription,
                 axis: .vertical
             )
-            .lineLimit(3, reservesSpace: true)
+            .lineLimit(
+                3,
+                reservesSpace: true
+            )
             .textFieldStyle(.roundedBorder)
             .padding(.horizontal)
-            .disabled(uploadService.isUploading)
+            .disabled(arePositiveDetailsLocked)
+
+            if completedPositiveResult != nil &&
+                !isFullSubmissionComplete {
+
+                positiveAlreadySavedCard
+            }
 
             negativePhotoSection
 
             uploadButton
 
             positiveUploadStatusCard
+
+            negativeUploadStatusCard
+
+            overallCompletionCard
         }
     }
 
-    // MARK: - Hard-negative photo section
+    // MARK: - Positive submission checkpoint
+
+    private var positiveAlreadySavedCard: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(
+                systemName: "checkmark.circle.fill"
+            )
+            .foregroundStyle(.green)
+            .font(.title3)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Landmark media saved")
+                    .font(.headline)
+
+                Text(
+                    "Your landmark and positive media were already uploaded. Retrying will upload only the negative reference photos."
+                )
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+        }
+        .padding()
+        .background(
+            Color.green.opacity(0.08)
+        )
+        .clipShape(
+            RoundedRectangle(cornerRadius: 16)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(
+                    Color.green.opacity(0.25)
+                )
+        }
+        .padding(.horizontal)
+    }
+
+    // MARK: - Negative photo section
 
     private var negativePhotoSection: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -373,22 +537,27 @@ struct LandmarkRecord: View {
             .clipShape(
                 RoundedRectangle(cornerRadius: 14)
             )
-            .disabled(uploadService.isUploading)
-            .opacity(uploadService.isUploading ? 0.6 : 1)
+            .disabled(areNegativePhotosLocked)
+            .opacity(
+                areNegativePhotosLocked ? 0.6 : 1
+            )
 
             if capturedNegativePhotos.isEmpty {
-                Text("No negative photos captured yet.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                Text(
+                    "No negative photos captured yet."
+                )
+                .font(.footnote)
+                .foregroundStyle(.secondary)
             } else {
                 negativeThumbnailStrip
             }
 
             Label(
                 negativePhotoStatusText,
-                systemImage: hasRequiredNegativePhotos
-                ? "checkmark.circle.fill"
-                : "exclamationmark.circle.fill"
+                systemImage:
+                    hasRequiredNegativePhotos
+                    ? "checkmark.circle.fill"
+                    : "exclamationmark.circle.fill"
             )
             .font(.footnote.bold())
             .foregroundStyle(
@@ -398,7 +567,7 @@ struct LandmarkRecord: View {
             )
 
             Text(
-                "These negative photos are currently stored on this device. Their server upload will be connected in the next step."
+                "These photos will be uploaded as negative training examples after the landmark media is saved."
             )
             .font(.caption)
             .foregroundStyle(.secondary)
@@ -433,27 +602,38 @@ struct LandmarkRecord: View {
     }
 
     private var negativeThumbnailStrip: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
+        ScrollView(
+            .horizontal,
+            showsIndicators: false
+        ) {
             HStack(spacing: 10) {
-                ForEach(capturedNegativePhotos) { photo in
+                ForEach(
+                    capturedNegativePhotos
+                ) { photo in
+
                     ZStack(alignment: .topTrailing) {
-                        Image(uiImage: photo.thumbnail)
-                            .resizable()
-                            .scaledToFill()
-                            .frame(
-                                width: 78,
-                                height: 78
+                        Image(
+                            uiImage: photo.thumbnail
+                        )
+                        .resizable()
+                        .scaledToFill()
+                        .frame(
+                            width: 78,
+                            height: 78
+                        )
+                        .clipShape(
+                            RoundedRectangle(
+                                cornerRadius: 10
                             )
-                            .clipShape(
-                                RoundedRectangle(cornerRadius: 10)
-                            )
-                            .clipped()
+                        )
+                        .clipped()
 
                         Button {
                             removeNegativePhoto(photo)
                         } label: {
                             Image(
-                                systemName: "xmark.circle.fill"
+                                systemName:
+                                    "xmark.circle.fill"
                             )
                             .font(.title3)
                             .symbolRenderingMode(.palette)
@@ -462,11 +642,10 @@ struct LandmarkRecord: View {
                                 .red
                             )
                         }
-                        .offset(
-                            x: 6,
-                            y: -6
+                        .offset(x: 6, y: -6)
+                        .disabled(
+                            areNegativePhotosLocked
                         )
-                        .disabled(uploadService.isUploading)
                     }
                 }
             }
@@ -475,23 +654,25 @@ struct LandmarkRecord: View {
         }
     }
 
-    // MARK: - Upload button
+    // MARK: - Main upload button
 
     private var uploadButton: some View {
         Button {
-            startPositiveUpload()
+            startFullSubmission()
         } label: {
             HStack(spacing: 10) {
-                if uploadService.isUploading {
+                if isSubmissionRunning {
                     ProgressView()
                         .tint(.white)
 
-                    Text("Uploading…")
+                    Text(activeUploadButtonText)
                         .fontWeight(.semibold)
+
                 } else {
                     Label(
-                        "Upload Landmark",
-                        systemImage: "arrow.up.circle"
+                        idleUploadButtonText,
+                        systemImage:
+                            uploadButtonSystemImage
                     )
                     .fontWeight(.semibold)
                 }
@@ -512,88 +693,194 @@ struct LandmarkRecord: View {
         .disabled(!canUpload)
     }
 
-    private func startPositiveUpload() {
-        Task {
-            let trimmedLabel = labelText
-                .trimmingCharacters(
-                    in: .whitespacesAndNewlines
-                )
+    private var activeUploadButtonText: String {
+        if hardNegativeUploadService.isUploading {
+            return "Uploading reference photos…"
+        }
 
-            guard !trimmedLabel.isEmpty else {
+        return "Uploading landmark…"
+    }
+
+    private var idleUploadButtonText: String {
+        if isFullSubmissionComplete {
+            return "Submission Complete"
+        }
+
+        if completedPositiveResult != nil {
+            return "Retry Negative Photos"
+        }
+
+        return "Upload Landmark"
+    }
+
+    private var uploadButtonSystemImage: String {
+        if isFullSubmissionComplete {
+            return "checkmark.circle.fill"
+        }
+
+        if completedPositiveResult != nil {
+            return "arrow.clockwise.circle"
+        }
+
+        return "arrow.up.circle"
+    }
+
+    // MARK: - Full submission workflow
+
+    private func startFullSubmission() {
+        Task {
+            guard !isSubmissionRunning,
+                  !isFullSubmissionComplete else {
                 return
             }
 
-            await vm.fetchUserEmail()
-
             if businessLandmarkId == nil {
-                businessLandmarkId = makeBusinessLandmarkId()
+                businessLandmarkId =
+                    makeBusinessLandmarkId()
             }
 
-            guard let landmarkId = businessLandmarkId else {
+            guard let generatedLandmarkId =
+                    businessLandmarkId else {
                 return
             }
 
             do {
-                let result = try await uploadService.upload(
-                    userEmail: vm.userEmail,
-                    label: trimmedLabel,
-                    landmarkId: landmarkId,
-                    landmarkLabel: trimmedLabel,
-                    shortDescription: shortDescription,
-                    userDescription: userDescription,
-                    latitude: locationManager.latitude,
-                    longitude: locationManager.longitude,
-                    horizontalAccuracy: locationManager.horizontalAccuracy,
-                    videoURL: pickedVideoURL,
-                    image: pickedImage
-                )
-
-                print(
-                    "✅ Positive upload completed:",
-                    result.submissionId,
-                    result.landmarkId ?? "no-landmark-id"
-                )
+                let positiveResult:
+                    PositiveSubmissionResult
 
                 /*
-                 Next step:
-
-                 let completedNegatives =
-                     try await hardNegativeUploadService.upload(
-                         landmarkId: landmarkId,
-                         photos: capturedNegativePhotos
-                     )
+                 Run the positive upload only when it has not
+                 already succeeded.
                  */
+                if let existingResult =
+                    completedPositiveResult {
+
+                    positiveResult = existingResult
+
+                } else {
+                    let trimmedLabel = labelText
+                        .trimmingCharacters(
+                            in: .whitespacesAndNewlines
+                        )
+
+                    guard !trimmedLabel.isEmpty else {
+                        return
+                    }
+
+                    await vm.fetchUserEmail()
+
+                    positiveResult =
+                        try await uploadService.upload(
+                            userEmail: vm.userEmail,
+                            label: trimmedLabel,
+                            landmarkId:
+                                generatedLandmarkId,
+                            landmarkLabel:
+                                trimmedLabel,
+                            shortDescription:
+                                shortDescription,
+                            userDescription:
+                                userDescription,
+                            latitude:
+                                locationManager.latitude,
+                            longitude:
+                                locationManager.longitude,
+                            horizontalAccuracy:
+                                locationManager
+                                    .horizontalAccuracy,
+                            videoURL:
+                                pickedVideoURL,
+                            image:
+                                pickedImage
+                        )
+
+                    completedPositiveResult =
+                        positiveResult
+
+                    statusText =
+                        "Landmark media saved. Uploading negative reference photos…"
+                }
+
+                /*
+                 Prefer the ID returned by the positive result.
+                 The locally generated ID remains the fallback.
+                 */
+                let completedLandmarkId =
+                    positiveResult.landmarkId ??
+                    generatedLandmarkId
+
+                let negativeResult =
+                    try await hardNegativeUploadService
+                        .upload(
+                            landmarkId:
+                                completedLandmarkId,
+                            photos:
+                                capturedNegativePhotos
+                        )
+
+                print(
+                    "✅ Negative upload completed:",
+                    negativeResult.batchId,
+                    negativeResult.processedCount
+                )
+
+                isFullSubmissionComplete = true
+
+                statusText =
+                    "Landmark and reference photos uploaded successfully."
 
             } catch {
                 print(
-                    "❌ Landmark upload failed:",
+                    "❌ Full landmark submission failed:",
                     error.localizedDescription
                 )
+
+                /*
+                 UploadService and HardNegativeUploadService each
+                 maintain their own user-facing failure message.
+
+                 completedPositiveResult intentionally remains set
+                 when only the negative upload fails.
+                 */
             }
         }
     }
 
-    // MARK: - Upload status card
+    // MARK: - Positive upload status
 
     @ViewBuilder
     private var positiveUploadStatusCard: some View {
         if uploadService.stage != .idle {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .top, spacing: 12) {
+            VStack(
+                alignment: .leading,
+                spacing: 12
+            ) {
+                HStack(
+                    alignment: .top,
+                    spacing: 12
+                ) {
                     if uploadService.isUploading {
                         ProgressView()
                             .controlSize(.regular)
                             .padding(.top, 2)
                     } else {
                         Image(
-                            systemName: uploadService.stage.systemImage
+                            systemName:
+                                uploadService
+                                    .stage
+                                    .systemImage
                         )
                         .font(.title3)
-                        .foregroundStyle(uploadStatusColor)
+                        .foregroundStyle(
+                            positiveUploadStatusColor
+                        )
                         .padding(.top, 1)
                     }
 
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(
+                        alignment: .leading,
+                        spacing: 4
+                    ) {
                         Text(uploadService.status)
                             .font(.headline)
 
@@ -611,7 +898,8 @@ struct LandmarkRecord: View {
 
                 if uploadService.isUploading {
                     ProgressView(
-                        value: uploadService.progress,
+                        value:
+                            uploadService.progress,
                         total: 1
                     )
                     .progressViewStyle(.linear)
@@ -623,7 +911,7 @@ struct LandmarkRecord: View {
                     .foregroundStyle(.secondary)
 
                     Text(
-                        "Please keep LookSee open until the upload finishes."
+                        "Please keep LookSee open until this step finishes."
                     )
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -635,7 +923,8 @@ struct LandmarkRecord: View {
                     } label: {
                         Label(
                             "Dismiss Error",
-                            systemImage: "xmark.circle"
+                            systemImage:
+                                "xmark.circle"
                         )
                     }
                     .font(.footnote.bold())
@@ -644,7 +933,8 @@ struct LandmarkRecord: View {
             .padding()
             .background(
                 Color(
-                    uiColor: .secondarySystemBackground
+                    uiColor:
+                        .secondarySystemBackground
                 )
             )
             .clipShape(
@@ -653,14 +943,15 @@ struct LandmarkRecord: View {
             .overlay {
                 RoundedRectangle(cornerRadius: 16)
                     .stroke(
-                        uploadStatusColor.opacity(0.3)
+                        positiveUploadStatusColor
+                            .opacity(0.3)
                     )
             }
             .padding(.horizontal)
         }
     }
 
-    private var uploadStatusColor: Color {
+    private var positiveUploadStatusColor: Color {
         switch uploadService.stage {
         case .complete:
             return .green
@@ -670,6 +961,219 @@ struct LandmarkRecord: View {
 
         default:
             return primaryColor
+        }
+    }
+
+    // MARK: - Negative upload status
+
+    @ViewBuilder
+    private var negativeUploadStatusCard: some View {
+        if hardNegativeUploadService.status != "Idle" {
+            VStack(
+                alignment: .leading,
+                spacing: 12
+            ) {
+                HStack(
+                    alignment: .top,
+                    spacing: 12
+                ) {
+                    if hardNegativeUploadService
+                        .isUploading {
+
+                        ProgressView()
+                            .controlSize(.regular)
+                            .padding(.top, 2)
+
+                    } else {
+                        Image(
+                            systemName:
+                                negativeStatusSystemImage
+                        )
+                        .font(.title3)
+                        .foregroundStyle(
+                            negativeStatusColor
+                        )
+                    }
+
+                    VStack(
+                        alignment: .leading,
+                        spacing: 4
+                    ) {
+                        Text(
+                            negativeStatusTitle
+                        )
+                        .font(.headline)
+
+                        Text(
+                            hardNegativeUploadService
+                                .status
+                        )
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(
+                            horizontal: false,
+                            vertical: true
+                        )
+                    }
+
+                    Spacer()
+                }
+
+                if hardNegativeUploadService
+                    .isUploading {
+
+                    ProgressView(
+                        value:
+                            hardNegativeUploadService
+                                .progress,
+                        total: 1
+                    )
+                    .progressViewStyle(.linear)
+
+                    Text(
+                        "\(Int(hardNegativeUploadService.progress * 100))% complete"
+                    )
+                    .font(.caption.bold())
+                    .foregroundStyle(.secondary)
+
+                    Text(
+                        "Uploading \(capturedNegativePhotos.count) negative reference photos. Please keep LookSee open."
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+
+                if negativeUploadHasFailed {
+                    Button {
+                        hardNegativeUploadService
+                            .reset()
+                    } label: {
+                        Label(
+                            "Dismiss Error",
+                            systemImage:
+                                "xmark.circle"
+                        )
+                    }
+                    .font(.footnote.bold())
+                }
+            }
+            .padding()
+            .background(
+                Color(
+                    uiColor:
+                        .secondarySystemBackground
+                )
+            )
+            .clipShape(
+                RoundedRectangle(cornerRadius: 16)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(
+                        negativeStatusColor
+                            .opacity(0.3)
+                    )
+            }
+            .padding(.horizontal)
+        }
+    }
+
+    private var negativeUploadHasFailed: Bool {
+        hardNegativeUploadService.status
+            .lowercased()
+            .contains("failed")
+    }
+
+    private var negativeUploadCompleted: Bool {
+        hardNegativeUploadService.progress >= 1 &&
+        !hardNegativeUploadService.isUploading &&
+        !negativeUploadHasFailed
+    }
+
+    private var negativeStatusTitle: String {
+        if negativeUploadHasFailed {
+            return "Reference photos need attention"
+        }
+
+        if negativeUploadCompleted {
+            return "Reference photos uploaded"
+        }
+
+        return "Uploading reference photos"
+    }
+
+    private var negativeStatusSystemImage: String {
+        if negativeUploadHasFailed {
+            return "exclamationmark.triangle.fill"
+        }
+
+        if negativeUploadCompleted {
+            return "checkmark.circle.fill"
+        }
+
+        return "photo.stack"
+    }
+
+    private var negativeStatusColor: Color {
+        if negativeUploadHasFailed {
+            return .red
+        }
+
+        if negativeUploadCompleted {
+            return .green
+        }
+
+        return primaryColor
+    }
+
+    // MARK: - Overall success
+
+    @ViewBuilder
+    private var overallCompletionCard: some View {
+        if isFullSubmissionComplete {
+            HStack(
+                alignment: .top,
+                spacing: 12
+            ) {
+                Image(
+                    systemName:
+                        "checkmark.seal.fill"
+                )
+                .font(.title2)
+                .foregroundStyle(.green)
+
+                VStack(
+                    alignment: .leading,
+                    spacing: 4
+                ) {
+                    Text(
+                        "Landmark submission complete"
+                    )
+                    .font(.headline)
+
+                    Text(
+                        "Your landmark media and negative reference photos were uploaded successfully."
+                    )
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+            }
+            .padding()
+            .background(
+                Color.green.opacity(0.08)
+            )
+            .clipShape(
+                RoundedRectangle(cornerRadius: 16)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(
+                        Color.green.opacity(0.3)
+                    )
+            }
+            .padding(.horizontal)
         }
     }
 
@@ -688,18 +1192,30 @@ struct LandmarkRecord: View {
                 labelText = ""
                 shortDescription = ""
                 userDescription = ""
-                businessLandmarkId = makeBusinessLandmarkId()
+
+                businessLandmarkId =
+                    makeBusinessLandmarkId()
+
+                completedPositiveResult = nil
+                isFullSubmissionComplete = false
 
                 uploadService.reset()
+                hardNegativeUploadService.reset()
             },
             onInvalidDuration: { message in
                 pickedVideoURL = nil
 
-                videoDurationAlertMessage = message
+                videoDurationAlertMessage =
+                    message
+
                 showVideoDurationAlert = true
                 statusText = message
 
+                completedPositiveResult = nil
+                isFullSubmissionComplete = false
+
                 uploadService.reset()
+                hardNegativeUploadService.reset()
             }
         )
     }
@@ -709,14 +1225,21 @@ struct LandmarkRecord: View {
             pickedImage = image
             pickedVideoURL = nil
 
-            statusText = "Selected landmark photo."
+            statusText =
+                "Selected landmark photo."
 
             labelText = ""
             shortDescription = ""
             userDescription = ""
-            businessLandmarkId = makeBusinessLandmarkId()
+
+            businessLandmarkId =
+                makeBusinessLandmarkId()
+
+            completedPositiveResult = nil
+            isFullSubmissionComplete = false
 
             uploadService.reset()
+            hardNegativeUploadService.reset()
         }
     }
 
@@ -742,6 +1265,10 @@ struct LandmarkRecord: View {
         }
 
         photo.deleteLocalFile()
+
+        if !hardNegativeUploadService.isUploading {
+            hardNegativeUploadService.reset()
+        }
     }
 }
 
