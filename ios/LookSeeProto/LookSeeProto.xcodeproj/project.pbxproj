@@ -10,6 +10,8 @@
 		3C19EB412F981FA400D1AA43 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = 3C19EB402F981FA400D1AA43 /* ZIPFoundation */; };
 		3C19EB492F9943F400D1AA43 /* final.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3C19EB482F9943F400D1AA43 /* final.mlpackage */; };
 		3C1FC9CC2F42C9E70006C1D3 /* PhotoPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C1FC9CB2F42C9DA0006C1D3 /* PhotoPicker.swift */; };
+		3C4E57012FE443230045B2D4 /* TextScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C4E57002FE443230045B2D4 /* TextScannerView.swift */; };
+		3C4E57072FE443E70045B2D4 /* LandmarkRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C4E57062FE443E70045B2D4 /* LandmarkRecord.swift */; };
 		3C5FED6B2F907D270018FF06 /* Tier2LandmarkRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C5FED6A2F907D270018FF06 /* Tier2LandmarkRecord.swift */; };
 		3C63C8A82F91875E0006C5DD /* VariableContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C63C8A72F91875E0006C5DD /* VariableContainer.swift */; };
 		3C72AA372F5141A000A90328 /* best.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3C72AA362F5141A000A90328 /* best.mlpackage */; };
@@ -26,12 +28,13 @@
 		3C9020C02F3AC88600EE30BF /* CokeCanDetect.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3C9020BD2F3AC88600EE30BF /* CokeCanDetect.mlpackage */; };
 		3C9020C12F3AC88600EE30BF /* fruits_and_cans_2.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3C9020BE2F3AC88600EE30BF /* fruits_and_cans_2.mlpackage */; };
 		3CE8899C2F3FEE2B00B66044 /* VideoPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CE8899B2F3FEE2300B66044 /* VideoPicker.swift */; };
+		3CF188BE2FE19AAD00FED231 /* CapturedNegativePhoto.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CF188BC2FE19AA300FED231 /* CapturedNegativePhoto.swift */; };
+		3CF188C32FE19B6D00FED231 /* MultiPhotoCameraView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CF188C22FE19B5A00FED231 /* MultiPhotoCameraView.swift */; };
 		561FF74B2EB258D400411CF8 /* Library.swift in Sources */ = {isa = PBXBuildFile; fileRef = 561FF74A2EB258CC00411CF8 /* Library.swift */; };
 		562AD38C2ECBAF1B00D5144C /* Login.swift in Sources */ = {isa = PBXBuildFile; fileRef = 562AD38B2ECBAF1800D5144C /* Login.swift */; };
 		562DAAAD2F2A71750083A71E /* Main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 562DAAAC2F2A71740083A71E /* Main.swift */; };
 		562DAAAF2F2A85B40083A71E /* Help.swift in Sources */ = {isa = PBXBuildFile; fileRef = 562DAAAE2F2A85B20083A71E /* Help.swift */; };
 		562DAAB32F2A89600083A71E /* LandmarkScan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 562DAAB22F2A895B0083A71E /* LandmarkScan.swift */; };
-		56432A372EBBBF70006B6E49 /* LandmarkRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56432A362EBBBF6D006B6E49 /* LandmarkRecord.swift */; };
 		568B4A5A2F294DDA002BCA3D /* Buttons.swift in Sources */ = {isa = PBXBuildFile; fileRef = 568B4A592F294DD4002BCA3D /* Buttons.swift */; };
 		568CE2CD2F5654F6009A8775 /* LandmarkInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 568CE2CC2F5654F6009A8775 /* LandmarkInfo.swift */; };
 		568CE2CF2F565512009A8775 /* PopUp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 568CE2CE2F565512009A8775 /* PopUp.swift */; };
@@ -69,6 +72,8 @@
 /* Begin PBXFileReference section */
 		3C19EB482F9943F400D1AA43 /* final.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = final.mlpackage; sourceTree = "<group>"; };
 		3C1FC9CB2F42C9DA0006C1D3 /* PhotoPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoPicker.swift; sourceTree = "<group>"; };
+		3C4E57002FE443230045B2D4 /* TextScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextScannerView.swift; sourceTree = "<group>"; };
+		3C4E57062FE443E70045B2D4 /* LandmarkRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LandmarkRecord.swift; sourceTree = "<group>"; };
 		3C5FED6A2F907D270018FF06 /* Tier2LandmarkRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tier2LandmarkRecord.swift; sourceTree = "<group>"; };
 		3C63C8A72F91875E0006C5DD /* VariableContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VariableContainer.swift; sourceTree = "<group>"; };
 		3C72AA362F5141A000A90328 /* best.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = best.mlpackage; sourceTree = "<group>"; };
@@ -82,12 +87,13 @@
 		3C918FAA2E9ECE6100AF5DAF /* LookSeeProtoTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LookSeeProtoTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		3C918FB42E9ECE6100AF5DAF /* LookSeeProtoUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LookSeeProtoUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		3CE8899B2F3FEE2300B66044 /* VideoPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoPicker.swift; sourceTree = "<group>"; };
+		3CF188BC2FE19AA300FED231 /* CapturedNegativePhoto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CapturedNegativePhoto.swift; sourceTree = "<group>"; };
+		3CF188C22FE19B5A00FED231 /* MultiPhotoCameraView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultiPhotoCameraView.swift; sourceTree = "<group>"; };
 		561FF74A2EB258CC00411CF8 /* Library.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Library.swift; sourceTree = "<group>"; };
 		562AD38B2ECBAF1800D5144C /* Login.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Login.swift; sourceTree = "<group>"; };
 		562DAAAC2F2A71740083A71E /* Main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Main.swift; sourceTree = "<group>"; };
 		562DAAAE2F2A85B20083A71E /* Help.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Help.swift; sourceTree = "<group>"; };
 		562DAAB22F2A895B0083A71E /* LandmarkScan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LandmarkScan.swift; sourceTree = "<group>"; };
-		56432A362EBBBF6D006B6E49 /* LandmarkRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LandmarkRecord.swift; sourceTree = "<group>"; };
 		568B4A592F294DD4002BCA3D /* Buttons.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Buttons.swift; sourceTree = "<group>"; };
 		568CE2CC2F5654F6009A8775 /* LandmarkInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LandmarkInfo.swift; sourceTree = "<group>"; };
 		568CE2CE2F565512009A8775 /* PopUp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PopUp.swift; sourceTree = "<group>"; };
@@ -213,12 +219,13 @@
 		56C3FA072EA6CA3100EA6153 /* UI Files */ = {
 			isa = PBXGroup;
 			children = (
+				3CF188C22FE19B5A00FED231 /* MultiPhotoCameraView.swift */,
 				B0DE8C0E2F51712F008E1512 /* ConfirmSignup.swift */,
 				B0DE8C0C2F516FD3008E1512 /* Signup.swift */,
+				3CF188BC2FE19AA300FED231 /* CapturedNegativePhoto.swift */,
 				562DAAAE2F2A85B20083A71E /* Help.swift */,
 				562AD38B2ECBAF1800D5144C /* Login.swift */,
 				562DAAB22F2A895B0083A71E /* LandmarkScan.swift */,
-				56432A362EBBBF6D006B6E49 /* LandmarkRecord.swift */,
 				3C1FC9CB2F42C9DA0006C1D3 /* PhotoPicker.swift */,
 				3CE8899B2F3FEE2300B66044 /* VideoPicker.swift */,
 				562DAAAC2F2A71740083A71E /* Main.swift */,
@@ -228,7 +235,9 @@
 				56C3FA052EA6CA3100EA6153 /* Settings.swift */,
 				568B4A592F294DD4002BCA3D /* Buttons.swift */,
 				568CE2D02F56554E009A8775 /* PromotionEditor.swift */,
+				3C4E57062FE443E70045B2D4 /* LandmarkRecord.swift */,
 				568CE2CC2F5654F6009A8775 /* LandmarkInfo.swift */,
+				3C4E57002FE443230045B2D4 /* TextScannerView.swift */,
 				568CE2CE2F565512009A8775 /* PopUp.swift */,
 				561FF74A2EB258CC00411CF8 /* Library.swift */,
 				56C3FA062EA6CA3100EA6153 /* Splash.swift */,
@@ -419,6 +428,8 @@
 				B0DE8C0D2F516FDD008E1512 /* Signup.swift in Sources */,
 				562DAAB32F2A89600083A71E /* LandmarkScan.swift in Sources */,
 				3C63C8A82F91875E0006C5DD /* VariableContainer.swift in Sources */,
+				3C4E57072FE443E70045B2D4 /* LandmarkRecord.swift in Sources */,
+				3CF188BE2FE19AAD00FED231 /* CapturedNegativePhoto.swift in Sources */,
 				562AD38C2ECBAF1B00D5144C /* Login.swift in Sources */,
 				B0DC9CA62F4F849A004A9452 /* AuthService.swift in Sources */,
 				568CE2D12F56554E009A8775 /* PromotionEditor.swift in Sources */,
@@ -429,10 +440,12 @@
 				B0DC9CA92F4F84B2004A9452 /* AuthViewModel.swift in Sources */,
 				B00F16732F9328370057430F /* ModelLoadingScreen.swift in Sources */,
 				561FF74B2EB258D400411CF8 /* Library.swift in Sources */,
+				3CF188C32FE19B6D00FED231 /* MultiPhotoCameraView.swift in Sources */,
 				3C72AA372F5141A000A90328 /* best.mlpackage in Sources */,
 				56C3FA082EA6CA3100EA6153 /* Settings.swift in Sources */,
 				3CE8899C2F3FEE2B00B66044 /* VideoPicker.swift in Sources */,
 				3C5FED6B2F907D270018FF06 /* Tier2LandmarkRecord.swift in Sources */,
+				3C4E57012FE443230045B2D4 /* TextScannerView.swift in Sources */,
 				B002FA112F91D23700120C4F /* AuthState.swift in Sources */,
 				56C3FA092EA6CA3100EA6153 /* Splash.swift in Sources */,
 				568CE2CD2F5654F6009A8775 /* LandmarkInfo.swift in Sources */,
@@ -445,7 +458,6 @@
 				3C1FC9CC2F42C9E70006C1D3 /* PhotoPicker.swift in Sources */,
 				568CE2CF2F565512009A8775 /* PopUp.swift in Sources */,
 				3C9020A32F3ABCE200EE30BF /* Detector.swift in Sources */,
-				56432A372EBBBF70006B6E49 /* LandmarkRecord.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -632,7 +644,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = looksee.uconn.edu;
+				PRODUCT_BUNDLE_IDENTIFIER = looksee.infooutpost.com;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -669,7 +681,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = looksee.uconn.edu;
+				PRODUCT_BUNDLE_IDENTIFIER = looksee.infooutpost.com;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;

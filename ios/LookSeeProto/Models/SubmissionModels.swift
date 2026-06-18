@@ -45,3 +45,12 @@ struct CompleteSubmissionRequest: Codable {
     let longitude: Double?
     let horizontalAccuracy: Double?
 }
+
+// Returned locally after the positive submission has completed.
+// This is not decoded directly from the backend.
+struct PositiveSubmissionResult {
+    let submissionId: String
+    let landmarkId: String?
+    let mediaKind: MediaKind
+    let s3Key: String
+}

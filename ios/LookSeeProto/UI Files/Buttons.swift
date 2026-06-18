@@ -14,6 +14,7 @@ struct Buttons: View {
     @State private var showSignUpPrompt = false
     @State private var showSignUp = false
     @State private var currentTab = 0
+    @State private var pendingUploadLandmarkId: String?
 
     // Number of tabs based on tier
     var tabCount: Int {
@@ -39,16 +40,34 @@ struct Buttons: View {
 
                     // Tab 1 — Record (business only, hidden for others)
                     if authState.tier == .business {
-                        LandmarkRecord()
-                            .safeAreaInset(edge: .top) { Color.clear.frame(height: 70) }
-                            .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 60) }
-                            .tag(1)
+                        LandmarkRecord { landmarkId in
+                            pendingUploadLandmarkId = landmarkId
+
+                            withAnimation(
+                                .easeInOut(duration: 0.25)
+                            ) {
+                                currentTab = 2
+                            }
+                        }
+                        .safeAreaInset(edge: .top) {
+                            Color.clear.frame(height: 70)
+                        }
+                        .safeAreaInset(edge: .bottom) {
+                            Color.clear.frame(height: 60)
+                        }
+                        .tag(1)
                     }
 
                     // Tab 2 (or 1 for non-business) — Upload
                     Group {
                         if authState.tier == .authenticated || authState.tier == .business {
-                            Tier2LandmarkRecord()
+                            Tier2LandmarkRecord(
+                                initialLandmarkId:
+                                    pendingUploadLandmarkId,
+                                onInitialLandmarkConsumed: {
+                                    pendingUploadLandmarkId = nil
+                                }
+                            )
                         } else {
                             // Guest sees a blank page — prompt handled by button tap
                             Color(red: 0.06, green: 0.06, blue: 0.10)
