@@ -10,6 +10,7 @@
 		3C19EB412F981FA400D1AA43 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = 3C19EB402F981FA400D1AA43 /* ZIPFoundation */; };
 		3C19EB492F9943F400D1AA43 /* final.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3C19EB482F9943F400D1AA43 /* final.mlpackage */; };
 		3C1FC9CC2F42C9E70006C1D3 /* PhotoPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C1FC9CB2F42C9DA0006C1D3 /* PhotoPicker.swift */; };
+		3C4E57012FE443230045B2D4 /* TextScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C4E57002FE443230045B2D4 /* TextScannerView.swift */; };
 		3C5FED6B2F907D270018FF06 /* Tier2LandmarkRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C5FED6A2F907D270018FF06 /* Tier2LandmarkRecord.swift */; };
 		3C63C8A82F91875E0006C5DD /* VariableContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C63C8A72F91875E0006C5DD /* VariableContainer.swift */; };
 		3C72AA372F5141A000A90328 /* best.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3C72AA362F5141A000A90328 /* best.mlpackage */; };
@@ -71,6 +72,7 @@
 /* Begin PBXFileReference section */
 		3C19EB482F9943F400D1AA43 /* final.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = final.mlpackage; sourceTree = "<group>"; };
 		3C1FC9CB2F42C9DA0006C1D3 /* PhotoPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoPicker.swift; sourceTree = "<group>"; };
+		3C4E57002FE443230045B2D4 /* TextScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextScannerView.swift; sourceTree = "<group>"; };
 		3C5FED6A2F907D270018FF06 /* Tier2LandmarkRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tier2LandmarkRecord.swift; sourceTree = "<group>"; };
 		3C63C8A72F91875E0006C5DD /* VariableContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VariableContainer.swift; sourceTree = "<group>"; };
 		3C72AA362F5141A000A90328 /* best.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = best.mlpackage; sourceTree = "<group>"; };
@@ -235,6 +237,7 @@
 				568B4A592F294DD4002BCA3D /* Buttons.swift */,
 				568CE2D02F56554E009A8775 /* PromotionEditor.swift */,
 				568CE2CC2F5654F6009A8775 /* LandmarkInfo.swift */,
+				3C4E57002FE443230045B2D4 /* TextScannerView.swift */,
 				568CE2CE2F565512009A8775 /* PopUp.swift */,
 				561FF74A2EB258CC00411CF8 /* Library.swift */,
 				56C3FA062EA6CA3100EA6153 /* Splash.swift */,
@@ -441,6 +444,7 @@
 				56C3FA082EA6CA3100EA6153 /* Settings.swift in Sources */,
 				3CE8899C2F3FEE2B00B66044 /* VideoPicker.swift in Sources */,
 				3C5FED6B2F907D270018FF06 /* Tier2LandmarkRecord.swift in Sources */,
+				3C4E57012FE443230045B2D4 /* TextScannerView.swift in Sources */,
 				B002FA112F91D23700120C4F /* AuthState.swift in Sources */,
 				56C3FA092EA6CA3100EA6153 /* Splash.swift in Sources */,
 				568CE2CD2F5654F6009A8775 /* LandmarkInfo.swift in Sources */,
