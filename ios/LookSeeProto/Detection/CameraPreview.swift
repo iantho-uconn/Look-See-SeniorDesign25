@@ -122,14 +122,14 @@ final class OverlayView: UIView {
 //        // TODO: Possibly change this for AR support
 //        for det in detections {
 //            var bbox = det.bbox
-//            
+//
 //            print("RAW:", bbox)
 ////            // Clamp bounding box to view
 ////            bbox.origin.x = max(0, min(bbox.origin.x, bounds.width))
 ////            bbox.origin.y = max(0, min(bbox.origin.y, bounds.height))
 ////            bbox.size.width = max(0, min(bbox.size.width, bounds.width - bbox.origin.x))
 ////            bbox.size.height = max(0, min(bbox.size.height, bounds.height - bbox.origin.y))
-////            
+////
 //            print("corr",bbox.origin.x,bbox.origin.y,bbox.size.width,bbox.size.height)
 //
 //            if bbox.width <= 0 || bbox.height <= 0 { continue }
@@ -218,6 +218,11 @@ struct CameraPreview: UIViewRepresentable {
 //        let tapGesture = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.bbClick(_:)))
 ////        tapGesture.delaysTouchesBegan = true
 //        view.addGestureRecognizer(tapGesture)
+
+        // Add the bounding-box tap recognizer once. updateUIView only enables/disables it.
+        let boundingBoxTapGesture = context.coordinator.boundingBoxTapGesture
+        boundingBoxTapGesture.isEnabled = false
+        view.addGestureRecognizer(boundingBoxTapGesture)
         
         let pinchGesture = UIPinchGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handlePinch(_:)))
         view.addGestureRecognizer(pinchGesture)
@@ -228,8 +233,6 @@ struct CameraPreview: UIViewRepresentable {
     func updateUIView(_ uiView: Preview, context: Context) {
         // Variable to count bounding boxes
         @ObservedObject var infoView = VariableContainer.shared
-        
-        let tapGesture = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.bbClick(_:)))
         
         // Stop rendering new bounding boxes when they appear for 30 consecutive frames and are above a certain threshold
         if infoView.bboxCounter < 30 {
@@ -244,24 +247,22 @@ struct CameraPreview: UIViewRepresentable {
             }
         }
         else {
-            // Add tap gesture
-            uiView.addGestureRecognizer(tapGesture)
+            // The recognizer already exists; only enable it once the detection is stable.
+            context.coordinator.boundingBoxTapGesture.isEnabled = true
             DispatchQueue.main.async {
                 infoView.bboxCounter += 1
             }
-            
         }
         
         // Stop rendering rectangles when the pop-up is open or it's been appromixately three seconds after an item has been scanned
         // Reset counter for halting bounding box rendering, remove tap gesture
-        if infoView.infoView || infoView.bboxCounter == 210{
-            uiView.removeGestureRecognizer(tapGesture)
+        if infoView.infoView || infoView.bboxCounter >= 210 {
+            context.coordinator.boundingBoxTapGesture.isEnabled = false
             uiView.overlay.detections.removeAll()
             DispatchQueue.main.async {
                 infoView.bboxCounter = 0
             }
         }
-        print(infoView.bboxCounter)
     }
 
     func makeCoordinator() -> Coordinator {
@@ -275,6 +276,10 @@ struct CameraPreview: UIViewRepresentable {
         private var zoomFactorAtGestureStart: CGFloat = 1.0
         
         @ObservedObject var infoView = VariableContainer.shared
+
+        lazy var boundingBoxTapGesture: UITapGestureRecognizer = {
+            UITapGestureRecognizer(target: self, action: #selector(bbClick(_:)))
+        }()
         
         // Initialize services
         private let landmarkService = LandmarkService()
@@ -305,42 +310,58 @@ struct CameraPreview: UIViewRepresentable {
             }
         }
 
-        @objc func bbClick(_ recognizer: UITapGestureRecognizer? = nil) {
-            let tapLocation = recognizer!.location(in: view)
-            
-            // Ensure there is a detection and the tap is within the overlay
-            guard let overlay = overlay,
-                  overlay.frame.contains(tapLocation),
-                  let detection = overlay.detections.first else {
+        @objc func bbClick(_ recognizer: UITapGestureRecognizer) {
+            guard let view, let overlay else {
+                print("⚠️ [Phase 1] Tap ignored because preview/overlay is unavailable")
                 return
             }
 
-            let detectionLabel = detection.label // This is "det.label"
-            
-            print("🔍 detectionLabel sent to API: '\(detectionLabel)'")
+            let tapLocation = recognizer.location(in: view)
+
+            // Phase one preserves the current selection behavior: the first detection is used.
+            // We log this explicitly because a later phase should resolve the detection whose
+            // displayed bounding box actually contains the tap location.
+            guard overlay.frame.contains(tapLocation),
+                  let detection = overlay.detections.first else {
+                print("⚠️ [Phase 1] Tap did not have an available detection")
+                return
+            }
+
+            let detectionLabel = detection.label
+
+            print("")
+            print("🧭 [Phase 1] Detection selected for popup")
+            print("   clusterID: \(detection.clusterID)")
+            print("   modelIdentifier: \(detection.modelIdentifier)")
+            print("   classIndex: \(detection.classIndex)")
+            print("   legacy detectionLabel: '\(detectionLabel)'")
+            print("   confidence: \(String(format: "%.4f", detection.confidence))")
+            print("   tapLocation: \(tapLocation)")
+            print("   selectionBehavior: first detection in overlay.detections")
+            print("⚠️ fetchLandmarkByLabel currently receives the numeric class-index string")
+            print("")
 
             Task {
-                // 1. Fetch from both tables in parallel using the detection label
+                // Legacy lookup retained during phase one so runtime behavior can be compared.
                 async let landmarkFetch = landmarkService.fetchLandmarkByLabel(label: detectionLabel)
                 async let promotionsFetch = promotionService.fetchPromotionsByLabel(label: detectionLabel)
-                
+
                 let (landmark, promotions) = await (landmarkFetch, promotionsFetch)
-                
-                print("🏛 Landmark returned: \(String(describing: landmark))")
+
+                print("🏛 Landmark returned for class index \(detection.classIndex): \(String(describing: landmark))")
                 print("🎯 Promotions returned: \(promotions)")
                 print("🎯 Promotions count: \(promotions.count)")
                 for promo in promotions {
                     print("  - name: \(promo.name), label: \(promo.landmarkLabel)")
                 }
 
-                // 2. Update the UI on the Main Thread
                 await MainActor.run {
-                    if let landmark = landmark {
+                    if let landmark {
                         infoView.landmarkName = landmark.label
                         infoView.landmarkDescription = landmark.shortDescription ?? "No description available."
                     } else {
-                        infoView.landmarkName = detectionLabel
-                        infoView.landmarkDescription = "No details found in database."
+                        infoView.landmarkName = "Class \(detection.classIndex)"
+                        infoView.landmarkDescription = "No landmark matched the numeric class index."
                     }
 
                     if let activePromo = promotions.first {
@@ -351,7 +372,7 @@ struct CameraPreview: UIViewRepresentable {
                         infoView.promoDescription = ""
                     }
 
-                    infoView.landmarkConfidence = (detection.confidence * 100)
+                    infoView.landmarkConfidence = detection.confidence * 100
                     infoView.infoView = true
                 }
             }
