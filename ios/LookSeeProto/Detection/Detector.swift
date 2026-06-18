@@ -12,9 +12,22 @@ import CoreImage
 
 struct Detection: Identifiable {
     let id = UUID()
-    let label: String
+
+    /// Cluster whose model produced this detection.
+    let clusterID: String
+
+    /// Local compiled-model folder/file name used for inference.
+    let modelIdentifier: String
+
+    /// Zero-based YOLO/Core ML class index selected from the confidence output.
+    let classIndex: Int
+
     let confidence: Float
     let bbox: CGRect
+
+    /// Temporary compatibility property for existing overlay and API code.
+    /// This is NOT a human-readable landmark label.
+    var label: String { String(classIndex) }
 }
 
 final class Detector: NSObject, ObservableObject {
@@ -29,6 +42,15 @@ final class Detector: NSObject, ObservableObject {
 
     private var isAttached = false
     private var throttling = false
+
+    // The model and its identity are read/written only on `queue`.
+    private var activeClusterID: String?
+    private var activeModelIdentifier: String?
+
+    // Prevent phase-one diagnostics from printing on every camera frame.
+    private var lastDetectionLogKey: String?
+    private var lastDetectionLogDate = Date.distantPast
+    private let detectionLogInterval: TimeInterval = 2.0
 
     private let inputSize = CGSize(width: 640, height: 640)
     private let confidenceThreshold: Float = 0.25
@@ -61,11 +83,25 @@ final class Detector: NSObject, ObservableObject {
         queue.async {
             do {
                 let loaded = try MLModel(contentsOf: url)
+                let modelIdentifier = url.deletingPathExtension().lastPathComponent
+
+                self.model = loaded
+                self.activeClusterID = clusterID
+                self.activeModelIdentifier = modelIdentifier
+                self.lastDetectionLogKey = nil
+
+                let inputNames = Array(loaded.modelDescription.inputDescriptionsByName.keys).sorted()
+                let outputNames = Array(loaded.modelDescription.outputDescriptionsByName.keys).sorted()
+
                 DispatchQueue.main.async {
-                    self.model = loaded
-                    print("✅ Detector switched to cluster \(clusterID)")
-                    print("📥 Inputs:", loaded.modelDescription.inputDescriptionsByName.keys)
-                    print("📤 Outputs:", loaded.modelDescription.outputDescriptionsByName.keys)
+                    print("")
+                    print("✅ [Phase 1] Detector model loaded")
+                    print("   clusterID: \(clusterID)")
+                    print("   modelIdentifier: \(modelIdentifier)")
+                    print("   modelURL: \(url.lastPathComponent)")
+                    print("   inputs: \(inputNames)")
+                    print("   outputs: \(outputNames)")
+                    print("")
                 }
             } catch {
                 print("❌ Model load error for cluster \(clusterID): \(error)")
@@ -82,8 +118,12 @@ final class Detector: NSObject, ObservableObject {
 
     // MARK: - Process Frame
     private func process(pixelBuffer: CVPixelBuffer) {
-        guard let model = model else {
-            print("⚠️ No model loaded yet — skipping frame")
+        guard
+            let model = model,
+            let clusterID = activeClusterID,
+            let modelIdentifier = activeModelIdentifier
+        else {
+            print("⚠️ No fully identified model loaded yet — skipping frame")
             return
         }
         guard !throttling else { return }
@@ -124,7 +164,15 @@ final class Detector: NSObject, ObservableObject {
                 scale: scale,
                 padX: padX,
                 padY: padY,
-                originalSize: CGSize(width: originalWidth, height: originalHeight)
+                originalSize: CGSize(width: originalWidth, height: originalHeight),
+                clusterID: clusterID,
+                modelIdentifier: modelIdentifier
+            )
+
+            logPhaseOneDiagnostics(
+                detections,
+                confidenceShape: confidenceArray.shape.map { $0.intValue },
+                coordinatesShape: coordinatesArray.shape.map { $0.intValue }
             )
 
             let end = CFAbsoluteTimeGetCurrent()
@@ -173,7 +221,9 @@ final class Detector: NSObject, ObservableObject {
                                  scale: CGFloat,
                                  padX: CGFloat,
                                  padY: CGFloat,
-                                 originalSize: CGSize) -> [Detection] {
+                                 originalSize: CGSize,
+                                 clusterID: String,
+                                 modelIdentifier: String) -> [Detection] {
         var results: [Detection] = []
 
         let confPtr = confidenceArray.dataPointer.bindMemory(to: Float.self,
@@ -207,10 +257,52 @@ final class Detector: NSObject, ObservableObject {
             let y = cy - h / 2
             let rect = CGRect(x: x, y: y, width: w, height: h)
 
-            results.append(Detection(label: "\(bestClass)", confidence: bestScore, bbox: rect))
+            results.append(
+                Detection(
+                    clusterID: clusterID,
+                    modelIdentifier: modelIdentifier,
+                    classIndex: bestClass,
+                    confidence: bestScore,
+                    bbox: rect
+                )
+            )
         }
 
         return results
+    }
+
+    // MARK: - Phase One Diagnostics
+    private func logPhaseOneDiagnostics(
+        _ detections: [Detection],
+        confidenceShape: [Int],
+        coordinatesShape: [Int]
+    ) {
+        guard let strongest = detections.max(by: { $0.confidence < $1.confidence }) else {
+            return
+        }
+
+        let logKey = "\(strongest.clusterID)|\(strongest.modelIdentifier)|\(strongest.classIndex)"
+        let now = Date()
+        let enoughTimePassed = now.timeIntervalSince(lastDetectionLogDate) >= detectionLogInterval
+
+        guard logKey != lastDetectionLogKey || enoughTimePassed else {
+            return
+        }
+
+        lastDetectionLogKey = logKey
+        lastDetectionLogDate = now
+
+        print("")
+        print("🔬 [Phase 1] Raw detection mapping")
+        print("   clusterID: \(strongest.clusterID)")
+        print("   modelIdentifier: \(strongest.modelIdentifier)")
+        print("   classIndex: \(strongest.classIndex)")
+        print("   legacy detection.label: '\(strongest.label)'")
+        print("   confidence: \(String(format: "%.4f", strongest.confidence))")
+        print("   confidence output shape: \(confidenceShape)")
+        print("   coordinates output shape: \(coordinatesShape)")
+        print("   conclusion: detection.label is the zero-based class index converted to String")
+        print("")
     }
 }
 
