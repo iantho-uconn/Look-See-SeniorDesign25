@@ -11,7 +11,7 @@ enum Tier2ActiveMediaSheet: Identifiable {
     case recordVideo
     case galleryVideo
     case takePhoto
-    case scanText 
+    case scanText
 
     var id: String {
         switch self {
@@ -125,8 +125,9 @@ struct Tier2LandmarkRecord: View {
                     pickedVideoURL = nil
                     statusText = "Selected photo."
                     
-                    extractedLatitude = nil
-                    extractedLongitude = nil
+                    // THE FIX: Lock in the phone's current GPS instantly
+                    extractedLatitude = locationManager.latitude
+                    extractedLongitude = locationManager.longitude
 
                     shortDescription = ""
                     userDescription = ""
@@ -134,8 +135,8 @@ struct Tier2LandmarkRecord: View {
                     uploadService.status = "Idle"
                     uploadService.progress = 0
                 }
-            case .scanText: // NEW: The scanner target
-                ScannerSheet(scannedText: $userDescription)
+            case .scanText:
+                ScannerSheet(scannedText: $shortDescription)
             }
         }
         .alert("Invalid Video Length", isPresented: $showVideoDurationAlert) {
@@ -364,35 +365,38 @@ struct Tier2LandmarkRecord: View {
             Text("Short description (required)")
                 .padding(.horizontal)
 
-            TextField("e.g., 'Main entrance', 'Statue base', 'North side of building'", text: $shortDescription)
-                .textFieldStyle(.roundedBorder)
-                .padding(.horizontal)
-
-            // NEW: Custom ZStack UI to hold the scan button inside the text box
             ZStack(alignment: .bottomTrailing) {
-                TextField("e.g., 'UConn logo, scoreboard, seats'", text: $userDescription, axis: .vertical)
-                    .lineLimit(4...8) // Expand box to give more room for plaques
+                TextField("e.g., 'Main entrance', 'Statue base', 'North side of building'", text: $shortDescription, axis: .vertical)
+                    .lineLimit(3...5)
                     .textFieldStyle(.roundedBorder)
-
+                
                 Button {
                     activeSheet = .scanText
                 } label: {
                     Image(systemName: "text.viewfinder")
                         .font(.system(size: 18))
                         .foregroundColor(.white)
-                        .padding(8)
+                        .padding(6)
                         .background(Color(red: 0.11, green: 0.22, blue: 0.55))
                         .clipShape(Circle())
                         .shadow(radius: 2)
                 }
-                .padding(.trailing, 8)
-                .padding(.bottom, 8)
+                .padding(.trailing, 6)
+                .padding(.bottom, 6)
             }
             .padding(.horizontal)
 
+            Text("What’s in the frame? (required)")
+                .padding(.horizontal)
+
+            TextField("e.g., 'UConn logo, scoreboard, seats'", text: $userDescription, axis: .vertical)
+                .lineLimit(4...8)
+                .textFieldStyle(.roundedBorder)
+                .padding(.horizontal)
+
             Button {
                 guard let selectedLandmark else { return }
-
+                
                 Task {
                     await vm.fetchUserEmail()
                     await uploadService.upload(
@@ -464,12 +468,13 @@ struct Tier2LandmarkRecord: View {
         pickedImage = nil
         statusText = "Selected video: \(url.lastPathComponent)"
         
+        // THE FIX: Lock in the location the exact moment the video is selected/recorded
         if let loc = location {
             extractedLatitude = loc.latitude
             extractedLongitude = loc.longitude
         } else {
-            extractedLatitude = nil
-            extractedLongitude = nil
+            extractedLatitude = locationManager.latitude
+            extractedLongitude = locationManager.longitude
         }
 
         shortDescription = ""
