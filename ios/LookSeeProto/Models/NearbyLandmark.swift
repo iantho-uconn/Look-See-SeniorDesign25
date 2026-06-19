@@ -14,6 +14,13 @@ struct NearbyLandmark: Codable, Identifiable, Hashable {
     let latitude: Double
     let longitude: Double
     let distanceMeters: Double
+    
+    // MARK: - New Filter Fields (Matched to the updated Lambda)
+    let createdBy: String?
+    let createdAt: String?
+    let promotionEnabled: Bool
+    let promotion: String?
+    let clusterId: String? // <-- THIS IS THE NEWEST ADDITION!
 
     var id: String { landmarkId }
 }
@@ -22,6 +29,7 @@ struct NearbyLandmarksRequest: Codable {
     let latitude: Double
     let longitude: Double
     let radiusMeters: Double
+    let limit: Int? // Added to support our new database limit safeguard!
 }
 
 struct NearbyLandmarksResponse: Codable {

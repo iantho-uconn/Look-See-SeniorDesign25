@@ -50,6 +50,10 @@
 		B0DC9CA92F4F84B2004A9452 /* AuthViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0DC9CA72F4F84B2004A9452 /* AuthViewModel.swift */; };
 		B0DE8C0D2F516FDD008E1512 /* Signup.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0DE8C0C2F516FD3008E1512 /* Signup.swift */; };
 		B0DE8C0F2F517138008E1512 /* ConfirmSignup.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0DE8C0E2F51712F008E1512 /* ConfirmSignup.swift */; };
+		D0B0B12C2FE48EC100C75E25 /* OfflineMediaManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0B0B12B2FE48EBD00C75E25 /* OfflineMediaManager.swift */; };
+		D0B0B12E2FE48EF800C75E25 /* ArchiveView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0B0B12D2FE48EF500C75E25 /* ArchiveView.swift */; };
+		D0B0B1302FE51DBA00C75E25 /* LandmarkMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0B0B12F2FE51DB500C75E25 /* LandmarkMapView.swift */; };
+		D0B0B1322FE59F0300C75E25 /* QuickUploadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0B0B1312FE59EF800C75E25 /* QuickUploadView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -108,6 +112,10 @@
 		B0DC9CA72F4F84B2004A9452 /* AuthViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthViewModel.swift; sourceTree = "<group>"; };
 		B0DE8C0C2F516FD3008E1512 /* Signup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Signup.swift; sourceTree = "<group>"; };
 		B0DE8C0E2F51712F008E1512 /* ConfirmSignup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfirmSignup.swift; sourceTree = "<group>"; };
+		D0B0B12B2FE48EBD00C75E25 /* OfflineMediaManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineMediaManager.swift; sourceTree = "<group>"; };
+		D0B0B12D2FE48EF500C75E25 /* ArchiveView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchiveView.swift; sourceTree = "<group>"; };
+		D0B0B12F2FE51DB500C75E25 /* LandmarkMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LandmarkMapView.swift; sourceTree = "<group>"; };
+		D0B0B1312FE59EF800C75E25 /* QuickUploadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickUploadView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -219,11 +227,15 @@
 		56C3FA072EA6CA3100EA6153 /* UI Files */ = {
 			isa = PBXGroup;
 			children = (
+				D0B0B1312FE59EF800C75E25 /* QuickUploadView.swift */,
+				D0B0B12F2FE51DB500C75E25 /* LandmarkMapView.swift */,
+				D0B0B12D2FE48EF500C75E25 /* ArchiveView.swift */,
 				3CF188C22FE19B5A00FED231 /* MultiPhotoCameraView.swift */,
 				B0DE8C0E2F51712F008E1512 /* ConfirmSignup.swift */,
 				B0DE8C0C2F516FD3008E1512 /* Signup.swift */,
 				3CF188BC2FE19AA300FED231 /* CapturedNegativePhoto.swift */,
 				562DAAAE2F2A85B20083A71E /* Help.swift */,
+				3C4E57062FE443E70045B2D4 /* LandmarkRecord.swift */,
 				562AD38B2ECBAF1800D5144C /* Login.swift */,
 				562DAAB22F2A895B0083A71E /* LandmarkScan.swift */,
 				3C1FC9CB2F42C9DA0006C1D3 /* PhotoPicker.swift */,
@@ -235,7 +247,6 @@
 				56C3FA052EA6CA3100EA6153 /* Settings.swift */,
 				568B4A592F294DD4002BCA3D /* Buttons.swift */,
 				568CE2D02F56554E009A8775 /* PromotionEditor.swift */,
-				3C4E57062FE443E70045B2D4 /* LandmarkRecord.swift */,
 				568CE2CC2F5654F6009A8775 /* LandmarkInfo.swift */,
 				3C4E57002FE443230045B2D4 /* TextScannerView.swift */,
 				568CE2CE2F565512009A8775 /* PopUp.swift */,
@@ -257,6 +268,7 @@
 		B0DC9CA52F4F849A004A9452 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				D0B0B12B2FE48EBD00C75E25 /* OfflineMediaManager.swift */,
 				B0DC9CA42F4F849A004A9452 /* AuthService.swift */,
 			);
 			path = Services;
@@ -432,6 +444,8 @@
 				3CF188BE2FE19AAD00FED231 /* CapturedNegativePhoto.swift in Sources */,
 				562AD38C2ECBAF1B00D5144C /* Login.swift in Sources */,
 				B0DC9CA62F4F849A004A9452 /* AuthService.swift in Sources */,
+				D0B0B12C2FE48EC100C75E25 /* OfflineMediaManager.swift in Sources */,
+				D0B0B1322FE59F0300C75E25 /* QuickUploadView.swift in Sources */,
 				568CE2D12F56554E009A8775 /* PromotionEditor.swift in Sources */,
 				3C9020A02F3ABCD300EE30BF /* CameraPreview.swift in Sources */,
 				56BDFD612EC63B52006D1B84 /* PayInfo.swift in Sources */,
@@ -449,11 +463,13 @@
 				B002FA112F91D23700120C4F /* AuthState.swift in Sources */,
 				56C3FA092EA6CA3100EA6153 /* Splash.swift in Sources */,
 				568CE2CD2F5654F6009A8775 /* LandmarkInfo.swift in Sources */,
+				D0B0B12E2FE48EF800C75E25 /* ArchiveView.swift in Sources */,
 				B0DE8C0F2F517138008E1512 /* ConfirmSignup.swift in Sources */,
 				3C9020A82F3ABCE900EE30BF /* LocationManager.swift in Sources */,
 				3C9020C02F3AC88600EE30BF /* CokeCanDetect.mlpackage in Sources */,
 				3C72AA3B2F51570300A90328 /* again.mlpackage in Sources */,
 				3C9020C12F3AC88600EE30BF /* fruits_and_cans_2.mlpackage in Sources */,
+				D0B0B1302FE51DBA00C75E25 /* LandmarkMapView.swift in Sources */,
 				562DAAAF2F2A85B40083A71E /* Help.swift in Sources */,
 				3C1FC9CC2F42C9E70006C1D3 /* PhotoPicker.swift in Sources */,
 				568CE2CF2F565512009A8775 /* PopUp.swift in Sources */,
@@ -628,13 +644,14 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = C66T6ZH83N;
+				DEVELOPMENT_TEAM = ZLBPU9JP27;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Camera is used to scan objects in real time.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Location services are used to tags scans made in app and help strengthen model data.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Microphone is used in video recordings for training data";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "\"LookSee needs access to your gallery so you can upload existing videos and photos of landmarks.\"";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -644,7 +661,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = looksee.infooutpost.com;
+				PRODUCT_BUNDLE_IDENTIFIER = com.angelpineda.looksee;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -665,13 +682,14 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = C66T6ZH83N;
+				DEVELOPMENT_TEAM = ZLBPU9JP27;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Camera is used to scan objects in real time.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Location services are used to tags scans made in app and help strengthen model data.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Microphone is used in video recordings for training data";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "\"LookSee needs access to your gallery so you can upload existing videos and photos of landmarks.\"";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -681,7 +699,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = looksee.infooutpost.com;
+				PRODUCT_BUNDLE_IDENTIFIER = com.angelpineda.looksee;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -700,7 +718,7 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = C66T6ZH83N;
+				DEVELOPMENT_TEAM = ZLBPU9JP27;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
@@ -722,7 +740,7 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = C66T6ZH83N;
+				DEVELOPMENT_TEAM = ZLBPU9JP27;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
