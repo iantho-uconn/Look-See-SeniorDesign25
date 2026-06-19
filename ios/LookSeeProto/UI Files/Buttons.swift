@@ -98,7 +98,7 @@ struct Buttons: View {
 //                .tabViewStyle(.page(indexDisplayMode: .never))
                 .ignoresSafeArea()
 
-                VStack {
+                VStack(spacing: 0) {
                     // Top nav bar
                     HStack(spacing: 0) {
                         NavigationLink {
@@ -205,6 +205,9 @@ struct Buttons: View {
                     )
                 }
             }
+            // Buttons supplies its own header, so suppress SwiftUI's navigation bar.
+            // Otherwise an invisible navigation-bar region can push the custom header down.
+            .toolbar(.hidden, for: .navigationBar)
         }
     }
 
