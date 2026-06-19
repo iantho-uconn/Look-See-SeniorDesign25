@@ -6,10 +6,12 @@
 import SwiftUI
 import UIKit
 import AVFoundation
+import Photos
+import CoreLocation
 
 struct VideoPicker: UIViewControllerRepresentable {
     var useCamera: Bool = true
-    var onPicked: (URL) -> Void
+    var onPicked: (URL, CLLocationCoordinate2D?) -> Void
     var onInvalidDuration: (String) -> Void
 
     private let minDuration: Double = 15
@@ -46,13 +48,13 @@ struct VideoPicker: UIViewControllerRepresentable {
     final class Coordinator: NSObject, UINavigationControllerDelegate, UIImagePickerControllerDelegate {
         let minDuration: Double
         let maxDuration: Double
-        let onPicked: (URL) -> Void
+        let onPicked: (URL, CLLocationCoordinate2D?) -> Void
         let onInvalidDuration: (String) -> Void
 
         init(
             minDuration: Double,
             maxDuration: Double,
-            onPicked: @escaping (URL) -> Void,
+            onPicked: @escaping (URL, CLLocationCoordinate2D?) -> Void,
             onInvalidDuration: @escaping (String) -> Void
         ) {
             self.minDuration = minDuration
@@ -91,7 +93,13 @@ struct VideoPicker: UIViewControllerRepresentable {
                 return
             }
 
-            onPicked(url)
+            // Extract original GPS location directly from the Gallery asset
+            var extractedLocation: CLLocationCoordinate2D? = nil
+            if let phAsset = info[.phAsset] as? PHAsset, let location = phAsset.location {
+                extractedLocation = location.coordinate
+            }
+
+            onPicked(url, extractedLocation)
         }
     }
 }

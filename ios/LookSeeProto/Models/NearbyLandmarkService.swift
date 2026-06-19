@@ -16,20 +16,24 @@ final class NearbyLandmarkService: ObservableObject {
 
     private let baseURL = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev")!
 
-    func fetchNearby(latitude: Double, longitude: Double, radiusMeters: Double = 100) async {
+    // NEW: Added `limit` with a default of 100
+    func fetchNearby(latitude: Double, longitude: Double, radiusMeters: Double = 100, limit: Int = 100) async {
         isLoading = true
         errorMessage = nil
 
         do {
-            let url = baseURL.appendingPathComponent("landmarks/nearby")
+            // FIXED: Now points to the new enterprise Map Lambda route!
+            let url = baseURL.appendingPathComponent("landmarks/map")
             var req = URLRequest(url: url)
             req.httpMethod = "POST"
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
+            // NEW: Passing the limit into the request body
             let body = NearbyLandmarksRequest(
                 latitude: latitude,
                 longitude: longitude,
-                radiusMeters: radiusMeters
+                radiusMeters: radiusMeters,
+                limit: limit
             )
             req.httpBody = try JSONEncoder().encode(body)
 
@@ -52,6 +56,7 @@ final class NearbyLandmarkService: ObservableObject {
         } catch {
             items = []
             errorMessage = error.localizedDescription
+            print("🚨 BACKEND ERROR: \(error)")
         }
 
         isLoading = false
