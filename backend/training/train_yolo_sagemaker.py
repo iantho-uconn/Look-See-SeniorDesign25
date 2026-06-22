@@ -14,7 +14,7 @@ DEFAULTS = {
     "epochs": "50",
     "imgsz": "640",
     "batch": "16",
-    "device": "cpu",
+    "device": "0",
     "patience": "20",
     "run_name": "training_run"
 }
@@ -98,7 +98,14 @@ def main():
     if best_weights and os.path.exists(best_weights):
         s3 = boto3.client('s3')
         bucket = "looksee-models"
-        cluster_id = os.environ.get("SM_TRAINING_ENV_CLUSTER_ID", "default-cluster")
+        
+        # 1. Try to get the cluster ID from the environment variable
+        cluster_id = os.environ.get("SM_TRAINING_ENV_CLUSTER_ID")
+        
+        # 2. If it's missing, try to get it from hyperparameters (run_name)
+        if not cluster_id:
+            cluster_id = hps.get("cluster_id", hps.get("run_name", "0"))
+            
         s3_destination = f"sagemaker-training-output/{cluster_id}.pt"
         
         s3.upload_file(best_weights, bucket, s3_destination)

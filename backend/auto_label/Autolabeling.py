@@ -91,8 +91,8 @@ for obj in response['Contents']:
         f.write("\n".join(yolo_lines))
 
     # Upload to final dataset folders
-    s3_img_out = f"dataset/{class_name}/images/{img_name}"
-    s3_label_out = f"dataset/{class_name}/labels/{label_name}"
+    s3_img_out = f"neg-dataset/{class_name}/images/{img_name}"
+    s3_label_out = f"neg-dataset/{class_name}/labels/{label_name}"
 
     s3.upload_file(local_img_path, BUCKET_NAME, s3_img_out)
     s3.upload_file(local_label_path, BUCKET_NAME, s3_label_out)
