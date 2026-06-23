@@ -217,7 +217,7 @@ def scan_all(table, scan_kwargs: dict) -> List[dict]:
 
 def load_cluster_metadata() -> Tuple[Dict[str, int], Dict[str, dict]]:
     """
-    Join the canonical landmark records to their cluster assignments.
+    Join canonical landmark records to cluster assignments.
 
     Returns:
       folder_to_cluster:
@@ -229,14 +229,21 @@ def load_cluster_metadata() -> Tuple[Dict[str, int], Dict[str, dict]]:
             "landmarkId": str,
             "label": str,
             "shortDescription": str,
-            "folderName": str
+            "folderName": str,
+            "isActive": bool | None
           }
         }
 
-    The folder name is still used for the dataset class ordering so this
-    preserves the exact class-index behavior of the existing packager. The
-    richer landmark record is retained so the same ordering can also produce
-    landmark-manifest.json for the iOS app.
+    Duplicate labels are not rejected while scanning LookSeeLandmarks because
+    stale or unmapped landmark records do not affect training. Ambiguity is
+    checked only after joining against LookSeeClusterMappings.
+
+    Resolution rules for duplicate mapped folder names:
+      1. One mapped landmark -> use it.
+      2. Multiple mapped landmarks, but exactly one isActive=True -> use the
+         active landmark and log a warning.
+      3. Otherwise -> fail, because the class-to-landmark mapping is genuinely
+         ambiguous and should be corrected in DynamoDB.
     """
     landmarks_table = dynamodb.Table(LANDMARKS_TABLE)
     mappings_table = dynamodb.Table(CLUSTER_MAPPINGS_TABLE)
@@ -246,13 +253,16 @@ def load_cluster_metadata() -> Tuple[Dict[str, int], Dict[str, dict]]:
     landmark_items = scan_all(
         landmarks_table,
         {
-            "ProjectionExpression": "landmarkId, #lbl, shortDescription",
+            "ProjectionExpression": (
+                "landmarkId, #lbl, shortDescription, isActive, "
+                "createdAt, updatedAt"
+            ),
             "ExpressionAttributeNames": {"#lbl": "label"}
         }
     )
 
     landmark_id_to_metadata: Dict[str, dict] = {}
-    folder_owner: Dict[str, str] = {}
+    duplicate_folder_records: Dict[str, List[str]] = defaultdict(list)
 
     for item in landmark_items:
         landmark_id = item.get("landmarkId")
@@ -266,22 +276,17 @@ def load_cluster_metadata() -> Tuple[Dict[str, int], Dict[str, dict]]:
             continue
 
         folder = label_to_s3_folder(label)
-        existing_landmark_id = folder_owner.get(folder)
 
-        if existing_landmark_id and existing_landmark_id != landmark_id:
-            raise ValueError(
-                "Duplicate dataset folder name generated from multiple landmarks: "
-                f"folder={folder!r}, landmarkIds={existing_landmark_id!r} and {landmark_id!r}. "
-                "Class-to-landmark mapping would be ambiguous."
-            )
-
-        folder_owner[folder] = landmark_id
         landmark_id_to_metadata[landmark_id] = {
             "landmarkId": landmark_id,
             "label": label,
             "shortDescription": short_description,
-            "folderName": folder
+            "folderName": folder,
+            "isActive": item.get("isActive"),
+            "createdAt": item.get("createdAt"),
+            "updatedAt": item.get("updatedAt")
         }
+        duplicate_folder_records[folder].append(landmark_id)
 
         if not short_description:
             print(
@@ -289,7 +294,18 @@ def load_cluster_metadata() -> Tuple[Dict[str, int], Dict[str, dict]]:
                 "the generated landmark manifest will contain an empty string."
             )
 
+    duplicate_folder_count = sum(
+        1 for ids in duplicate_folder_records.values() if len(set(ids)) > 1
+    )
+
     print(f"Loaded {len(landmark_id_to_metadata)} usable landmarks from DynamoDB")
+
+    if duplicate_folder_count:
+        print(
+            f"WARNING: Found {duplicate_folder_count} duplicate dataset folder "
+            "name(s) in LookSeeLandmarks. They will be evaluated after joining "
+            "against LookSeeClusterMappings."
+        )
 
     print("Loading cluster mappings from DynamoDB...")
 
@@ -300,8 +316,9 @@ def load_cluster_metadata() -> Tuple[Dict[str, int], Dict[str, dict]]:
         }
     )
 
-    folder_to_cluster: Dict[str, int] = {}
-    folder_to_landmark: Dict[str, dict] = {}
+    # A duplicate label only matters if multiple matching landmark IDs are
+    # actually mapped into the trainable cluster set.
+    mapped_candidates_by_folder: Dict[str, List[dict]] = defaultdict(list)
 
     for item in mapping_items:
         landmark_id = item.get("landmarkId")
@@ -319,9 +336,77 @@ def load_cluster_metadata() -> Tuple[Dict[str, int], Dict[str, dict]]:
             )
             continue
 
-        folder = metadata["folderName"]
-        folder_to_cluster[folder] = int(cluster_id)
-        folder_to_landmark[folder] = metadata
+        mapped_candidates_by_folder[metadata["folderName"]].append({
+            "clusterId": int(cluster_id),
+            "metadata": metadata
+        })
+
+    folder_to_cluster: Dict[str, int] = {}
+    folder_to_landmark: Dict[str, dict] = {}
+
+    for folder, raw_candidates in mapped_candidates_by_folder.items():
+        # Deduplicate repeated mapping rows for the same landmark and cluster.
+        unique_candidates: Dict[Tuple[str, int], dict] = {}
+
+        for candidate in raw_candidates:
+            metadata = candidate["metadata"]
+            key = (metadata["landmarkId"], candidate["clusterId"])
+            unique_candidates[key] = candidate
+
+        candidates = list(unique_candidates.values())
+
+        if len(candidates) == 1:
+            chosen = candidates[0]
+        else:
+            active_candidates = [
+                candidate
+                for candidate in candidates
+                if candidate["metadata"].get("isActive") is True
+            ]
+
+            if len(active_candidates) == 1:
+                chosen = active_candidates[0]
+                ignored_ids = [
+                    candidate["metadata"]["landmarkId"]
+                    for candidate in candidates
+                    if candidate is not chosen
+                ]
+                print(
+                    "WARNING: Duplicate mapped dataset folder resolved using the "
+                    "only active landmark: "
+                    f"folder={folder!r}, selectedLandmarkId="
+                    f"{chosen['metadata']['landmarkId']!r}, ignoredLandmarkIds="
+                    f"{ignored_ids!r}."
+                )
+            else:
+                details = [
+                    {
+                        "landmarkId": candidate["metadata"]["landmarkId"],
+                        "clusterId": candidate["clusterId"],
+                        "isActive": candidate["metadata"].get("isActive"),
+                        "label": candidate["metadata"].get("label", "")
+                    }
+                    for candidate in sorted(
+                        candidates,
+                        key=lambda value: (
+                            value["clusterId"],
+                            value["metadata"]["landmarkId"]
+                        )
+                    )
+                ]
+
+                raise ValueError(
+                    "Ambiguous mapped dataset folder name. Multiple landmark "
+                    "records that collapse to the same class folder are present "
+                    "in LookSeeClusterMappings, and there is not exactly one "
+                    "active record to select. "
+                    f"folder={folder!r}, candidates={details!r}. "
+                    "Remove the stale cluster mapping, deactivate the stale "
+                    "landmark, or give the records unique labels before rerunning."
+                )
+
+        folder_to_cluster[folder] = chosen["clusterId"]
+        folder_to_landmark[folder] = chosen["metadata"]
 
     print(f"Resolved {len(folder_to_cluster)} folder->cluster mappings")
 
