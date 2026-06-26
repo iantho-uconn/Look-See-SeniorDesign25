@@ -1,16 +1,14 @@
 //
 //  CameraPreview.swift
-//  LookSeeTake2
-//
-//  Created by Ian Thompson on 11/18/25.
+//  LookSeeProto
 //
 
 import SwiftUI
 import AVFoundation
 import Vision
 import Combine
+import UIKit
 
-/// Keeps the AVCaptureSession alive and exposes the video output so Detector can attach.
 final class CameraSessionCoordinator {
     let session = AVCaptureSession()
     let videoOutput = AVCaptureVideoDataOutput()
@@ -20,7 +18,6 @@ final class CameraSessionCoordinator {
         session.beginConfiguration()
         session.sessionPreset = .high
 
-        // Input: back wide camera
         guard
             let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
             let input = try? AVCaptureDeviceInput(device: device),
@@ -32,168 +29,113 @@ final class CameraSessionCoordinator {
         videoDevice = device
         session.addInput(input)
 
-        // Output for frames
         videoOutput.alwaysDiscardsLateVideoFrames = true
-        if session.canAddOutput(videoOutput) {
-            session.addOutput(videoOutput)
-        }
+        if session.canAddOutput(videoOutput) { session.addOutput(videoOutput) }
 
-        // Portrait orientation if supported
         if let conn = videoOutput.connection(with: .video) {
-            if conn.isVideoRotationAngleSupported(90) {
-                conn.videoRotationAngle = 90
-            }
+            if conn.isVideoRotationAngleSupported(90) { conn.videoRotationAngle = 90 }
         }
-        
         session.commitConfiguration()
     }
     
     func setZoom(factor: CGFloat) {
         guard let device = videoDevice else { return }
-        let maxZoom = min(device.activeFormat.videoMaxZoomFactor, 5.0) // cap at 5x
+        let maxZoom = min(device.activeFormat.videoMaxZoomFactor, 5.0)
         let clampedZoom = max(1.0, min(factor, maxZoom))
         
         do {
             try device.lockForConfiguration()
             device.videoZoomFactor = clampedZoom
             device.unlockForConfiguration()
-        } catch {
-            print("❌ Zoom error: \(error)")
-        }
+        } catch { print("❌ Zoom error: \(error)") }
     }
 
     func start() {
         guard !session.isRunning else { return }
         DispatchQueue.global(qos: .userInitiated).async { self.session.startRunning() }
     }
-
     func stop() {
         guard session.isRunning else { return }
         session.stopRunning()
     }
 }
 
-/// CoreAnimation overlay view that draws detection boxes.
-import UIKit
-import AVFoundation
-
-
 final class OverlayView: UIView {
     weak var previewLayer: AVCaptureVideoPreviewLayer?
     
-    // Variable to allow the info pop-up to appear
-    @ObservedObject var infoView = VariableContainer.shared
-    
-    var detections: [Detection] = [] {
-        didSet {
-            // print("🟢 OverlayView received \(detections.count) detections")
-           // for _ in detections {
-                //print("🔹 \(det.label) \(Int(det.confidence*100))% → \(det.bbox)")
-           // }
-            setNeedsDisplay()
-        }
-    }
+    var showSafeZone: Bool = true { didSet { setNeedsDisplay() } }
+    var safeZoneRect: CGRect = .zero { didSet { setNeedsDisplay() } }
+    var detections: [Detection] = [] { didSet { setNeedsDisplay() } }
 
     override func draw(_ rect: CGRect) {
-       /* guard let ctx = UIGraphicsGetCurrentContext(),
-            let previewLayer = previewLayer else { return }
-*/
         guard let ctx = UIGraphicsGetCurrentContext() else { return }
         ctx.clear(rect)
-        ctx.setLineWidth(2.0)
-
-        for det in detections {
-            let bbox = det.bbox
-            
-            // print("RAW:", bbox)
-            
-            let rect = CGRect(
-                x: bbox.origin.x * bounds.width,
-                y: bbox.origin.y * bounds.height,
-                width: bbox.width * (bounds.width * 2),
-                height: bbox.height * bounds.height
-            )
-            
-            // print("DRAW RECT:", rect)
-
-            UIColor.systemRed.setStroke()
-            ctx.stroke(rect)
         
-//        // TODO: Possibly change this for AR support
-//        for det in detections {
-//            var bbox = det.bbox
-//            
-//            print("RAW:", bbox)
-////            // Clamp bounding box to view
-////            bbox.origin.x = max(0, min(bbox.origin.x, bounds.width))
-////            bbox.origin.y = max(0, min(bbox.origin.y, bounds.height))
-////            bbox.size.width = max(0, min(bbox.size.width, bounds.width - bbox.origin.x))
-////            bbox.size.height = max(0, min(bbox.size.height, bounds.height - bbox.origin.y))
-////            
-//            print("corr",bbox.origin.x,bbox.origin.y,bbox.size.width,bbox.size.height)
-//
-//            if bbox.width <= 0 || bbox.height <= 0 { continue }
-//
-//            // Draw bounding box
-//            UIColor.systemGreen.setStroke()
-//            ctx.stroke(bbox)
-
-            // Draw label and confidence above the box
-            let labelText = "\(det.label) \(Int(det.confidence * 100))%"
-            let font = UIFont.systemFont(ofSize: 14, weight: .semibold)
-            let attributes: [NSAttributedString.Key: Any] = [
-                .font: font,
-                .foregroundColor: UIColor.white
-            ]
-
-            let textSize = labelText.size(withAttributes: attributes)
-
-            // Put label inside top-left of box (clamped to view)
-            let textX = max(rect.minX, 0)
-            let textY = max(rect.minY, 0)
-
-            let _ = CGRect(                     //let bgRect = CGRect(
-                x: textX,
-                y: textY,
-                width: textSize.width + 8,
-                height: textSize.height + 4
-            )
-
-            UIColor.systemGreen.setFill()
-            //ctx.fill(bgRect)
-
-            // labelText.draw(in: bgRect.insetBy(dx: 4, dy: 2), withAttributes: attributes)
+        let activeSafeZone = safeZoneRect == .zero ? bounds : safeZoneRect
+        
+        if showSafeZone {
+            let backdropPath = UIBezierPath(rect: rect)
+            let clearCutout = UIBezierPath(rect: activeSafeZone).reversing()
+            backdropPath.append(clearCutout)
+            UIColor.black.withAlphaComponent(0.40).setFill()
+            backdropPath.fill()
         }
-        
-        // Variable to count bounding boxes
-        @ObservedObject var infoView = VariableContainer.shared
-        
-        // Green bounding box
-        if infoView.bboxCounter >= 29 {
-            ctx.clear(rect)
-            ctx.setLineWidth(2.0)
 
-            for det in detections {
-                let bbox = det.bbox
-                
-                let rect = CGRect(
-                    x: bbox.origin.x * bounds.width,
-                    y: bbox.origin.y * bounds.height,
-                    width: bbox.width * (bounds.width * 2),
-                    height: bbox.height * bounds.height
-                )
+        if let bestTarget = detections.first {
+            // Viewfinder ON = Use the static bounding box. Viewfinder OFF = Wrap the object.
+            let targetBox = showSafeZone ? activeSafeZone : bestTarget.bbox
+            
+            // THE FIX: Clamp the box strictly to the safe visual area so it NEVER bleeds off the phone screen
+            let maxScreenBounds = rect.insetBy(dx: 16, dy: 80)
+            let clampedBox = targetBox.intersection(maxScreenBounds)
+            
+            if !clampedBox.isNull && clampedBox.width > 10 && clampedBox.height > 10 {
                 UIColor.systemGreen.setStroke()
-                ctx.stroke(rect)
+                let perimeter = UIBezierPath(roundedRect: clampedBox, cornerRadius: 8)
+                perimeter.lineWidth = 4.0
+                perimeter.stroke()
+                
+                let labelText = "\(bestTarget.label) \(Int(bestTarget.confidence * 100))%"
+                let font = UIFont.systemFont(ofSize: 16, weight: .bold)
+                let textStyle: [NSAttributedString.Key: Any] = [
+                    .font: font,
+                    .foregroundColor: UIColor.white
+                ]
+
+                let labelSize = labelText.size(withAttributes: textStyle)
+                
+                let adjustedY = max(clampedBox.minY - labelSize.height - 8, 44)
+                let adjustedX = max(clampedBox.minX, 16)
+                
+                let backgroundPlate = CGRect(
+                    x: adjustedX,
+                    y: adjustedY,
+                    width: labelSize.width + 12,
+                    height: labelSize.height + 6
+                )
+
+                UIColor.systemGreen.setFill()
+                let badge = UIBezierPath(roundedRect: backgroundPlate, cornerRadius: 6)
+                badge.fill()
+                (labelText as NSString).draw(in: backgroundPlate.insetBy(dx: 6, dy: 3), withAttributes: textStyle)
             }
             
+        } else if showSafeZone {
+            UIColor(red: 0.0, green: 0.8, blue: 1.0, alpha: 0.8).setStroke()
+            let perimeter = UIBezierPath(rect: activeSafeZone)
+            perimeter.lineWidth = 2.0
+            perimeter.setLineDash([8, 6], count: 2, phase: 0)
+            perimeter.stroke()
         }
     }
 }
 
 struct CameraPreview: UIViewRepresentable {
     @ObservedObject var detector: Detector
-    @State private var currentZoom: CGFloat = 1.0
     @Binding var zoomLevel: CGFloat
+    @Binding var showSafeZone: Bool
+    @Binding var safeZoneRect: CGRect
+    @Binding var isAIPaused: Bool
 
     static let sharedSession = CameraSessionCoordinator()
 
@@ -201,72 +143,47 @@ struct CameraPreview: UIViewRepresentable {
         let view = Preview()
         view.backgroundColor = .black
 
-        // camera layer
         view.videoLayer.session = CameraPreview.sharedSession.session
         view.videoLayer.videoGravity = .resizeAspectFill
         view.overlay.previewLayer = view.videoLayer
+        view.overlay.showSafeZone = showSafeZone
+        view.overlay.safeZoneRect = safeZoneRect
 
-        // detector -> overlay binding
         context.coordinator.overlay = view.overlay
         context.coordinator.view = view
 
-        // attach detector to video frames once
         detector.attach(to: CameraPreview.sharedSession.videoOutput)
         CameraPreview.sharedSession.start()
         
-//        // Tap gesture recognizer
-//        let tapGesture = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.bbClick(_:)))
-////        tapGesture.delaysTouchesBegan = true
-//        view.addGestureRecognizer(tapGesture)
+        let pinch = UIPinchGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handlePinch(_:)))
+        view.addGestureRecognizer(pinch)
         
-        let pinchGesture = UIPinchGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handlePinch(_:)))
-        view.addGestureRecognizer(pinchGesture)
+        let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.bbClick(_:)))
+        view.addGestureRecognizer(tap)
         
         return view
     }
 
     func updateUIView(_ uiView: Preview, context: Context) {
-        // Variable to count bounding boxes
-        @ObservedObject var infoView = VariableContainer.shared
+        uiView.overlay.showSafeZone = showSafeZone
+        uiView.overlay.safeZoneRect = safeZoneRect
         
-        let tapGesture = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.bbClick(_:)))
-        
-        // Stop rendering new bounding boxes when they appear for 30 consecutive frames and are above a certain threshold
-        if infoView.bboxCounter < 30 {
-            // push latest detections to overlay each update
+        if !VariableContainer.shared.infoView {
             uiView.overlay.detections = detector.detections
             
-            DispatchQueue.main.async {
-                if !uiView.overlay.detections.isEmpty && uiView.overlay.detections[0].confidence > 0.10 {
-                    infoView.bboxCounter += 1
+            // Auto-lock feature in Free Mode
+            if !showSafeZone && !detector.detections.isEmpty && !isAIPaused {
+                DispatchQueue.main.async {
+                    self.isAIPaused = true
+                    self.detector.isPaused = true
                 }
-                else { infoView.bboxCounter = 0 }
             }
-        }
-        else {
-            // Add tap gesture
-            uiView.addGestureRecognizer(tapGesture)
-            DispatchQueue.main.async {
-                infoView.bboxCounter += 1
-            }
-            
-        }
-        
-        // Stop rendering rectangles when the pop-up is open or it's been appromixately three seconds after an item has been scanned
-        // Reset counter for halting bounding box rendering, remove tap gesture
-        if infoView.infoView || infoView.bboxCounter == 210{
-            uiView.removeGestureRecognizer(tapGesture)
+        } else {
             uiView.overlay.detections.removeAll()
-            DispatchQueue.main.async {
-                infoView.bboxCounter = 0
-            }
         }
-        print(infoView.bboxCounter)
     }
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator(zoomLevel: $zoomLevel)
-    }
+    func makeCoordinator() -> Coordinator { Coordinator(zoomLevel: $zoomLevel) }
 
     final class Coordinator {
         weak var overlay: OverlayView?
@@ -274,109 +191,69 @@ struct CameraPreview: UIViewRepresentable {
         var zoomLevel: Binding<CGFloat>
         private var zoomFactorAtGestureStart: CGFloat = 1.0
         
-        @ObservedObject var infoView = VariableContainer.shared
-        
-        // Initialize services
         private let landmarkService = LandmarkService()
         private let promotionService = PromotionService()
         
-        init(zoomLevel: Binding<CGFloat>) {
-            self.zoomLevel = zoomLevel
-        }
+        init(zoomLevel: Binding<CGFloat>) { self.zoomLevel = zoomLevel }
         
         @objc func handlePinch(_ recognizer: UIPinchGestureRecognizer) {
             guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) else { return }
-            
             switch recognizer.state {
-            case .began:
-                zoomFactorAtGestureStart = device.videoZoomFactor
+            case .began: zoomFactorAtGestureStart = device.videoZoomFactor
             case .changed:
                 let newZoom = zoomFactorAtGestureStart * recognizer.scale
                 let maxZoom = min(device.activeFormat.videoMaxZoomFactor, 5.0)
                 let clampedZoom = max(1.0, min(newZoom, maxZoom))
                 CameraPreview.sharedSession.setZoom(factor: clampedZoom)
-                
-                // ← update the UI binding on main thread
-                DispatchQueue.main.async {
-                    self.zoomLevel.wrappedValue = clampedZoom
-                }
-            default:
-                break
+                DispatchQueue.main.async { self.zoomLevel.wrappedValue = clampedZoom }
+            default: break
             }
         }
 
-        @objc func bbClick(_ recognizer: UITapGestureRecognizer? = nil) {
-            let tapLocation = recognizer!.location(in: view)
-            
-            // Ensure there is a detection and the tap is within the overlay
-            guard let overlay = overlay,
-                  overlay.frame.contains(tapLocation),
-                  let detection = overlay.detections.first else {
-                return
-            }
+        @objc func bbClick(_ recognizer: UITapGestureRecognizer) {
+            guard !VariableContainer.shared.infoView else { return }
+            guard let overlay = overlay, let firstDetection = overlay.detections.first else { return }
 
-            let detectionLabel = detection.label // This is "det.label"
+            let detectionLabel = firstDetection.label
             
-            print("🔍 detectionLabel sent to API: '\(detectionLabel)'")
-
             Task {
-                // 1. Fetch from both tables in parallel using the detection label
                 async let landmarkFetch = landmarkService.fetchLandmarkByLabel(label: detectionLabel)
                 async let promotionsFetch = promotionService.fetchPromotionsByLabel(label: detectionLabel)
-                
                 let (landmark, promotions) = await (landmarkFetch, promotionsFetch)
                 
-                print("🏛 Landmark returned: \(String(describing: landmark))")
-                print("🎯 Promotions returned: \(promotions)")
-                print("🎯 Promotions count: \(promotions.count)")
-                for promo in promotions {
-                    print("  - name: \(promo.name), label: \(promo.landmarkLabel)")
-                }
-
-                // 2. Update the UI on the Main Thread
                 await MainActor.run {
                     if let landmark = landmark {
-                        infoView.landmarkName = landmark.label
-                        infoView.landmarkDescription = landmark.shortDescription ?? "No description available."
+                        VariableContainer.shared.landmarkName = landmark.label
+                        VariableContainer.shared.landmarkDescription = landmark.shortDescription ?? "No description available."
                     } else {
-                        infoView.landmarkName = detectionLabel
-                        infoView.landmarkDescription = "No details found in database."
+                        VariableContainer.shared.landmarkName = detectionLabel
+                        VariableContainer.shared.landmarkDescription = "No details found in database."
                     }
-
                     if let activePromo = promotions.first {
-                        infoView.promoName = activePromo.name
-                        infoView.promoDescription = activePromo.description
+                        VariableContainer.shared.promoName = activePromo.name
+                        VariableContainer.shared.promoDescription = activePromo.description
                     } else {
-                        infoView.promoName = "No active promotion"
-                        infoView.promoDescription = ""
+                        VariableContainer.shared.promoName = "No active promotion"
+                        VariableContainer.shared.promoDescription = ""
                     }
-
-                    infoView.landmarkConfidence = (detection.confidence * 100)
-                    infoView.infoView = true
+                    VariableContainer.shared.landmarkConfidence = (firstDetection.confidence * 100)
+                    VariableContainer.shared.infoView = true
                 }
             }
         }
     }
 
     final class Preview: UIView {
-        // camera
         override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }
         var videoLayer: AVCaptureVideoPreviewLayer { layer as! AVCaptureVideoPreviewLayer }
-
-        // overlay
         let overlay = OverlayView()
-
         override init(frame: CGRect) {
             super.init(frame: frame)
             overlay.backgroundColor = .clear
             overlay.isUserInteractionEnabled = false
             addSubview(overlay)
         }
-
-        required init?(coder: NSCoder) {
-            fatalError("init(coder:) has not been implemented")
-        }
-
+        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
         override func layoutSubviews() {
             super.layoutSubviews()
             overlay.frame = bounds

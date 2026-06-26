@@ -5,120 +5,300 @@
 //  Created by Angel Pineda on 6/19/26.
 //
 
-
 import SwiftUI
-import AVFoundation
-import Combine 
+import AVKit
 
 struct QuickUploadView: View {
     let landmark: NearbyLandmark
     @Environment(\.dismiss) var dismiss
+    @EnvironmentObject var vm: AuthViewModel
     
-    // Now that Combine is imported, @StateObject works correctly
-    @StateObject private var cameraManager = CameraManager()
+    // Connect the Real AWS Upload Engine
+    @StateObject private var uploadService = UploadService()
     
-    @State private var isRecording = false
-    @State private var isUploading = false
-    @State private var uploadProgress: Double = 0.0
-    @State private var showSuccess = false
+    // THE FIX: Use an Identifiable enum instead of a boolean to prevent SwiftUI race conditions
+    enum ActivePicker: Identifiable {
+        case camera, library
+        var id: Int { hashValue }
+    }
+    @State private var activePicker: ActivePicker?
     
-    private let primaryColor = Color(red: 0.11, green: 0.22, blue: 0.55)
+    @State private var selectedMediaURL: URL?
+    @State private var isVideo = false
+    
+    // Tech UI Colors
+    private let bgDark = Color(red: 0.04, green: 0.04, blue: 0.06)
+    private let panelBg = Color(white: 0.08)
+    private let accentCyan = Color(red: 0.0, green: 0.8, blue: 1.0)
+    private let primaryBlue = Color(red: 0.11, green: 0.22, blue: 0.55)
 
     var body: some View {
         NavigationStack {
             ZStack {
-                Color(red: 0.04, green: 0.04, blue: 0.06).ignoresSafeArea()
+                bgDark.ignoresSafeArea()
                 
-                VStack(spacing: 20) {
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text("Contribution").font(.caption.bold()).foregroundStyle(.gray)
-                        Text(landmark.label).font(.title2.bold()).foregroundStyle(.white)
-                    }.frame(maxWidth: .infinity, alignment: .leading).padding()
-
-                    ZStack {
-                        CameraPreviewView(session: cameraManager.session)
-                            .clipShape(RoundedRectangle(cornerRadius: 20))
-                    }
-                    .frame(height: 350)
-                    .padding(.horizontal)
-
-                    Spacer()
-
-                    VStack(spacing: 12) {
-                        Button(action: {
-                            if cameraManager.isRecording { cameraManager.stopRecording() }
-                            else { cameraManager.startRecording() }
-                        }) {
-                            Text(cameraManager.isRecording ? "Stop Recording" : "Start Recording")
-                                .font(.headline)
-                                .frame(maxWidth: .infinity).padding().background(cameraManager.isRecording ? Color.red : primaryColor).clipShape(RoundedRectangle(cornerRadius: 12))
+                VStack(spacing: 24) {
+                    
+                    // Techy Header
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("TARGETING LANDMARK")
+                                .font(.system(.caption, design: .monospaced).weight(.bold))
+                                .foregroundStyle(accentCyan)
+                            Text(landmark.label)
+                                .font(.system(.title2, design: .rounded).weight(.heavy))
                                 .foregroundStyle(.white)
                         }
+                        Spacer()
+                        Image(systemName: "viewfinder")
+                            .font(.system(size: 32, weight: .ultraLight))
+                            .foregroundStyle(accentCyan)
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.top, 10)
+                    
+                    // Media HUD Box
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 24)
+                            .fill(panelBg)
+                            .frame(height: 420)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 24)
+                                    .stroke(selectedMediaURL == nil ? Color.gray.opacity(0.3) : accentCyan.opacity(0.6), lineWidth: selectedMediaURL == nil ? 1 : 2)
+                            )
+                            .shadow(color: selectedMediaURL == nil ? .clear : accentCyan.opacity(0.3), radius: 10, x: 0, y: 0)
                         
-                        Button("Submit Training Data") {
-                            isUploading = true
+                        if let url = selectedMediaURL {
+                            // Media Preview
+                            if isVideo {
+                                VideoPlayer(player: AVPlayer(url: url))
+                                    .clipShape(RoundedRectangle(cornerRadius: 24))
+                            } else {
+                                AsyncImage(url: url) { phase in
+                                    if let image = phase.image {
+                                        image.resizable().aspectRatio(contentMode: .fill)
+                                    }
+                                }
+                                .frame(height: 420)
+                                .clipShape(RoundedRectangle(cornerRadius: 24))
+                            }
+                            
+                            // Discard Overlay
+                            VStack {
+                                HStack {
+                                    Spacer()
+                                    Button {
+                                        withAnimation {
+                                            selectedMediaURL = nil
+                                            uploadService.reset()
+                                        }
+                                    } label: {
+                                        Image(systemName: "xmark")
+                                            .font(.system(size: 16, weight: .bold))
+                                            .foregroundStyle(.white)
+                                            .padding(12)
+                                            .background(Circle().fill(Color.red.opacity(0.8)))
+                                    }
+                                    .padding(16)
+                                    .disabled(uploadService.isUploading)
+                                }
+                                Spacer()
+                            }
+                        } else {
+                            // Empty State
+                            VStack(spacing: 20) {
+                                Image(systemName: "arrow.up.doc.on.clipboard")
+                                    .font(.system(size: 40, weight: .light))
+                                    .foregroundStyle(.gray)
+                                
+                                Text("AWAITING TRAINING DATA")
+                                    .font(.system(.subheadline, design: .monospaced).weight(.semibold))
+                                    .foregroundStyle(.gray)
+                                
+                                HStack(spacing: 16) {
+                                    Button {
+                                        activePicker = .camera // Fixed
+                                    } label: {
+                                        VStack(spacing: 8) {
+                                            Image(systemName: "camera.viewfinder")
+                                                .font(.title2)
+                                            Text("CAPTURE")
+                                                .font(.system(.caption, design: .monospaced).weight(.bold))
+                                        }
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 20)
+                                        .background(Color.white.opacity(0.05))
+                                        .foregroundStyle(accentCyan)
+                                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                                    }
+                                    
+                                    Button {
+                                        activePicker = .library // Fixed
+                                    } label: {
+                                        VStack(spacing: 8) {
+                                            Image(systemName: "folder.fill")
+                                                .font(.title2)
+                                            Text("BROWSE")
+                                                .font(.system(.caption, design: .monospaced).weight(.bold))
+                                        }
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 20)
+                                        .background(Color.white.opacity(0.05))
+                                        .foregroundStyle(.white)
+                                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                                    }
+                                }
+                                .padding(.horizontal, 24)
+                                .padding(.top, 10)
+                                
+                                Text("Videos must be 15 - 60 seconds.")
+                                    .font(.system(.caption2, design: .monospaced))
+                                    .foregroundStyle(.gray)
+                            }
                         }
-                        .font(.headline)
-                        .frame(maxWidth: .infinity).padding().background(Color.green).clipShape(RoundedRectangle(cornerRadius: 12))
-                        .foregroundStyle(.white)
-                    }.padding()
+                    }
+                    .padding(.horizontal, 20)
+                    
+                    Spacer()
+                    
+                    // Action Footer
+                    if uploadService.isUploading || uploadService.stage == .complete {
+                        VStack(spacing: 12) {
+                            if uploadService.stage == .complete {
+                                Image(systemName: "checkmark.circle.fill").font(.title).foregroundStyle(.green)
+                            } else if uploadService.stage == .failed {
+                                Image(systemName: "exclamationmark.triangle.fill").font(.title).foregroundStyle(.red)
+                            } else {
+                                ProgressView(value: uploadService.progress)
+                                    .tint(accentCyan)
+                            }
+                            
+                            Text(uploadService.status)
+                                .font(.system(.caption, design: .monospaced))
+                                .foregroundStyle(uploadService.stage == .complete ? .green : (uploadService.stage == .failed ? .red : accentCyan))
+                            
+                            if uploadService.stage == .complete {
+                                Button("DONE") { dismiss() }
+                                    .font(.system(.caption, design: .monospaced).weight(.bold))
+                                    .padding(.top, 8)
+                                    .foregroundStyle(.white)
+                            }
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 20)
+                    } else {
+                        Button {
+                            Task { await triggerRealUpload() }
+                        } label: {
+                            HStack {
+                                Image(systemName: "network")
+                                Text("INITIATE UPLOAD")
+                                    .font(.system(.headline, design: .monospaced).weight(.bold))
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 18)
+                            .background(selectedMediaURL == nil ? Color.white.opacity(0.05) : primaryBlue)
+                            .foregroundStyle(selectedMediaURL == nil ? Color.gray : .white)
+                            .clipShape(RoundedRectangle(cornerRadius: 16))
+                            .shadow(color: selectedMediaURL == nil ? .clear : primaryBlue.opacity(0.5), radius: 8, x: 0, y: 4)
+                        }
+                        .disabled(selectedMediaURL == nil || uploadService.isUploading)
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 20)
+                    }
                 }
             }
-            .navigationTitle("Upload")
+            .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .topBarLeading) { Button("Close") { dismiss() } } }
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Abort") { dismiss() }
+                        .font(.system(.subheadline, design: .monospaced))
+                        .foregroundStyle(.red)
+                        .disabled(uploadService.isUploading && uploadService.stage != .complete)
+                }
+            }
+            // THE FIX: Open the sheet bound to the specific item enum
+            .sheet(item: $activePicker) { picker in
+                MediaPicker(
+                    sourceType: picker == .camera ? .camera : .photoLibrary,
+                    selectedURL: $selectedMediaURL,
+                    isVideo: $isVideo
+                )
+            }
+        }
+    }
+    
+    // MARK: - The Real AWS Hand-off
+    private func triggerRealUpload() async {
+        guard let url = selectedMediaURL else { return }
+        
+        await vm.fetchUserEmail()
+        
+        let uploadImage: UIImage? = isVideo ? nil : UIImage(contentsOfFile: url.path)
+        let uploadVideoURL: URL? = isVideo ? url : nil
+
+        do {
+            let _ = try await uploadService.upload(
+                userEmail: vm.userEmail,
+                label: landmark.label,
+                landmarkId: landmark.landmarkId,
+                landmarkLabel: landmark.label,
+                shortDescription: landmark.shortDescription,
+                userDescription: nil,
+                latitude: landmark.latitude,
+                longitude: landmark.longitude,
+                horizontalAccuracy: 10.0,
+                videoURL: uploadVideoURL,
+                image: uploadImage
+            )
+            print("✅ QuickUpload Completed Successfully")
+        } catch {
+            print("❌ QuickUpload Failed: \(error.localizedDescription)")
         }
     }
 }
 
-// MARK: - Camera Manager
-final class CameraManager: NSObject, ObservableObject, AVCaptureFileOutputRecordingDelegate {
-    let session = AVCaptureSession()
-    private let movieOutput = AVCaptureMovieFileOutput()
+// MARK: - iOS Native Media Picker
+struct MediaPicker: UIViewControllerRepresentable {
+    var sourceType: UIImagePickerController.SourceType
+    @Binding var selectedURL: URL?
+    @Binding var isVideo: Bool
+    @Environment(\.presentationMode) var presentationMode
     
-    @Published var isRecording = false // Published property for UI updates
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.sourceType = sourceType
+        picker.mediaTypes = ["public.image", "public.movie"]
+        picker.videoQuality = .typeHigh
+        picker.videoMaximumDuration = 60.0
+        picker.delegate = context.coordinator
+        return picker
+    }
     
-    override init() {
-        super.init()
-        session.beginConfiguration()
-        if let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
-           let input = try? AVCaptureDeviceInput(device: device), session.canAddInput(input) {
-            session.addInput(input)
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+    
+    class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        let parent: MediaPicker
+        init(_ parent: MediaPicker) { self.parent = parent }
+        
+        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
+            if let mediaType = info[.mediaType] as? String {
+                if mediaType == "public.movie", let url = info[.mediaURL] as? URL {
+                    parent.isVideo = true
+                    parent.selectedURL = url
+                } else if mediaType == "public.image" {
+                    if let image = info[.originalImage] as? UIImage,
+                       let data = image.jpegData(compressionQuality: 0.9) {
+                        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".jpg")
+                        try? data.write(to: tempURL)
+                        parent.isVideo = false
+                        parent.selectedURL = tempURL
+                    }
+                }
+            }
+            parent.presentationMode.wrappedValue.dismiss()
         }
-        if session.canAddOutput(movieOutput) {
-            session.addOutput(movieOutput)
-        }
-        session.commitConfiguration()
-        DispatchQueue.global(qos: .userInitiated).async { self.session.startRunning() }
     }
-
-    func startRecording() {
-        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("upload.mov")
-        movieOutput.startRecording(to: tempURL, recordingDelegate: self)
-        DispatchQueue.main.async { self.isRecording = true }
-    }
-
-    func stopRecording() {
-        movieOutput.stopRecording()
-        DispatchQueue.main.async { self.isRecording = false }
-    }
-
-    func fileOutput(_ output: AVCaptureFileOutput, didFinishRecordingTo outputFileURL: URL, from connections: [AVCaptureConnection], error: Error?) {
-        print("✅ Video captured to: \(outputFileURL)")
-    }
-    
-    func stop() { session.stopRunning() }
-}
-
-struct CameraPreviewView: UIViewRepresentable {
-    let session: AVCaptureSession
-    func makeUIView(context: Context) -> UIView {
-        let view = UIView(frame: UIScreen.main.bounds)
-        let previewLayer = AVCaptureVideoPreviewLayer(session: session)
-        previewLayer.videoGravity = .resizeAspectFill
-        previewLayer.frame = view.bounds
-        view.layer.addSublayer(previewLayer)
-        return view
-    }
-    func updateUIView(_ uiView: UIView, context: Context) {}
 }

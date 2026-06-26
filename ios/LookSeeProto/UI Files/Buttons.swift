@@ -95,17 +95,15 @@ struct Buttons: View {
                 }
                 .scrollDismissesKeyboard(.immediately)
                 .defaultScrollAnchor(.bottom, for: .sizeChanges)
-//                .tabViewStyle(.page(indexDisplayMode: .never))
                 .ignoresSafeArea()
 
-                VStack {
+                VStack(spacing: 0) {
                     // Top nav bar
                     HStack(spacing: 0) {
-                        NavigationLink {
-                            Library()
-                        } label: {
-                            NavButton(icon: "archivebox", label: "Library")
-                        }
+                        
+                        // Invisible spacer replaces the old Library button to maintain perfect center alignment
+                        Color.clear
+                            .frame(width: 56, height: 48)
 
                         Spacer()
 
@@ -205,6 +203,9 @@ struct Buttons: View {
                     )
                 }
             }
+            // Buttons supplies its own header, so suppress SwiftUI's navigation bar.
+            // Otherwise an invisible navigation-bar region can push the custom header down.
+            .toolbar(.hidden, for: .navigationBar)
         }
     }
 
