@@ -1,7 +1,8 @@
 import Foundation
 
 /// Temporary development-only check that proves the generated cluster manifest
-/// can be loaded from the app bundle and resolved by model class index.
+/// can be loaded from the app bundle, resolved by model class index, and passed
+/// into the existing popup state.
 enum LandmarkManifestSmokeTest {
     static let resourceName = "cluster-0-landmark-manifest"
     static let resourceExtension = "json"
@@ -18,23 +19,27 @@ enum LandmarkManifestSmokeTest {
         ExpectedLookup(classIndex: 99, expectedLabel: nil)
     ]
 
-    /// Loads the bundled JSON, validates it, registers it in the shared store,
-    /// and verifies known class-index lookups.
-    ///
-    /// - Returns: `true` when every lookup matches the expected result.
+    /// Class index displayed in the temporary popup smoke test.
+    private static let popupClassIndex = 8
+
+    /// Loads the bundled JSON, validates it, verifies known class-index lookups,
+    /// then opens the existing popup using class index 8.
+    @MainActor
     @discardableResult
     static func run(
         bundle: Bundle = .main,
-        store: LandmarkManifestStore = .shared
+        store: LandmarkManifestStore = .shared,
+        popupState: VariableContainer = .shared,
+        showPopup: Bool = true
     ) -> Bool {
-        print("\n🧪 [Manifest Smoke Test] Starting")
+        print("\n🧪 [Manifest + Popup Smoke Test] Starting")
 
         guard let manifestURL = bundle.url(
             forResource: resourceName,
             withExtension: resourceExtension
         ) else {
             print(
-                "❌ [Manifest Smoke Test] Bundle resource not found: " +
+                "❌ [Manifest + Popup Smoke Test] Bundle resource not found: " +
                 "\(resourceName).\(resourceExtension)"
             )
             print(
@@ -47,7 +52,7 @@ enum LandmarkManifestSmokeTest {
         do {
             let manifest = try store.load(from: manifestURL)
 
-            print("✅ [Manifest Smoke Test] Manifest decoded and validated")
+            print("✅ Manifest decoded and validated")
             print("   clusterId: \(manifest.clusterId)")
             print("   trainingRunId: \(manifest.trainingRunId)")
             print("   classCount: \(manifest.classCount)")
@@ -98,15 +103,44 @@ enum LandmarkManifestSmokeTest {
                 }
             }
 
+            if showPopup {
+                guard let popupEntry = store.resolve(
+                    clusterId: manifest.clusterId,
+                    trainingRunId: manifest.trainingRunId,
+                    classIndex: popupClassIndex
+                ) else {
+                    print(
+                        "❌ Unable to open popup because class index " +
+                        "\(popupClassIndex) did not resolve."
+                    )
+                    return false
+                }
+
+                popupState.presentLandmark(
+                    popupEntry,
+                    clusterId: manifest.clusterId,
+                    trainingRunId: manifest.trainingRunId,
+                    detectionConfidence: 0.92
+                )
+
+                print(
+                    "✅ Popup state populated with class index " +
+                    "\(popupClassIndex): \(popupEntry.label)"
+                )
+            }
+
             if allPassed {
-                print("✅ [Manifest Smoke Test] PASS\n")
+                print("✅ [Manifest + Popup Smoke Test] PASS\n")
             } else {
-                print("❌ [Manifest Smoke Test] FAIL\n")
+                print("❌ [Manifest + Popup Smoke Test] FAIL\n")
             }
 
             return allPassed
         } catch {
-            print("❌ [Manifest Smoke Test] Failed: \(error.localizedDescription)\n")
+            print(
+                "❌ [Manifest + Popup Smoke Test] Failed: " +
+                "\(error.localizedDescription)\n"
+            )
             return false
         }
     }
