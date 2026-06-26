@@ -5,7 +5,6 @@
 //  Created by Angel Pineda on 6/19/26.
 //
 
-
 import SwiftUI
 import MapKit
 import CoreLocation
@@ -77,11 +76,11 @@ struct LandmarkMapView: View {
 
             // Search Bar & Filter Container
             VStack(alignment: .trailing, spacing: 12) {
-                // Polished Google-Maps Style Search Bar
                 HStack {
                     Image(systemName: "magnifyingglass").foregroundStyle(.gray)
-                    TextField("Search landmarks...", text: $searchText)
-                        .foregroundStyle(.black) // Fixed: Black text on white background
+                    
+                    TextField("", text: $searchText, prompt: Text("Search landmarks...").foregroundStyle(.gray.opacity(0.8)))
+                        .foregroundStyle(.black)
                         .autocorrectionDisabled()
                         .submitLabel(.search)
                         .onSubmit {
@@ -91,10 +90,11 @@ struct LandmarkMapView: View {
                                 }
                             }
                         }
+                    
                     if !searchText.isEmpty { Button { searchText = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.gray) } }
                 }
                 .padding(15)
-                .background(Color.white) // Fixed: Bright white background
+                .background(Color.white)
                 .clipShape(RoundedRectangle(cornerRadius: 12))
                 .shadow(color: .black.opacity(0.2), radius: 6, x: 0, y: 3)
                 .padding(.horizontal, 20)
@@ -109,7 +109,7 @@ struct LandmarkMapView: View {
                 }
                 .padding(.trailing, 20)
             }
-            .padding(.top, 65)
+            .padding(.top, 45)
         }
         .task {
             if !locationManager.isAuthorized { locationManager.requestPermissionIfNeeded() }
