@@ -1,3 +1,12 @@
+//
+//  Detector.swift
+//  LookSeeTake2
+//
+//  Rewritten to integrate proximity-based detection filtering using LocationManager.
+//  Flow: Camera frame → letterbox → CoreML (YOLO) → parse → NMS → proximity filter → smooth → publish
+//
+
+
 import Foundation
 import AVFoundation
 import CoreML
@@ -5,7 +14,11 @@ import SwiftUI
 import Combine
 import CoreImage
 import UIKit
+import CoreLocation
 
+// MARK: - Data Models
+
+/// A single detected object from the YOLO model, used to drive the bounding box UI.
 struct Detection: Identifiable {
     let id = UUID()
     let label: String
@@ -13,52 +26,113 @@ struct Detection: Identifiable {
     let bbox: CGRect
 }
 
+/// Metadata for one landmark class, parsed from the manifest JSON sent down from AWS.
+/// The manifest tells us what each class index means and where the landmark physically is.
+struct ObjectInfo: Codable {
+    let classIndex: Int
+    let landmarkId: String
+    let label: String
+    let shortDescription: String
+    let latitude: Double
+    let longitude: Double
+}
+
+/// Top-level manifest model. AWS sends one of these alongside each compiled .mlmodel.
+struct ModelManifest: Codable {
+    let schemaVersion: Int
+    let clusterId: Int
+    let classCount: Int
+    let landmarks: [String: ObjectInfo]
+
+    /// Look up landmark metadata by its class index (0-based integer from the model output).
+    /// We use this during detection parsing to map a class index → coordinates + label.
+    func landmark(for classIndex: Int) -> ObjectInfo? {
+        landmarks.values.first { $0.classIndex == classIndex }
+    }
+}
+
+// MARK: - Bounding Box Smoother
+
+/// Reduces jitter in bounding boxes by averaging the last N frames.
+/// Each detected class gets its own smoother instance so they don't interfere.
 class BoundingBoxSmoother {
     private var history: [CGRect] = []
-    private let maxFrames = 4
-    
+    private let maxFrames = 4 // number of frames to average over
+
+    /// Call this every frame with the latest raw box. Returns the smoothed box.
     func smooth(newBox: CGRect) -> CGRect {
         history.append(newBox)
         if history.count > maxFrames { history.removeFirst() }
-        
+
         let count = CGFloat(history.count)
         let avgX = history.map { $0.minX }.reduce(0, +) / count
         let avgY = history.map { $0.minY }.reduce(0, +) / count
         let avgW = history.map { $0.width }.reduce(0, +) / count
         let avgH = history.map { $0.height }.reduce(0, +) / count
-        
+
         return CGRect(x: avgX, y: avgY, width: avgW, height: avgH)
     }
+
     func reset() { history.removeAll() }
 }
 
+// MARK: - Detector
+
 final class Detector: NSObject, ObservableObject {
-    @Published var detections: [Detection] = []
-    @Published var lastInferenceMS: Double = 0
-    @Published var bufferSize: CGSize = .zero
-    
-    @Published var isPaused: Bool = false
-    @Published var classLabels: [String] = [] // Dynamic model labels
+
+    // MARK: Published state (consumed by the UI layer)
+
+    @Published var detections: [Detection] = []         // final filtered + smoothed detections
+    @Published var lastInferenceMS: Double = 0          // how long the last prediction took
+    @Published var bufferSize: CGSize = .zero           // raw camera buffer dimensions
+    @Published var isPaused: Bool = false               // lets the UI freeze detection
+    @Published var classLabels: [String] = []           // label strings for each class index
+
+    // MARK: Configuration
+
+    /// The region of screen space inside which detections are considered valid.
+    /// Defaults to full screen. Can be narrowed to a viewfinder crop area.
     var dynamicSafeZone: CGRect = .zero
+
+    /// The manifest loaded from AWS alongside the model.
+    /// Setting this enables proximity filtering. If nil, all detections pass through.
+    var manifest: ModelManifest?
+
+    /// Distance threshold in meters. Detections whose landmark is farther than this
+    /// from the user are suppressed. Tune per-deployment as needed.
+    var proximityThresholdMeters: Double = 150
+
+    /// Injected from LocationManager. Updated externally whenever GPS updates.
+    /// Kept as CLLocation so we can call .distance(from:) directly.
+    var userLocation: CLLocation?
+
+    // MARK: Private internals
 
     private var model: MLModel?
     private let queue = DispatchQueue(label: "yolo.queue")
     private let ciContext = CIContext()
-    
-    private var isAttached = false
-    private var throttling = false
 
-    private let inputSize = CGSize(width: 640, height: 640)
-    private let confidenceThreshold: Float = 0.35 // Sensitive enough to catch the ceiling light
-    private let iouThreshold: Float = 0.45
-    
+    private var isAttached = false      // prevents double-attaching to AVCapture
+    private var throttling = false      // rate-limits inference to ~30fps max
+
+    private let inputSize = CGSize(width: 640, height: 640) // YOLO expects 640×640
+    private let confidenceThreshold: Float = 0.35           // minimum score to consider a detection
+    private let iouThreshold: Float = 0.45                  // overlap threshold for NMS
+
+    /// One smoother per class label. Created lazily, removed when a label disappears.
     private var smoothers: [String: BoundingBoxSmoother] = [:]
+
+    // MARK: Init
 
     override init() {
         super.init()
-        observeActiveCluster()
+        observeActiveCluster() // begin watching for model switches from ModelSelector
     }
 
+    // MARK: - Public API
+
+    /// Clears all current detections and resets smoothing history.
+    /// Call this when switching contexts (e.g. navigating away and back).
     func resetEngine() {
         DispatchQueue.main.async {
             self.detections.removeAll()
@@ -66,69 +140,93 @@ final class Detector: NSObject, ObservableObject {
         }
     }
 
-    private func observeActiveCluster() {
-        Task { @MainActor in
-            for await clusterID in ModelSelector.shared.$activeClusterID.values {
-                guard let clusterID, case .loaded(let models) = ModelService.shared.state,
-                      let match = models.first(where: { $0.clusterID == clusterID }),
-                      let url = match.compiledModelURL else { continue }
-                loadModel(from: url, clusterID: clusterID)
-            }
-        }
-    }
-
-    private func loadModel(from url: URL, clusterID: String) {
-        queue.async {
-            do {
-                let loaded = try MLModel(contentsOf: url)
-                let labels = loaded.modelDescription.classLabels as? [String] ?? []
-                
-                DispatchQueue.main.async {
-                    self.model = loaded
-                    self.classLabels = labels
-                    self.smoothers.removeAll()
-                    print("✅ Detector switched to cluster \(clusterID) with \(labels.count) labels.")
-                }
-            } catch { print("❌ Model load error: \(error)") }
-        }
-    }
-
+    /// Attaches this detector as the sample buffer delegate on the given capture output.
+    /// Safe to call multiple times — only attaches once.
     func attach(to output: AVCaptureVideoDataOutput) {
         guard !isAttached else { return }
         isAttached = true
-        if let connection = output.connection(with: .video), connection.isVideoOrientationSupported {
+
+        // Lock to portrait so coordinate math stays consistent
+        if let connection = output.connection(with: .video),
+           connection.isVideoOrientationSupported {
             connection.videoOrientation = .portrait
         }
         output.setSampleBufferDelegate(self, queue: queue)
     }
 
+    // MARK: - Model Loading
+
+    /// Observes ModelSelector for changes to the active cluster and reloads the ML model.
+    /// Runs as an async stream so it picks up every future switch automatically.
+    private func observeActiveCluster() {
+        Task { @MainActor in
+            for await clusterID in ModelSelector.shared.$activeClusterID.values {
+                guard
+                    let clusterID,
+                    case .loaded(let models) = ModelService.shared.state,
+                    let match = models.first(where: { $0.clusterID == clusterID }),
+                    let url = match.compiledModelURL
+                else { continue }
+
+                loadModel(from: url, clusterID: clusterID)
+            }
+        }
+    }
+
+    /// Loads a compiled .mlmodel from disk on the inference queue, then publishes the result.
+    private func loadModel(from url: URL, clusterID: String) {
+        queue.async {
+            do {
+                let loaded = try MLModel(contentsOf: url)
+                // Extract class label strings from the model's own metadata
+                let labels = loaded.modelDescription.classLabels as? [String] ?? []
+
+                DispatchQueue.main.async {
+                    self.model = loaded
+                    self.classLabels = labels
+                    self.smoothers.removeAll() // reset smoothers — new model, new classes
+                    print("✅ Detector switched to cluster \(clusterID) with \(labels.count) labels.")
+                }
+            } catch {
+                print("❌ Model load error: \(error)")
+            }
+        }
+    }
+
+    // MARK: - Inference Pipeline
+
+    /// Entry point for each camera frame. Runs on the YOLO queue.
     private func process(pixelBuffer: CVPixelBuffer) {
-        guard let model = model, !throttling else { return }
-        if isPaused { return }
-        
+        guard let model = model, !throttling, !isPaused else { return }
+
         throttling = true
         let start = CFAbsoluteTimeGetCurrent()
 
+        // Capture raw buffer dimensions for coordinate math later
         let originalWidth = CGFloat(CVPixelBufferGetWidth(pixelBuffer))
         let originalHeight = CGFloat(CVPixelBufferGetHeight(pixelBuffer))
         DispatchQueue.main.async { self.bufferSize = CGSize(width: originalWidth, height: originalHeight) }
 
+        // Step 1: Resize + pad the frame to 640×640 without distortion
         let (inputBuffer, scale, padX, padY) = letterbox(pixelBuffer: pixelBuffer)
 
+        // Step 2: Build the CoreML input feature dictionary
         guard let input = try? MLDictionaryFeatureProvider(dictionary: [
             "image": MLFeatureValue(pixelBuffer: inputBuffer),
             "confidenceThreshold": NSNumber(value: confidenceThreshold),
             "iouThreshold": NSNumber(value: iouThreshold)
         ]) else { throttling = false; return }
 
+        // Step 3: Run inference
         do {
             let result = try model.prediction(from: input)
-            guard let confArray = result.featureValue(for: "confidence")?.multiArrayValue,
-                  let coordArray = result.featureValue(for: "coordinates")?.multiArrayValue else {
-                throttling = false
-                return
-            }
+            guard
+                let confArray = result.featureValue(for: "confidence")?.multiArrayValue,
+                let coordArray = result.featureValue(for: "coordinates")?.multiArrayValue
+            else { throttling = false; return }
 
+            // Step 4: Parse raw arrays → screen-space Detection structs
+            // (NMS + proximity filter + smoothing all happen inside here)
             let newDetections = parseDetections(
                 confArray: confArray,
                 coordArray: coordArray,
@@ -143,113 +241,216 @@ final class Detector: NSObject, ObservableObject {
                 self.detections = newDetections
                 self.lastInferenceMS = (end - start) * 1000
             }
-        } catch { print("Prediction error: \(error)") }
+        } catch {
+            print("Prediction error: \(error)")
+        }
 
+        // Throttle to ~30fps — prevents the queue from flooding on fast devices
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { self.throttling = false }
     }
 
+    // MARK: - Letterboxing
+
+    /// Scales the input frame to fit inside 640×640 while preserving aspect ratio,
+    /// padding the remainder with black. Returns the padded buffer plus the transform
+    /// parameters needed to map 640-space coordinates back to screen space.
     private func letterbox(pixelBuffer: CVPixelBuffer) -> (CVPixelBuffer, CGFloat, CGFloat, CGFloat) {
         let width = CGFloat(CVPixelBufferGetWidth(pixelBuffer))
         let height = CGFloat(CVPixelBufferGetHeight(pixelBuffer))
+
+        // Uniform scale factor — whichever axis hits the edge of 640 first
         let scale = min(inputSize.width / width, inputSize.height / height)
         let newW = width * scale
         let newH = height * scale
+
+        // How much black padding was added on each side
         let padX = (inputSize.width - newW) / 2
         let padY = (inputSize.height - newH) / 2
 
         let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
         let resized = ciImage.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
         let black = CIImage(color: .black).cropped(to: CGRect(origin: .zero, size: inputSize))
-        let composed = resized.transformed(by: CGAffineTransform(translationX: padX, y: padY)).composited(over: black)
+        let composed = resized
+            .transformed(by: CGAffineTransform(translationX: padX, y: padY))
+            .composited(over: black)
 
         var output: CVPixelBuffer?
-        CVPixelBufferCreate(nil, Int(inputSize.width), Int(inputSize.height), kCVPixelFormatType_32BGRA, nil, &output)
+        CVPixelBufferCreate(nil, Int(inputSize.width), Int(inputSize.height),
+                            kCVPixelFormatType_32BGRA, nil, &output)
         ciContext.render(composed, to: output!)
         return (output!, scale, padX, padY)
     }
 
-    private func parseDetections(confArray: MLMultiArray, coordArray: MLMultiArray, scale: CGFloat, padX: CGFloat, padY: CGFloat, originalSize: CGSize) -> [Detection] {
-        var rawDetections: [Detection] = []
+    // MARK: - Detection Parsing
+
+    /// Converts raw CoreML output arrays into screen-space Detection structs.
+    /// Pipeline inside: threshold filter → NMS → proximity filter → smooth
+    private func parseDetections(
+        confArray: MLMultiArray,
+        coordArray: MLMultiArray,
+        scale: CGFloat,
+        padX: CGFloat,
+        padY: CGFloat,
+        originalSize: CGSize
+    ) -> [Detection] {
+
         let confPtr = confArray.dataPointer.bindMemory(to: Float.self, capacity: confArray.count)
         let coordPtr = coordArray.dataPointer.bindMemory(to: Float.self, capacity: coordArray.count)
 
         let numDetections = coordArray.shape[0].intValue
         let numClasses = confArray.shape[1].intValue
 
+        // Compute screen→buffer scaling so boxes land correctly on the camera preview
         let screenWidth = UIScreen.main.bounds.width
         let screenHeight = UIScreen.main.bounds.height
         let screenScale = max(screenWidth / originalSize.width, screenHeight / originalSize.height)
         let offsetX = (originalSize.width * screenScale - screenWidth) / 2
         let offsetY = (originalSize.height * screenScale - screenHeight) / 2
 
+        // Use the dynamic safe zone if set, otherwise accept detections anywhere on screen
         let activeSafeZone = dynamicSafeZone == .zero ? UIScreen.main.bounds : dynamicSafeZone
 
+        // --- Step A: Score each candidate and convert to screen-space rects ---
+        var rawDetections: [Detection] = []
+
         for i in 0..<numDetections {
+            // Find the highest-scoring class for this detection candidate
             var bestScore: Float = 0
             var bestClass = 0
             for c in 0..<numClasses {
                 let score = confPtr[i * numClasses + c]
                 if score > bestScore { bestScore = score; bestClass = c }
             }
-            if bestScore < confidenceThreshold { continue }
+            guard bestScore >= confidenceThreshold else { continue }
 
+            // Coordinates may arrive normalised (0–1) or in pixel space; handle both
             let rawCx = CGFloat(coordPtr[i * 4 + 0])
             let rawCy = CGFloat(coordPtr[i * 4 + 1])
-            let rawW = CGFloat(coordPtr[i * 4 + 2])
-            let rawH = CGFloat(coordPtr[i * 4 + 3])
-            
-            let cx640 = rawCx <= 1.0 ? rawCx * inputSize.width : rawCx
-            let cy640 = rawCy <= 1.0 ? rawCy * inputSize.height : rawCy
-            let w640 = rawW <= 1.0 ? rawW * inputSize.width : rawW
-            let h640 = rawH <= 1.0 ? rawH * inputSize.height : rawH
+            let rawW  = CGFloat(coordPtr[i * 4 + 2])
+            let rawH  = CGFloat(coordPtr[i * 4 + 3])
 
+            let cx640 = rawCx <= 1.0 ? rawCx * inputSize.width  : rawCx
+            let cy640 = rawCy <= 1.0 ? rawCy * inputSize.height : rawCy
+            let w640  = rawW  <= 1.0 ? rawW  * inputSize.width  : rawW
+            let h640  = rawH  <= 1.0 ? rawH  * inputSize.height : rawH
+
+            // Reverse the letterbox transform: strip padding, undo scale, apply screen scale
             let finalX = (((cx640 - padX) / scale) * screenScale) - offsetX
             let finalY = (((cy640 - padY) / scale) * screenScale) - offsetY
             let finalW = (w640 / scale) * screenScale
             let finalH = (h640 / scale) * screenScale
-            if finalW <= 0 || finalH <= 0 { continue }
-            
-            let rect = CGRect(x: finalX - finalW/2, y: finalY - finalH/2, width: finalW, height: finalH)
-            
-            // Re-enabled intersection check so ceiling light detects properly
-            if rect.intersects(activeSafeZone) {
-                let className = bestClass < classLabels.count ? classLabels[bestClass] : "Class \(bestClass)"
-                rawDetections.append(Detection(label: className, confidence: bestScore, bbox: rect))
-            }
+            guard finalW > 0, finalH > 0 else { continue }
+
+            let rect = CGRect(x: finalX - finalW / 2, y: finalY - finalH / 2,
+                              width: finalW, height: finalH)
+
+            // Discard boxes that fall completely outside the viewfinder area
+            guard rect.intersects(activeSafeZone) else { continue }
+
+            let className = bestClass < classLabels.count ? classLabels[bestClass] : "Class \(bestClass)"
+            rawDetections.append(Detection(label: className, confidence: bestScore, bbox: rect))
         }
 
+        // --- Step B: NMS — remove duplicate boxes for the same object ---
         let nmsDetections = nonMaxSuppression(detections: rawDetections, iouThreshold: iouThreshold)
-        
-        var currentLabels = Set<String>()
-        for det in nmsDetections { currentLabels.insert(det.label) }
-        for key in smoothers.keys { if !currentLabels.contains(key) { smoothers.removeValue(forKey: key) } }
-        
+
+        // --- Step C: Proximity filter — suppress detections too far from the user ---
+        let nearbyDetections = proximityFilter(nmsDetections)
+
+        // --- Step D: Smooth bounding boxes across frames to reduce jitter ---
+        // Remove smoothers for labels no longer visible
+        let currentLabels = Set(nearbyDetections.map { $0.label })
+        smoothers.keys.filter { !currentLabels.contains($0) }.forEach { smoothers.removeValue(forKey: $0) }
+
         var finalResults: [Detection] = []
-        for det in nmsDetections {
+        for det in nearbyDetections {
             if smoothers[det.label] == nil { smoothers[det.label] = BoundingBoxSmoother() }
-            finalResults.append(Detection(label: det.label, confidence: det.confidence, bbox: smoothers[det.label]!.smooth(newBox: det.bbox)))
+            let smoothedBox = smoothers[det.label]!.smooth(newBox: det.bbox)
+            finalResults.append(Detection(label: det.label, confidence: det.confidence, bbox: smoothedBox))
         }
+
         return finalResults
     }
 
+    // MARK: - NMS
+
+    /// Non-Maximum Suppression: when multiple boxes overlap heavily, keep only
+    /// the most confident one. IoU (Intersection over Union) measures overlap —
+    /// 0 means no overlap, 1 means identical boxes. Boxes above iouThreshold are dropped.
     private func nonMaxSuppression(detections: [Detection], iouThreshold: Float) -> [Detection] {
         var results: [Detection] = []
         var sorted = detections.sorted { $0.confidence > $1.confidence }
+
         while !sorted.isEmpty {
-            let best = sorted.removeFirst()
+            let best = sorted.removeFirst()     // highest confidence box wins
             results.append(best)
+
+            // Remove everything that overlaps too much with this winner
             sorted.removeAll {
                 let inter = best.bbox.intersection($0.bbox)
-                let iou = inter.isNull ? 0 : (inter.width * inter.height) / ((best.bbox.width * best.bbox.height) + ($0.bbox.width * $0.bbox.height) - (inter.width * inter.height))
-                return iou > CGFloat(iouThreshold)
+                guard !inter.isNull else { return false }
+                let interArea = inter.width * inter.height
+                let unionArea = (best.bbox.width * best.bbox.height)
+                             + ($0.bbox.width * $0.bbox.height)
+                             - interArea
+                let iou = Float(interArea / unionArea)
+                return iou > iouThreshold
             }
         }
         return results
     }
+
+    // MARK: - Proximity Filter
+
+    /// Compares each detected landmark against the user's current GPS location.
+    /// Detections whose real-world object is farther than proximityThresholdMeters are suppressed.
+    ///
+    /// Falls back to allowing all detections if:
+    ///   - manifest hasn't loaded yet (model just switched)
+    ///   - GPS hasn't produced a fix yet
+    ///   - the detected label isn't in the manifest (unknown class)
+    private func proximityFilter(_ detections: [Detection]) -> [Detection] {
+        guard let manifest = manifest else {
+            // Manifest not yet loaded — can't filter, let everything through
+            return detections
+        }
+        guard let userLocation = userLocation else {
+            // No GPS fix yet — let everything through rather than suppressing valid detections
+            return detections
+        }
+
+        return detections.filter { detection in
+            // Find this label's entry in the manifest to get its coordinates
+            guard let object = manifest.landmarks.values
+                .first(where: { $0.label == detection.label })
+            else {
+                // Label not found in manifest — unknown class, let it through
+                return true
+            }
+
+            let objectLocation = CLLocation(
+                latitude: object.latitude,
+                longitude: object.longitude
+            )
+            let distanceMeters = userLocation.distance(from: objectLocation)
+
+            if distanceMeters > proximityThresholdMeters {
+                print("📍 Suppressed '\(detection.label)' — \(Int(distanceMeters))m away (threshold: \(Int(proximityThresholdMeters))m)")
+            }
+            return distanceMeters <= proximityThresholdMeters
+        }
+    }
 }
 
+// MARK: - AVCapture Delegate
+
 extension Detector: AVCaptureVideoDataOutputSampleBufferDelegate {
-    func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
-        if let pb = CMSampleBufferGetImageBuffer(sampleBuffer) { process(pixelBuffer: pb) }
+    /// Called by AVFoundation for every camera frame on the YOLO queue.
+    func captureOutput(_ output: AVCaptureOutput,
+                       didOutput sampleBuffer: CMSampleBuffer,
+                       from connection: AVCaptureConnection) {
+        if let pb = CMSampleBufferGetImageBuffer(sampleBuffer) {
+            process(pixelBuffer: pb)
+        }
     }
 }

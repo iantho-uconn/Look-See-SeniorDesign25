@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		374D81C92FF3051F0009620F /* MockManifest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 374D81C82FF305170009620F /* MockManifest.swift */; };
+		374D81CA2FF3051F0009620F /* MockManifest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 374D81C82FF305170009620F /* MockManifest.swift */; };
+		374D81CB2FF3051F0009620F /* MockManifest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 374D81C82FF305170009620F /* MockManifest.swift */; };
 		3C19EB412F981FA400D1AA43 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = 3C19EB402F981FA400D1AA43 /* ZIPFoundation */; };
 		3C19EB492F9943F400D1AA43 /* final.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3C19EB482F9943F400D1AA43 /* final.mlpackage */; };
 		3C1FC9CC2F42C9E70006C1D3 /* PhotoPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C1FC9CB2F42C9DA0006C1D3 /* PhotoPicker.swift */; };
@@ -74,6 +77,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		374D81C82FF305170009620F /* MockManifest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockManifest.swift; sourceTree = "<group>"; };
 		3C19EB482F9943F400D1AA43 /* final.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = final.mlpackage; sourceTree = "<group>"; };
 		3C1FC9CB2F42C9DA0006C1D3 /* PhotoPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoPicker.swift; sourceTree = "<group>"; };
 		3C4E57002FE443230045B2D4 /* TextScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextScannerView.swift; sourceTree = "<group>"; };
@@ -177,6 +181,7 @@
 		3C90209B2F3ABC8B00EE30BF /* Detection */ = {
 			isa = PBXGroup;
 			children = (
+				374D81C82FF305170009620F /* MockManifest.swift */,
 				3C90209D2F3ABCD300EE30BF /* CameraPreview.swift */,
 				3C9020A12F3ABCE200EE30BF /* Detector.swift */,
 				3C9020A52F3ABCE900EE30BF /* LocationManager.swift */,
@@ -449,6 +454,7 @@
 				568CE2D12F56554E009A8775 /* PromotionEditor.swift in Sources */,
 				3C9020A02F3ABCD300EE30BF /* CameraPreview.swift in Sources */,
 				56BDFD612EC63B52006D1B84 /* PayInfo.swift in Sources */,
+				374D81CA2FF3051F0009620F /* MockManifest.swift in Sources */,
 				3C19EB492F9943F400D1AA43 /* final.mlpackage in Sources */,
 				B0DC9CA92F4F84B2004A9452 /* AuthViewModel.swift in Sources */,
 				B00F16732F9328370057430F /* ModelLoadingScreen.swift in Sources */,
@@ -483,6 +489,7 @@
 			files = (
 				3C9020A62F3ABCE900EE30BF /* LocationManager.swift in Sources */,
 				3C90209F2F3ABCD300EE30BF /* CameraPreview.swift in Sources */,
+				374D81C92FF3051F0009620F /* MockManifest.swift in Sources */,
 				3C9020A22F3ABCE200EE30BF /* Detector.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -494,6 +501,7 @@
 				3C90209E2F3ABCD300EE30BF /* CameraPreview.swift in Sources */,
 				3C9020A72F3ABCE900EE30BF /* LocationManager.swift in Sources */,
 				3C9020A42F3ABCE200EE30BF /* Detector.swift in Sources */,
+				374D81CB2FF3051F0009620F /* MockManifest.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -656,6 +664,7 @@
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -694,6 +703,7 @@
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
