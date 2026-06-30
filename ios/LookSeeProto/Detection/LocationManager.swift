@@ -20,7 +20,6 @@ final class LocationManager: NSObject, ObservableObject {
     var isAuthorized: Bool {
         authorizationStatus == .authorizedAlways || authorizationStatus == .authorizedWhenInUse
     }
-
     override init() {
         super.init()
 

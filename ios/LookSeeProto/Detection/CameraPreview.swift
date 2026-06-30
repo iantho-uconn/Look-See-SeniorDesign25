@@ -135,6 +135,7 @@ struct CameraPreview: UIViewRepresentable {
     @Binding var zoomLevel: CGFloat
     @Binding var showSafeZone: Bool
     @Binding var safeZoneRect: CGRect
+    let onInteraction: () -> Void
     @Binding var isAIPaused: Bool
 
     static let sharedSession = CameraSessionCoordinator()
@@ -183,20 +184,32 @@ struct CameraPreview: UIViewRepresentable {
         }
     }
 
-    func makeCoordinator() -> Coordinator { Coordinator(zoomLevel: $zoomLevel) }
+    func makeCoordinator() -> Coordinator {
+        Coordinator(
+            zoomLevel: $zoomLevel,
+            onInteraction: onInteraction
+        )
+    }
 
     final class Coordinator {
         weak var overlay: OverlayView?
         var view: Preview?
         var zoomLevel: Binding<CGFloat>
+        
+        let onInteraction: () -> Void
+
         private var zoomFactorAtGestureStart: CGFloat = 1.0
         
         private let landmarkService = LandmarkService()
         private let promotionService = PromotionService()
         
-        init(zoomLevel: Binding<CGFloat>) { self.zoomLevel = zoomLevel }
+        init(zoomLevel: Binding<CGFloat>, onInteraction: @escaping () -> Void) {
+                self.zoomLevel = zoomLevel
+                self.onInteraction = onInteraction
+            }
         
         @objc func handlePinch(_ recognizer: UIPinchGestureRecognizer) {
+            onInteraction() 
             guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) else { return }
             switch recognizer.state {
             case .began: zoomFactorAtGestureStart = device.videoZoomFactor
@@ -211,6 +224,7 @@ struct CameraPreview: UIViewRepresentable {
         }
 
         @objc func bbClick(_ recognizer: UITapGestureRecognizer) {
+            onInteraction()
             guard !VariableContainer.shared.infoView else { return }
             guard let overlay = overlay, let firstDetection = overlay.detections.first else { return }
 
