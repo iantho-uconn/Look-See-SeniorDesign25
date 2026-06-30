@@ -103,6 +103,7 @@ struct Buttons: View {
                 .scrollDismissesKeyboard(.immediately)
                 .defaultScrollAnchor(.bottom, for: .sizeChanges)
                 .ignoresSafeArea()
+                .tabViewStyle(.page(indexDisplayMode: .never)) 
                 .onChange(of: currentTab) { _, _ in
                     // Switching tabs always shows chrome again, then re-starts
                     // the fade timer if we landed back on Scan.
