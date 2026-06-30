@@ -139,7 +139,7 @@ final class OverlayView: UIView {
 //            ctx.stroke(bbox)
 
             // Draw label and confidence above the box
-            let labelText = "\(det.label) \(Int(det.confidence * 100))%"
+            let labelText = "\(det.displayLabel) \(Int(det.confidence * 100))%"
             let font = UIFont.systemFont(ofSize: 14, weight: .semibold)
             let attributes: [NSAttributedString.Key: Any] = [
                 .font: font,
@@ -281,8 +281,8 @@ struct CameraPreview: UIViewRepresentable {
             UITapGestureRecognizer(target: self, action: #selector(bbClick(_:)))
         }()
         
-        // Initialize services
-        private let landmarkService = LandmarkService()
+        // Landmark display data now comes from the local manifest.
+        // Promotions remain backend-driven.
         private let promotionService = PromotionService()
         
         init(zoomLevel: Binding<CGFloat>) {
@@ -312,67 +312,97 @@ struct CameraPreview: UIViewRepresentable {
 
         @objc func bbClick(_ recognizer: UITapGestureRecognizer) {
             guard let view, let overlay else {
-                print("⚠️ [Phase 1] Tap ignored because preview/overlay is unavailable")
+                print("⚠️ [Phase 3] Tap ignored because preview/overlay is unavailable")
                 return
             }
 
             let tapLocation = recognizer.location(in: view)
 
-            // Phase one preserves the current selection behavior: the first detection is used.
-            // We log this explicitly because a later phase should resolve the detection whose
-            // displayed bounding box actually contains the tap location.
+            // Preserve the current selection behavior for this manifest pass:
+            // the first stable detection is used. Tap-to-specific-box selection
+            // can be tightened separately after the local metadata path is proven.
             guard overlay.frame.contains(tapLocation),
                   let detection = overlay.detections.first else {
-                print("⚠️ [Phase 1] Tap did not have an available detection")
+                print("⚠️ [Phase 3] Tap did not have an available detection")
                 return
             }
 
-            let detectionLabel = detection.label
+            guard let landmark = detection.landmarkEntry else {
+                print("")
+                print("❌ [Phase 3] Local landmark resolution failed")
+                print("   clusterID: \(detection.clusterID)")
+                print("   modelVersion: \(detection.modelVersion)")
+                print("   classIndex: \(detection.classIndex)")
+                print("   classCount: \(detection.classCount)")
+                print("")
+
+                DispatchQueue.main.async {
+                    self.infoView.landmarkName = "Class \(detection.classIndex)"
+                    self.infoView.landmarkDescription =
+                        "The matching landmark metadata could not be loaded."
+                    self.infoView.promoName = "No active promotion"
+                    self.infoView.promoDescription = ""
+                    self.infoView.landmarkConfidence =
+                        detection.confidence * 100
+                    self.infoView.infoView = true
+                }
+                return
+            }
 
             print("")
-            print("🧭 [Phase 1] Detection selected for popup")
+            print("🧭 [Phase 3] Detection selected for local popup")
             print("   clusterID: \(detection.clusterID)")
+            print("   modelVersion: \(detection.modelVersion)")
+            print("   release: \(detection.releaseIdentifier)")
             print("   modelIdentifier: \(detection.modelIdentifier)")
             print("   classIndex: \(detection.classIndex)")
-            print("   legacy detectionLabel: '\(detectionLabel)'")
+            print("   landmarkId: \(landmark.landmarkId)")
+            print("   landmark label: \(landmark.label)")
             print("   confidence: \(String(format: "%.4f", detection.confidence))")
             print("   tapLocation: \(tapLocation)")
-            print("   selectionBehavior: first detection in overlay.detections")
-            print("⚠️ fetchLandmarkByLabel currently receives the numeric class-index string")
+            print("✅ Landmark name and description resolved locally")
             print("")
 
             Task {
-                // Legacy lookup retained during phase one so runtime behavior can be compared.
-                async let landmarkFetch = landmarkService.fetchLandmarkByLabel(label: detectionLabel)
-                async let promotionsFetch = promotionService.fetchPromotionsByLabel(label: detectionLabel)
+                // Promotions remain dynamic and can still be fetched by the
+                // real landmark label resolved from the local manifest.
+                let promotions =
+                    await promotionService.fetchPromotionsByLabel(
+                        label: landmark.label
+                    )
 
-                let (landmark, promotions) = await (landmarkFetch, promotionsFetch)
-
-                print("🏛 Landmark returned for class index \(detection.classIndex): \(String(describing: landmark))")
-                print("🎯 Promotions returned: \(promotions)")
-                print("🎯 Promotions count: \(promotions.count)")
+                print("🎯 Promotions returned for \(landmark.label): \(promotions.count)")
                 for promo in promotions {
-                    print("  - name: \(promo.name), label: \(promo.landmarkLabel)")
+                    print(
+                        "  - name: \(promo.name), " +
+                        "label: \(promo.landmarkLabel)"
+                    )
                 }
 
                 await MainActor.run {
-                    if let landmark {
-                        infoView.landmarkName = landmark.label
-                        infoView.landmarkDescription = landmark.shortDescription ?? "No description available."
-                    } else {
-                        infoView.landmarkName = "Class \(detection.classIndex)"
-                        infoView.landmarkDescription = "No landmark matched the numeric class index."
-                    }
+                    infoView.landmarkName = landmark.label
+
+                    let trimmedDescription =
+                        landmark.shortDescription.trimmingCharacters(
+                            in: .whitespacesAndNewlines
+                        )
+
+                    infoView.landmarkDescription =
+                        trimmedDescription.isEmpty
+                        ? "No description available."
+                        : trimmedDescription
 
                     if let activePromo = promotions.first {
                         infoView.promoName = activePromo.name
-                        infoView.promoDescription = activePromo.description
+                        infoView.promoDescription =
+                            activePromo.description
                     } else {
                         infoView.promoName = "No active promotion"
                         infoView.promoDescription = ""
                     }
 
-                    infoView.landmarkConfidence = detection.confidence * 100
+                    infoView.landmarkConfidence =
+                        detection.confidence * 100
                     infoView.infoView = true
                 }
             }
