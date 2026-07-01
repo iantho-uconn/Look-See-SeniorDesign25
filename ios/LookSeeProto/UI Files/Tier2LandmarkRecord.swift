@@ -3,6 +3,7 @@
 //  LookSeeProto
 //
 
+
 import SwiftUI
 import CoreLocation
 import Photos
@@ -44,7 +45,12 @@ struct Tier2LandmarkRecord: View {
     @State private var pendingArchiveImage: UIImage?
     @State private var pendingArchiveLocation: CLLocationCoordinate2D?
 
+    @State private var capturedNegativeVideo: CapturedNegativeVideo? = nil
+    @State private var showNegativeCamera = false
+    @State private var showNegativeGalleryPicker = false
+
     @StateObject private var uploadService = UploadService()
+    @StateObject private var hardNegativeUploadService = HardNegativeUploadService()
     @StateObject private var locationManager = LocationManager()
     @StateObject private var nearbyService = NearbyLandmarkService()
 
@@ -62,7 +68,12 @@ struct Tier2LandmarkRecord: View {
         guard locationManager.isAuthorized, locationManager.latitude != nil, locationManager.longitude != nil, let acc = locationManager.horizontalAccuracy else { return false }
         return acc > 0 && acc <= maxAllowedAccuracy
     }
-    private var canSubmitUpload: Bool { hasMedia && selectedLandmark != nil && !uploadService.isUploading }
+    
+    private var canSubmitUpload: Bool {
+        (hasMedia || capturedNegativeVideo != nil) && selectedLandmark != nil && !uploadService.isUploading && !hardNegativeUploadService.isUploading
+    }
+    
+    private var areNegativePhotosLocked: Bool { uploadService.isUploading || hardNegativeUploadService.isUploading }
 
     var body: some View {
         ZStack {
@@ -89,6 +100,21 @@ struct Tier2LandmarkRecord: View {
         .sheet(isPresented: $showVideoPicker) { videoPicker }
         .sheet(isPresented: $showGalleryPicker) { galleryPicker }
         .sheet(isPresented: $showPhotoPicker) { photoPicker }
+        .fullScreenCover(isPresented: $showNegativeCamera) {
+            NegativeVideoCameraView(onDone: { video in
+                capturedNegativeVideo = video
+                if !hardNegativeUploadService.isUploading { hardNegativeUploadService.reset() }
+            })
+        }
+        .sheet(isPresented: $showNegativeGalleryPicker) {
+            NegativeGalleryPicker(onPicked: { url in
+                capturedNegativeVideo = CapturedNegativeVideo(fileURL: url)
+                if !hardNegativeUploadService.isUploading { hardNegativeUploadService.reset() }
+            }, onInvalidDuration: { message in
+                showVideoDurationAlert = true
+                videoDurationAlertMessage = message
+            })
+        }
         .alert("Invalid Video Length", isPresented: $showVideoDurationAlert) { Button("OK", role: .cancel) { } } message: { Text(videoDurationAlertMessage) }
         .alert("Discard this upload?", isPresented: $showDiscardAlert) {
             Button("Discard", role: .destructive) { clearScreen() }
@@ -129,7 +155,10 @@ struct Tier2LandmarkRecord: View {
                 Text(statusText).font(.footnote).foregroundStyle(.secondary).padding(.horizontal)
                 locationSection
                 nearbyLandmarksSection
-                if hasMedia { uploadDetailsSection }
+                
+                // THE FIX: As long as a landmark is selected, show the upload tools so they can do negatives alone.
+                if selectedLandmark != nil { uploadDetailsSection }
+                
                 Spacer(minLength: 30)
             }.padding(.top, 8)
         }.scrollDismissesKeyboard(.interactively)
@@ -185,25 +214,63 @@ struct Tier2LandmarkRecord: View {
         .padding().frame(maxWidth: .infinity, alignment: .leading).background(Color(uiColor: .systemGray6)).clipShape(RoundedRectangle(cornerRadius: 16)).padding(.horizontal)
     }
 
-    private var uploadDetailsSection: some View { VStack(alignment: .leading, spacing: 12) { uploadButtonRow; uploadStatusCard } }
+    private var uploadDetailsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            negativePhotoSection
+            uploadButtonRow
+            uploadStatusCard
+            negativeUploadStatusCard
+        }
+    }
+
+    private var negativePhotoSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("Negative Background Video", systemImage: "video.fill").font(.headline); Spacer()
+                Image(systemName: capturedNegativeVideo != nil ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                    .foregroundStyle(capturedNegativeVideo != nil ? Color.green : Color.orange)
+            }
+            Text("Optional: Add a >= 10s pan of the surrounding area to improve recognition.").font(.footnote).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            
+            HStack(spacing: 12) {
+                Button { showNegativeCamera = true } label: {
+                    Label(capturedNegativeVideo == nil ? "Record" : "Re-record", systemImage: "camera.fill").frame(maxWidth: .infinity).padding(.vertical, 13)
+                }
+                .foregroundStyle(.white).background(primaryColor).clipShape(RoundedRectangle(cornerRadius: 14))
+
+                Button { PHPhotoLibrary.requestAuthorization(for: .readWrite) { status in DispatchQueue.main.async { showNegativeGalleryPicker = true } } } label: {
+                    Label("Gallery", systemImage: "photo.on.rectangle").frame(maxWidth: .infinity).padding(.vertical, 13)
+                }
+                .foregroundStyle(.white).background(primaryColor).clipShape(RoundedRectangle(cornerRadius: 14))
+            }
+            .disabled(areNegativePhotosLocked).opacity(areNegativePhotosLocked ? 0.6 : 1)
+            
+            if let video = capturedNegativeVideo {
+                ZStack(alignment: .topTrailing) {
+                    VideoPlayer(player: AVPlayer(url: video.fileURL)).frame(height: 220).clipShape(RoundedRectangle(cornerRadius: 15))
+                    Button { video.deleteLocalFile(); capturedNegativeVideo = nil } label: { Image(systemName: "xmark.circle.fill").font(.title2).foregroundStyle(.white, .red) }.padding(12).disabled(areNegativePhotosLocked)
+                }.padding(.top, 8)
+            }
+        }.padding().background(Color(uiColor: .systemGray6)).cornerRadius(18).padding(.horizontal)
+    }
 
     private var uploadButtonRow: some View {
         HStack(spacing: 12) {
             
             if archivedMedia != nil {
                 Button(role: .cancel) { saveDraftAndDismiss() } label: { Image(systemName: "arrow.uturn.backward").font(.title2).foregroundStyle(.white).frame(width: 54, height: 52).background(Color.white.opacity(0.2)).clipShape(RoundedRectangle(cornerRadius: 15)) }
-            } else if hasMedia && !uploadService.isUploading {
+            } else if (hasMedia || capturedNegativeVideo != nil) && !uploadService.isUploading {
                 Button { saveToArchiveFromForm() } label: { Image(systemName: "folder.badge.plus").font(.title2).foregroundStyle(.white).frame(width: 54, height: 52).background(primaryColor).clipShape(RoundedRectangle(cornerRadius: 15)) }
             }
             
             Button { startUpload() } label: {
                 HStack(spacing: 10) {
-                    if uploadService.isUploading { ProgressView().tint(.white); Text("Uploading…").fontWeight(.semibold)
+                    if uploadService.isUploading || hardNegativeUploadService.isUploading { ProgressView().tint(.white); Text("Uploading…").fontWeight(.semibold)
                     } else { Label("Upload Media", systemImage: "arrow.up.circle").fontWeight(.semibold) }
                 }.frame(maxWidth: .infinity).padding(.vertical, 14)
             }.foregroundStyle(.white).background(canSubmitUpload ? primaryColor : Color.gray).clipShape(RoundedRectangle(cornerRadius: 15)).disabled(!canSubmitUpload)
             
-            if archivedMedia == nil && hasMedia && !uploadService.isUploading {
+            if archivedMedia == nil && (hasMedia || capturedNegativeVideo != nil) && !uploadService.isUploading {
                 Button(role: .destructive) { showDiscardAlert = true } label: { Image(systemName: "trash.fill").font(.title2).foregroundStyle(.red).frame(width: 54, height: 52).background(Color.red.opacity(0.15)).clipShape(RoundedRectangle(cornerRadius: 15)) }
             }
         }.padding(.horizontal)
@@ -217,6 +284,19 @@ struct Tier2LandmarkRecord: View {
                     VStack(alignment: .leading, spacing: 4) { Text(uploadService.status).font(.headline); Text(uploadService.detail).font(.footnote).foregroundStyle(.secondary) }
                     Spacer()
                 }
+            }.padding().background(Color(uiColor: .secondarySystemBackground)).clipShape(RoundedRectangle(cornerRadius: 16)).padding(.horizontal)
+        }
+    }
+
+    @ViewBuilder private var negativeUploadStatusCard: some View {
+        if hardNegativeUploadService.status != "Idle" {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top, spacing: 12) {
+                    if hardNegativeUploadService.isUploading { ProgressView().padding(.top, 2) } else { Image(systemName: "video.fill").font(.title3).foregroundStyle(primaryColor) }
+                    VStack(alignment: .leading, spacing: 4) { Text(hardNegativeUploadService.status).font(.footnote).foregroundStyle(.secondary) }
+                    Spacer()
+                }
+                if hardNegativeUploadService.isUploading { ProgressView(value: hardNegativeUploadService.progress, total: 1) }
             }.padding().background(Color(uiColor: .secondarySystemBackground)).clipShape(RoundedRectangle(cornerRadius: 16)).padding(.horizontal)
         }
     }
@@ -269,9 +349,10 @@ struct Tier2LandmarkRecord: View {
     
     private func clearScreen() {
         deleteTemporaryVideoIfNeeded(pickedVideoURL)
-        pickedVideoURL = nil; pickedImage = nil; extractedLatitude = nil; extractedLongitude = nil; selectedLandmark = nil
+        capturedNegativeVideo?.deleteLocalFile()
+        pickedVideoURL = nil; pickedImage = nil; extractedLatitude = nil; extractedLongitude = nil; selectedLandmark = nil; capturedNegativeVideo = nil
         if initialLandmarkId != nil { hasAppliedInitialLandmark = false; Task { await refreshNearbyIfPossible(force: true) } }
-        statusText = "No media selected."; uploadService.reset()
+        statusText = "No media selected."; uploadService.reset(); hardNegativeUploadService.reset()
     }
 
     private func startUpload() {
@@ -279,12 +360,21 @@ struct Tier2LandmarkRecord: View {
         Task {
             await vm.fetchUserEmail()
             do {
-                let result = try await uploadService.upload(
-                    userEmail: vm.userEmail, label: selectedLandmark.label, landmarkId: selectedLandmark.landmarkId, landmarkLabel: selectedLandmark.label, shortDescription: selectedLandmark.shortDescription, userDescription: nil,
-                    latitude: extractedLatitude ?? locationManager.latitude, longitude: extractedLongitude ?? locationManager.longitude, horizontalAccuracy: locationManager.horizontalAccuracy, videoURL: pickedVideoURL, image: pickedImage
-                )
-                print("✅ Tier-2 upload completed:", result.submissionId, result.landmarkId ?? "no-landmark-id")
+                if hasMedia {
+                    _ = try await uploadService.upload(
+                        userEmail: vm.userEmail, label: selectedLandmark.label, landmarkId: selectedLandmark.landmarkId, landmarkLabel: selectedLandmark.label, shortDescription: selectedLandmark.shortDescription, userDescription: nil,
+                        latitude: extractedLatitude ?? locationManager.latitude, longitude: extractedLongitude ?? locationManager.longitude, horizontalAccuracy: locationManager.horizontalAccuracy, videoURL: pickedVideoURL, image: pickedImage
+                    )
+                }
+                
+                if let negativeVideo = capturedNegativeVideo {
+                    _ = try await hardNegativeUploadService.upload(landmarkId: selectedLandmark.landmarkId, video: negativeVideo)
+                }
+                
+                print("✅ Tier-2 upload completed!")
                 if let media = archivedMedia { OfflineMediaManager.shared.deleteArchive(media: media) }
+                clearScreen()
+                statusText = "Media uploaded successfully."
             } catch { print("❌ Tier-2 upload failed:", error.localizedDescription) }
         }
     }
