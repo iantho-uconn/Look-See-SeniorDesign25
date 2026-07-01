@@ -60,7 +60,6 @@
 		D0E788892FF2E1CD00E5FE00 /* NegativeVideoCameraService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0E788872FF2E1C700E5FE00 /* NegativeVideoCameraService.swift */; };
 		D0E7888D2FF2E3C800E5FE00 /* NegativeVideoCameraView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0E7888C2FF2E3C000E5FE00 /* NegativeVideoCameraView.swift */; };
 		D0E7888F2FF39A9A00E5FE00 /* NegativeGalleryPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0E7888E2FF39A9500E5FE00 /* NegativeGalleryPicker.swift */; };
-		D0E788932FF5073000E5FE00 /* GymLocation.gpx in Resources */ = {isa = PBXBuildFile; fileRef = D0E788922FF5073000E5FE00 /* GymLocation.gpx */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -127,7 +126,6 @@
 		D0E788872FF2E1C700E5FE00 /* NegativeVideoCameraService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NegativeVideoCameraService.swift; sourceTree = "<group>"; };
 		D0E7888C2FF2E3C000E5FE00 /* NegativeVideoCameraView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NegativeVideoCameraView.swift; sourceTree = "<group>"; };
 		D0E7888E2FF39A9500E5FE00 /* NegativeGalleryPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NegativeGalleryPicker.swift; sourceTree = "<group>"; };
-		D0E788922FF5073000E5FE00 /* GymLocation.gpx */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = GymLocation.gpx; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -212,7 +210,6 @@
 		3C918F942E9ECE5F00AF5DAF = {
 			isa = PBXGroup;
 			children = (
-				D0E788922FF5073000E5FE00 /* GymLocation.gpx */,
 				3C9020BF2F3AC88600EE30BF /* MachineLearningModels */,
 				3C90209B2F3ABC8B00EE30BF /* Detection */,
 				565542BF2EBD8384007DBA98 /* Models */,
@@ -429,7 +426,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				D0E788932FF5073000E5FE00 /* GymLocation.gpx in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
