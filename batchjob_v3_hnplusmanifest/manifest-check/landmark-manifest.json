@@ -1,0 +1,153 @@
+{
+  "schemaVersion": 1,
+  "clusterId": 0,
+  "trainingRunId": "manual-negtest-run-002-manifest",
+  "generatedAt": "2026-06-23T15:59:02.989621Z",
+  "classCount": 18,
+  "landmarks": {
+    "0": {
+      "classIndex": 0,
+      "landmarkId": "landmark_D9E2C9EF",
+      "datasetClassName": "Dodd_Center_Stone_Book",
+      "label": "Dodd Center Stone Book",
+      "shortDescription": "A representation of a book made of stone in front of the Dodd Center.",
+      "positiveImageCount": 703
+    },
+    "1": {
+      "classIndex": 1,
+      "landmarkId": "landmark_50BC3C5C",
+      "datasetClassName": "Dove_Tower",
+      "label": "Dove Tower",
+      "shortDescription": "Tower structure",
+      "positiveImageCount": 546
+    },
+    "2": {
+      "classIndex": 2,
+      "landmarkId": "landmark_2257A04C",
+      "datasetClassName": "Frogfest_'05_statue",
+      "label": "Frogfest '05 statue",
+      "shortDescription": "A frog-shaped statue by Sally Sargent Markey in the School of Pharmacy building dedicated to FrogFest `05",
+      "positiveImageCount": 653
+    },
+    "3": {
+      "classIndex": 3,
+      "landmarkId": "landmark_1D0A3622",
+      "datasetClassName": "Gampel_Pavilion",
+      "label": "Gampel Pavilion",
+      "shortDescription": "UConn’s basketball stadium",
+      "positiveImageCount": 229
+    },
+    "4": {
+      "classIndex": 4,
+      "landmarkId": "landmark_E187C25C",
+      "datasetClassName": "Husky_Dog_Statue",
+      "label": "Husky Dog Statue",
+      "shortDescription": "The UConn husky mascot, standing tall since 1881. There’s campus tradition to where you can rub his nose and ears for good luck!",
+      "positiveImageCount": 0
+    },
+    "5": {
+      "classIndex": 5,
+      "landmarkId": "landmark_F2459BC1",
+      "datasetClassName": "ITE",
+      "label": "ITE",
+      "shortDescription": "Information technology building UConn",
+      "positiveImageCount": 205
+    },
+    "6": {
+      "classIndex": 6,
+      "landmarkId": "landmark_D866E084",
+      "datasetClassName": "ITE_Building",
+      "label": "ITE Building",
+      "shortDescription": "2nd Floor Entrance",
+      "positiveImageCount": 82
+    },
+    "7": {
+      "classIndex": 7,
+      "landmarkId": "landmark_664CD1ED",
+      "datasetClassName": "Ian’s_Cubone_Skull",
+      "label": "Ian’s Cubone Skull",
+      "shortDescription": "Cubone",
+      "positiveImageCount": 497
+    },
+    "8": {
+      "classIndex": 8,
+      "landmarkId": "landmark_5870BA5F",
+      "datasetClassName": "Ian’s_Tea_Cup",
+      "label": "Ian’s Tea Cup",
+      "shortDescription": "A tea cup for Ian’s morning tea",
+      "positiveImageCount": 493
+    },
+    "9": {
+      "classIndex": 9,
+      "landmarkId": "landmark_BF5A3A74",
+      "datasetClassName": "Ian’s_ac_remote",
+      "label": "Ian’s ac remote",
+      "shortDescription": "It’s a remote",
+      "positiveImageCount": 511
+    },
+    "10": {
+      "classIndex": 10,
+      "landmarkId": "landmark_1D7072CF",
+      "datasetClassName": "Ian’s_laptop",
+      "label": "Ian’s laptop",
+      "shortDescription": "It’s a MacBook",
+      "positiveImageCount": 545
+    },
+    "11": {
+      "classIndex": 11,
+      "landmarkId": "landmark_FA5E8408",
+      "datasetClassName": "Ian’s_water_bottle",
+      "label": "Ian’s water bottle",
+      "shortDescription": "It’s a water bottle",
+      "positiveImageCount": 543
+    },
+    "12": {
+      "classIndex": 12,
+      "landmarkId": "landmark_70BB584D",
+      "datasetClassName": "Möbius_Solaris",
+      "label": "Möbius Solaris",
+      "shortDescription": "An installation built by Robert Perless and completed in 1995.",
+      "positiveImageCount": 1139
+    },
+    "13": {
+      "classIndex": 13,
+      "landmarkId": "landmark_E562ECE3",
+      "datasetClassName": "Rainbow_Volleyball",
+      "label": "Rainbow Volleyball",
+      "shortDescription": "Ian’s beach volleyball",
+      "positiveImageCount": 953
+    },
+    "14": {
+      "classIndex": 14,
+      "landmarkId": "landmark_51FC6B25",
+      "datasetClassName": "Student_Recreation_center",
+      "label": "Student Recreation center",
+      "shortDescription": "UConn Rec Center",
+      "positiveImageCount": 246
+    },
+    "15": {
+      "classIndex": 15,
+      "landmarkId": "landmark_4D6992BD",
+      "datasetClassName": "Student_Union",
+      "label": "Student Union",
+      "shortDescription": "UConn student union",
+      "positiveImageCount": 200
+    },
+    "16": {
+      "classIndex": 16,
+      "landmarkId": "landmark_6B1C598E",
+      "datasetClassName": "Sundial_plaza",
+      "label": "Sundial plaza",
+      "shortDescription": "A plaza with a sundial at the center.",
+      "positiveImageCount": 823
+    },
+    "17": {
+      "classIndex": 17,
+      "landmarkId": "landmark_214301DA",
+      "datasetClassName": "Uconn_planetarium",
+      "label": "Uconn planetarium",
+      "shortDescription": "A small planetarium located close to UCONN's Swan Lake.",
+      "positiveImageCount": 836
+    }
+  }
+}

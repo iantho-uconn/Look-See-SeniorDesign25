@@ -1,0 +1,5 @@
+train: images/train
+val: images/val
+
+nc: 18
+names: ["Dodd_Center_Stone_Book", "Dove_Tower", "Frogfest_'05_statue", "Gampel_Pavilion", "Husky_Dog_Statue", "ITE", "ITE_Building", "Ian\u2019s_Cubone_Skull", "Ian\u2019s_Tea_Cup", "Ian\u2019s_ac_remote", "Ian\u2019s_laptop", "Ian\u2019s_water_bottle", "M\u00f6bius_Solaris", "Rainbow_Volleyball", "Student_Recreation_center", "Student_Union", "Sundial_plaza", "Uconn_planetarium"]
