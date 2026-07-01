@@ -248,6 +248,7 @@ final class Detector: NSObject, ObservableObject {
         // Throttle to ~30fps — prevents the queue from flooding on fast devices
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { self.throttling = false }
     }
+    
 
     // MARK: - Letterboxing
 
