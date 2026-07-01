@@ -7,7 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		3C19792C2FF41FF900B90C32 /* MysticCluster0.gpx in Resources */ = {isa = PBXBuildFile; fileRef = 3C19792B2FF41FF900B90C32 /* MysticCluster0.gpx */; };
 		3C19EB412F981FA400D1AA43 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = 3C19EB402F981FA400D1AA43 /* ZIPFoundation */; };
 		3C19EB492F9943F400D1AA43 /* final.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3C19EB482F9943F400D1AA43 /* final.mlpackage */; };
 		3C1FC9CC2F42C9E70006C1D3 /* PhotoPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C1FC9CB2F42C9DA0006C1D3 /* PhotoPicker.swift */; };
@@ -71,7 +70,6 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		3C19792B2FF41FF900B90C32 /* MysticCluster0.gpx */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = MysticCluster0.gpx; sourceTree = "<group>"; };
 		3C19EB482F9943F400D1AA43 /* final.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = final.mlpackage; sourceTree = "<group>"; };
 		3C1FC9CB2F42C9DA0006C1D3 /* PhotoPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoPicker.swift; sourceTree = "<group>"; };
 		3C4E57002FE443230045B2D4 /* TextScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextScannerView.swift; sourceTree = "<group>"; };
@@ -193,7 +191,6 @@
 		3C918F942E9ECE5F00AF5DAF = {
 			isa = PBXGroup;
 			children = (
-				3C19792B2FF41FF900B90C32 /* MysticCluster0.gpx */,
 				3C9020BF2F3AC88600EE30BF /* MachineLearningModels */,
 				3C90209B2F3ABC8B00EE30BF /* Detection */,
 				565542BF2EBD8384007DBA98 /* Models */,
@@ -403,7 +400,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				3C19792C2FF41FF900B90C32 /* MysticCluster0.gpx in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
