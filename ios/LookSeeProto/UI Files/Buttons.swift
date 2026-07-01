@@ -19,9 +19,9 @@ struct Buttons: View {
     // Number of tabs based on tier
     var tabCount: Int {
         switch authState.tier {
-        case .guest: return 2           // Scan + blocked Upload
-        case .authenticated: return 2   // Scan + Upload
-        case .business: return 3        // Scan + Record + Upload
+        case .guest: return 4           // Scan + Map + blocked Upload + blocked Archive
+        case .authenticated: return 4   // Scan + Map + Upload + Archive
+        case .business: return 5        // Scan + Map + Record + Upload + Archive
         }
     }
 
@@ -37,8 +37,14 @@ struct Buttons: View {
                         .safeAreaInset(edge: .top) { Color.clear.frame(height: 70) }
                         .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 60) }
                         .tag(0)
+                    
+                    // Tab 1 — Map (all users)
+                    LandmarkMapView()
+                        .safeAreaInset(edge: .top) { Color.clear.frame(height: 70) }
+                        .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 60) }
+                        .tag(1)
 
-                    // Tab 1 — Record (business only, hidden for others)
+                    // Tab 2 — Record (business only, hidden for others)
                     if authState.tier == .business {
                         LandmarkRecord { landmarkId in
                             pendingUploadLandmarkId = landmarkId
@@ -46,24 +52,19 @@ struct Buttons: View {
                             withAnimation(
                                 .easeInOut(duration: 0.25)
                             ) {
-                                currentTab = 2
+                                currentTab = 3 // Shifted to Tab 3
                             }
                         }
-                        .safeAreaInset(edge: .top) {
-                            Color.clear.frame(height: 70)
-                        }
-                        .safeAreaInset(edge: .bottom) {
-                            Color.clear.frame(height: 60)
-                        }
-                        .tag(1)
+                        .safeAreaInset(edge: .top) { Color.clear.frame(height: 70) }
+                        .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 60) }
+                        .tag(2)
                     }
 
-                    // Tab 2 (or 1 for non-business) — Upload
+                    // Tab 3 (or 2 for non-business) — Upload
                     Group {
                         if authState.tier == .authenticated || authState.tier == .business {
                             Tier2LandmarkRecord(
-                                initialLandmarkId:
-                                    pendingUploadLandmarkId,
+                                initialLandmarkId: pendingUploadLandmarkId,
                                 onInitialLandmarkConsumed: {
                                     pendingUploadLandmarkId = nil
                                 }
@@ -76,21 +77,33 @@ struct Buttons: View {
                     }
                     .safeAreaInset(edge: .top) { Color.clear.frame(height: 70) }
                     .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 60) }
-                    .tag(authState.tier == .business ? 2 : 1)
+                    .tag(authState.tier == .business ? 3 : 2)
+                    
+                    // Tab 4 (or 3 for non-business) — Archive
+                    Group {
+                        if authState.tier == .authenticated || authState.tier == .business {
+                            ArchiveView()
+                        } else {
+                            // Guest sees a blank page
+                            Color(red: 0.06, green: 0.06, blue: 0.10)
+                                .ignoresSafeArea()
+                        }
+                    }
+                    .safeAreaInset(edge: .top) { Color.clear.frame(height: 70) }
+                    .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 60) }
+                    .tag(authState.tier == .business ? 4 : 3)
                 }
                 .scrollDismissesKeyboard(.immediately)
                 .defaultScrollAnchor(.bottom, for: .sizeChanges)
-//                .tabViewStyle(.page(indexDisplayMode: .never))
                 .ignoresSafeArea()
 
-                VStack {
+                VStack(spacing: 0) {
                     // Top nav bar
                     HStack(spacing: 0) {
-                        NavigationLink {
-                            Library()
-                        } label: {
-                            NavButton(icon: "archivebox", label: "Library")
-                        }
+                        
+                        // Invisible spacer replaces the old Library button to maintain perfect center alignment
+                        Color.clear
+                            .frame(width: 56, height: 48)
 
                         Spacer()
 
@@ -137,17 +150,28 @@ struct Buttons: View {
                     HStack(spacing: 0) {
                         // Scan — always visible
                         tabButton(title: "Scan", icon: "camera.aperture", tab: 0, locked: false)
+                        
+                        // Map — always visible
+                        tabButton(title: "Map", icon: "map", tab: 1, locked: false)
 
                         // Record — business only
                         if authState.tier == .business {
-                            tabButton(title: "Record", icon: "video", tab: 1, locked: false)
+                            tabButton(title: "Record", icon: "video", tab: 2, locked: false)
                         }
 
                         // Upload — visible to all, locked for guest
                         tabButton(
                             title: "Upload",
                             icon: "arrow.up.circle",
-                            tab: authState.tier == .business ? 2 : 1,
+                            tab: authState.tier == .business ? 3 : 2,
+                            locked: authState.tier == .guest
+                        )
+                        
+                        // Archive — visible to all, locked for guest
+                        tabButton(
+                            title: "Archive",
+                            icon: "folder.fill",
+                            tab: authState.tier == .business ? 4 : 3,
                             locked: authState.tier == .guest
                         )
                     }
@@ -160,7 +184,7 @@ struct Buttons: View {
                     )
                 }
 
-                // Sign up prompt overlay for guest tapping Upload
+                // Sign up prompt overlay for guest tapping Upload/Archive
                 if showSignUpPrompt {
                     signUpPromptOverlay
                 }
@@ -179,6 +203,9 @@ struct Buttons: View {
                     )
                 }
             }
+            // Buttons supplies its own header, so suppress SwiftUI's navigation bar.
+            // Otherwise an invisible navigation-bar region can push the custom header down.
+            .toolbar(.hidden, for: .navigationBar)
         }
     }
 
@@ -264,7 +291,7 @@ struct Buttons: View {
     func tabButton(title: String, icon: String, tab: Int, locked: Bool) -> some View {
         Button {
             if locked {
-                // Guest tapping Upload — show sign up prompt
+                // Guest tapping Upload/Archive — show sign up prompt
                 showSignUpPrompt = true
             } else {
                 withAnimation(.easeInOut(duration: 0.25)) {
@@ -325,7 +352,3 @@ private struct NavButton: View {
         .contentShape(Rectangle())
     }
 }
-
-//#Preview {
-//    Buttons()
-//}

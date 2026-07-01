@@ -19,40 +19,30 @@ final class HardNegativeUploadService: ObservableObject {
     )!
 
     enum UploadError: LocalizedError {
-        case noPhotos
-        case tooManyPhotos
+        case noVideo
         case invalidURL
         case invalidResponse
         case badStatus(Int, String)
-        case responseCountMismatch(expected: Int, received: Int)
+        case responseCountMismatch
         case missingLocalFile(String)
-        case incompleteUpload(processed: Int, failed: Int)
+        case incompleteUpload
 
         var errorDescription: String? {
             switch self {
-            case .noPhotos:
-                return "No negative photos were provided."
-
-            case .tooManyPhotos:
-                return "A maximum of 25 negative photos can be uploaded in one batch."
-
+            case .noVideo:
+                return "No negative video was provided."
             case .invalidURL:
                 return "The upload service returned an invalid URL."
-
             case .invalidResponse:
                 return "The server returned an invalid response."
-
             case .badStatus(let code, let body):
                 return "HTTP \(code): \(body)"
-
-            case .responseCountMismatch(let expected, let received):
-                return "Expected \(expected) upload URLs, but received \(received)."
-
+            case .responseCountMismatch:
+                return "Expected 1 upload URL, but received a different amount."
             case .missingLocalFile(let filename):
-                return "The local photo could not be found: \(filename)"
-
-            case .incompleteUpload(let processed, let failed):
-                return "Only \(processed) photos completed successfully; \(failed) failed."
+                return "The local video could not be found: \(filename)"
+            case .incompleteUpload:
+                return "The upload failed to complete successfully."
             }
         }
     }
@@ -61,19 +51,12 @@ final class HardNegativeUploadService: ObservableObject {
 
     func upload(
         landmarkId: String,
-        photos: [CapturedNegativePhoto]
+        video: CapturedNegativeVideo
     ) async throws -> HardNegativeCompleteResponse {
-        guard !photos.isEmpty else {
-            throw UploadError.noPhotos
-        }
-
-        guard photos.count <= 25 else {
-            throw UploadError.tooManyPhotos
-        }
-
+        
         isUploading = true
         progress = 0
-        status = "Preparing negative photos…"
+        status = "Preparing negative video…"
 
         defer {
             isUploading = false
@@ -82,56 +65,37 @@ final class HardNegativeUploadService: ObservableObject {
         do {
             let initResponse = try await initializeUpload(
                 landmarkId: landmarkId,
-                photos: photos
+                video: video
             )
 
-            guard initResponse.uploads.count == photos.count else {
-                throw UploadError.responseCountMismatch(
-                    expected: photos.count,
-                    received: initResponse.uploads.count
-                )
+            guard let uploadTarget = initResponse.uploads.first, initResponse.uploads.count == 1 else {
+                throw UploadError.responseCountMismatch
             }
 
             progress = 0.1
+            status = "Uploading negative video to S3…"
 
-            for (index, pair) in zip(
-                photos,
-                initResponse.uploads
-            ).enumerated() {
-                let photo = pair.0
-                let uploadTarget = pair.1
+            try await uploadVideo(
+                video,
+                to: uploadTarget
+            )
 
-                status = "Uploading negative photo \(index + 1) of \(photos.count)…"
-
-                try await uploadPhoto(
-                    photo,
-                    to: uploadTarget
-                )
-
-                let uploadedFraction =
-                    Double(index + 1) / Double(photos.count)
-
-                progress = 0.1 + (uploadedFraction * 0.75)
-            }
-
-            status = "Finalizing negative photos…"
+            progress = 0.85
+            status = "Finalizing negative video…"
 
             let completeResponse = try await completeUpload(
                 landmarkId: landmarkId,
                 batchId: initResponse.batchId,
-                negativeIds: initResponse.uploads.map(\.negativeId)
+                negativeIds: [uploadTarget.negativeId]
             )
 
             guard completeResponse.failedCount == 0,
-                  completeResponse.processedCount == photos.count else {
-                throw UploadError.incompleteUpload(
-                    processed: completeResponse.processedCount,
-                    failed: completeResponse.failedCount
-                )
+                  completeResponse.processedCount == 1 else {
+                throw UploadError.incompleteUpload
             }
 
             progress = 1
-            status = "Negative photos uploaded ✅"
+            status = "Negative video uploaded ✅"
 
             return completeResponse
 
@@ -152,7 +116,7 @@ final class HardNegativeUploadService: ObservableObject {
 
     private func initializeUpload(
         landmarkId: String,
-        photos: [CapturedNegativePhoto]
+        video: CapturedNegativeVideo
     ) async throws -> HardNegativeInitResponse {
         let url = baseURL
             .appendingPathComponent("landmarks")
@@ -161,12 +125,12 @@ final class HardNegativeUploadService: ObservableObject {
             .appendingPathComponent("init")
 
         let body = HardNegativeInitRequest(
-            files: photos.map {
+            files: [
                 HardNegativeFileRequest(
-                    filename: $0.filename,
-                    contentType: "image/jpeg"
+                    filename: video.filename,
+                    contentType: "video/quicktime"
                 )
-            }
+            ]
         )
 
         var request = URLRequest(url: url)
@@ -194,15 +158,15 @@ final class HardNegativeUploadService: ObservableObject {
 
     // MARK: - Presigned S3 uploads
 
-    private func uploadPhoto(
-        _ photo: CapturedNegativePhoto,
+    private func uploadVideo(
+        _ video: CapturedNegativeVideo,
         to target: HardNegativeUploadTarget
     ) async throws {
         guard FileManager.default.fileExists(
-            atPath: photo.fileURL.path
+            atPath: video.fileURL.path
         ) else {
             throw UploadError.missingLocalFile(
-                photo.filename
+                video.filename
             )
         }
 
@@ -215,7 +179,6 @@ final class HardNegativeUploadService: ObservableObject {
         var request = URLRequest(url: url)
         request.httpMethod = "PUT"
 
-        // This must exactly match the content type signed by Lambda.
         request.setValue(
             target.contentType,
             forHTTPHeaderField: "Content-Type"
@@ -223,7 +186,7 @@ final class HardNegativeUploadService: ObservableObject {
 
         let (_, response) = try await URLSession.shared.upload(
             for: request,
-            fromFile: photo.fileURL
+            fromFile: video.fileURL
         )
 
         guard let httpResponse = response as? HTTPURLResponse else {
@@ -233,7 +196,7 @@ final class HardNegativeUploadService: ObservableObject {
         guard (200...299).contains(httpResponse.statusCode) else {
             throw UploadError.badStatus(
                 httpResponse.statusCode,
-                "S3 PUT failed for \(photo.filename)"
+                "S3 PUT failed for \(video.filename)"
             )
         }
     }
@@ -268,8 +231,6 @@ final class HardNegativeUploadService: ObservableObject {
             for: request
         )
 
-        // This intentionally accepts 207 Multi-Status. We inspect
-        // failedCount after decoding it.
         try validateAPIResponse(
             response,
             data: data
