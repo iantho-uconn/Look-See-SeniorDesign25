@@ -3,6 +3,7 @@
 //  LookSeeProto
 //
 
+
 import SwiftUI
 import CoreLocation
 import Photos
@@ -46,10 +47,10 @@ struct LandmarkRecord: View {
     @State private var pendingArchiveImage: UIImage?
     @State private var pendingArchiveLocation: CLLocationCoordinate2D?
 
-    @State private var capturedNegativePhotos: [CapturedNegativePhoto] = []
+    // Negative Video State
+    @State private var capturedNegativeVideo: CapturedNegativeVideo? = nil
     @State private var showNegativeCamera = false
-    private let minimumNegativePhotoCount = 5
-    private let maximumNegativePhotoCount = 10
+    @State private var showNegativeGalleryPicker = false
 
     @State private var completedPositiveResult: PositiveSubmissionResult?
     @State private var completedLandmarkId: String?
@@ -68,13 +69,15 @@ struct LandmarkRecord: View {
     private var hasPositiveMedia: Bool { pickedVideoURL != nil || pickedImage != nil }
     private var hasLabel: Bool { !labelText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     private var hasRequiredShortDescription: Bool { !shortDescription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-    private var hasRequiredNegativePhotos: Bool { capturedNegativePhotos.count >= minimumNegativePhotoCount && capturedNegativePhotos.count <= maximumNegativePhotoCount }
+    private var hasRequiredNegativeVideo: Bool { capturedNegativeVideo != nil }
+    
     private var isSubmissionRunning: Bool { uploadService.isUploading || hardNegativeUploadService.isUploading }
     
     private var canUpload: Bool {
         guard !isSubmissionRunning, !isFullSubmissionComplete else { return false }
-        if completedPositiveResult != nil { return hasRequiredNegativePhotos }
-        return hasPositiveMedia && hasLabel && hasRequiredShortDescription && hasRequiredNegativePhotos
+        if completedPositiveResult != nil { return hasRequiredNegativeVideo }
+        // Must have both positive and negative to create a BRAND NEW landmark
+        return hasPositiveMedia && hasLabel && hasRequiredShortDescription && hasRequiredNegativeVideo
     }
     
     private var arePositiveDetailsLocked: Bool { isSubmissionRunning || completedPositiveResult != nil || isFullSubmissionComplete }
@@ -120,12 +123,8 @@ struct LandmarkRecord: View {
                 extractedLatitude = archive.latitude
                 extractedLongitude = archive.longitude
                 
-                // LOAD DRAFTS
                 labelText = archive.savedLabel ?? ""
                 shortDescription = archive.savedDescription ?? ""
-                if let cachedNegs = OfflineMediaManager.shared.negativeCache[archive.id] {
-                    capturedNegativePhotos = cachedNegs
-                }
                 
                 if businessLandmarkId == nil { businessLandmarkId = makeBusinessLandmarkId() }
                 statusText = "Loaded archived media."
@@ -135,11 +134,21 @@ struct LandmarkRecord: View {
         .sheet(isPresented: $showGalleryPicker) { galleryPicker }
         .sheet(isPresented: $showPhotoPicker) { photoPicker }
         .sheet(isPresented: $showTextScanner) { ScannerSheet(scannedText: $shortDescription) }
+        
         .fullScreenCover(isPresented: $showNegativeCamera) {
-            MultiPhotoCameraView(existingPhotos: capturedNegativePhotos, minimumPhotoCount: minimumNegativePhotoCount, maximumPhotoCount: maximumNegativePhotoCount) { photos in
-                capturedNegativePhotos = photos
+            NegativeVideoCameraView(onDone: { video in
+                capturedNegativeVideo = video
                 if !hardNegativeUploadService.isUploading { hardNegativeUploadService.reset() }
-            }
+            })
+        }
+        .sheet(isPresented: $showNegativeGalleryPicker) {
+            NegativeGalleryPicker(onPicked: { url in
+                capturedNegativeVideo = CapturedNegativeVideo(fileURL: url)
+                if !hardNegativeUploadService.isUploading { hardNegativeUploadService.reset() }
+            }, onInvalidDuration: { message in
+                showVideoDurationAlert = true
+                videoDurationAlertMessage = message
+            })
         }
         .alert("Invalid Video Length", isPresented: $showVideoDurationAlert) { Button("OK", role: .cancel) { } } message: { Text(videoDurationAlertMessage) }
         .alert("Discard this upload?", isPresented: $showDiscardAlert) {
@@ -149,7 +158,7 @@ struct LandmarkRecord: View {
         .alert("Landmark Uploaded!", isPresented: $showCompletionPopup) {
             Button("Create Another Landmark") { resetForAnotherLandmark() }
             Button("Add More Photos or Videos") { openAdditionalMediaUpload() }
-        } message: { Text("Your landmark media and negative reference photos were uploaded successfully.") }
+        } message: { Text("Your landmark media and negative reference video were uploaded successfully.") }
     }
 
     var archivePromptOverlay: some View {
@@ -226,35 +235,35 @@ struct LandmarkRecord: View {
     private var negativePhotoSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Label("Negative Reference Photos", systemImage: "photo.stack").font(.headline); Spacer()
-                Text("\(capturedNegativePhotos.count)/\(maximumNegativePhotoCount)").font(.subheadline.bold()).foregroundStyle(hasRequiredNegativePhotos ? Color.green : Color.orange)
+                Label("Negative Background Video", systemImage: "video.fill").font(.headline); Spacer()
+                Image(systemName: hasRequiredNegativeVideo ? "checkmark.circle.fill" : "exclamationmark.circle.fill").foregroundStyle(hasRequiredNegativeVideo ? Color.green : Color.orange)
             }
-            Text("Take 5–10 photos of nearby walls or angles that should not be recognized as this landmark.").font(.footnote).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            Button { showNegativeCamera = true } label: { Label(capturedNegativePhotos.isEmpty ? "Take Negative Photos" : "Continue Taking Photos", systemImage: "camera.fill").frame(maxWidth: .infinity).padding(.vertical, 13) }
-            .foregroundStyle(.white).background(primaryColor).clipShape(RoundedRectangle(cornerRadius: 14)).disabled(areNegativePhotosLocked).opacity(areNegativePhotosLocked ? 0.6 : 1)
-            if capturedNegativePhotos.isEmpty { Text("No negative photos captured yet.").font(.footnote).foregroundStyle(.secondary) } else { negativeThumbnailStrip }
-            Label(capturedNegativePhotos.count < minimumNegativePhotoCount ? "\(minimumNegativePhotoCount - capturedNegativePhotos.count) more required." : "Required negative photos captured.", systemImage: hasRequiredNegativePhotos ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
-                .font(.footnote.bold()).foregroundStyle(hasRequiredNegativePhotos ? Color.green : Color.orange)
-        }.padding().background(Color(red: 0.11, green: 0.11, blue: 0.16)).clipShape(RoundedRectangle(cornerRadius: 18)).overlay { RoundedRectangle(cornerRadius: 18).stroke(Color.white.opacity(0.15)) }.padding(.horizontal).padding(.top, 8)
-    }
-
-    private var negativeThumbnailStrip: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
-                ForEach(capturedNegativePhotos) { photo in
-                    ZStack(alignment: .topTrailing) {
-                        Image(uiImage: photo.thumbnail).resizable().scaledToFill().frame(width: 78, height: 78).clipShape(RoundedRectangle(cornerRadius: 10)).clipped()
-                        Button { capturedNegativePhotos.removeAll { $0.id == photo.id }; photo.deleteLocalFile() } label: { Image(systemName: "xmark.circle.fill").font(.title3).symbolRenderingMode(.palette).foregroundStyle(.white, .red) }.offset(x: 6, y: -6).disabled(areNegativePhotosLocked)
-                    }
+            Text("Record a >= 10s video panning around the area. Do NOT include the landmark in the frame.").font(.footnote).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            
+            HStack(spacing: 12) {
+                Button { showNegativeCamera = true } label: {
+                    Label(capturedNegativeVideo == nil ? "Record" : "Re-record", systemImage: "camera.fill").frame(maxWidth: .infinity).padding(.vertical, 13)
                 }
-            }.padding(.vertical, 6).padding(.horizontal, 4)
-        }
+                .foregroundStyle(.white).background(primaryColor).clipShape(RoundedRectangle(cornerRadius: 14))
+
+                Button { PHPhotoLibrary.requestAuthorization(for: .readWrite) { status in DispatchQueue.main.async { showNegativeGalleryPicker = true } } } label: {
+                    Label("Gallery", systemImage: "photo.on.rectangle").frame(maxWidth: .infinity).padding(.vertical, 13)
+                }
+                .foregroundStyle(.white).background(primaryColor).clipShape(RoundedRectangle(cornerRadius: 14))
+            }
+            .disabled(areNegativePhotosLocked).opacity(areNegativePhotosLocked ? 0.6 : 1)
+            
+            if let video = capturedNegativeVideo {
+                ZStack(alignment: .topTrailing) {
+                    VideoPlayer(player: AVPlayer(url: video.fileURL)).frame(height: 220).clipShape(RoundedRectangle(cornerRadius: 15))
+                    Button { video.deleteLocalFile(); capturedNegativeVideo = nil } label: { Image(systemName: "xmark.circle.fill").font(.title2).foregroundStyle(.white, .red) }.padding(12).disabled(areNegativePhotosLocked)
+                }.padding(.top, 8)
+            }
+        }.padding().background(Color(red: 0.11, green: 0.11, blue: 0.16)).clipShape(RoundedRectangle(cornerRadius: 18)).overlay { RoundedRectangle(cornerRadius: 18).stroke(Color.white.opacity(0.15)) }.padding(.horizontal).padding(.top, 8)
     }
 
     private var uploadButtonRow: some View {
         HStack(spacing: 12) {
-            
-            // LEFT BUTTON
             if archivedMedia != nil {
                 Button(role: .cancel) { saveDraftAndDismiss() } label: {
                     Image(systemName: "arrow.uturn.backward").font(.title2).foregroundStyle(.white).frame(width: 54, height: 52).background(Color.white.opacity(0.2)).clipShape(RoundedRectangle(cornerRadius: 15))
@@ -265,15 +274,13 @@ struct LandmarkRecord: View {
                 }
             }
             
-            // CENTER BUTTON
             Button { startFullSubmission() } label: {
                 HStack(spacing: 10) {
-                    if isSubmissionRunning { ProgressView().tint(.white); Text(hardNegativeUploadService.isUploading ? "Uploading reference photos…" : "Uploading landmark…").fontWeight(.semibold)
-                    } else { Label(isFullSubmissionComplete ? "Submission Complete" : (completedPositiveResult != nil ? "Retry Negative Photos" : "Upload Landmark"), systemImage: isFullSubmissionComplete ? "checkmark.circle.fill" : "arrow.up.circle").fontWeight(.semibold) }
+                    if isSubmissionRunning { ProgressView().tint(.white); Text(hardNegativeUploadService.isUploading ? "Uploading reference video…" : "Uploading landmark…").fontWeight(.semibold)
+                    } else { Label(isFullSubmissionComplete ? "Submission Complete" : (completedPositiveResult != nil ? "Retry Negative Video" : "Upload Landmark"), systemImage: isFullSubmissionComplete ? "checkmark.circle.fill" : "arrow.up.circle").fontWeight(.semibold) }
                 }.frame(maxWidth: .infinity).padding(.vertical, 14)
             }.foregroundStyle(.white).background(canUpload ? primaryColor : Color.gray).clipShape(RoundedRectangle(cornerRadius: 15)).disabled(!canUpload)
             
-            // RIGHT BUTTON
             if archivedMedia == nil && hasPositiveMedia && !uploadService.isUploading && !isFullSubmissionComplete {
                 Button(role: .destructive) { showDiscardAlert = true } label: {
                     Image(systemName: "trash.fill").font(.title2).foregroundStyle(.red).frame(width: 54, height: 52).background(Color.red.opacity(0.15)).clipShape(RoundedRectangle(cornerRadius: 15))
@@ -302,14 +309,18 @@ struct LandmarkRecord: View {
                         latitude: extractedLatitude ?? locationManager.latitude, longitude: extractedLongitude ?? locationManager.longitude, horizontalAccuracy: locationManager.horizontalAccuracy, videoURL: pickedVideoURL, image: pickedImage
                     )
                     completedPositiveResult = positiveResult
-                    statusText = "Landmark media saved. Uploading negative reference photos…"
+                    statusText = "Landmark media saved. Uploading negative reference video…"
                 }
 
                 let finalLandmarkId = positiveResult.landmarkId ?? generatedLandmarkId
-                let negativeResult = try await hardNegativeUploadService.upload(landmarkId: finalLandmarkId, photos: capturedNegativePhotos)
+                
+                if let negativeVideo = capturedNegativeVideo {
+                    _ = try await hardNegativeUploadService.upload(landmarkId: finalLandmarkId, video: negativeVideo)
+                }
+                
                 completedLandmarkId = finalLandmarkId
                 isFullSubmissionComplete = true
-                statusText = "Landmark and reference photos uploaded successfully."
+                statusText = "Landmark and reference video uploaded successfully."
                 showCompletionPopup = true
                 
                 if let media = archivedMedia { OfflineMediaManager.shared.deleteArchive(media: media) }
@@ -336,7 +347,7 @@ struct LandmarkRecord: View {
         if hardNegativeUploadService.status != "Idle" {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top, spacing: 12) {
-                    if hardNegativeUploadService.isUploading { ProgressView().padding(.top, 2) } else { Image(systemName: "photo.stack").font(.title3).foregroundStyle(primaryColor) }
+                    if hardNegativeUploadService.isUploading { ProgressView().padding(.top, 2) } else { Image(systemName: "video.fill").font(.title3).foregroundStyle(primaryColor) }
                     VStack(alignment: .leading, spacing: 4) { Text(hardNegativeUploadService.status).font(.footnote).foregroundStyle(.secondary) }
                     Spacer()
                 }
@@ -345,10 +356,19 @@ struct LandmarkRecord: View {
         }
     }
 
+    // THIS FIXES THE MISSING OVERALL COMPLETION CARD ERROR
     @ViewBuilder private var overallCompletionCard: some View {
         if isFullSubmissionComplete {
-            HStack { Image(systemName: "checkmark.seal.fill").foregroundStyle(.green); Text("Submission complete").font(.headline); Spacer() }
-            .padding().background(Color.green.opacity(0.08)).clipShape(RoundedRectangle(cornerRadius: 16)).overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.green.opacity(0.3))).padding(.horizontal)
+            HStack {
+                Image(systemName: "checkmark.seal.fill").foregroundStyle(.green)
+                Text("Submission complete").font(.headline)
+                Spacer()
+            }
+            .padding()
+            .background(Color.green.opacity(0.08))
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.green.opacity(0.3)))
+            .padding(.horizontal)
         }
     }
 
@@ -392,20 +412,17 @@ struct LandmarkRecord: View {
     private func saveToArchiveFromForm() {
         let lat = extractedLatitude ?? locationManager.latitude ?? 0.0
         let lon = extractedLongitude ?? locationManager.longitude ?? 0.0
-        let newArchive: ArchivedMedia?
         
-        if let url = pickedVideoURL { newArchive = OfflineMediaManager.shared.archiveVideo(tempURL: url, lat: lat, lon: lon, label: labelText, desc: shortDescription)
-        } else if let img = pickedImage { newArchive = OfflineMediaManager.shared.archivePhoto(image: img, lat: lat, lon: lon, label: labelText, desc: shortDescription)
+        if let url = pickedVideoURL { _ = OfflineMediaManager.shared.archiveVideo(tempURL: url, lat: lat, lon: lon, label: labelText, desc: shortDescription)
+        } else if let img = pickedImage { _ = OfflineMediaManager.shared.archivePhoto(image: img, lat: lat, lon: lon, label: labelText, desc: shortDescription)
         } else { return }
         
-        if let archive = newArchive { OfflineMediaManager.shared.negativeCache[archive.id] = capturedNegativePhotos }
         clearScreen(); statusText = "Media securely saved to Offline Archive."
     }
     
     private func saveDraftAndDismiss() {
         if let archive = archivedMedia {
             OfflineMediaManager.shared.updateDraft(media: archive, label: labelText, desc: shortDescription)
-            OfflineMediaManager.shared.negativeCache[archive.id] = capturedNegativePhotos
         }
         dismiss()
     }
@@ -417,8 +434,8 @@ struct LandmarkRecord: View {
     
     private func clearScreen() {
         deleteTemporaryVideoIfNeeded(pickedVideoURL)
-        for photo in capturedNegativePhotos { photo.deleteLocalFile() }
-        pickedVideoURL = nil; pickedImage = nil; extractedLatitude = nil; extractedLongitude = nil; labelText = ""; shortDescription = ""; businessLandmarkId = nil; capturedNegativePhotos = []
+        capturedNegativeVideo?.deleteLocalFile()
+        pickedVideoURL = nil; pickedImage = nil; extractedLatitude = nil; extractedLongitude = nil; labelText = ""; shortDescription = ""; businessLandmarkId = nil; capturedNegativeVideo = nil
         completedPositiveResult = nil; completedLandmarkId = nil; isFullSubmissionComplete = false
         statusText = "No landmark media selected."; uploadService.reset(); hardNegativeUploadService.reset()
     }
