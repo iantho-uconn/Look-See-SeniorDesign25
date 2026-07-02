@@ -4,6 +4,7 @@
 //
 //  Created by Christian Barbara on 1/25/26.
 //
+
 import SwiftUI
 
 struct Buttons: View {
@@ -16,8 +17,7 @@ struct Buttons: View {
     @State private var currentTab = 0
     @State private var pendingUploadLandmarkId: String?
     
-    // Chrome visibility — top/bottom bars fade out on Scan after inactivity,
-    // matching Snapchat's camera screen. Always visible on other tabs.
+    // Chrome visibility
     @State private var chromeVisible = true
     @State private var chromeFadeTask: Task<Void, Never>?
     
@@ -29,8 +29,6 @@ struct Buttons: View {
         }
     }
     
-    /// Chrome only auto-hides on the Scan tab — every other tab needs its
-    /// nav visible to be usable (Map, Upload, Archive all rely on it).
     private var isScanTab: Bool { currentTab == 0 }
     
     var body: some View {
@@ -40,23 +38,19 @@ struct Buttons: View {
                     .ignoresSafeArea()
                 
                 TabView(selection: $currentTab) {
-                    // Tab 0 — Scan (all users)
+                    // Tab 0 — Scan
                     LandmarkScan(
                         onInteraction: revealChromeThenFade
                     )
                     .tag(0)
-                    // No safeAreaInset padding here anymore — the bars now float
-                    // transparently over the camera instead of pushing it down,
-                    // so Scan gets the full frame edge-to-edge.
                     
-                    
-                    // Tab 1 — Map (all users)
+                    // Tab 1 — Map
                     LandmarkMapView()
                         .safeAreaInset(edge: .top) { Color.clear.frame(height: 70) }
-                        .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 60) }
+                        .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 90) }
                         .tag(1)
                     
-                    // Tab 2 — Record (business only, hidden for others)
+                    // Tab 2 — Record (business only)
                     if authState.tier == .business {
                         LandmarkRecord { landmarkId in
                             pendingUploadLandmarkId = landmarkId
@@ -65,11 +59,11 @@ struct Buttons: View {
                             }
                         }
                         .safeAreaInset(edge: .top) { Color.clear.frame(height: 70) }
-                        .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 60) }
+                        .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 90) }
                         .tag(2)
                     }
                     
-                    // Tab 3 (or 2 for non-business) — Upload
+                    // Tab 3 (or 2) — Upload
                     Group {
                         if authState.tier == .authenticated || authState.tier == .business {
                             Tier2LandmarkRecord(
@@ -84,10 +78,10 @@ struct Buttons: View {
                         }
                     }
                     .safeAreaInset(edge: .top) { Color.clear.frame(height: 70) }
-                    .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 60) }
+                    .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 90) }
                     .tag(authState.tier == .business ? 3 : 2)
                     
-                    // Tab 4 (or 3 for non-business) — Archive
+                    // Tab 4 (or 3) — Archive
                     Group {
                         if authState.tier == .authenticated || authState.tier == .business {
                             ArchiveView()
@@ -97,22 +91,24 @@ struct Buttons: View {
                         }
                     }
                     .safeAreaInset(edge: .top) { Color.clear.frame(height: 70) }
-                    .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 60) }
+                    .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 90) }
                     .tag(authState.tier == .business ? 4 : 3)
                 }
                 .scrollDismissesKeyboard(.immediately)
                 .defaultScrollAnchor(.bottom, for: .sizeChanges)
                 .ignoresSafeArea()
-                .tabViewStyle(.page(indexDisplayMode: .never)) 
+                .toolbar(.hidden, for: .tabBar)
+                .animation(.easeInOut(duration: 0.2), value: currentTab)
                 .onChange(of: currentTab) { _, _ in
-                    // Switching tabs always shows chrome again, then re-starts
-                    // the fade timer if we landed back on Scan.
                     revealChromeThenFade()
                 }
                 
-                // Floating top bar — fully transparent, no background plate.
-                // Icons get a drop shadow instead, so the camera feed shows
-                // through completely, like Snapchat's top row.
+                // TYPE 1: The physical edge swipe blocks (ONLY active on the Map)
+                if currentTab == 1 {
+                    mapEdgeSwipeZones
+                }
+                
+                // Floating top and bottom bars
                 VStack(spacing: 0) {
                     if chromeVisible {
                         topBar
@@ -121,8 +117,7 @@ struct Buttons: View {
                     
                     Spacer()
                     
-                        bottomBar
-                            
+                    bottomBar
                 }
                 .animation(.easeOut(duration: 0.3), value: chromeVisible)
                 
@@ -130,6 +125,26 @@ struct Buttons: View {
                     signUpPromptOverlay
                 }
             }
+            // TYPE 2: The Universal Swipe (Active everywhere EXCEPT the map)
+            // Using a minimumDistance of 30 ensures that taps register instantly,
+            // and the gesture only triggers if the user purposefully drags their finger.
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 30).onEnded { value in
+                    // If we are on the Map (Tab 1), ignore this universal swipe
+                    // and let mapEdgeSwipeZones handle it.
+                    guard currentTab != 1 else { return }
+                    
+                    if value.translation.width > 40 && currentTab > 0 {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            currentTab -= 1
+                        }
+                    } else if value.translation.width < -40 && currentTab < (tabCount - 1) {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            currentTab += 1
+                        }
+                    }
+                }
+            )
             .fullScreenCover(isPresented: $showSignUp) {
                 NavigationStack {
                     Signup(
@@ -144,10 +159,50 @@ struct Buttons: View {
             }
             .toolbar(.hidden, for: .navigationBar)
         }
-        .onAppear { scheduleChromeFadeIfNeeded() }
+        .onAppear {
+            scheduleChromeFadeIfNeeded()
+            UITabBar.appearance().isHidden = true
+        }
     }
     
-    // MARK: - Top Bar (transparent, floating)
+    // MARK: - Edge Swipe Zones (Map Only)
+    
+    private var mapEdgeSwipeZones: some View {
+        HStack {
+            // Left Edge: Swipe right to go to Scan (Tab 0)
+            Color.white.opacity(0.001)
+                .frame(width: 40)
+                .frame(maxHeight: .infinity)
+                .highPriorityGesture(
+                    DragGesture(minimumDistance: 15).onEnded { value in
+                        if value.translation.width > 30 && currentTab > 0 {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                currentTab -= 1
+                            }
+                        }
+                    }
+                )
+            
+            Spacer()
+            
+            // Right Edge: Swipe left to go to Record/Upload
+            Color.white.opacity(0.001)
+                .frame(width: 40)
+                .frame(maxHeight: .infinity)
+                .highPriorityGesture(
+                    DragGesture(minimumDistance: 15).onEnded { value in
+                        if value.translation.width < -30 && currentTab < (tabCount - 1) {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                currentTab += 1
+                            }
+                        }
+                    }
+                )
+        }
+        .ignoresSafeArea()
+    }
+    
+    // MARK: - Top Bar
     
     private var topBar: some View {
         HStack(spacing: 0) {
@@ -156,26 +211,28 @@ struct Buttons: View {
             
             Spacer()
             
-            Button {
-                if authState.tier == .business {
-                    showPromotion = true
-                } else {
-                    showBusinessAlert = true
+            Text("LookSee")
+                .font(.system(size: 18, weight: .bold, design: .rounded))
+                .foregroundStyle(.white)
+                .shadow(color: .black.opacity(0.5), radius: 4)
+                .contentShape(Rectangle())
+                .highPriorityGesture(
+                    TapGesture().onEnded {
+                        if authState.tier == .business {
+                            showPromotion = true
+                        } else {
+                            showBusinessAlert = true
+                        }
+                    }
+                )
+                .sheet(isPresented: $showPromotion) {
+                    PromotionEditor()
                 }
-            } label: {
-                Text("LookSee")
-                    .font(.system(size: 18, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
-                    .shadow(color: .black.opacity(0.5), radius: 4)
-            }
-            .sheet(isPresented: $showPromotion) {
-                PromotionEditor()
-            }
-            .alert("Business Account Required", isPresented: $showBusinessAlert) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text("You need a business account to access the Promotion Editor.")
-            }
+                .alert("Business Account Required", isPresented: $showBusinessAlert) {
+                    Button("OK", role: .cancel) {}
+                } message: {
+                    Text("You need a business account to access the Promotion Editor.")
+                }
             
             Spacer()
             
@@ -188,11 +245,9 @@ struct Buttons: View {
         .padding(.horizontal, 24)
         .padding(.top, 12)
         .padding(.bottom, 10)
-        // No background — fully transparent, just floating over the content
     }
     
-    
-    // MARK: - Bottom Bar (minimal, floating, stays fully visible — no fade)
+    // MARK: - Bottom Bar
     
     private var bottomBar: some View {
         HStack(spacing: 0) {
@@ -219,7 +274,6 @@ struct Buttons: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        // single background for the whole row — removes the double-pill artifact
         .background(
             Capsule()
                 .fill(Color.black.opacity(0.35))
@@ -230,8 +284,6 @@ struct Buttons: View {
     
     // MARK: - Chrome Auto-Fade
     
-    /// Cancels any pending fade, shows the chrome immediately, then schedules
-    /// a new fade-out — but only while sitting on the Scan tab.
     private func revealChromeThenFade() {
         chromeFadeTask?.cancel()
         chromeVisible = true
@@ -328,49 +380,49 @@ struct Buttons: View {
     
     @ViewBuilder
     func tabButton(title: String, icon: String, tab: Int, locked: Bool) -> some View {
-        Button {
-            if locked {
-                showSignUpPrompt = true
-            } else {
-                withAnimation(.easeInOut(duration: 0.25)) {
-                    currentTab = tab
+        VStack(spacing: 4) {
+            ZStack(alignment: .topTrailing) {
+                Image(systemName: icon)
+                    .font(.system(size: 20, weight: .medium))
+                if locked {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 8))
+                        .foregroundStyle(Color.white.opacity(0.4))
+                        .offset(x: 6, y: -4)
                 }
             }
-        } label: {
-            VStack(spacing: 4) {
-                ZStack(alignment: .topTrailing) {
-                    Image(systemName: icon)
-                        .font(.system(size: 20, weight: .medium))
-                    if locked {
-                        Image(systemName: "lock.fill")
-                            .font(.system(size: 8))
-                            .foregroundStyle(Color.white.opacity(0.4))
-                            .offset(x: 6, y: -4)
-                    }
-                }
-                Text(title)
-                    .font(.system(size: 10, weight: .medium))
-            }
-            .foregroundStyle(
-                locked
-                ? Color.white.opacity(0.25)
-                : currentTab == tab
-                ? Color(red: 0.22, green: 0.49, blue: 1.00)
-                : Color.white.opacity(0.6)
-            )
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 8)
-            // background now sits flush within the shared capsule, no separate
-            // shadow/offset fighting with the row's own background
-            .background(
-                Group {
-                    if currentTab == tab && !locked {
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(Color(red: 0.22, green: 0.49, blue: 1.00).opacity(0.18))
-                    }
-                }
-            )
+            Text(title)
+                .font(.system(size: 10, weight: .medium))
         }
+        .foregroundStyle(
+            locked
+            ? Color.white.opacity(0.25)
+            : currentTab == tab
+            ? Color(red: 0.22, green: 0.49, blue: 1.00)
+            : Color.white.opacity(0.6)
+        )
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+        .background(
+            Group {
+                if currentTab == tab && !locked {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color(red: 0.22, green: 0.49, blue: 1.00).opacity(0.18))
+                }
+            }
+        )
+        .contentShape(Rectangle())
+        .highPriorityGesture(
+            TapGesture().onEnded {
+                if locked {
+                    showSignUpPrompt = true
+                } else {
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        currentTab = tab
+                    }
+                }
+            }
+        )
     }
     
     // MARK: - Nav Button
