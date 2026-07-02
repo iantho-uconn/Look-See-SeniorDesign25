@@ -18,10 +18,10 @@ final class ModelAutoRefreshService: ObservableObject {
     // Poll backend every 10 minutes while active.
     private let pollIntervalSeconds: UInt64 = 10 * 60
 
-    // Only refresh if there has been a meaningful amount of movement
+    // Only refresh after meaningful movement.
     private let minimumMovementBeforeRefreshMeters: Double = 50.0
 
-    // Avoid accidental double-refreshes from launch/view lifecycle overlap.
+    // Avoid accidental double-refreshes from view lifecycle overlap.
     private let minimumTimeBetweenRefreshesSeconds: TimeInterval = 10 * 60
 
     // MARK: - State
@@ -51,18 +51,33 @@ final class ModelAutoRefreshService: ObservableObject {
         pollingTask = Task { [weak self] in
             guard let self else { return }
 
-            print("🔁 Model auto-refresh started")
+            print(
+                "🔁 Model auto-refresh started; " +
+                "first backend poll will occur in " +
+                "\(self.pollIntervalSeconds / 60) minutes"
+            )
 
             while !Task.isCancelled {
-                await self.performRefreshIfNeeded(force: false)
-
+                // The normal launch flow already performs the first model load.
+                // Sleeping first prevents the initial load and background polling
+                // from downloading and compiling the same release simultaneously.
                 do {
                     try await Task.sleep(
-                        nanoseconds: self.pollIntervalSeconds * 1_000_000_000
+                        nanoseconds:
+                            self.pollIntervalSeconds *
+                            1_000_000_000
                     )
                 } catch {
                     break
                 }
+
+                guard !Task.isCancelled else {
+                    break
+                }
+
+                await self.performRefreshIfNeeded(
+                    force: false
+                )
             }
 
             self.isPolling = false
@@ -84,11 +99,18 @@ final class ModelAutoRefreshService: ObservableObject {
 
     // MARK: - Location Updates
 
-    func updateLocation(latitude: Double, longitude: Double) {
-        let location = CLLocation(latitude: latitude, longitude: longitude)
+    func updateLocation(
+        latitude: Double,
+        longitude: Double
+    ) {
+        let location = CLLocation(
+            latitude: latitude,
+            longitude: longitude
+        )
+
         latestLocation = location
 
-        // Fast local switching between already-loaded clusters.
+        // Fast local switching between already-loaded complete releases.
         ModelSelector.shared.updateUserLocation(
             latitude: latitude,
             longitude: longitude
@@ -103,30 +125,54 @@ final class ModelAutoRefreshService: ObservableObject {
 
     // MARK: - Refresh Logic
 
-    private func performRefreshIfNeeded(force: Bool) async {
+    private func performRefreshIfNeeded(
+        force: Bool
+    ) async {
         guard let location = latestLocation else {
-            lastRefreshReason = "Skipped: no location available yet"
-            print("⚠️ Model auto-refresh skipped: no location available yet")
+            lastRefreshReason =
+                "Skipped: no location available yet"
+
+            print(
+                "⚠️ Model auto-refresh skipped: " +
+                "no location available yet"
+            )
             return
         }
 
         if !force {
             if let lastDate = lastRefreshDate {
-                let secondsSinceLastRefresh = Date().timeIntervalSince(lastDate)
+                let secondsSinceLastRefresh =
+                    Date().timeIntervalSince(lastDate)
 
-                if secondsSinceLastRefresh < minimumTimeBetweenRefreshesSeconds {
-                    lastRefreshReason = "Skipped: cooldown active"
-                    print("⏳ Model auto-refresh skipped: cooldown active")
+                if secondsSinceLastRefresh <
+                    minimumTimeBetweenRefreshesSeconds {
+                    lastRefreshReason =
+                        "Skipped: cooldown active"
+
+                    print(
+                        "⏳ Model auto-refresh skipped: " +
+                        "cooldown active"
+                    )
                     return
                 }
             }
 
             if let lastLocation = lastRefreshLocation {
-                let movement = location.distance(from: lastLocation)
+                let movement = location.distance(
+                    from: lastLocation
+                )
 
-                if movement < minimumMovementBeforeRefreshMeters {
-                    lastRefreshReason = "Skipped: moved only \(String(format: "%.1f", movement))m"
-                    print("📍 Model auto-refresh skipped: moved only \(String(format: "%.1f", movement))m")
+                if movement <
+                    minimumMovementBeforeRefreshMeters {
+                    lastRefreshReason =
+                        "Skipped: moved only " +
+                        "\(String(format: "%.1f", movement))m"
+
+                    print(
+                        "📍 Model auto-refresh skipped: " +
+                        "moved only " +
+                        "\(String(format: "%.1f", movement))m"
+                    )
                     return
                 }
             }
@@ -134,21 +180,36 @@ final class ModelAutoRefreshService: ObservableObject {
 
         lastRefreshDate = Date()
         lastRefreshLocation = location
-        lastRefreshReason = force ? "Manual refresh" : "Polling refresh"
+        lastRefreshReason =
+            force ? "Manual refresh" : "Polling refresh"
 
-        print("🔁 Checking backend for closer models at \(location.coordinate.latitude), \(location.coordinate.longitude)")
-
-        let changed = await ModelService.shared.refreshModelsSilentlyIfNeeded(
-            latitude: location.coordinate.latitude,
-            longitude: location.coordinate.longitude
+        print(
+            "🔁 Checking backend for closer models at " +
+            "\(location.coordinate.latitude), " +
+            "\(location.coordinate.longitude)"
         )
+
+        let changed =
+            await ModelService.shared
+                .refreshModelsSilentlyIfNeeded(
+                    latitude:
+                        location.coordinate.latitude,
+                    longitude:
+                        location.coordinate.longitude
+                )
 
         lastRefreshChangedModels = changed
 
         if changed {
-            print("✅ Model auto-refresh updated the loaded model set")
+            print(
+                "✅ Model auto-refresh updated " +
+                "the loaded model set"
+            )
         } else {
-            print("✅ Model auto-refresh finished with no model-set change")
+            print(
+                "✅ Model auto-refresh finished " +
+                "with no model-set change"
+            )
         }
     }
 }

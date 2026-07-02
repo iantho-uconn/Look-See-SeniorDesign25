@@ -70,6 +70,21 @@ final class OverlayView: UIView {
     override func draw(_ rect: CGRect) {
         guard let ctx = UIGraphicsGetCurrentContext() else { return }
         ctx.clear(rect)
+        ctx.setLineWidth(2.0)
+
+        for det in detections {
+            let bbox = det.bbox
+            
+            let rect = CGRect(
+                x: bbox.origin.x * bounds.width,
+                y: bbox.origin.y * bounds.height,
+                width: bbox.width * (bounds.width * 2),
+                height: bbox.height * bounds.height
+            )
+
+            UIColor.systemRed.setStroke()
+            ctx.stroke(rect)
+        }
         
         let activeSafeZone = safeZoneRect == .zero ? bounds : safeZoneRect
         
@@ -82,10 +97,8 @@ final class OverlayView: UIView {
         }
 
         if let bestTarget = detections.first {
-            // Viewfinder ON = Use the static bounding box. Viewfinder OFF = Wrap the object.
             let targetBox = showSafeZone ? activeSafeZone : bestTarget.bbox
             
-            // THE FIX: Clamp the box strictly to the safe visual area so it NEVER bleeds off the phone screen
             let maxScreenBounds = rect.insetBy(dx: 16, dy: 80)
             let clampedBox = targetBox.intersection(maxScreenBounds)
             
@@ -95,7 +108,7 @@ final class OverlayView: UIView {
                 perimeter.lineWidth = 4.0
                 perimeter.stroke()
                 
-                let labelText = "\(bestTarget.label) \(Int(bestTarget.confidence * 100))%"
+                let labelText = "\(bestTarget.displayLabel) \(Int(bestTarget.confidence * 100))%"
                 let font = UIFont.systemFont(ofSize: 16, weight: .bold)
                 let textStyle: [NSAttributedString.Key: Any] = [
                     .font: font,
@@ -135,6 +148,7 @@ struct CameraPreview: UIViewRepresentable {
     @Binding var zoomLevel: CGFloat
     @Binding var showSafeZone: Bool
     @Binding var safeZoneRect: CGRect
+    let onInteraction: () -> Void
     @Binding var isAIPaused: Bool
 
     static let sharedSession = CameraSessionCoordinator()
@@ -154,49 +168,85 @@ struct CameraPreview: UIViewRepresentable {
 
         detector.attach(to: CameraPreview.sharedSession.videoOutput)
         CameraPreview.sharedSession.start()
-        
+
+        let boundingBoxTapGesture = context.coordinator.boundingBoxTapGesture
+        boundingBoxTapGesture.isEnabled = false
+        view.addGestureRecognizer(boundingBoxTapGesture)
+      
         let pinch = UIPinchGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handlePinch(_:)))
         view.addGestureRecognizer(pinch)
-        
-        let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.bbClick(_:)))
-        view.addGestureRecognizer(tap)
         
         return view
     }
 
     func updateUIView(_ uiView: Preview, context: Context) {
-        uiView.overlay.showSafeZone = showSafeZone
-        uiView.overlay.safeZoneRect = safeZoneRect
+        @ObservedObject var infoView = VariableContainer.shared
         
-        if !VariableContainer.shared.infoView {
-            uiView.overlay.detections = detector.detections
+        if infoView.bboxCounter < 30 {
+            uiView.overlay.showSafeZone = showSafeZone
+            uiView.overlay.safeZoneRect = safeZoneRect
             
-            // Auto-lock feature in Free Mode
-            if !showSafeZone && !detector.detections.isEmpty && !isAIPaused {
-                DispatchQueue.main.async {
-                    self.isAIPaused = true
-                    self.detector.isPaused = true
+            if !VariableContainer.shared.infoView {
+                uiView.overlay.detections = detector.detections
+                
+                if !showSafeZone && !detector.detections.isEmpty && !isAIPaused {
+                    DispatchQueue.main.async {
+                        self.isAIPaused = true
+                        self.detector.isPaused = true
+                    }
+                } else {
+                    DispatchQueue.main.async {
+                        infoView.bboxCounter = 0
+                    }
                 }
+            } else {
+                context.coordinator.boundingBoxTapGesture.isEnabled = true
+                DispatchQueue.main.async {
+                    infoView.bboxCounter += 1
+                }
+            }
+            
+            if infoView.infoView || infoView.bboxCounter >= 210 {
+                context.coordinator.boundingBoxTapGesture.isEnabled = false
             }
         } else {
             uiView.overlay.detections.removeAll()
         }
     }
 
-    func makeCoordinator() -> Coordinator { Coordinator(zoomLevel: $zoomLevel) }
+    func makeCoordinator() -> Coordinator {
+        Coordinator(
+            zoomLevel: $zoomLevel,
+            onInteraction: onInteraction
+        )
+    }
 
     final class Coordinator {
         weak var overlay: OverlayView?
         var view: Preview?
         var zoomLevel: Binding<CGFloat>
+        
+        let onInteraction: () -> Void
         private var zoomFactorAtGestureStart: CGFloat = 1.0
         
-        private let landmarkService = LandmarkService()
-        private let promotionService = PromotionService()
+        @ObservedObject var infoView = VariableContainer.shared
+
+        lazy var boundingBoxTapGesture: UITapGestureRecognizer = {
+            UITapGestureRecognizer(target: self, action: #selector(bbClick(_:)))
+        }()
         
-        init(zoomLevel: Binding<CGFloat>) { self.zoomLevel = zoomLevel }
+        // These fetch from your remote API logic
+        // (Assuming you still have these classes available in your project)
+        // private let landmarkService = LandmarkService()
+        // private let promotionService = PromotionService()
+        
+        init(zoomLevel: Binding<CGFloat>, onInteraction: @escaping () -> Void) {
+            self.zoomLevel = zoomLevel
+            self.onInteraction = onInteraction
+        }
         
         @objc func handlePinch(_ recognizer: UIPinchGestureRecognizer) {
+            onInteraction()
             guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) else { return }
             switch recognizer.state {
             case .began: zoomFactorAtGestureStart = device.videoZoomFactor
@@ -211,34 +261,38 @@ struct CameraPreview: UIViewRepresentable {
         }
 
         @objc func bbClick(_ recognizer: UITapGestureRecognizer) {
-            guard !VariableContainer.shared.infoView else { return }
-            guard let overlay = overlay, let firstDetection = overlay.detections.first else { return }
+            onInteraction()
+            guard let view = view, let overlay = overlay else { return }
 
-            let detectionLabel = firstDetection.label
-            
-            Task {
-                async let landmarkFetch = landmarkService.fetchLandmarkByLabel(label: detectionLabel)
-                async let promotionsFetch = promotionService.fetchPromotionsByLabel(label: detectionLabel)
-                let (landmark, promotions) = await (landmarkFetch, promotionsFetch)
-                
-                await MainActor.run {
-                    if let landmark = landmark {
-                        VariableContainer.shared.landmarkName = landmark.label
-                        VariableContainer.shared.landmarkDescription = landmark.shortDescription ?? "No description available."
-                    } else {
-                        VariableContainer.shared.landmarkName = detectionLabel
-                        VariableContainer.shared.landmarkDescription = "No details found in database."
-                    }
-                    if let activePromo = promotions.first {
-                        VariableContainer.shared.promoName = activePromo.name
-                        VariableContainer.shared.promoDescription = activePromo.description
-                    } else {
-                        VariableContainer.shared.promoName = "No active promotion"
-                        VariableContainer.shared.promoDescription = ""
-                    }
-                    VariableContainer.shared.landmarkConfidence = (firstDetection.confidence * 100)
-                    VariableContainer.shared.infoView = true
+            let tapLocation = recognizer.location(in: view)
+
+            guard overlay.frame.contains(tapLocation),
+                  let detection = overlay.detections.first else {
+                return
+            }
+
+            guard let landmark = detection.landmarkEntry else {
+                DispatchQueue.main.async {
+                    self.infoView.landmarkName = "Class \(detection.classIndex)"
+                    self.infoView.landmarkDescription = "The matching landmark metadata could not be loaded."
+                    self.infoView.promoName = "No active promotion"
+                    self.infoView.promoDescription = ""
+                    self.infoView.landmarkConfidence = detection.confidence * 100
+                    self.infoView.infoView = true
                 }
+                return
+            }
+
+            // Mocking promotion for now since PromotionService was removed from your local manifest updates.
+            // If you still use PromotionService, you can re-implement the fetch here.
+            DispatchQueue.main.async {
+                self.infoView.landmarkName = landmark.label
+                let trimmedDescription = landmark.shortDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+                self.infoView.landmarkDescription = trimmedDescription.isEmpty ? "No description available." : trimmedDescription
+                self.infoView.promoName = "No active promotion"
+                self.infoView.promoDescription = ""
+                self.infoView.landmarkConfidence = detection.confidence * 100
+                self.infoView.infoView = true
             }
         }
     }
@@ -247,13 +301,16 @@ struct CameraPreview: UIViewRepresentable {
         override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }
         var videoLayer: AVCaptureVideoPreviewLayer { layer as! AVCaptureVideoPreviewLayer }
         let overlay = OverlayView()
+        
         override init(frame: CGRect) {
             super.init(frame: frame)
             overlay.backgroundColor = .clear
             overlay.isUserInteractionEnabled = false
             addSubview(overlay)
         }
+        
         required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+        
         override func layoutSubviews() {
             super.layoutSubviews()
             overlay.frame = bounds
