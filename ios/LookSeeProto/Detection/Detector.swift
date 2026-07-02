@@ -41,7 +41,6 @@ struct Detection: Identifiable {
 
     /// Number of valid classes declared by the matching landmark manifest.
     let classCount: Int
-
     let confidence: Float
     let bbox: CGRect
 
