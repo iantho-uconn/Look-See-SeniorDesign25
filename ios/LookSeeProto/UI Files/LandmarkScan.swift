@@ -1,8 +1,9 @@
 import SwiftUI
 
 struct LandmarkScan: View {
-    let onInteraction: () -> Void
-
+    var onTap: () -> Void = {}
+    var onPinch: () -> Void = {}
+    
     @StateObject private var detector = Detector()
     @ObservedObject var infoView = VariableContainer.shared
 
@@ -26,14 +27,15 @@ struct LandmarkScan: View {
                 zoomLevel: $zoomLevel,
                 showSafeZone: .constant(false),
                 safeZoneRect: .constant(lockedSafeZone),
-                onInteraction: onInteraction,
+                onTap: onTap,
+                onPinch: onPinch,
                 isAIPaused: .constant(false)
             )
             .ignoresSafeArea()
             .blur(radius: blurAmount)
             .onChange(of: zoomLevel) { _, _ in
                 showZoomIndicatorThenFade()
-                onInteraction() // Reset chrome timer when zoom changes
+                onTap() // Reset chrome timer when zoom changes
             }
 
             if infoView.infoView {

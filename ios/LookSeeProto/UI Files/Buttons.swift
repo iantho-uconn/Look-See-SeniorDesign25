@@ -40,7 +40,8 @@ struct Buttons: View {
                 TabView(selection: $currentTab) {
                     // Tab 0 — Scan
                     LandmarkScan(
-                        onInteraction: revealChromeThenFade
+                        onTap: revealChromeThenFade
+                    
                     )
                     .tag(0)
                     
@@ -94,6 +95,7 @@ struct Buttons: View {
                     .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 90) }
                     .tag(authState.tier == .business ? 4 : 3)
                 }
+                //.tabViewStyle(.page(indexDisplayMode: .never))
                 .scrollDismissesKeyboard(.immediately)
                 .defaultScrollAnchor(.bottom, for: .sizeChanges)
                 .ignoresSafeArea()
@@ -135,11 +137,15 @@ struct Buttons: View {
                     guard currentTab != 1 else { return }
                     
                     if value.translation.width > 40 && currentTab > 0 {
-                        withAnimation(.easeInOut(duration: 0.2)) {
+                        withAnimation(.interactiveSpring(response: 0.35,
+                                                         dampingFraction: 0.85,
+                                                         blendDuration: 0.2)) {
                             currentTab -= 1
                         }
                     } else if value.translation.width < -40 && currentTab < (tabCount - 1) {
-                        withAnimation(.easeInOut(duration: 0.2)) {
+                        withAnimation(.interactiveSpring(response: 0.35,
+                                                         dampingFraction: 0.85,
+                                                         blendDuration: 0.2)) {
                             currentTab += 1
                         }
                     }
@@ -284,6 +290,7 @@ struct Buttons: View {
     
     // MARK: - Chrome Auto-Fade
     
+    
     private func revealChromeThenFade() {
         chromeFadeTask?.cancel()
         chromeVisible = true
@@ -352,6 +359,7 @@ struct Buttons: View {
                     }
                     
                     Button {
+                        
                         showSignUpPrompt = false
                         withAnimation(.easeInOut(duration: 0.25)) { currentTab = 0 }
                     } label: {

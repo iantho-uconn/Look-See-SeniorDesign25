@@ -15,7 +15,13 @@ import CoreImage
 import UIKit
 import CoreLocation
 
+
+
+
+
 // MARK: - Data Models
+
+
 
 /// A single detected object from the YOLO model, used to drive the bounding box UI.
 struct Detection: Identifiable {
@@ -153,9 +159,45 @@ final class Detector: NSObject, ObservableObject {
     // MARK: Init
     override init() {
         super.init()
-        // observeActiveRelease() -> Assuming ModelSelector logic exists elsewhere
-    }
 
+        loadLocalModel(named: "FinalDetector")
+    }
+    
+    // MARK: - Load Local Model
+    func loadLocalModel(named name: String) {
+        guard let modelURL = Bundle.main.url(forResource: name, withExtension: "mlmodelc") else {
+            print("❌ Could not find \(name).mlmodelc in app bundle")
+
+            // Debug: print bundle contents
+            if let resourcePath = Bundle.main.resourcePath {
+                do {
+                    let files = try FileManager.default.subpathsOfDirectory(atPath: resourcePath)
+                    print("Bundle contains:")
+                    files.forEach { print("  \($0)") }
+                } catch {
+                    print("Failed to inspect bundle:", error)
+                }
+            }
+
+            return
+        }
+
+        do {
+            model = try MLModel(contentsOf: modelURL)
+
+            // Initialize the metadata your detector expects
+            activeClusterID = "local"
+            activeModelVersion = "1.0"
+            activeModelIdentifier = name
+            activeExpectedClassCount = 2   // <-- CHANGE THIS to your model's class count
+            activeReleaseIdentifier = "\(activeClusterID!)|\(activeModelVersion!)"
+
+            print("✅ Successfully loaded local model: \(name)")
+        } catch {
+            print("❌ Failed to load model:", error)
+        }
+    }
+    
     // MARK: - Public API
     func resetEngine() {
         DispatchQueue.main.async {
