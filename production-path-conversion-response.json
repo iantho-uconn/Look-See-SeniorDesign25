@@ -1,0 +1,1 @@
+{"processedRecordCount": 1, "results": [{"status": "Job Started", "jobName": "yolo-coreml-2553dc0ce2aeda4460a7f729", "sourceKey": "sagemaker-training-output-negtest/IT-cluster-0-manifest-fix-smoke-002/output/model.tar.gz", "outputRoot": "s3://looksee-models/ml_conversions/"}]}

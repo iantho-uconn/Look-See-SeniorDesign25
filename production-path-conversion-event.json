@@ -1,0 +1,15 @@
+{
+  "Records": [
+    {
+      "s3": {
+        "bucket": {
+          "name": "looksee-models"
+        },
+        "object": {
+          "key": "sagemaker-training-output-negtest/IT-cluster-0-manifest-fix-smoke-002/output/model.tar.gz",
+          "eTag": "1c1b91486f64567468def37128eec179"
+        }
+      }
+    }
+  ]
+}
