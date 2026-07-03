@@ -2,8 +2,8 @@
 //  Detector.swift
 //  LookSeeProto
 //
-//  Rewritten to integrate proximity-based detection filtering using LocationManager.
-//  Flow: Camera frame → letterbox → CoreML (YOLO) → parse → NMS → proximity filter → smooth → publish
+//  OTA-Enabled: Actively listens to ModelSelector to hot-swap CoreML models.
+//  Metal-Bypass: Restricts compute units to CPU & Neural Engine to prevent Signal 9 crashes.
 //
 
 import Foundation
@@ -15,33 +15,15 @@ import CoreImage
 import UIKit
 import CoreLocation
 
-
-
-
-
 // MARK: - Data Models
 
-
-
-/// A single detected object from the YOLO model, used to drive the bounding box UI.
 struct Detection: Identifiable {
     let id = UUID()
-
-    /// Cluster whose model produced this detection.
     let clusterID: String
-
-    /// Immutable model-release version. This currently matches trainingRunId.
     let modelVersion: String
-
-    /// Local compiled-model folder/file name used for inference.
     let modelIdentifier: String
-
-    /// Zero-based YOLO/Core ML class index.
     let classIndex: Int
-
-    /// Number of valid classes declared by the matching landmark manifest.
     let classCount: Int
-
     let confidence: Float
     let bbox: CGRect
 
@@ -49,7 +31,6 @@ struct Detection: Identifiable {
         "\(clusterID)|\(modelVersion)"
     }
 
-    /// Local metadata for this detection, when the matching manifest is loaded.
     var landmarkEntry: LandmarkManifestEntry? {
         LandmarkManifestStore.shared.resolve(
             clusterId: clusterID,
@@ -58,18 +39,15 @@ struct Detection: Identifiable {
         )
     }
 
-    /// Human-readable label for overlays and diagnostics.
     var displayLabel: String {
         landmarkEntry?.label ?? "Class \(classIndex)"
     }
 
-    /// Temporary compatibility property.
     var label: String {
         String(classIndex)
     }
 }
 
-/// Metadata for one landmark class, parsed from the manifest JSON sent down from AWS.
 struct ObjectInfo: Codable {
     let classIndex: Int
     let landmarkId: String
@@ -79,14 +57,12 @@ struct ObjectInfo: Codable {
     let longitude: Double
 }
 
-/// Top-level manifest model. AWS sends one of these alongside each compiled .mlmodel.
 struct ModelManifest: Codable {
     let schemaVersion: Int
     let clusterId: Int
     let classCount: Int
     let landmarks: [String: ObjectInfo]
 
-    /// Look up landmark metadata by its class index (0-based integer from the model output).
     func landmark(for classIndex: Int) -> ObjectInfo? {
         landmarks.values.first { $0.classIndex == classIndex }
     }
@@ -94,7 +70,6 @@ struct ModelManifest: Codable {
 
 // MARK: - Bounding Box Smoother
 
-/// Reduces jitter in bounding boxes by averaging the last N frames.
 class BoundingBoxSmoother {
     private var history: [CGRect] = []
     private let maxFrames = 4
@@ -121,6 +96,7 @@ final class Detector: NSObject, ObservableObject {
 
     // MARK: Published state
     @Published var detections: [Detection] = []
+    @Published var currentLabel: String? = nil
     @Published var lastInferenceMS: Double = 0
     @Published var bufferSize: CGSize = .zero
     @Published var isPaused: Bool = false
@@ -159,49 +135,54 @@ final class Detector: NSObject, ObservableObject {
     // MARK: Init
     override init() {
         super.init()
-
-        loadLocalModel(named: "FinalDetector")
+        observeActiveCluster()
     }
     
-    // MARK: - Load Local Model
-    func loadLocalModel(named name: String) {
-        guard let modelURL = Bundle.main.url(forResource: name, withExtension: "mlmodelc") else {
-            print("❌ Could not find \(name).mlmodelc in app bundle")
+    // MARK: - Observe Active Cluster (OTA Updater)
+    private func observeActiveCluster() {
+        Task { @MainActor in
+            for await clusterID in ModelSelector.shared.$activeClusterID.values {
+                guard let clusterID else { continue }
 
-            // Debug: print bundle contents
-            if let resourcePath = Bundle.main.resourcePath {
-                do {
-                    let files = try FileManager.default.subpathsOfDirectory(atPath: resourcePath)
-                    print("Bundle contains:")
-                    files.forEach { print("  \($0)") }
-                } catch {
-                    print("Failed to inspect bundle:", error)
+                if case .loaded(let models) = ModelService.shared.state,
+                   let match = models.first(where: { $0.clusterID == clusterID }),
+                   let compiledURL = match.compiledModelURL {
+                    
+                    self.activeClusterID = match.clusterID
+                    self.activeModelVersion = match.modelVersion
+                    self.activeModelIdentifier = match.modelKey ?? "ota-model"
+                    self.activeExpectedClassCount = match.classCount ?? 0
+                    self.activeReleaseIdentifier = "\(match.clusterID)|\(match.modelVersion)"
+                    
+                    loadModel(from: compiledURL, clusterID: clusterID)
                 }
             }
-
-            return
-        }
-
-        do {
-            model = try MLModel(contentsOf: modelURL)
-
-            // Initialize the metadata your detector expects
-            activeClusterID = "local"
-            activeModelVersion = "1.0"
-            activeModelIdentifier = name
-            activeExpectedClassCount = 2   // <-- CHANGE THIS to your model's class count
-            activeReleaseIdentifier = "\(activeClusterID!)|\(activeModelVersion!)"
-
-            print("✅ Successfully loaded local model: \(name)")
-        } catch {
-            print("❌ Failed to load model:", error)
         }
     }
-    
+
+    private func loadModel(from url: URL, clusterID: String) {
+        queue.async {
+            do {
+                // Bypass the Apple Metal GPU bug by forcing CPU and Neural Engine
+                let config = MLModelConfiguration()
+                config.computeUnits = .cpuAndNeuralEngine
+                
+                let loaded = try MLModel(contentsOf: url, configuration: config)
+                DispatchQueue.main.async {
+                    self.model = loaded
+                    print("✅ Detector hot-swapped to OTA cluster \(clusterID) (Metal Bypassed)")
+                }
+            } catch {
+                print("❌ OTA Model load error for cluster \(clusterID): \(error)")
+            }
+        }
+    }
+
     // MARK: - Public API
     func resetEngine() {
         DispatchQueue.main.async {
             self.detections.removeAll()
+            self.currentLabel = nil
             for smoother in self.smoothers.values { smoother.reset() }
         }
     }
@@ -287,6 +268,7 @@ final class Detector: NSObject, ObservableObject {
             DispatchQueue.main.async {
                 self.detections = newDetections
                 self.lastInferenceMS = (end - start) * 1000
+                self.currentLabel = newDetections.max(by: { $0.confidence < $1.confidence })?.displayLabel
             }
         } catch {
             print("❌ Prediction error: \(error)")
@@ -498,8 +480,6 @@ final class Detector: NSObject, ObservableObject {
         print("")
     }
 }
-
-// MARK: - AVFoundation Delegate
 
 extension Detector: AVCaptureVideoDataOutputSampleBufferDelegate {
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {

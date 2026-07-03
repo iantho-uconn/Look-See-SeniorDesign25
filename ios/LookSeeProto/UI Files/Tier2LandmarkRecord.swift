@@ -3,7 +3,6 @@
 //  LookSeeProto
 //
 
-
 import SwiftUI
 import CoreLocation
 import Photos
@@ -156,7 +155,6 @@ struct Tier2LandmarkRecord: View {
                 locationSection
                 nearbyLandmarksSection
                 
-                // THE FIX: As long as a landmark is selected, show the upload tools so they can do negatives alone.
                 if selectedLandmark != nil { uploadDetailsSection }
                 
                 Spacer(minLength: 30)
@@ -189,7 +187,15 @@ struct Tier2LandmarkRecord: View {
         }.padding(.horizontal)
     }
 
-    private var nearbyLandmarksSection: some View { VStack(alignment: .leading, spacing: 10) { Text("Nearby landmarks").font(.headline).padding(.horizontal); nearbyLandmarkResults; if let selectedLandmark { selectedLandmarkCard(selectedLandmark) } } }
+    private var nearbyLandmarksSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Nearby landmarks").font(.headline).padding(.horizontal)
+            nearbyLandmarkResults
+            if let selectedLandmark { selectedLandmarkCard(selectedLandmark) }
+        }
+        // ADDED: The 24pt padding to push the list down from the location info above
+        .padding(.top, 24)
+    }
 
     @ViewBuilder private var nearbyLandmarkResults: some View {
         if nearbyService.isLoading { ProgressView("Looking for nearby landmarks…").padding(.horizontal)

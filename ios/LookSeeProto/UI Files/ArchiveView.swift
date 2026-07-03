@@ -1,10 +1,9 @@
 //
-//  ArchiveView..swift
+//  ArchiveView.swift
 //  LookSeeProto
 //
 //  Created by Angel Pineda on 6/18/26.
 //
-
 
 import SwiftUI
 
@@ -12,7 +11,6 @@ struct ArchiveView: View {
     @StateObject private var offlineManager = OfflineMediaManager.shared
     @State private var selectedMedia: ArchivedMedia?
     
-    // NEW: Expanded 6-way sorting menu
     enum SortOption { case dateNewest, dateOldest, nameAZ, nameZA, videoFirst, photoFirst }
     @State private var sortOption: SortOption = .dateNewest
     @State private var showFavoritesOnly = false
@@ -44,7 +42,8 @@ struct ArchiveView: View {
             
             VStack(alignment: .leading, spacing: 0) {
                 HStack {
-                    Text("Offline Archive")
+                    // CHANGED: From "Offline Archive" to "Saved Media" to prevent duplication
+                    Text("Saved Media")
                         .font(.title2.bold())
                         .foregroundStyle(.white)
                     
@@ -79,7 +78,6 @@ struct ArchiveView: View {
             }
         }
         .sheet(item: $selectedMedia) { media in
-            // NEW: Smart routing! Opens Tier 2 if the archive was made in Tier 2!
             if media.isTier2 == true {
                 Tier2LandmarkRecord(archivedMedia: media)
             } else {
@@ -129,13 +127,9 @@ struct ArchiveView: View {
                 Text("Saved on \(media.dateSaved.formatted(date: .abbreviated, time: .shortened))").font(.caption).foregroundStyle(Color.white.opacity(0.7))
             }.padding(16)
         }
-        .contentShape(RoundedRectangle(cornerRadius: 20)) // FIX: Stops ghost taps from shadows!
+        .contentShape(RoundedRectangle(cornerRadius: 20))
         .clipShape(RoundedRectangle(cornerRadius: 20))
         .shadow(color: Color.black.opacity(0.3), radius: 8, x: 0, y: 4)
         .onTapGesture { selectedMedia = media }
     }
-}
-
-#Preview {
-    ArchiveView()
 }
