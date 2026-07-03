@@ -15,10 +15,6 @@ import CoreImage
 import UIKit
 import CoreLocation
 
-
-
-
-
 // MARK: - Data Models
 
 
@@ -159,7 +155,7 @@ final class Detector: NSObject, ObservableObject {
     override init() {
         super.init()
 
-        loadLocalModel(named: "FinalDetector")
+        //loadLocalModel(named: "FinalDetector")
     }
     
     // MARK: - Load Local Model
@@ -466,6 +462,7 @@ final class Detector: NSObject, ObservableObject {
             if distanceMeters > proximityThresholdMeters {
                 print("📍 Suppressed '\(detection.displayLabel)' — \(Int(distanceMeters))m away")
             }
+            print("no proximity  filter applied")
             return distanceMeters <= proximityThresholdMeters
         }
     }
