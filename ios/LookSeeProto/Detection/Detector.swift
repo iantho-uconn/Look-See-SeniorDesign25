@@ -144,7 +144,7 @@ final class Detector: NSObject, ObservableObject {
     // MARK: Init
     override init() {
         super.init()
-
+        observeActiveCluster()
         startLocationUpdatesIfNeeded()
         //loadLocalModel(named: "FinalDetector")
     }
@@ -464,6 +464,7 @@ final class Detector: NSObject, ObservableObject {
     // MARK: - Proximity Filter
     private func proximityFilter(_ detections: [Detection]) -> [Detection] {
         guard let manifest = manifest, let userLocation = userLocation else {
+            print(manifest, userLocation, "no manifest")
             return detections
         }
 
@@ -474,6 +475,7 @@ final class Detector: NSObject, ObservableObject {
 
             let objectLocation = CLLocation(latitude: object.latitude, longitude: object.longitude)
             let distanceMeters = userLocation.distance(from: objectLocation)
+            print(distanceMeters)
             let isNearby = distanceMeters <= proximityThresholdMeters
 
             if !isNearby {
