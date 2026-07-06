@@ -135,7 +135,8 @@ final class Detector: NSObject, ObservableObject {
     // MARK: Init
     override init() {
         super.init()
-        observeActiveCluster()
+
+        //loadLocalModel(named: "FinalDetector")
     }
     
     // MARK: - Observe Active Cluster (OTA Updater)
@@ -449,6 +450,7 @@ final class Detector: NSObject, ObservableObject {
             if distanceMeters > proximityThresholdMeters {
                 print("📍 Suppressed '\(detection.displayLabel)' — \(Int(distanceMeters))m away")
             }
+            print("no proximity  filter applied")
             return distanceMeters <= proximityThresholdMeters
         }
     }
