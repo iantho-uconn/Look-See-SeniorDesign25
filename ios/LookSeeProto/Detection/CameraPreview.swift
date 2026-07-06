@@ -5,7 +5,6 @@
 
 import SwiftUI
 import AVFoundation
-import Vision
 import Combine
 import UIKit
 
@@ -74,18 +73,7 @@ final class OverlayView: UIView {
         ctx.clear(rect)
         ctx.setLineWidth(2.0)
 
-        // Draw raw debug boxes for every detection
-        for det in detections {
-            let bbox = det.bbox
-            let drawRect = CGRect(
-                x: bbox.origin.x * bounds.width,
-                y: bbox.origin.y * bounds.height,
-                width: bbox.width * (bounds.width * 2),
-                height: bbox.height * bounds.height
-            )
-            UIColor.systemRed.setStroke()
-            ctx.stroke(drawRect)
-        }
+        // REMOVED: The red debug boxes that were drawing over the screen
 
         let activeSafeZone = safeZoneRect == .zero ? bounds : safeZoneRect
 
@@ -105,6 +93,7 @@ final class OverlayView: UIView {
             let clampedBox = targetBox.intersection(maxScreenBounds)
 
             if !clampedBox.isNull && clampedBox.width > 10 && clampedBox.height > 10 {
+                // LookSee Brand Green
                 UIColor.systemGreen.setStroke()
                 let perimeter = UIBezierPath(roundedRect: clampedBox, cornerRadius: 8)
                 perimeter.lineWidth = 4.0
@@ -188,8 +177,6 @@ struct CameraPreview: UIViewRepresentable {
         )
         view.addGestureRecognizer(pinch)
         
-        // In makeUIView, after adding boundingBoxTapGesture:
-
         // Always-on tap just for revealing chrome — separate from the detection tap
         let chromeTap = UITapGestureRecognizer(
             target: context.coordinator,
@@ -334,9 +321,6 @@ struct CameraPreview: UIViewRepresentable {
         }
     }
     
-    
-
-
     // MARK: - Preview UIView
 
     final class Preview: UIView {
