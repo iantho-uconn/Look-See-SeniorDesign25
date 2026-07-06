@@ -4,6 +4,8 @@
 //
 //  OTA-Enabled: Actively listens to ModelSelector to hot-swap CoreML models.
 //  Metal-Bypass: Restricts compute units to CPU & Neural Engine to prevent Signal 9 crashes.
+//  Self-contained location: runs its own CLLocationManager for proximity filtering,
+//  independent of the app's main LocationManager.
 //
 
 import Foundation
@@ -106,6 +108,10 @@ final class Detector: NSObject, ObservableObject {
     var dynamicSafeZone: CGRect = .zero
     var manifest: ModelManifest?
     var proximityThresholdMeters: Double = 150
+
+    // Written from the location delegate (main thread), read from `queue`
+    // inside process(pixelBuffer:) / proximityFilter. Always mutate this
+    // via `queue.async` to avoid a cross-thread race.
     var userLocation: CLLocation?
 
     // MARK: Private internals
@@ -132,13 +138,17 @@ final class Detector: NSObject, ObservableObject {
 
     private var smoothers: [String: BoundingBoxSmoother] = [:]
 
+    // MARK: Self-contained location tracking
+    private let locationManager = CLLocationManager()
+
     // MARK: Init
     override init() {
         super.init()
 
+        startLocationUpdatesIfNeeded()
         //loadLocalModel(named: "FinalDetector")
     }
-    
+
     // MARK: - Observe Active Cluster (OTA Updater)
     private func observeActiveCluster() {
         Task { @MainActor in
@@ -148,13 +158,13 @@ final class Detector: NSObject, ObservableObject {
                 if case .loaded(let models) = ModelService.shared.state,
                    let match = models.first(where: { $0.clusterID == clusterID }),
                    let compiledURL = match.compiledModelURL {
-                    
+
                     self.activeClusterID = match.clusterID
                     self.activeModelVersion = match.modelVersion
                     self.activeModelIdentifier = match.modelKey ?? "ota-model"
                     self.activeExpectedClassCount = match.classCount ?? 0
                     self.activeReleaseIdentifier = "\(match.clusterID)|\(match.modelVersion)"
-                    
+
                     loadModel(from: compiledURL, clusterID: clusterID)
                 }
             }
@@ -167,7 +177,7 @@ final class Detector: NSObject, ObservableObject {
                 // Bypass the Apple Metal GPU bug by forcing CPU and Neural Engine
                 let config = MLModelConfiguration()
                 config.computeUnits = .cpuAndNeuralEngine
-                
+
                 let loaded = try MLModel(contentsOf: url, configuration: config)
                 DispatchQueue.main.async {
                     self.model = loaded
@@ -176,6 +186,24 @@ final class Detector: NSObject, ObservableObject {
             } catch {
                 print("❌ OTA Model load error for cluster \(clusterID): \(error)")
             }
+        }
+    }
+
+    // MARK: - Location Setup
+    private func startLocationUpdatesIfNeeded() {
+        locationManager.delegate = self
+        locationManager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters
+        locationManager.distanceFilter = 15 // meters
+
+        switch locationManager.authorizationStatus {
+        case .notDetermined:
+            locationManager.requestWhenInUseAuthorization()
+        case .authorizedAlways, .authorizedWhenInUse:
+            locationManager.startUpdatingLocation()
+        case .denied, .restricted:
+            break
+        @unknown default:
+            break
         }
     }
 
@@ -395,7 +423,7 @@ final class Detector: NSObject, ObservableObject {
         for det in nearbyDetections {
             if smoothers[det.label] == nil { smoothers[det.label] = BoundingBoxSmoother() }
             let smoothedBox = smoothers[det.label]!.smooth(newBox: det.bbox)
-            
+
             finalResults.append(
                 Detection(
                     clusterID: det.clusterID,
@@ -446,12 +474,13 @@ final class Detector: NSObject, ObservableObject {
 
             let objectLocation = CLLocation(latitude: object.latitude, longitude: object.longitude)
             let distanceMeters = userLocation.distance(from: objectLocation)
+            let isNearby = distanceMeters <= proximityThresholdMeters
 
-            if distanceMeters > proximityThresholdMeters {
+            if !isNearby {
                 print("📍 Suppressed '\(detection.displayLabel)' — \(Int(distanceMeters))m away")
             }
-            print("no proximity  filter applied")
-            return distanceMeters <= proximityThresholdMeters
+
+            return isNearby
         }
     }
 
@@ -488,5 +517,34 @@ extension Detector: AVCaptureVideoDataOutputSampleBufferDelegate {
         if let pb = CMSampleBufferGetImageBuffer(sampleBuffer) {
             process(pixelBuffer: pb)
         }
+    }
+}
+
+// MARK: - CLLocationManagerDelegate
+extension Detector: CLLocationManagerDelegate {
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        switch manager.authorizationStatus {
+        case .authorizedAlways, .authorizedWhenInUse:
+            manager.startUpdatingLocation()
+        default:
+            break
+        }
+    }
+
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        guard let last = locations.last,
+              last.horizontalAccuracy > 0,
+              last.horizontalAccuracy <= 100
+        else { return }
+
+        // Written here (main thread via CoreLocation), read from `queue`
+        // in proximityFilter — hop onto `queue` to avoid a data race.
+        queue.async {
+            self.userLocation = last
+        }
+    }
+
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        print("❌ Detector location error:", error.localizedDescription)
     }
 }
