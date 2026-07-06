@@ -76,7 +76,35 @@ struct Tier2LandmarkRecord: View {
 
     var body: some View {
         ZStack {
-            mainContent.safeAreaInset(edge: .top) { Color.clear.frame(height: 50) }
+            ScrollView {
+                VStack(spacing: 18) {
+                    if archivedMedia == nil {
+                        instructionCard
+                        captureButtons
+                    }
+
+                    if let url = pickedVideoURL {
+                        VideoPlayer(player: AVPlayer(url: url)).frame(height: 220).clipShape(RoundedRectangle(cornerRadius: 15)).padding(.horizontal)
+                    } else if let img = pickedImage {
+                        Image(uiImage: img).resizable().scaledToFill().frame(height: 220).clipShape(RoundedRectangle(cornerRadius: 15)).padding(.horizontal)
+                    }
+
+                    Text(statusText).font(.footnote).foregroundStyle(.secondary).padding(.horizontal)
+                    locationSection
+                    nearbyLandmarksSection
+                    
+                    if selectedLandmark != nil { uploadDetailsSection }
+                    
+                    Spacer(minLength: 30)
+                }
+                // FIX: Matched identically to the 40 used in LandmarkRecord.swift
+                .padding(.top, 10)
+            }
+            // FIX: Locks the ScrollView to the Top so the AWS loading jump doesn't happen
+            .defaultScrollAnchor(.top)
+            .scrollDismissesKeyboard(.interactively)
+            .safeAreaInset(edge: .top) { Color.clear.frame(height: 50) }
+
             if showArchivePrompt { archivePromptOverlay }
         }
         .task {
@@ -140,28 +168,6 @@ struct Tier2LandmarkRecord: View {
         }
     }
 
-    private var mainContent: some View {
-        ScrollView {
-            VStack(spacing: 18) {
-                if archivedMedia == nil {
-                    instructionCard
-                    captureButtons
-                }
-
-                if let url = pickedVideoURL { VideoPlayer(player: AVPlayer(url: url)).frame(height: 220).clipShape(RoundedRectangle(cornerRadius: 15)).padding(.horizontal)
-                } else if let img = pickedImage { Image(uiImage: img).resizable().scaledToFill().frame(height: 220).clipShape(RoundedRectangle(cornerRadius: 15)).padding(.horizontal) }
-
-                Text(statusText).font(.footnote).foregroundStyle(.secondary).padding(.horizontal)
-                locationSection
-                nearbyLandmarksSection
-                
-                if selectedLandmark != nil { uploadDetailsSection }
-                
-                Spacer(minLength: 30)
-            }.padding(.top, 8)
-        }.scrollDismissesKeyboard(.interactively)
-    }
-
     private var instructionCard: some View {
         RoundedRectangle(cornerRadius: 25).stroke(Color(red: 0.75, green: 0.85, blue: 1.00)).fill(Color(red: 0.94, green: 0.96, blue: 1.00)).frame(height: 140)
             .overlay { Text("Record one short video or take one photo of a nearby landmark. Choose one of the valid landmarks returned for your location, then upload media to help improve recognition.").padding().multilineTextAlignment(.center).foregroundStyle(primaryColor) }.padding(.horizontal)
@@ -193,7 +199,6 @@ struct Tier2LandmarkRecord: View {
             nearbyLandmarkResults
             if let selectedLandmark { selectedLandmarkCard(selectedLandmark) }
         }
-        // ADDED: The 24pt padding to push the list down from the location info above
         .padding(.top, 24)
     }
 

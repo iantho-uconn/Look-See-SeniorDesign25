@@ -33,7 +33,7 @@ struct Buttons: View {
     
     private var isScanTab: Bool { currentTab == 0 }
     
-    // DYNAMIC TITLE: Changes based on the active tab so they fit nicely
+    // DYNAMIC TITLE
     private var topBarTitle: String {
         switch currentTab {
         case 0: return "LookSee"
@@ -55,14 +55,14 @@ struct Buttons: View {
                     // Tab 0 — Scan
                     LandmarkScan(
                         onTap: revealChromeThenFade,
-                        isDetecting: $isDetecting, // Passes state up from the camera
-                        isNavVisible: $chromeVisible // Tells the ad if it needs to slide up
+                        isDetecting: $isDetecting,
+                        isNavVisible: $chromeVisible
                     )
                     .tag(0)
                     
                     // Tab 1 — Map
                     LandmarkMapView()
-                        .safeAreaInset(edge: .top) { Color.clear.frame(height: 45) } // Raised from 70 to 45
+                        .safeAreaInset(edge: .top) { Color.clear.frame(height: 45) }
                         .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 90) }
                         .tag(1)
                     
@@ -78,40 +78,39 @@ struct Buttons: View {
                     }
                     
                     // Tab 3 (or 2) — Upload
-                    Group {
-                        if authState.tier == .authenticated || authState.tier == .business {
-                            Tier2LandmarkRecord(
-                                initialLandmarkId: pendingUploadLandmarkId,
-                                onInitialLandmarkConsumed: { pendingUploadLandmarkId = nil }
-                            )
-                        } else {
-                            Color(red: 0.06, green: 0.06, blue: 0.10).ignoresSafeArea()
-                        }
+                    if authState.tier == .authenticated || authState.tier == .business {
+                        Tier2LandmarkRecord(
+                            initialLandmarkId: pendingUploadLandmarkId,
+                            onInitialLandmarkConsumed: { pendingUploadLandmarkId = nil }
+                        )
+                        .safeAreaInset(edge: .top) { Color.clear.frame(height: 45) }
+                        .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 90) }
+                        .tag(authState.tier == .business ? 3 : 2)
+                    } else {
+                        Color(red: 0.06, green: 0.06, blue: 0.10)
+                            .ignoresSafeArea()
+                            .tag(authState.tier == .business ? 3 : 2)
                     }
-                    .safeAreaInset(edge: .top) { Color.clear.frame(height: 45) }
-                    .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 90) }
-                    .tag(authState.tier == .business ? 3 : 2)
                     
                     // Tab 4 (or 3) — Archive
-                    Group {
-                        if authState.tier == .authenticated || authState.tier == .business {
-                            ArchiveView()
-                        } else {
-                            Color(red: 0.06, green: 0.06, blue: 0.10).ignoresSafeArea()
-                        }
+                    if authState.tier == .authenticated || authState.tier == .business {
+                        ArchiveView()
+                            .safeAreaInset(edge: .top) { Color.clear.frame(height: 45) }
+                            .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 90) }
+                            .tag(authState.tier == .business ? 4 : 3)
+                    } else {
+                        Color(red: 0.06, green: 0.06, blue: 0.10)
+                            .ignoresSafeArea()
+                            .tag(authState.tier == .business ? 4 : 3)
                     }
-                    .safeAreaInset(edge: .top) { Color.clear.frame(height: 45) }
-                    .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 90) }
-                    .tag(authState.tier == .business ? 4 : 3)
                 }
                 .scrollDismissesKeyboard(.immediately)
-                .defaultScrollAnchor(.bottom, for: .sizeChanges)
+                // FIX: Deleted the .defaultScrollAnchor(.bottom) that was hijacking the page
                 .ignoresSafeArea()
                 .toolbar(.hidden, for: .tabBar)
                 .animation(.easeInOut(duration: 0.2), value: currentTab)
                 .onChange(of: currentTab) { _, _ in revealChromeThenFade() }
                 
-                // Hide Chrome INSTANTLY if AI finds an object (Focus Mode)
                 .onChange(of: isDetecting) { _, detecting in
                     if detecting && isScanTab {
                         chromeFadeTask?.cancel()
@@ -119,17 +118,13 @@ struct Buttons: View {
                     }
                 }
                 
-                // TYPE 1: Map Edge Swipes
                 if currentTab == 1 { mapEdgeSwipeZones }
                 
-                // Floating top and bottom bars
                 VStack(spacing: 0) {
                     if chromeVisible {
                         topBar.transition(.opacity)
                     }
-                    
                     Spacer()
-                    
                     if chromeVisible || !isScanTab {
                         bottomBar.transition(.move(edge: .bottom).combined(with: .opacity))
                     }
@@ -138,7 +133,6 @@ struct Buttons: View {
                 
                 if showSignUpPrompt { signUpPromptOverlay }
             }
-            // TYPE 2: Universal Swipe Fix
             .simultaneousGesture(
                 DragGesture(minimumDistance: 30).onEnded { value in
                     guard currentTab != 1 else { return }
@@ -188,14 +182,10 @@ struct Buttons: View {
     // MARK: - Top Bar
     private var topBar: some View {
         HStack(spacing: 0) {
-            // LEFT: Settings
             NavigationLink { Settings().environmentObject(vm) } label: {
                 NavButton(icon: "gearshape.fill", label: "Settings")
             }
-            
             Spacer()
-            
-            // CENTER: Dynamic Title
             Text(topBarTitle)
                 .font(.system(size: 22, weight: .bold, design: .rounded))
                 .foregroundStyle(.white)
@@ -213,10 +203,7 @@ struct Buttons: View {
                 } message: {
                     Text("You need a business account to access the Promotion Editor.")
                 }
-            
             Spacer()
-            
-            // RIGHT: Info / Tutorial
             Button {
                 showTutorial = true
             } label: {
@@ -252,19 +239,19 @@ struct Buttons: View {
         VStack(spacing: 16) {
             Group {
                 switch currentTab {
-                case 0: // Scan
+                case 0:
                     Image(systemName: "viewfinder").font(.system(size: 40))
                     Text("How to Scan").font(.title2.weight(.bold))
                     Text("Point your camera at a landmark. Keep the object well-lit and steady. LookSee will identify it automatically.")
-                case 1: // Map
+                case 1:
                     Image(systemName: "map").font(.system(size: 40))
                     Text("Explore the Map").font(.title2.weight(.bold))
                     Text("Find valid landmarks around you to scan. Use the search bar or filters to narrow down locations.")
-                case 2, 3: // Record / Upload
+                case 2, 3:
                     Image(systemName: "arrow.up.circle").font(.system(size: 40))
                     Text("Upload Media").font(.title2.weight(.bold))
                     Text("Record a short video or take a photo of a nearby landmark to help improve our recognition models.")
-                default: // Archive
+                default:
                     Image(systemName: "folder.fill").font(.system(size: 40))
                     Text("Offline Archive").font(.title2.weight(.bold))
                     Text("This is your offline folder. You can record and save videos here to upload later when you have a better connection.")
