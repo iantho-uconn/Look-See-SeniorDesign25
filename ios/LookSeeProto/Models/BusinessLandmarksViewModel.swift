@@ -2,8 +2,6 @@
 //  BusinessLandmarksViewModel.swift
 //  LookSeeProto
 //
-//  Created by Ian Thompson on 7/6/26.
-//
 //  View model for the business landmark management list.
 //
 
@@ -30,8 +28,8 @@ final class BusinessLandmarksViewModel: ObservableObject {
         do {
             let response = try await service.fetchBusinessLandmarks()
             landmarks = response.items.sorted {
-                let left = $0.label.localizedCaseInsensitiveCompare($1.label)
-                return left == .orderedAscending
+                let comparison = $0.label.localizedCaseInsensitiveCompare($1.label)
+                return comparison == .orderedAscending
             }
         } catch {
             errorMessage = error.localizedDescription

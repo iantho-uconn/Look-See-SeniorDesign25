@@ -2,7 +2,6 @@
 //  BusinessLandmarksView.swift
 //  LookSeeProto
 //
-//  Created by Ian Thompson on 7/6/26.
 //  Business user's landmark management entry point.
 //
 
@@ -54,6 +53,7 @@ struct BusinessLandmarksView: View {
                     HStack(alignment: .top, spacing: 10) {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .foregroundStyle(.orange)
+
                         Text(errorMessage)
                             .font(.footnote)
                             .foregroundStyle(.secondary)
@@ -80,6 +80,7 @@ struct BusinessLandmarksView: View {
     private var loadingView: some View {
         VStack(spacing: 14) {
             ProgressView()
+
             Text("Loading your landmarks...")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
@@ -132,11 +133,15 @@ private struct BusinessLandmarkRow: View {
                 .lineLimit(2)
 
             HStack(spacing: 8) {
-                Label(landmark.displayPromotionStatus, systemImage: landmark.promotionEnabled == true ? "tag.fill" : "tag")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Label(
+                    landmark.displayPromotionStatus,
+                    systemImage: landmark.promotionEnabled == true ? "tag.fill" : "tag"
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
 
-                if let latitude = landmark.latitude, let longitude = landmark.longitude {
+                if let latitude = landmark.latitude,
+                   let longitude = landmark.longitude {
                     Text("·")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -148,11 +153,5 @@ private struct BusinessLandmarkRow: View {
             }
         }
         .padding(.vertical, 4)
-    }
-}
-
-#Preview {
-    NavigationStack {
-        BusinessLandmarksView()
     }
 }

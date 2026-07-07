@@ -60,7 +60,6 @@ enum BusinessLandmarkServiceError: LocalizedError {
     case notSignedIn
     case tokensUnavailable
     case badStatus(Int, String)
-    case invalidBaseURL
 
     var errorDescription: String? {
         switch self {
@@ -70,8 +69,6 @@ enum BusinessLandmarkServiceError: LocalizedError {
             return "Cognito tokens were unavailable."
         case .badStatus(let code, let body):
             return "API error \(code): \(body)"
-        case .invalidBaseURL:
-            return "The business landmark API URL is invalid."
         }
     }
 }
