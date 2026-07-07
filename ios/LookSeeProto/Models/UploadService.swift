@@ -13,6 +13,8 @@
 import Foundation
 import UIKit
 import Combine
+import Amplify
+import AWSPluginsCore
 
 // MARK: - User-facing upload stage
 
@@ -84,6 +86,8 @@ final class UploadService: ObservableObject {
         case uploadAlreadyInProgress
         case missingLabel
         case missingUserEmail
+        case notSignedIn
+        case tokensUnavailable
         case noMediaSelected
         case multipleMediaSelected
         case invalidURL
@@ -101,6 +105,12 @@ final class UploadService: ObservableObject {
 
             case .missingUserEmail:
                 return "We could not verify your account. Please sign in again and retry."
+
+            case .notSignedIn:
+                return "You must be signed in before uploading."
+
+            case .tokensUnavailable:
+                return "We could not access your secure login token. Please sign out, sign back in, and try again."
 
             case .noMediaSelected:
                 return "Please record one video or take one landmark photo."
@@ -420,6 +430,34 @@ final class UploadService: ObservableObject {
         return error.localizedDescription
     }
 
+    // MARK: - Cognito authorization
+
+    private func getCognitoIDToken() async throws -> String {
+        let session = try await Amplify.Auth.fetchAuthSession()
+
+        guard session.isSignedIn else {
+            throw UploadError.notSignedIn
+        }
+
+        guard let tokenProvider = session as? AuthCognitoTokensProvider else {
+            throw UploadError.tokensUnavailable
+        }
+
+        let tokens = try tokenProvider.getCognitoTokens().get()
+        return tokens.idToken
+    }
+
+    private func addAuthorizationHeader(
+        to request: inout URLRequest
+    ) async throws {
+        let idToken = try await getCognitoIDToken()
+
+        request.setValue(
+            "Bearer \(idToken)",
+            forHTTPHeaderField: "Authorization"
+        )
+    }
+
     // MARK: - Initialize submission
 
     private func initSubmission(
@@ -440,6 +478,11 @@ final class UploadService: ObservableObject {
             "application/json",
             forHTTPHeaderField: "Accept"
         )
+
+        try await addAuthorizationHeader(
+            to: &request
+        )
+
         request.httpBody = try JSONEncoder().encode(
             requestBody
         )
@@ -565,6 +608,11 @@ final class UploadService: ObservableObject {
             "application/json",
             forHTTPHeaderField: "Accept"
         )
+
+        try await addAuthorizationHeader(
+            to: &request
+        )
+
         request.httpBody = try JSONEncoder().encode(
             requestBody
         )
