@@ -80,12 +80,15 @@ struct ClusterLandmarkManifest: Codable, Equatable {
 }
 
 /// The display information associated with one cluster-local class index.
+/// The display information associated with one cluster-local class index.
 struct LandmarkManifestEntry: Codable, Equatable, Identifiable {
     let classIndex: Int
     let landmarkId: String
     let datasetClassName: String
     let label: String
     let shortDescription: String
+    let latitude: Double
+    let longitude: Double
     let positiveImageCount: Int?
 
     var id: String {
