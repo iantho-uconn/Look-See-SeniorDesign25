@@ -14,6 +14,11 @@ struct BusinessLandmarkListResponse: Decodable {
     let count: Int
 }
 
+struct BusinessLandmarkUpdateResponse: Decodable {
+    let ok: Bool
+    let item: BusinessLandmark
+}
+
 struct BusinessLandmark: Decodable, Identifiable, Hashable {
     let landmarkId: String
     let label: String
@@ -33,6 +38,7 @@ struct BusinessLandmark: Decodable, Identifiable, Hashable {
     var id: String {
         landmarkId
     }
+    
 
     var displayDescription: String {
         let value = shortDescription?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -110,5 +116,41 @@ final class BusinessLandmarkService {
         }
 
         return try JSONDecoder().decode(BusinessLandmarkListResponse.self, from: data)
+    }
+    
+    func updateShortDescription(
+        landmarkId: String,
+        shortDescription: String
+    ) async throws -> BusinessLandmark {
+        let idToken = try await getCognitoIDToken()
+
+        let url = baseURL
+            .appendingPathComponent("business")
+            .appendingPathComponent("landmarks")
+            .appendingPathComponent(landmarkId)
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        request.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let body: [String: String] = [
+            "shortDescription": shortDescription
+        ]
+
+        request.httpBody = try JSONEncoder().encode(body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
+        let responseBody = String(data: data, encoding: .utf8) ?? ""
+
+        guard (200...299).contains(statusCode) else {
+            throw BusinessLandmarkServiceError.badStatus(statusCode, responseBody)
+        }
+
+        let decoded = try JSONDecoder().decode(BusinessLandmarkUpdateResponse.self, from: data)
+        return decoded.item
     }
 }

@@ -42,4 +42,17 @@ final class BusinessLandmarksViewModel: ObservableObject {
     func refresh() async {
         await loadLandmarks()
     }
+    
+    func replaceLandmark(_ updatedLandmark: BusinessLandmark) {
+        guard let index = landmarks.firstIndex(where: { $0.landmarkId == updatedLandmark.landmarkId }) else {
+            return
+        }
+
+        landmarks[index] = updatedLandmark
+
+        landmarks.sort {
+            let comparison = $0.label.localizedCaseInsensitiveCompare($1.label)
+            return comparison == .orderedAscending
+        }
+    }
 }

@@ -2,13 +2,36 @@
 //  BusinessLandmarkDetailView.swift
 //  LookSeeProto
 //
-//  Read-only detail page for one business-owned landmark.
+//  Read-only/detail-edit page for one business-owned landmark.
 //
 
 import SwiftUI
 
 struct BusinessLandmarkDetailView: View {
     let landmark: BusinessLandmark
+    let onLandmarkUpdated: (BusinessLandmark) -> Void
+
+    @State private var displayedShortDescription: String
+    @State private var draftShortDescription: String
+    @State private var isEditingDescription = false
+    @State private var isSavingDescription = false
+    @State private var saveErrorMessage: String?
+
+    private let service = BusinessLandmarkService()
+
+    init(
+        landmark: BusinessLandmark,
+        onLandmarkUpdated: @escaping (BusinessLandmark) -> Void = { _ in }
+    ) {
+        self.landmark = landmark
+        self.onLandmarkUpdated = onLandmarkUpdated
+
+        let initialDescription = landmark.shortDescription?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+        _displayedShortDescription = State(initialValue: initialDescription)
+        _draftShortDescription = State(initialValue: initialDescription)
+    }
 
     var body: some View {
         Form {
@@ -17,11 +40,40 @@ struct BusinessLandmarkDetailView: View {
                     Text(landmark.label.isEmpty ? "Untitled Landmark" : landmark.label)
                         .font(.title2.weight(.bold))
 
-                    Text(landmark.displayDescription)
+                    Text(displayDescription)
                         .font(.body)
                         .foregroundColor(.secondary)
                 }
                 .padding(.vertical, 4)
+            }
+
+            Section(header: Text("Landmark Info")) {
+                Button {
+                    draftShortDescription = displayedShortDescription
+                    saveErrorMessage = nil
+                    isEditingDescription = true
+                } label: {
+                    HStack {
+                        Label("Edit Short Description", systemImage: "square.and.pencil")
+
+                        Spacer()
+
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                if let saveErrorMessage {
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(.orange)
+
+                        Text(saveErrorMessage)
+                            .font(.footnote)
+                            .foregroundColor(.secondary)
+                    }
+                }
             }
 
             Section(header: Text("Management")) {
@@ -96,6 +148,101 @@ struct BusinessLandmarkDetailView: View {
         }
         .navigationTitle("Landmark Details")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $isEditingDescription) {
+            editDescriptionSheet
+        }
+    }
+
+    private var displayDescription: String {
+        let cleaned = displayedShortDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+        return cleaned.isEmpty ? "No description available." : cleaned
+    }
+
+    private var editDescriptionSheet: some View {
+        NavigationStack {
+            Form {
+                Section(
+                    header: Text("Short Description"),
+                    footer: Text("This description is shown to users when LookSee identifies this landmark.")
+                ) {
+                    TextEditor(text: $draftShortDescription)
+                        .frame(minHeight: 160)
+                        .disabled(isSavingDescription)
+                }
+
+                if let saveErrorMessage {
+                    Section {
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(.orange)
+
+                            Text(saveErrorMessage)
+                                .font(.footnote)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Edit Description")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        isEditingDescription = false
+                    }
+                    .disabled(isSavingDescription)
+                }
+
+                ToolbarItem(placement: .confirmationAction) {
+                    Button {
+                        saveDescription()
+                    } label: {
+                        if isSavingDescription {
+                            ProgressView()
+                        } else {
+                            Text("Save")
+                        }
+                    }
+                    .disabled(isSavingDescription || draftShortDescription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
+    }
+
+    private func saveDescription() {
+        guard !isSavingDescription else { return }
+
+        let cleanedDescription = draftShortDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !cleanedDescription.isEmpty else {
+            saveErrorMessage = "Short description cannot be empty."
+            return
+        }
+
+        isSavingDescription = true
+        saveErrorMessage = nil
+
+        Task {
+            do {
+                let updatedLandmark = try await service.updateShortDescription(
+                    landmarkId: landmark.landmarkId,
+                    shortDescription: cleanedDescription
+                )
+
+                await MainActor.run {
+                    displayedShortDescription = updatedLandmark.shortDescription ?? cleanedDescription
+                    draftShortDescription = displayedShortDescription
+                    onLandmarkUpdated(updatedLandmark)
+                    isSavingDescription = false
+                    isEditingDescription = false
+                }
+            } catch {
+                await MainActor.run {
+                    saveErrorMessage = error.localizedDescription
+                    isSavingDescription = false
+                }
+            }
+        }
     }
 
     private func formattedCoordinate(_ value: Double?) -> String {
