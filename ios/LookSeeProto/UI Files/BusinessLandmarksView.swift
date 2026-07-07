@@ -52,11 +52,11 @@ struct BusinessLandmarksView: View {
                 Section {
                     HStack(alignment: .top, spacing: 10) {
                         Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.orange)
+                            .foregroundColor(.orange)
 
                         Text(errorMessage)
                             .font(.footnote)
-                            .foregroundStyle(.secondary)
+                            .foregroundColor(.secondary)
                     }
                 }
             }
@@ -83,7 +83,7 @@ struct BusinessLandmarksView: View {
 
             Text("Loading your landmarks...")
                 .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .foregroundColor(.secondary)
         }
     }
 
@@ -118,18 +118,18 @@ private struct BusinessLandmarkRow: View {
             HStack(alignment: .firstTextBaseline) {
                 Text(landmark.label.isEmpty ? "Untitled Landmark" : landmark.label)
                     .font(.headline)
-                    .foregroundStyle(.primary)
+                    .foregroundColor(.primary)
 
                 Spacer()
 
                 Text(landmark.displayStatus)
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(landmark.isActive == false ? .secondary : .green)
+                    .foregroundColor(landmark.isActive == false ? .secondary : .green)
             }
 
             Text(landmark.displayDescription)
                 .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .foregroundColor(.secondary)
                 .lineLimit(2)
 
             HStack(spacing: 8) {
@@ -138,17 +138,17 @@ private struct BusinessLandmarkRow: View {
                     systemImage: landmark.promotionEnabled == true ? "tag.fill" : "tag"
                 )
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundColor(.secondary)
 
                 if let latitude = landmark.latitude,
                    let longitude = landmark.longitude {
                     Text("·")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundColor(.secondary)
 
                     Text(String(format: "%.5f, %.5f", latitude, longitude))
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundColor(.secondary)
                 }
             }
         }
