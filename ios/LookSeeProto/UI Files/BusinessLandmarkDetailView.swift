@@ -2,10 +2,12 @@
 //  BusinessLandmarkDetailView.swift
 //  LookSeeProto
 //
-//  Read-only/detail-edit page for one business-owned landmark.
+//  Detail/edit page for one business-owned landmark.
 //
 
 import SwiftUI
+import PhotosUI
+import UniformTypeIdentifiers
 
 struct BusinessLandmarkDetailView: View {
     let landmark: BusinessLandmark
@@ -17,7 +19,17 @@ struct BusinessLandmarkDetailView: View {
     @State private var isSavingDescription = false
     @State private var saveErrorMessage: String?
 
+    @State private var selectedPositiveMediaItems: [PhotosPickerItem] = []
+    @State private var selectedNegativeMediaItems: [PhotosPickerItem] = []
+
+    @State private var isUploadingMedia = false
+    @State private var activeUploadRole: BusinessDatasetRole?
+    @State private var uploadStatusMessage: String?
+    @State private var uploadErrorMessage: String?
+    @State private var uploadProgressText: String?
+
     private let service = BusinessLandmarkService()
+    private let maxSelectionCount = 10
 
     init(
         landmark: BusinessLandmark,
@@ -110,21 +122,15 @@ struct BusinessLandmarkDetailView: View {
 
             Section(
                 header: Text("Media Uploads"),
-                footer: Text("Remote positive and negative media uploads will be connected in the next phase.")
+                footer: Text("Choose media first, then submit when you are ready. Positive media should show the landmark clearly. Negative examples should show nearby objects, backgrounds, or similar-looking things that are not this landmark.")
             ) {
-                Button {
-                    print("Positive media upload tapped for \(landmark.landmarkId)")
-                } label: {
-                    Label("Upload Positive Media", systemImage: "plus.circle")
-                }
-                .disabled(true)
+                positiveMediaPicker
+                positiveSelectionControls
 
-                Button {
-                    print("Negative example upload tapped for \(landmark.landmarkId)")
-                } label: {
-                    Label("Upload Negative Examples", systemImage: "minus.circle")
-                }
-                .disabled(true)
+                negativeMediaPicker
+                negativeSelectionControls
+
+                uploadStatusArea
             }
 
             Section(header: Text("Identifiers")) {
@@ -152,6 +158,164 @@ struct BusinessLandmarkDetailView: View {
             editDescriptionSheet
         }
     }
+
+    // MARK: - Media Picker Views
+
+    private var positiveMediaPicker: some View {
+        PhotosPicker(
+            selection: $selectedPositiveMediaItems,
+            maxSelectionCount: maxSelectionCount,
+            matching: .any(of: [.images, .videos]),
+            photoLibrary: .shared()
+        ) {
+            uploadRow(
+                title: "Choose Positive Media",
+                subtitle: selectedMediaSubtitle(
+                    count: selectedPositiveMediaItems.count,
+                    emptyText: "Select photos or videos of this landmark."
+                ),
+                systemImage: "plus.circle"
+            )
+        }
+        .disabled(isUploadingMedia)
+    }
+
+    private var negativeMediaPicker: some View {
+        PhotosPicker(
+            selection: $selectedNegativeMediaItems,
+            maxSelectionCount: maxSelectionCount,
+            matching: .any(of: [.images, .videos]),
+            photoLibrary: .shared()
+        ) {
+            uploadRow(
+                title: "Choose Negative Examples",
+                subtitle: selectedMediaSubtitle(
+                    count: selectedNegativeMediaItems.count,
+                    emptyText: "Select nearby objects that are not this landmark."
+                ),
+                systemImage: "minus.circle"
+            )
+        }
+        .disabled(isUploadingMedia)
+    }
+
+    private var positiveSelectionControls: some View {
+        Group {
+            if !selectedPositiveMediaItems.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("\(selectedPositiveMediaItems.count) positive item\(selectedPositiveMediaItems.count == 1 ? "" : "s") selected")
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+
+                    HStack {
+                        Button {
+                            Task {
+                                await uploadSelectedMediaItems(
+                                    items: selectedPositiveMediaItems,
+                                    datasetRole: .positive
+                                )
+                            }
+                        } label: {
+                            Label("Submit Positive Upload", systemImage: "arrow.up.circle.fill")
+                        }
+                        .disabled(isUploadingMedia)
+
+                        Spacer()
+
+                        Button(role: .destructive) {
+                            selectedPositiveMediaItems.removeAll()
+                        } label: {
+                            Text("Clear")
+                        }
+                        .disabled(isUploadingMedia)
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+        }
+    }
+
+    private var negativeSelectionControls: some View {
+        Group {
+            if !selectedNegativeMediaItems.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("\(selectedNegativeMediaItems.count) negative item\(selectedNegativeMediaItems.count == 1 ? "" : "s") selected")
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+
+                    HStack {
+                        Button {
+                            Task {
+                                await uploadSelectedMediaItems(
+                                    items: selectedNegativeMediaItems,
+                                    datasetRole: .hardNegative
+                                )
+                            }
+                        } label: {
+                            Label("Submit Negative Upload", systemImage: "arrow.up.circle.fill")
+                        }
+                        .disabled(isUploadingMedia)
+
+                        Spacer()
+
+                        Button(role: .destructive) {
+                            selectedNegativeMediaItems.removeAll()
+                        } label: {
+                            Text("Clear")
+                        }
+                        .disabled(isUploadingMedia)
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+        }
+    }
+
+    private var uploadStatusArea: some View {
+        Group {
+            if isUploadingMedia {
+                HStack(spacing: 10) {
+                    ProgressView()
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(uploadingText)
+                            .font(.footnote)
+                            .foregroundColor(.secondary)
+
+                        if let uploadProgressText {
+                            Text(uploadProgressText)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+            }
+
+            if let uploadStatusMessage {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundColor(.green)
+
+                    Text(uploadStatusMessage)
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            if let uploadErrorMessage {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundColor(.orange)
+
+                    Text(uploadErrorMessage)
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+    }
+
+    // MARK: - Description Editing
 
     private var displayDescription: String {
         let cleaned = displayedShortDescription.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -203,7 +367,10 @@ struct BusinessLandmarkDetailView: View {
                             Text("Save")
                         }
                     }
-                    .disabled(isSavingDescription || draftShortDescription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(
+                        isSavingDescription ||
+                        draftShortDescription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    )
                 }
             }
         }
@@ -245,6 +412,205 @@ struct BusinessLandmarkDetailView: View {
         }
     }
 
+    // MARK: - Media Upload Logic
+
+    private var uploadingText: String {
+        if let activeUploadRole {
+            return "Uploading \(activeUploadRole.displayName.lowercased())..."
+        }
+
+        return "Uploading media..."
+    }
+
+    private func uploadSelectedMediaItems(
+        items: [PhotosPickerItem],
+        datasetRole: BusinessDatasetRole
+    ) async {
+        guard !isUploadingMedia else { return }
+        guard !items.isEmpty else { return }
+
+        await MainActor.run {
+            isUploadingMedia = true
+            activeUploadRole = datasetRole
+            uploadStatusMessage = nil
+            uploadErrorMessage = nil
+            uploadProgressText = "Preparing \(items.count) item\(items.count == 1 ? "" : "s")..."
+        }
+
+        var completedCount = 0
+        var failedCount = 0
+        var lastSubmissionId: String?
+
+        for index in items.indices {
+            let item = items[index]
+
+            await MainActor.run {
+                uploadProgressText = "Uploading item \(index + 1) of \(items.count)..."
+            }
+
+            do {
+                guard let mediaData = try await item.loadTransferable(type: Data.self) else {
+                    throw MediaSelectionError.couldNotLoadMedia
+                }
+
+                let contentType = item.supportedContentTypes.first ?? .data
+                let mediaKind = inferMediaKind(from: contentType)
+                let mimeType = contentType.preferredMIMEType ?? "application/octet-stream"
+
+                let filename = makeUploadFilename(
+                    datasetRole: datasetRole,
+                    mediaKind: mediaKind,
+                    contentType: contentType,
+                    index: index + 1
+                )
+
+                print("⬆️ Business media upload starting")
+                print("   item: \(index + 1)/\(items.count)")
+                print("   landmarkId: \(landmark.landmarkId)")
+                print("   datasetRole: \(datasetRole.rawValue)")
+                print("   mediaKind: \(mediaKind.rawValue)")
+                print("   filename: \(filename)")
+                print("   contentType: \(mimeType)")
+                print("   bytes: \(mediaData.count)")
+
+                let response = try await service.uploadBusinessMedia(
+                    landmarkId: landmark.landmarkId,
+                    datasetRole: datasetRole,
+                    mediaKind: mediaKind,
+                    filename: filename,
+                    contentType: mimeType,
+                    data: mediaData
+                )
+
+                completedCount += 1
+                lastSubmissionId = response.submissionId
+
+                print("✅ Business media upload complete: \(response.submissionId)")
+
+            } catch {
+                failedCount += 1
+                print("❌ Business media upload failed on item \(index + 1): \(error.localizedDescription)")
+            }
+        }
+
+        await MainActor.run {
+            isUploadingMedia = false
+            activeUploadRole = nil
+            uploadProgressText = nil
+
+            if failedCount == 0 {
+                uploadStatusMessage = successSummaryMessage(
+                    datasetRole: datasetRole,
+                    completedCount: completedCount,
+                    lastSubmissionId: lastSubmissionId
+                )
+
+                uploadErrorMessage = nil
+
+                switch datasetRole {
+                case .positive:
+                    selectedPositiveMediaItems.removeAll()
+                case .hardNegative:
+                    selectedNegativeMediaItems.removeAll()
+                }
+            } else {
+                uploadStatusMessage = completedCount > 0
+                    ? "\(completedCount) item\(completedCount == 1 ? "" : "s") uploaded successfully."
+                    : nil
+
+                uploadErrorMessage = "\(failedCount) item\(failedCount == 1 ? "" : "s") failed to upload. Please try again."
+            }
+        }
+    }
+
+    private func successSummaryMessage(
+        datasetRole: BusinessDatasetRole,
+        completedCount: Int,
+        lastSubmissionId: String?
+    ) -> String {
+        let base: String
+
+        switch datasetRole {
+        case .positive:
+            base = "\(completedCount) positive item\(completedCount == 1 ? "" : "s") uploaded successfully."
+        case .hardNegative:
+            base = "\(completedCount) negative example\(completedCount == 1 ? "" : "s") uploaded successfully."
+        }
+
+        if let lastSubmissionId {
+            return "\(base) Last submission: \(lastSubmissionId)"
+        }
+
+        return base
+    }
+
+    private func selectedMediaSubtitle(
+        count: Int,
+        emptyText: String
+    ) -> String {
+        if count == 0 {
+            return emptyText
+        }
+
+        return "\(count) item\(count == 1 ? "" : "s") selected. Tap Submit when ready."
+    }
+
+    private func inferMediaKind(from contentType: UTType) -> BusinessMediaKind {
+        if contentType.conforms(to: .movie) || contentType.conforms(to: .video) {
+            return .video
+        }
+
+        return .photo
+    }
+
+    private func makeUploadFilename(
+        datasetRole: BusinessDatasetRole,
+        mediaKind: BusinessMediaKind,
+        contentType: UTType,
+        index: Int
+    ) -> String {
+        let fallbackExtension = mediaKind == .video ? "mov" : "jpg"
+        let fileExtension = contentType.preferredFilenameExtension ?? fallbackExtension
+
+        let cleanedLabel = landmark.label
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: " ", with: "_")
+            .replacingOccurrences(of: "/", with: "_")
+
+        let labelComponent = cleanedLabel.isEmpty ? landmark.landmarkId : cleanedLabel
+
+        return "\(labelComponent)_\(datasetRole.filenameComponent)_\(index)_\(UUID().uuidString).\(fileExtension)"
+    }
+
+    // MARK: - Small UI Helpers
+
+    private func uploadRow(
+        title: String,
+        subtitle: String,
+        systemImage: String
+    ) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: systemImage)
+                .font(.title3)
+                .foregroundColor(.accentColor)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .foregroundColor(.primary)
+
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer()
+
+            Image(systemName: "chevron.right")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+    }
+
     private func formattedCoordinate(_ value: Double?) -> String {
         guard let value else {
             return "Not available"
@@ -263,6 +629,17 @@ struct BusinessLandmarkDetailView: View {
             Text(value)
                 .multilineTextAlignment(.trailing)
                 .foregroundColor(.primary)
+        }
+    }
+}
+
+private enum MediaSelectionError: LocalizedError {
+    case couldNotLoadMedia
+
+    var errorDescription: String? {
+        switch self {
+        case .couldNotLoadMedia:
+            return "Could not load the selected media."
         }
     }
 }
