@@ -10,6 +10,7 @@
 		374D81C92FF3051F0009620F /* MockManifest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 374D81C82FF305170009620F /* MockManifest.swift */; };
 		374D81CA2FF3051F0009620F /* MockManifest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 374D81C82FF305170009620F /* MockManifest.swift */; };
 		374D81CB2FF3051F0009620F /* MockManifest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 374D81C82FF305170009620F /* MockManifest.swift */; };
+		374D85FA2FF7D1150009620F /* Nisarg_cluster_3.gpx in Resources */ = {isa = PBXBuildFile; fileRef = 374D85F92FF7D10D0009620F /* Nisarg_cluster_3.gpx */; };
 		3C19EB412F981FA400D1AA43 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = 3C19EB402F981FA400D1AA43 /* ZIPFoundation */; };
 		3C19EB492F9943F400D1AA43 /* FinalDetector.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3C19EB482F9943F400D1AA43 /* FinalDetector.mlpackage */; };
 		3C1FC9CC2F42C9E70006C1D3 /* PhotoPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C1FC9CB2F42C9DA0006C1D3 /* PhotoPicker.swift */; };
@@ -82,6 +83,7 @@
 
 /* Begin PBXFileReference section */
 		374D81C82FF305170009620F /* MockManifest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockManifest.swift; sourceTree = "<group>"; };
+		374D85F92FF7D10D0009620F /* Nisarg_cluster_3.gpx */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = Nisarg_cluster_3.gpx; sourceTree = "<group>"; };
 		3C19EB482F9943F400D1AA43 /* FinalDetector.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = FinalDetector.mlpackage; sourceTree = "<group>"; };
 		3C1FC9CB2F42C9DA0006C1D3 /* PhotoPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoPicker.swift; sourceTree = "<group>"; };
 		3C4E57002FE443230045B2D4 /* TextScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextScannerView.swift; sourceTree = "<group>"; };
@@ -213,6 +215,7 @@
 			isa = PBXGroup;
 			children = (
 				D0E788922FF5073000E5FE00 /* GymLocation.gpx */,
+				374D85F92FF7D10D0009620F /* Nisarg_cluster_3.gpx */,
 				3C9020BF2F3AC88600EE30BF /* MachineLearningModels */,
 				3C90209B2F3ABC8B00EE30BF /* Detection */,
 				565542BF2EBD8384007DBA98 /* Models */,
@@ -430,6 +433,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				D0E788932FF5073000E5FE00 /* GymLocation.gpx in Resources */,
+				374D85FA2FF7D1150009620F /* Nisarg_cluster_3.gpx in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -668,7 +672,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = ZLBPU9JP27;
+				DEVELOPMENT_TEAM = 74S483TXSF;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
@@ -686,7 +690,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = looksee.angell.com;
+				PRODUCT_BUNDLE_IDENTIFIER = looksee.nisarg.com;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -707,7 +711,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = ZLBPU9JP27;
+				DEVELOPMENT_TEAM = 74S483TXSF;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
@@ -725,7 +729,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = looksee.angell.com;
+				PRODUCT_BUNDLE_IDENTIFIER = looksee.nisarg.com;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
