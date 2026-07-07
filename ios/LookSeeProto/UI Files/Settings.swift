@@ -73,18 +73,20 @@ struct Settings: View {
                     .task {
                         await vm.fetchUserEmail()
                     }
-                    .task {
-                        do {
-                            let response = try await BusinessLandmarkService().fetchBusinessLandmarks()
+                }
 
-                            print("✅ Business landmarks fetched: \(response.count)")
-
-                            for landmark in response.items {
-                                print("📍 \(landmark.landmarkId) — \(landmark.label)")
-                            }
-                        } catch {
-                            print("❌ Business landmarks fetch failed: \(error.localizedDescription)")
+                // MARK: - Business Management
+                if authState.tier == .business {
+                    Section {
+                        NavigationLink {
+                            BusinessLandmarksView()
+                        } label: {
+                            Label("Manage My Landmarks", systemImage: "building.2.crop.circle")
                         }
+                    } header: {
+                        Text("Business Management")
+                    } footer: {
+                        Text("View the landmarks assigned to your business account. Remote media uploads will be added in the next phase.")
                     }
                 }
 
@@ -186,4 +188,3 @@ struct Settings: View {
         return false
     }
 }
-
