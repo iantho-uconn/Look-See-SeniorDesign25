@@ -19,6 +19,8 @@ struct BusinessLandmarkDetailView: View {
     @State private var isSavingDescription = false
     @State private var saveErrorMessage: String?
 
+    @State private var showPositivePicker = false
+    @State private var showNegativePicker = false
     @State private var selectedPositiveMediaItems: [PhotosPickerItem] = []
     @State private var selectedNegativeMediaItems: [PhotosPickerItem] = []
 
@@ -122,12 +124,12 @@ struct BusinessLandmarkDetailView: View {
 
             Section(
                 header: Text("Media Uploads"),
-                footer: Text("Choose media first, then submit when you are ready. Positive media should show the landmark clearly. Negative examples should show nearby objects, backgrounds, or similar-looking things that are not this landmark.")
+                footer: Text("Choose media first, confirm your selection with the blue checkmark in the photo picker, then submit when ready.")
             ) {
-                positiveMediaPicker
+                positivePickerButton
                 positiveSelectionControls
 
-                negativeMediaPicker
+                negativePickerButton
                 negativeSelectionControls
 
                 uploadStatusArea
@@ -159,15 +161,13 @@ struct BusinessLandmarkDetailView: View {
         }
     }
 
-    // MARK: - Media Picker Views
+    // MARK: - Picker Buttons
 
-    private var positiveMediaPicker: some View {
-        PhotosPicker(
-            selection: $selectedPositiveMediaItems,
-            maxSelectionCount: maxSelectionCount,
-            matching: .any(of: [.images, .videos]),
-            photoLibrary: .shared()
-        ) {
+    private var positivePickerButton: some View {
+        Button {
+            print("📸 Opening positive media picker")
+            showPositivePicker = true
+        } label: {
             uploadRow(
                 title: "Choose Positive Media",
                 subtitle: selectedMediaSubtitle(
@@ -177,16 +177,22 @@ struct BusinessLandmarkDetailView: View {
                 systemImage: "plus.circle"
             )
         }
+        .buttonStyle(.plain)
         .disabled(isUploadingMedia)
-    }
-
-    private var negativeMediaPicker: some View {
-        PhotosPicker(
-            selection: $selectedNegativeMediaItems,
+        .photosPicker(
+            isPresented: $showPositivePicker,
+            selection: $selectedPositiveMediaItems,
             maxSelectionCount: maxSelectionCount,
             matching: .any(of: [.images, .videos]),
             photoLibrary: .shared()
-        ) {
+        )
+    }
+
+    private var negativePickerButton: some View {
+        Button {
+            print("📸 Opening negative media picker")
+            showNegativePicker = true
+        } label: {
             uploadRow(
                 title: "Choose Negative Examples",
                 subtitle: selectedMediaSubtitle(
@@ -196,7 +202,15 @@ struct BusinessLandmarkDetailView: View {
                 systemImage: "minus.circle"
             )
         }
+        .buttonStyle(.plain)
         .disabled(isUploadingMedia)
+        .photosPicker(
+            isPresented: $showNegativePicker,
+            selection: $selectedNegativeMediaItems,
+            maxSelectionCount: maxSelectionCount,
+            matching: .any(of: [.images, .videos]),
+            photoLibrary: .shared()
+        )
     }
 
     private var positiveSelectionControls: some View {
@@ -207,30 +221,33 @@ struct BusinessLandmarkDetailView: View {
                         .font(.footnote)
                         .foregroundColor(.secondary)
 
-                    HStack {
-                        Button {
-                            Task {
-                                await uploadSelectedMediaItems(
-                                    items: selectedPositiveMediaItems,
-                                    datasetRole: .positive
-                                )
-                            }
-                        } label: {
-                            Label("Submit Positive Upload", systemImage: "arrow.up.circle.fill")
-                        }
-                        .disabled(isUploadingMedia)
+                    Button {
+                        print("🚀 Submit positive tapped with \(selectedPositiveMediaItems.count) item(s)")
 
-                        Spacer()
-
-                        Button(role: .destructive) {
-                            selectedPositiveMediaItems.removeAll()
-                        } label: {
-                            Text("Clear")
+                        Task {
+                            await uploadSelectedMediaItems(
+                                items: selectedPositiveMediaItems,
+                                datasetRole: .positive
+                            )
                         }
-                        .disabled(isUploadingMedia)
+                    } label: {
+                        Label("Submit Positive Upload", systemImage: "arrow.up.circle.fill")
+                            .frame(maxWidth: .infinity)
                     }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isUploadingMedia)
+
+                    Button(role: .destructive) {
+                        print("🧹 Clearing positive selection")
+                        selectedPositiveMediaItems.removeAll()
+                    } label: {
+                        Label("Clear Positive Selection", systemImage: "trash")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isUploadingMedia)
                 }
-                .padding(.vertical, 4)
+                .padding(.vertical, 6)
             }
         }
     }
@@ -243,30 +260,33 @@ struct BusinessLandmarkDetailView: View {
                         .font(.footnote)
                         .foregroundColor(.secondary)
 
-                    HStack {
-                        Button {
-                            Task {
-                                await uploadSelectedMediaItems(
-                                    items: selectedNegativeMediaItems,
-                                    datasetRole: .hardNegative
-                                )
-                            }
-                        } label: {
-                            Label("Submit Negative Upload", systemImage: "arrow.up.circle.fill")
-                        }
-                        .disabled(isUploadingMedia)
+                    Button {
+                        print("🚀 Submit negative tapped with \(selectedNegativeMediaItems.count) item(s)")
 
-                        Spacer()
-
-                        Button(role: .destructive) {
-                            selectedNegativeMediaItems.removeAll()
-                        } label: {
-                            Text("Clear")
+                        Task {
+                            await uploadSelectedMediaItems(
+                                items: selectedNegativeMediaItems,
+                                datasetRole: .hardNegative
+                            )
                         }
-                        .disabled(isUploadingMedia)
+                    } label: {
+                        Label("Submit Negative Upload", systemImage: "arrow.up.circle.fill")
+                            .frame(maxWidth: .infinity)
                     }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isUploadingMedia)
+
+                    Button(role: .destructive) {
+                        print("🧹 Clearing negative selection")
+                        selectedNegativeMediaItems.removeAll()
+                    } label: {
+                        Label("Clear Negative Selection", systemImage: "trash")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isUploadingMedia)
                 }
-                .padding(.vertical, 4)
+                .padding(.vertical, 6)
             }
         }
     }
@@ -426,8 +446,15 @@ struct BusinessLandmarkDetailView: View {
         items: [PhotosPickerItem],
         datasetRole: BusinessDatasetRole
     ) async {
-        guard !isUploadingMedia else { return }
-        guard !items.isEmpty else { return }
+        guard !isUploadingMedia else {
+            print("⚠️ Upload already in progress")
+            return
+        }
+
+        guard !items.isEmpty else {
+            print("⚠️ Submit tapped but no items were selected")
+            return
+        }
 
         await MainActor.run {
             isUploadingMedia = true
@@ -436,6 +463,8 @@ struct BusinessLandmarkDetailView: View {
             uploadErrorMessage = nil
             uploadProgressText = "Preparing \(items.count) item\(items.count == 1 ? "" : "s")..."
         }
+
+        print("🚀 Starting \(datasetRole.rawValue) upload for \(items.count) item(s)")
 
         var completedCount = 0
         var failedCount = 0
@@ -609,6 +638,7 @@ struct BusinessLandmarkDetailView: View {
                 .font(.caption)
                 .foregroundColor(.secondary)
         }
+        .contentShape(Rectangle())
     }
 
     private func formattedCoordinate(_ value: Double?) -> String {
