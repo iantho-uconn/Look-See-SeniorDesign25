@@ -326,17 +326,30 @@ def main() -> None:
 
     model = YOLO(model_name)
 
+    # Check if we baked the tuned hyperparameters into the Docker image
+    custom_cfg = "/app/looksee_best_hyperparameters.yaml"
+    
+    # Set up our base training arguments
+    train_args = {
+        "data": data_yaml,
+        "epochs": epochs,
+        "patience": patience,
+        "imgsz": imgsz,
+        "batch": batch,
+        "device": device,
+        "project": yolo_project_dir,
+        "name": run_name
+    }
+
+    # If the file exists, inject the golden recipe!
+    if os.path.exists(custom_cfg):
+        print(f"🎯 Found tuned hyperparameters! Injecting {custom_cfg} into training...")
+        train_args["cfg"] = custom_cfg
+    else:
+        print("⚠️ No custom hyperparameters found. Falling back to standard YOLO defaults.")
+
     # Notice the val flag is completely removed so YOLO relies on our edited data.yaml
-    model.train(
-        data=data_yaml,
-        epochs=epochs,
-        patience=patience,
-        imgsz=imgsz,
-        batch=batch,
-        device=device,
-        project=yolo_project_dir,
-        name=run_name
-    )
+    model.train(**train_args)
 
     best_weights = find_best_weights(yolo_project_dir, run_name)
     print(f"best_weights={best_weights}")

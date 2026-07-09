@@ -5,6 +5,7 @@ import boto3
 import json
 import gc
 import time 
+from botocore.exceptions import ClientError
 
 from autodistill_grounding_dino import GroundingDINO
 from autodistill.detection import CaptionOntology
@@ -38,8 +39,8 @@ while True:
 
     if 'Messages' not in response:
         print("Queue is empty. Waiting for new tasks (30s sleep)...")
-        time.sleep(30) # <--- FIX: Pause for 30 seconds
-        continue # <--- FIX: Loop back to check the queue again instead of breaking
+        time.sleep(30)
+        continue 
 
     message = response['Messages'][0]
     receipt_handle = message['ReceiptHandle']
@@ -62,7 +63,7 @@ while True:
     except Exception as e:
         print(f"Error: Missing or corrupt metadata in {SUBMISSION_FOLDER}. Deleting message and skipping.")
         sqs.delete_message(QueueUrl=QUEUE_URL, ReceiptHandle=receipt_handle)
-        continue # Move to the next message in the queue
+        continue 
 
     class_name = metadata.get('class_name', 'UnknownObject').replace(" ", "_")
     prompt = metadata.get('prompt', class_name)
@@ -75,7 +76,6 @@ while True:
     # -----------------------------------------
     ontology = CaptionOntology({prompt: class_name})
     
-    # --- UPGRADE: LOOSER THRESHOLDS ---
     model = GroundingDINO(
         ontology=ontology,
         box_threshold=0.15,
@@ -105,6 +105,21 @@ while True:
         img_name = os.path.basename(img_key)
         local_img_path = f"/tmp/{img_name}"
         
+        label_name = os.path.splitext(img_name)[0] + ".txt"
+        s3_label_out = f"neg-dataset/{class_name}/labels/{label_name}"
+
+        # --- UPGRADE 1: S3 CHECKPOINTING ---
+        try:
+            s3.head_object(Bucket=BUCKET_NAME, Key=s3_label_out)
+            # If no error is thrown, the file exists! Skip this frame.
+            count += 1
+            continue
+        except ClientError as e:
+            # A 404 error means the file doesn't exist yet, which is expected.
+            if e.response['Error']['Code'] != '404':
+                print(f"Unexpected S3 error checking checkpoint: {e}")
+            pass
+
         # Download image from S3
         s3.download_file(BUCKET_NAME, img_key, local_img_path)
         image = cv2.imread(local_img_path)
@@ -115,7 +130,6 @@ while True:
         # Skip frame if AI finds nothing
         if len(detections.xyxy) == 0:
             os.remove(local_img_path)
-            # --- MEMORY LEAK FIX (SKIPPED FRAMES) ---
             del image
             del detections
             gc.collect()
@@ -123,35 +137,30 @@ while True:
                 torch.cuda.empty_cache()
             continue
 
-        # --- UPGRADE: MASTER BOX MATH ---
+        # --- MASTER BOX MATH ---
         h, w, _ = image.shape
         yolo_lines = []
         
         if len(detections.xyxy) > 0:
-            # Grab the absolute outermost coordinates across ALL detected boxes
             x_min = min(box[0] for box in detections.xyxy)
             y_min = min(box[1] for box in detections.xyxy)
             x_max = max(box[2] for box in detections.xyxy)
             y_max = max(box[3] for box in detections.xyxy)
             
-            # Calculate YOLO coordinates for the single Master Box
             x_center = ((x_min + x_max) / 2) / w
             y_center = ((y_min + y_max) / 2) / h
             bw = (x_max - x_min) / w
             bh = (y_max - y_min) / h
             
-            # Use '0' as class index for single-class training
             yolo_lines.append(f"0 {x_center:.6f} {y_center:.6f} {bw:.6f} {bh:.6f}")
 
         # Save label file locally
-        label_name = os.path.splitext(img_name)[0] + ".txt"
         local_label_path = f"/tmp/{label_name}"
         with open(local_label_path, "w") as f:
             f.write("\n".join(yolo_lines))
 
         # Upload to final dataset folders
         s3_img_out = f"neg-dataset/{class_name}/images/{img_name}"
-        s3_label_out = f"neg-dataset/{class_name}/labels/{label_name}"
 
         s3.upload_file(local_img_path, BUCKET_NAME, s3_img_out)
         s3.upload_file(local_label_path, BUCKET_NAME, s3_label_out)
@@ -160,18 +169,27 @@ while True:
         os.remove(local_img_path)
         os.remove(local_label_path)
         
-        # --- THE TRUE MEMORY WIPE ---
+        # --- TRUE MEMORY WIPE ---
         del image
         del detections
         gc.collect()
         if torch.cuda.is_available():
-            torch.cuda.empty_cache()  # Forces the GPU to release the hoarding memory
+            torch.cuda.empty_cache()
             
         count += 1
         
-        # Print a heartbeat so CloudWatch logs show it hasn't frozen
-        if count % 50 == 0:
-            print(f"Heartbeat: Processed {count}/{len(all_keys)} frames...")
+        # --- UPGRADE 2: DYNAMIC HEARTBEAT ---
+        # Every 25 frames, tell SQS to add 15 minutes to the countdown timer
+        if count % 25 == 0:
+            print(f"Heartbeat: Processed {count}/{len(all_keys)} frames. Extending timeout by 15 mins.")
+            try:
+                sqs.change_message_visibility(
+                    QueueUrl=QUEUE_URL,
+                    ReceiptHandle=receipt_handle,
+                    VisibilityTimeout=900
+                )
+            except Exception as e:
+                print(f"Warning: Failed to extend heartbeat: {e}")
 
     print(f"DONE: Successfully labeled {count} images for {class_name}.")
     
