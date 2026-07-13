@@ -51,6 +51,7 @@ final class HardNegativeUploadService: ObservableObject {
 
     func upload(
         landmarkId: String,
+        idToken: String, // <-- NEW: Require the VIP token
         video: CapturedNegativeVideo
     ) async throws -> HardNegativeCompleteResponse {
         
@@ -65,6 +66,7 @@ final class HardNegativeUploadService: ObservableObject {
         do {
             let initResponse = try await initializeUpload(
                 landmarkId: landmarkId,
+                token: idToken, // <-- Pass it here
                 video: video
             )
 
@@ -86,7 +88,8 @@ final class HardNegativeUploadService: ObservableObject {
             let completeResponse = try await completeUpload(
                 landmarkId: landmarkId,
                 batchId: initResponse.batchId,
-                negativeIds: [uploadTarget.negativeId]
+                negativeIds: [uploadTarget.negativeId],
+                token: idToken // <-- And pass it here
             )
 
             guard completeResponse.failedCount == 0,
@@ -116,6 +119,7 @@ final class HardNegativeUploadService: ObservableObject {
 
     private func initializeUpload(
         landmarkId: String,
+        token: String,
         video: CapturedNegativeVideo
     ) async throws -> HardNegativeInitResponse {
         let url = baseURL
@@ -139,6 +143,13 @@ final class HardNegativeUploadService: ObservableObject {
             "application/json",
             forHTTPHeaderField: "Content-Type"
         )
+        
+        // Attach the Cognito ID Token so API Gateway lets us in!
+        request.setValue(
+            token,
+            forHTTPHeaderField: "Authorization"
+        )
+        
         request.httpBody = try JSONEncoder().encode(body)
 
         let (data, response) = try await URLSession.shared.data(
@@ -206,7 +217,8 @@ final class HardNegativeUploadService: ObservableObject {
     private func completeUpload(
         landmarkId: String,
         batchId: String,
-        negativeIds: [String]
+        negativeIds: [String],
+        token: String
     ) async throws -> HardNegativeCompleteResponse {
         let url = baseURL
             .appendingPathComponent("landmarks")
@@ -225,6 +237,13 @@ final class HardNegativeUploadService: ObservableObject {
             "application/json",
             forHTTPHeaderField: "Content-Type"
         )
+        
+        // Attach the Cognito ID Token here as well
+        request.setValue(
+            token,
+            forHTTPHeaderField: "Authorization"
+        )
+        
         request.httpBody = try JSONEncoder().encode(body)
 
         let (data, response) = try await URLSession.shared.data(

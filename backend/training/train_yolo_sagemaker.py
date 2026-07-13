@@ -1,117 +1,146 @@
-import json
 import os
+import sys
+import json
+import yaml
 import shutil
-import boto3
+import glob
 from ultralytics import YOLO
 
 SM_CHANNEL_TRAINING = os.environ.get("SM_CHANNEL_TRAINING", "/opt/ml/input/data/training")
 SM_MODEL_DIR = os.environ.get("SM_MODEL_DIR", "/opt/ml/model")
-SM_OUTPUT_DATA_DIR = os.environ.get("SM_OUTPUT_DATA_DIR", "/opt/ml/output/data")
-SM_HP_FILE = "/opt/ml/input/config/hyperparameters.json"
 
-DEFAULTS = {
-    "model_name": "yolo11n.pt",
-    "epochs": "50",
-    "imgsz": "640",
-    "batch": "16",
-    "device": "0",
-    "patience": "20",
-    "run_name": "training_run"
-}
+def load_and_validate_landmark_manifest(manifest_path):
+    with open(manifest_path, 'r') as f:
+        manifest = json.load(f)
 
-def load_hyperparameters():
-    hps = dict(DEFAULTS)
-    if os.path.exists(SM_HP_FILE):
-        with open(SM_HP_FILE, "r") as f:
-            loaded = json.load(f)
-        hps.update(loaded)
-    return hps
+    if manifest.get('schemaVersion') != 2:
+        raise ValueError(
+            f"Unsupported schemaVersion: {manifest.get('schemaVersion')}. "
+            "Only schemaVersion=2 is supported by this training script."
+        )
 
-def find_best_weights(project_dir: str, run_name: str) -> str | None:
-    candidate = os.path.join(project_dir, run_name, "weights", "best.pt")
-    return candidate if os.path.exists(candidate) else None
+    landmarks = manifest.get('landmarks', {})
+    if not landmarks:
+        raise ValueError("The 'landmarks' dictionary is empty.")
 
-def copy_artifacts_to_model_dir(best_weights: str | None, data_yaml: str):
-    os.makedirs(SM_MODEL_DIR, exist_ok=True)
-    if best_weights and os.path.exists(best_weights):
-        dst = os.path.join(SM_MODEL_DIR, "best.pt")
-        shutil.copy2(best_weights, dst)
-        print(f"Copied best weights to {dst}")
-    else:
-        print("WARNING: best.pt not found; no model weights copied to /opt/ml/model")
+    print(f"Validated landmark manifest: clusterId={manifest.get('clusterId')}, "
+          f"trainingRunId={manifest.get('trainingRunId')}, "
+          f"classCount={manifest.get('classCount')}")
+
+
+def find_best_weights(run_dir, run_name):
+    # YOLO typically saves to `runs/detect/run_name/weights/best.pt`
+    target = os.path.join(run_dir, run_name, "weights", "best.pt")
+    if os.path.exists(target):
+        return target
     
-    if os.path.exists(data_yaml):
-        dst_yaml = os.path.join(SM_MODEL_DIR, "data.yaml")
-        shutil.copy2(data_yaml, dst_yaml)
-        print(f"Copied data.yaml to {dst_yaml}")
+    # Fallback to search if the directory structure is unexpected
+    for root, _, files in os.walk(run_dir):
+        if "best.pt" in files:
+            return os.path.join(root, "best.pt")
+    
+    return None
+
+def copy_artifacts_to_model_dir(best_weights_path, manifest_path):
+    if not best_weights_path or not os.path.exists(best_weights_path):
+        raise FileNotFoundError(f"Best weights not found at {best_weights_path}")
+        
+    os.makedirs(SM_MODEL_DIR, exist_ok=True)
+    
+    # Copy weights
+    dest_weights = os.path.join(SM_MODEL_DIR, "model.pt")
+    shutil.copy(best_weights_path, dest_weights)
+    print(f"Copied weights to {dest_weights}")
+
+    # Copy manifest
+    if os.path.exists(manifest_path):
+        dest_manifest = os.path.join(SM_MODEL_DIR, "landmark-manifest.json")
+        shutil.copy(manifest_path, dest_manifest)
+        print(f"Copied manifest to {dest_manifest}")
+    else:
+        print(f"WARNING: Manifest not found at {manifest_path}, skipping copy.")
+
 
 def main():
-    hps = load_hyperparameters()
-    model_name = hps["model_name"]
-    epochs = int(hps["epochs"])
-    imgsz = int(hps["imgsz"])
-    batch = int(hps["batch"])
-    device = hps["device"]
-    patience = int(hps["patience"])
-    run_name = hps["run_name"]
-
+    print("🚀 Starting YOLO SageMaker Training...")
     data_yaml = os.path.join(SM_CHANNEL_TRAINING, "data.yaml")
-    yolo_project_dir = os.path.join(SM_OUTPUT_DATA_DIR, "runs")
-
-    print(f"SM_CHANNEL_TRAINING={SM_CHANNEL_TRAINING}")
-    print(f"SM_MODEL_DIR={SM_MODEL_DIR}")
-    print(f"SM_OUTPUT_DATA_DIR={SM_OUTPUT_DATA_DIR}")
-    print(f"SM_HP_FILE={SM_HP_FILE}")
-    print(f"data_yaml={data_yaml}")
-    print(f"model_name={model_name}")
-    print(f"epochs={epochs}")
-    print(f"imgsz={imgsz}")
-    print(f"batch={batch}")
-    print(f"device={device}")
-    print(f"patience={patience}")
-    print(f"run_name={run_name}")
-
-    if not os.path.exists(SM_CHANNEL_TRAINING):
-        raise FileNotFoundError(f"Training channel path does not exist: {SM_CHANNEL_TRAINING}")
-
+    landmark_manifest = os.path.join(SM_CHANNEL_TRAINING, "landmark-manifest.json")
+    
     if not os.path.exists(data_yaml):
-        raise FileNotFoundError(f"data.yaml not found at: {data_yaml}")
+        raise FileNotFoundError(f"Missing data.yaml at {data_yaml}")
 
-    model = YOLO(model_name)
+    # Ensure schemaVersion=2 manifest is valid
+    if os.path.exists(landmark_manifest):
+        load_and_validate_landmark_manifest(landmark_manifest)
+    else:
+        print("WARNING: landmark-manifest.json is missing!")
 
-    model.train(
-        data=data_yaml,
-        epochs=epochs,
-        patience=patience,
-        imgsz=imgsz,
-        batch=batch,
-        device=device,
-        project=yolo_project_dir,
-        name=run_name
-    )
+    train_dir = os.path.join(SM_CHANNEL_TRAINING, "images", "train")
+    val_dir = os.path.join(SM_CHANNEL_TRAINING, "images", "val")
+    
+    # --- FAILSAFE 1: Empty Cluster Check ---
+    if not os.path.exists(train_dir) and not os.path.exists(val_dir):
+        raise RuntimeError("CRITICAL: Both 'train' and 'val' dirs missing. No images packaged!")
+
+    # --- FAILSAFE 2: Train missing (Caused by Boosting hashing all copies to val) ---
+    if not os.path.exists(train_dir):
+        print("⚠️ WARNING: 'train' directory missing! Modifying data.yaml to use 'val' for training.")
+        try:
+            with open(data_yaml, 'r') as f:
+                yaml_content = yaml.safe_load(f)
+            yaml_content['train'] = yaml_content['val']
+            with open(data_yaml, 'w') as f:
+                yaml.dump(yaml_content, f)
+            print("Successfully updated data.yaml fallback for missing train dir.")
+        except Exception as e:
+            print(f"Failed to modify data.yaml: {e}")
+
+    # --- FAILSAFE 3: Val missing (Caused by Boosting hashing all copies to train) ---
+    if not os.path.exists(val_dir):
+        print("⚠️ WARNING: 'val' directory missing! Modifying data.yaml to use 'train' for validation.")
+        try:
+            with open(data_yaml, 'r') as f:
+                yaml_content = yaml.safe_load(f)
+            yaml_content['val'] = yaml_content['train']
+            with open(data_yaml, 'w') as f:
+                yaml.dump(yaml_content, f)
+            print("Successfully updated data.yaml fallback for missing val dir.")
+        except Exception as e:
+            print(f"Failed to modify data.yaml: {e}")
+
+    # Load YOLO
+    model = YOLO("yolo11n.pt")
+    custom_cfg = "/app/looksee_best_hyperparameters.yaml"
+    
+    yolo_project_dir = "/opt/ml/output/data/runs"
+    run_name = "training_run"
+
+    # Set up our base training arguments
+    train_args = {
+        "data": data_yaml,
+        "epochs": 50,
+        "patience": 20,
+        "imgsz": 640,
+        "batch": 16,
+        "device": 0,
+        "project": yolo_project_dir,
+        "name": run_name
+    }
+
+    # If the file exists, inject the golden recipe!
+    if os.path.exists(custom_cfg):
+        print(f"🎯 Found tuned hyperparameters! Injecting {custom_cfg} into training...")
+        train_args["cfg"] = custom_cfg
+    else:
+        print("⚠️ No custom hyperparameters found. Falling back to standard YOLO defaults.")
+
+    # Notice the val flag is completely removed so YOLO relies on our edited data.yaml
+    model.train(**train_args)
 
     best_weights = find_best_weights(yolo_project_dir, run_name)
     print(f"best_weights={best_weights}")
 
-    copy_artifacts_to_model_dir(best_weights, data_yaml)
-
-    if best_weights and os.path.exists(best_weights):
-        s3 = boto3.client('s3')
-        bucket = "looksee-models"
-        
-        # 1. Try to get the cluster ID from the environment variable
-        cluster_id = os.environ.get("SM_TRAINING_ENV_CLUSTER_ID")
-        
-        # 2. If it's missing, try to get it from hyperparameters (run_name)
-        if not cluster_id:
-            cluster_id = hps.get("cluster_id", hps.get("run_name", "0"))
-            
-        s3_destination = f"sagemaker-training-output/{cluster_id}.pt"
-        
-        s3.upload_file(best_weights, bucket, s3_destination)
-        print(f"Uploaded raw best.pt directly to s3://{bucket}/{s3_destination}")
-
-    print("Training job complete.")
+    copy_artifacts_to_model_dir(best_weights, landmark_manifest)
 
 if __name__ == "__main__":
     main()

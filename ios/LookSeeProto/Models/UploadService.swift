@@ -8,6 +8,11 @@
 //  - Propagate upload errors
 //  - Prevent duplicate uploads
 //  - Provide user-friendly progress messages
+//  - Support multiple recorded clips per landmark: clips are merged into a
+//    single video (via VideoMerger) before upload, so the backend still only
+//    ever receives one file per submission.
+//  - Cognito authorization restored on init/complete requests (was missing,
+//    causing 401s).
 //
 
 import Foundation
@@ -80,6 +85,8 @@ final class UploadService: ObservableObject {
     private let apiTimeout: TimeInterval = 60
     private let mediaUploadTimeout: TimeInterval = 300
 
+    private let minimumCombinedVideoDuration: Double = 15
+
     // MARK: Errors
 
     enum UploadError: LocalizedError {
@@ -113,10 +120,10 @@ final class UploadService: ObservableObject {
                 return "We could not access your secure login token. Please sign out, sign back in, and try again."
 
             case .noMediaSelected:
-                return "Please record one video or take one landmark photo."
+                return "Please record one or more videos (totaling at least 15 seconds) or take one landmark photo."
 
             case .multipleMediaSelected:
-                return "Please select either one video or one photo, not both."
+                return "Please select either video(s) or a photo, not both."
 
             case .invalidURL:
                 return "The server returned an invalid upload link. Please try again."
@@ -159,8 +166,14 @@ final class UploadService: ObservableObject {
 
     // MARK: - Main upload flow
 
+    /// Uploads either one photo, or one-or-more recorded video clips, for a
+    /// single landmark. When multiple clips are provided, they are first
+    /// concatenated into a single video file (see VideoMerger) and validated
+    /// to meet the combined 15s minimum, then uploaded as exactly one
+    /// submission — matching the backend's one-file-per-submission contract.
     func upload(
         userEmail: String,
+        idToken: String,
         label: String,
         landmarkId: String? = nil,
         landmarkLabel: String? = nil,
@@ -169,7 +182,7 @@ final class UploadService: ObservableObject {
         latitude: Double?,
         longitude: Double?,
         horizontalAccuracy: Double?,
-        videoURL: URL?,
+        videoURLs: [URL],
         image: UIImage?
     ) async throws -> PositiveSubmissionResult {
 
@@ -207,7 +220,7 @@ final class UploadService: ObservableObject {
                 throw UploadError.missingUserEmail
             }
 
-            let hasVideo = videoURL != nil
+            let hasVideo = !videoURLs.isEmpty
             let hasImage = image != nil
 
             guard hasVideo || hasImage else {
@@ -219,82 +232,10 @@ final class UploadService: ObservableObject {
             }
 
             let trimmedShortDescription = shortDescription?
-                .trimmingCharacters(
-                    in: .whitespacesAndNewlines
-                )
+                .trimmingCharacters(in: .whitespacesAndNewlines)
 
             let trimmedUserDescription = userDescription?
-                .trimmingCharacters(
-                    in: .whitespacesAndNewlines
-                )
-
-            let mediaKind: MediaKind
-            let filename: String
-            let contentType: String
-
-            if videoURL != nil {
-                mediaKind = .video
-                filename = "video.mov"
-                contentType = "video/quicktime"
-            } else {
-                mediaKind = .photo
-                filename = "photo.jpg"
-                contentType = "image/jpeg"
-            }
-
-            let initRequest = InitSubmissionRequest(
-                userEmail: trimmedUserEmail,
-                label: trimmedLabel,
-                mediaKind: mediaKind,
-                filename: filename,
-                contentType: contentType
-            )
-
-            updateStage(
-                .preparingUpload,
-                progress: 0.12,
-                status: "Preparing a secure upload",
-                detail: "This should only take a moment."
-            )
-
-            let initResponse = try await initSubmission(
-                initRequest
-            )
-
-            print(
-                "✅ Positive init completed:",
-                initResponse.submissionId
-            )
-
-            if mediaKind == .video {
-                updateStage(
-                    .uploadingMedia,
-                    progress: 0.20,
-                    status: "Uploading your landmark video",
-                    detail: "Videos can take a little longer. Keep LookSee open until the upload finishes."
-                )
-            } else {
-                updateStage(
-                    .uploadingMedia,
-                    progress: 0.20,
-                    status: "Uploading your landmark photo",
-                    detail: "Keep LookSee open while your photo is uploaded."
-                )
-            }
-
-            try await putToS3(
-                presignedURL: initResponse.uploadUrl,
-                contentType: contentType,
-                videoURL: videoURL,
-                image: image
-            )
-
-            updateStage(
-                .finalizing,
-                progress: 0.88,
-                status: "Saving your landmark",
-                detail: "Your media is uploaded. We’re attaching its information and location."
-            )
+                .trimmingCharacters(in: .whitespacesAndNewlines)
 
             let normalizedShortDescription: String?
 
@@ -314,6 +255,161 @@ final class UploadService: ObservableObject {
                 normalizedUserDescription = nil
             }
 
+            // MARK: Photo path — single file, unchanged behavior.
+            if let image {
+                let mediaKind = MediaKind.photo
+                let filename = "photo.jpg"
+                let contentType = "image/jpeg"
+
+                let initRequest = InitSubmissionRequest(
+                    userEmail: trimmedUserEmail,
+                    label: trimmedLabel,
+                    mediaKind: mediaKind,
+                    filename: filename,
+                    contentType: contentType
+                )
+
+                updateStage(
+                    .preparingUpload,
+                    progress: 0.12,
+                    status: "Preparing a secure upload",
+                    detail: "This should only take a moment."
+                )
+
+                let initResponse = try await initSubmission(
+                    initRequest,
+                    token: idToken // <--- ADDED TOKEN HERE
+                )
+
+                print("✅ Positive init completed:", initResponse.submissionId)
+
+                updateStage(
+                    .uploadingMedia,
+                    progress: 0.20,
+                    status: "Uploading your landmark photo",
+                    detail: "Keep LookSee open while your photo is uploaded."
+                )
+
+                try await putToS3(
+                    presignedURL: initResponse.uploadUrl,
+                    contentType: contentType,
+                    videoURL: nil,
+                    image: image
+                )
+
+                updateStage(
+                    .finalizing,
+                    progress: 0.88,
+                    status: "Saving your landmark",
+                    detail: "Your media is uploaded. We’re attaching its information and location."
+                )
+
+                let completeRequest = CompleteSubmissionRequest(
+                    submissionId: initResponse.submissionId,
+                    s3Key: initResponse.s3Key,
+                    userEmail: trimmedUserEmail,
+                    label: trimmedLabel,
+                    landmarkId: landmarkId,
+                    landmarkLabel: landmarkLabel,
+                    mediaKind: mediaKind,
+                    shortDescription: normalizedShortDescription,
+                    userDescription: normalizedUserDescription,
+                    latitude: latitude,
+                    longitude: longitude,
+                    horizontalAccuracy: horizontalAccuracy
+                )
+
+                try await completeSubmission(
+                    completeRequest,
+                    token: idToken // <--- ADDED TOKEN HERE
+                )
+
+                updateStage(
+                    .complete,
+                    progress: 1,
+                    status: "Landmark media uploaded",
+                    detail: "Your positive landmark media was saved successfully."
+                )
+
+                print("✅ Positive upload completed:", initResponse.submissionId)
+
+                return PositiveSubmissionResult(
+                    submissionId: initResponse.submissionId,
+                    landmarkId: landmarkId,
+                    mediaKind: mediaKind,
+                    s3Key: initResponse.s3Key
+                )
+            }
+
+            // MARK: Video path — merge all clips into one file first, then
+            // upload exactly one submission.
+            updateStage(
+                .preparingUpload,
+                progress: 0.08,
+                status: "Combining your clips",
+                detail: "Stitching \(videoURLs.count) clip\(videoURLs.count == 1 ? "" : "s") into one video."
+            )
+
+            let mergedURL = try await VideoMerger.mergeAndValidate(
+                clipURLs: videoURLs,
+                minimumDuration: minimumCombinedVideoDuration
+            )
+
+            defer {
+                // Clean up the merged temp file, unless it's actually one of
+                // the original clip URLs (VideoMerger's single-clip passthrough).
+                if !videoURLs.contains(mergedURL) {
+                    try? FileManager.default.removeItem(at: mergedURL)
+                }
+            }
+
+            let mediaKind = MediaKind.video
+            let filename = "video.mov"
+            let contentType = "video/quicktime"
+
+            let initRequest = InitSubmissionRequest(
+                userEmail: trimmedUserEmail,
+                label: trimmedLabel,
+                mediaKind: mediaKind,
+                filename: filename,
+                contentType: contentType
+            )
+
+            updateStage(
+                .preparingUpload,
+                progress: 0.15,
+                status: "Preparing a secure upload",
+                detail: "This should only take a moment."
+            )
+
+            let initResponse = try await initSubmission(
+                initRequest,
+                token: idToken
+            )
+
+            print("✅ Positive init completed:", initResponse.submissionId)
+
+            updateStage(
+                .uploadingMedia,
+                progress: 0.20,
+                status: "Uploading your landmark video",
+                detail: "Videos can take a little longer. Keep LookSee open until the upload finishes."
+            )
+
+            try await putToS3(
+                presignedURL: initResponse.uploadUrl,
+                contentType: contentType,
+                videoURL: mergedURL,
+                image: nil
+            )
+
+            updateStage(
+                .finalizing,
+                progress: 0.88,
+                status: "Saving your landmark",
+                detail: "Your media is uploaded. We’re attaching its information and location."
+            )
+
             let completeRequest = CompleteSubmissionRequest(
                 submissionId: initResponse.submissionId,
                 s3Key: initResponse.s3Key,
@@ -330,20 +426,18 @@ final class UploadService: ObservableObject {
             )
 
             try await completeSubmission(
-                completeRequest
+                completeRequest,
+                token: idToken
             )
 
             updateStage(
                 .complete,
                 progress: 1,
                 status: "Landmark media uploaded",
-                detail: "Your positive landmark media was saved successfully."
+                detail: "Your combined video was saved successfully."
             )
 
-            print(
-                "✅ Positive upload completed:",
-                initResponse.submissionId
-            )
+            print("✅ Positive upload completed:", initResponse.submissionId)
 
             return PositiveSubmissionResult(
                 submissionId: initResponse.submissionId,
@@ -399,6 +493,10 @@ final class UploadService: ObservableObject {
     private func userFriendlyMessage(
         for error: Error
     ) -> String {
+        if let mergeError = error as? VideoMergeError {
+            return mergeError.localizedDescription
+        }
+
         if let uploadError = error as? UploadError {
             return uploadError.localizedDescription
         }
@@ -461,7 +559,8 @@ final class UploadService: ObservableObject {
     // MARK: - Initialize submission
 
     private func initSubmission(
-        _ requestBody: InitSubmissionRequest
+        _ requestBody: InitSubmissionRequest,
+        token: String
     ) async throws -> InitSubmissionResponse {
         let url = baseURL
             .appendingPathComponent("submissions")
@@ -483,6 +582,13 @@ final class UploadService: ObservableObject {
             to: &request
         )
 
+        
+        // Attach the Cognito ID Token so API Gateway lets us in!
+        request.setValue(
+            token,
+            forHTTPHeaderField: "Authorization"
+        )
+        
         request.httpBody = try JSONEncoder().encode(
             requestBody
         )
@@ -591,7 +697,8 @@ final class UploadService: ObservableObject {
     // MARK: - Complete submission
 
     private func completeSubmission(
-        _ requestBody: CompleteSubmissionRequest
+        _ requestBody: CompleteSubmissionRequest,
+        token: String
     ) async throws {
         let url = baseURL
             .appendingPathComponent("submissions")
@@ -613,6 +720,13 @@ final class UploadService: ObservableObject {
             to: &request
         )
 
+        
+        // Attach the Cognito ID Token here as well
+        request.setValue(
+            token,
+            forHTTPHeaderField: "Authorization"
+        )
+        
         request.httpBody = try JSONEncoder().encode(
             requestBody
         )

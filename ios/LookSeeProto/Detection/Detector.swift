@@ -2,8 +2,11 @@
 //  Detector.swift
 //  LookSeeProto
 //
-//  OTA-Enabled: Actively listens to ModelSelector to hot-swap CoreML models.
+//  OTA-Enabled: Actively listens to ModelSelector to hot-swap CoreML models
+//  and landmark manifests, driven by ModelSelector.activeRelease.
 //  Metal-Bypass: Restricts compute units to CPU & Neural Engine to prevent Signal 9 crashes.
+//  Self-contained location: runs its own CLLocationManager for proximity filtering,
+//  independent of the app's main LocationManager.
 //
 
 import Foundation
@@ -48,26 +51,6 @@ struct Detection: Identifiable {
     }
 }
 
-struct ObjectInfo: Codable {
-    let classIndex: Int
-    let landmarkId: String
-    let label: String
-    let shortDescription: String
-    let latitude: Double
-    let longitude: Double
-}
-
-struct ModelManifest: Codable {
-    let schemaVersion: Int
-    let clusterId: Int
-    let classCount: Int
-    let landmarks: [String: ObjectInfo]
-
-    func landmark(for classIndex: Int) -> ObjectInfo? {
-        landmarks.values.first { $0.classIndex == classIndex }
-    }
-}
-
 // MARK: - Bounding Box Smoother
 
 class BoundingBoxSmoother {
@@ -104,8 +87,12 @@ final class Detector: NSObject, ObservableObject {
 
     // MARK: Configuration
     var dynamicSafeZone: CGRect = .zero
-    var manifest: ModelManifest?
+    var manifest: ClusterLandmarkManifest?
     var proximityThresholdMeters: Double = 150
+
+    // Written from the location delegate (main thread), read from `queue`
+    // inside process(pixelBuffer:) / proximityFilter. Always mutate this
+    // via `queue.async` to avoid a cross-thread race.
     var userLocation: CLLocation?
 
     // MARK: Private internals
@@ -132,30 +119,35 @@ final class Detector: NSObject, ObservableObject {
 
     private var smoothers: [String: BoundingBoxSmoother] = [:]
 
+    // MARK: Self-contained location tracking
+    private let locationManager = CLLocationManager()
+
     // MARK: Init
     override init() {
         super.init()
         observeActiveCluster()
+        startLocationUpdatesIfNeeded()
+        //loadLocalModel(named: "FinalDetector")
     }
-    
-    // MARK: - Observe Active Cluster (OTA Updater)
+
+    // MARK: - Observe Active Release (OTA Updater)
+    //
+    // Driven by ModelSelector.activeRelease, which only publishes once a
+    // release's compiled model AND manifest files are confirmed to exist
+    // on disk (see ModelSelector.isCompleteRelease / makeActiveRelease).
     private func observeActiveCluster() {
         Task { @MainActor in
-            for await clusterID in ModelSelector.shared.$activeClusterID.values {
-                guard let clusterID else { continue }
+            for await release in ModelSelector.shared.$activeRelease.values {
+                guard let release else { continue }
 
-                if case .loaded(let models) = ModelService.shared.state,
-                   let match = models.first(where: { $0.clusterID == clusterID }),
-                   let compiledURL = match.compiledModelURL {
-                    
-                    self.activeClusterID = match.clusterID
-                    self.activeModelVersion = match.modelVersion
-                    self.activeModelIdentifier = match.modelKey ?? "ota-model"
-                    self.activeExpectedClassCount = match.classCount ?? 0
-                    self.activeReleaseIdentifier = "\(match.clusterID)|\(match.modelVersion)"
-                    
-                    loadModel(from: compiledURL, clusterID: clusterID)
-                }
+                self.activeClusterID = release.clusterID
+                self.activeModelVersion = release.modelVersion
+                self.activeModelIdentifier = release.modelKey ?? "ota-model"
+                self.activeExpectedClassCount = release.classCount
+                self.activeReleaseIdentifier = release.releaseIdentifier
+
+                loadModel(from: release.compiledModelURL, clusterID: release.clusterID)
+                loadManifest(from: release.manifestFileURL)
             }
         }
     }
@@ -166,7 +158,7 @@ final class Detector: NSObject, ObservableObject {
                 // Bypass the Apple Metal GPU bug by forcing CPU and Neural Engine
                 let config = MLModelConfiguration()
                 config.computeUnits = .cpuAndNeuralEngine
-                
+
                 let loaded = try MLModel(contentsOf: url, configuration: config)
                 DispatchQueue.main.async {
                     self.model = loaded
@@ -175,6 +167,53 @@ final class Detector: NSObject, ObservableObject {
             } catch {
                 print("❌ OTA Model load error for cluster \(clusterID): \(error)")
             }
+        }
+    }
+
+    // MARK: - Manifest Loading
+    private func loadManifest(from url: URL) {
+        do {
+            let data = try Data(contentsOf: url)
+
+            let decodedManifest = try JSONDecoder().decode(
+                ClusterLandmarkManifest.self,
+                from: data
+            )
+
+            try decodedManifest.validate()
+
+            DispatchQueue.main.async {
+                self.manifest = decodedManifest
+                print("✅ Loaded manifest:")
+                print("   \(url.lastPathComponent)")
+                print("   \(decodedManifest.landmarks.count) landmarks")
+            }
+
+        } catch {
+            print("❌ Failed to load manifest:")
+            print(error)
+
+            DispatchQueue.main.async {
+                self.manifest = nil
+            }
+        }
+    }
+
+    // MARK: - Location Setup
+    private func startLocationUpdatesIfNeeded() {
+        locationManager.delegate = self
+        locationManager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters
+        locationManager.distanceFilter = 15 // meters
+
+        switch locationManager.authorizationStatus {
+        case .notDetermined:
+            locationManager.requestWhenInUseAuthorization()
+        case .authorizedAlways, .authorizedWhenInUse:
+            locationManager.startUpdatingLocation()
+        case .denied, .restricted:
+            break
+        @unknown default:
+            break
         }
     }
 
@@ -394,7 +433,7 @@ final class Detector: NSObject, ObservableObject {
         for det in nearbyDetections {
             if smoothers[det.label] == nil { smoothers[det.label] = BoundingBoxSmoother() }
             let smoothedBox = smoothers[det.label]!.smooth(newBox: det.bbox)
-            
+
             finalResults.append(
                 Detection(
                     clusterID: det.clusterID,
@@ -433,23 +472,43 @@ final class Detector: NSObject, ObservableObject {
     }
 
     // MARK: - Proximity Filter
+    //
+    // Filters detections down to only landmarks within proximityThresholdMeters
+    // of the user's current live location. Distance is always recomputed here
+    // against `userLocation` — never against any distance value baked into the
+    // manifest JSON, since that value is stale (computed at manifest-generation
+    // time, not relative to where the user actually is right now).
+    //
+    // Note: ModelSelector separately gates which *model release* gets loaded
+    // using its own activationRadiusMeters (75m) based on proximity to any
+    // object in that cluster. This filter is a second, independent gate on
+    // top of that — it governs which *individual detected landmarks* are
+    // shown once a model is already active, using proximityThresholdMeters
+    // (150m).
     private func proximityFilter(_ detections: [Detection]) -> [Detection] {
         guard let manifest = manifest, let userLocation = userLocation else {
+            // Manifest or live location not yet available — pass everything
+            // through unfiltered rather than suppressing all detections.
             return detections
         }
 
         return detections.filter { detection in
             guard let object = manifest.landmark(for: detection.classIndex) else {
+                // No manifest entry for this class — don't suppress, just
+                // let it through unfiltered (classIndex may be a class the
+                // manifest doesn't describe).
                 return true
             }
 
             let objectLocation = CLLocation(latitude: object.latitude, longitude: object.longitude)
             let distanceMeters = userLocation.distance(from: objectLocation)
+            let isNearby = distanceMeters <= proximityThresholdMeters
 
-            if distanceMeters > proximityThresholdMeters {
+            if !isNearby {
                 print("📍 Suppressed '\(detection.displayLabel)' — \(Int(distanceMeters))m away")
             }
-            return distanceMeters <= proximityThresholdMeters
+
+            return isNearby
         }
     }
 
@@ -486,5 +545,34 @@ extension Detector: AVCaptureVideoDataOutputSampleBufferDelegate {
         if let pb = CMSampleBufferGetImageBuffer(sampleBuffer) {
             process(pixelBuffer: pb)
         }
+    }
+}
+
+// MARK: - CLLocationManagerDelegate
+extension Detector: CLLocationManagerDelegate {
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        switch manager.authorizationStatus {
+        case .authorizedAlways, .authorizedWhenInUse:
+            manager.startUpdatingLocation()
+        default:
+            break
+        }
+    }
+
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        guard let last = locations.last,
+              last.horizontalAccuracy > 0,
+              last.horizontalAccuracy <= 100
+        else { return }
+
+        // Written here (main thread via CoreLocation), read from `queue`
+        // in proximityFilter — hop onto `queue` to avoid a data race.
+        queue.async {
+            self.userLocation = last
+        }
+    }
+
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        print("❌ Detector location error:", error.localizedDescription)
     }
 }

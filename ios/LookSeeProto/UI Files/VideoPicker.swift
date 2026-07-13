@@ -2,6 +2,10 @@
 //  VideoPicker.swift
 //  LookSeeProto
 //
+//  Per-clip minimum duration was removed — clips are now combined and
+//  validated as a group in LandmarkRecord (sum of all clips must be >= 15s).
+//  A per-clip maximum is kept so no single clip is unreasonably long.
+//
 
 import SwiftUI
 import UIKit
@@ -14,7 +18,6 @@ struct VideoPicker: UIViewControllerRepresentable {
     var onPicked: (URL, CLLocationCoordinate2D?) -> Void
     var onInvalidDuration: (String) -> Void
 
-    private let minDuration: Double = 15
     private let maxDuration: Double = 60
 
     func makeUIViewController(context: Context) -> UIImagePickerController {
@@ -38,7 +41,6 @@ struct VideoPicker: UIViewControllerRepresentable {
 
     func makeCoordinator() -> Coordinator {
         Coordinator(
-            minDuration: minDuration,
             maxDuration: maxDuration,
             onPicked: onPicked,
             onInvalidDuration: onInvalidDuration
@@ -46,18 +48,15 @@ struct VideoPicker: UIViewControllerRepresentable {
     }
 
     final class Coordinator: NSObject, UINavigationControllerDelegate, UIImagePickerControllerDelegate {
-        let minDuration: Double
         let maxDuration: Double
         let onPicked: (URL, CLLocationCoordinate2D?) -> Void
         let onInvalidDuration: (String) -> Void
 
         init(
-            minDuration: Double,
             maxDuration: Double,
             onPicked: @escaping (URL, CLLocationCoordinate2D?) -> Void,
             onInvalidDuration: @escaping (String) -> Void
         ) {
-            self.minDuration = minDuration
             self.maxDuration = maxDuration
             self.onPicked = onPicked
             self.onInvalidDuration = onInvalidDuration
@@ -83,13 +82,10 @@ struct VideoPicker: UIViewControllerRepresentable {
                 return
             }
 
-            if durationSeconds < minDuration {
-                onInvalidDuration("Video must be at least 15 seconds long.")
-                return
-            }
-
+            // No per-clip minimum anymore — clips are combined and the
+            // combined total is validated against the 15s minimum elsewhere.
             if durationSeconds > maxDuration {
-                onInvalidDuration("Video must be 60 seconds or less.")
+                onInvalidDuration("Each clip must be 60 seconds or less.")
                 return
             }
 

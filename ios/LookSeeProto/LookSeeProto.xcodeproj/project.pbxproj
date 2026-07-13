@@ -7,9 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		374D81C92FF3051F0009620F /* MockManifest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 374D81C82FF305170009620F /* MockManifest.swift */; };
-		374D81CA2FF3051F0009620F /* MockManifest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 374D81C82FF305170009620F /* MockManifest.swift */; };
-		374D81CB2FF3051F0009620F /* MockManifest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 374D81C82FF305170009620F /* MockManifest.swift */; };
+		374D85FA2FF7D1150009620F /* Nisarg_cluster_3.gpx in Resources */ = {isa = PBXBuildFile; fileRef = 374D85F92FF7D10D0009620F /* Nisarg_cluster_3.gpx */; };
+		374FCAFB2FFE98CB0035A674 /* VideoMerge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 374FCAFA2FFE98CB0035A674 /* VideoMerge.swift */; };
 		3C19EB412F981FA400D1AA43 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = 3C19EB402F981FA400D1AA43 /* ZIPFoundation */; };
 		3C19EB492F9943F400D1AA43 /* FinalDetector.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3C19EB482F9943F400D1AA43 /* FinalDetector.mlpackage */; };
 		3C1FC9CC2F42C9E70006C1D3 /* PhotoPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C1FC9CB2F42C9DA0006C1D3 /* PhotoPicker.swift */; };
@@ -83,7 +82,8 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		374D81C82FF305170009620F /* MockManifest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockManifest.swift; sourceTree = "<group>"; };
+		374D85F92FF7D10D0009620F /* Nisarg_cluster_3.gpx */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = Nisarg_cluster_3.gpx; sourceTree = "<group>"; };
+		374FCAFA2FFE98CB0035A674 /* VideoMerge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoMerge.swift; sourceTree = "<group>"; };
 		3C19EB482F9943F400D1AA43 /* FinalDetector.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = FinalDetector.mlpackage; sourceTree = "<group>"; };
 		3C1FC9CB2F42C9DA0006C1D3 /* PhotoPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoPicker.swift; sourceTree = "<group>"; };
 		3C3D161D2FFCA97200C8A544 /* BusinessLandmarksView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BusinessLandmarksView.swift; sourceTree = "<group>"; };
@@ -193,7 +193,6 @@
 		3C90209B2F3ABC8B00EE30BF /* Detection */ = {
 			isa = PBXGroup;
 			children = (
-				374D81C82FF305170009620F /* MockManifest.swift */,
 				3C90209D2F3ABCD300EE30BF /* CameraPreview.swift */,
 				3C9020A12F3ABCE200EE30BF /* Detector.swift */,
 				3C9020A52F3ABCE900EE30BF /* LocationManager.swift */,
@@ -217,6 +216,7 @@
 			isa = PBXGroup;
 			children = (
 				D0E788922FF5073000E5FE00 /* GymLocation.gpx */,
+				374D85F92FF7D10D0009620F /* Nisarg_cluster_3.gpx */,
 				3C9020BF2F3AC88600EE30BF /* MachineLearningModels */,
 				3C90209B2F3ABC8B00EE30BF /* Detection */,
 				565542BF2EBD8384007DBA98 /* Models */,
@@ -247,6 +247,7 @@
 			children = (
 				3C3D161F2FFCA9B700C8A544 /* BusinessLandmarkDetailView.swift */,
 				3C3D161D2FFCA97200C8A544 /* BusinessLandmarksView.swift */,
+				374FCAFA2FFE98CB0035A674 /* VideoMerge.swift */,
 				D0E7888C2FF2E3C000E5FE00 /* NegativeVideoCameraView.swift */,
 				D0B0B1312FE59EF800C75E25 /* QuickUploadView.swift */,
 				D0B0B12F2FE51DB500C75E25 /* LandmarkMapView.swift */,
@@ -436,6 +437,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				D0E788932FF5073000E5FE00 /* GymLocation.gpx in Resources */,
+				374D85FA2FF7D1150009620F /* Nisarg_cluster_3.gpx in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -474,11 +476,11 @@
 				568CE2D12F56554E009A8775 /* PromotionEditor.swift in Sources */,
 				3C9020A02F3ABCD300EE30BF /* CameraPreview.swift in Sources */,
 				56BDFD612EC63B52006D1B84 /* PayInfo.swift in Sources */,
-				374D81CA2FF3051F0009620F /* MockManifest.swift in Sources */,
 				D0E7888D2FF2E3C800E5FE00 /* NegativeVideoCameraView.swift in Sources */,
 				3C19EB492F9943F400D1AA43 /* FinalDetector.mlpackage in Sources */,
 				B0DC9CA92F4F84B2004A9452 /* AuthViewModel.swift in Sources */,
 				B00F16732F9328370057430F /* ModelLoadingScreen.swift in Sources */,
+				374FCAFB2FFE98CB0035A674 /* VideoMerge.swift in Sources */,
 				561FF74B2EB258D400411CF8 /* Library.swift in Sources */,
 				3CF188C32FE19B6D00FED231 /* MultiPhotoCameraView.swift in Sources */,
 				3C72AA372F5141A000A90328 /* best.mlpackage in Sources */,
@@ -513,7 +515,6 @@
 			files = (
 				3C9020A62F3ABCE900EE30BF /* LocationManager.swift in Sources */,
 				3C90209F2F3ABCD300EE30BF /* CameraPreview.swift in Sources */,
-				374D81C92FF3051F0009620F /* MockManifest.swift in Sources */,
 				3C9020A22F3ABCE200EE30BF /* Detector.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -525,7 +526,6 @@
 				3C90209E2F3ABCD300EE30BF /* CameraPreview.swift in Sources */,
 				3C9020A72F3ABCE900EE30BF /* LocationManager.swift in Sources */,
 				3C9020A42F3ABCE200EE30BF /* Detector.swift in Sources */,
-				374D81CB2FF3051F0009620F /* MockManifest.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
