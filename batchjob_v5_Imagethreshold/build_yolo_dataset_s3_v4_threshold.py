@@ -35,9 +35,17 @@ CLEAR_DEST = os.environ.get("CLEAR_DEST", "true").lower() == "true"
 # Global negatives
 # ---------------------------------------------------------------------------
 
+# Kept for backward compatibility with the old batch job.
+# Old behavior:
+#   NEG_PREFIX=dataset/negatives/
+#   images are read from dataset/negatives/images/
 INCLUDE_NEGATIVES = os.environ.get("INCLUDE_NEGATIVES", "true").lower() == "true"
 NEG_PREFIX = os.environ.get("NEG_PREFIX", f"{SRC_PREFIX.rstrip('/')}/negatives/")
 
+# New preferred explicit global negative root.
+# New behavior:
+#   GLOBAL_NEG_PREFIX=Neg-dataset/negatives/global/
+#   images are read from Neg-dataset/negatives/global/images/
 GLOBAL_NEG_PREFIX = os.environ.get(
     "GLOBAL_NEG_PREFIX",
     f"{SRC_PREFIX.rstrip('/')}/negatives/global/"
@@ -46,6 +54,8 @@ GLOBAL_NEG_PREFIX = os.environ.get(
 NEG_RATIO = float(os.environ.get("NEG_RATIO", "1.0"))
 NEG_MAX = int(os.environ.get("NEG_MAX", "500"))
 
+# If true, and no global negatives are found at GLOBAL_NEG_PREFIX/images/,
+# the job will try the legacy NEG_PREFIX/images/ path.
 ALLOW_LEGACY_NEGATIVE_FALLBACK = (
     os.environ.get("ALLOW_LEGACY_NEGATIVE_FALLBACK", "true").lower() == "true"
 )
@@ -58,11 +68,19 @@ INCLUDE_HARD_NEGATIVES = (
     os.environ.get("INCLUDE_HARD_NEGATIVES", "false").lower() == "true"
 )
 
+# New hard-negative root.
+# Example:
+#   Neg-dataset/negatives/by-landmark/
+# Then per landmark:
+#   Neg-dataset/negatives/by-landmark/Painting_A/images/
+#   Neg-dataset/negatives/by-landmark/Painting_A/labels/
 HARD_NEG_ROOT = os.environ.get(
     "HARD_NEG_ROOT",
     f"{SRC_PREFIX.rstrip('/')}/negatives/by-landmark/"
 )
 
+# Hard negatives are selected per landmark/class.
+# desired per landmark = min(HARD_NEG_MAX_PER_LANDMARK, class_positive_count * HARD_NEG_RATIO)
 HARD_NEG_RATIO = float(os.environ.get("HARD_NEG_RATIO", "0.25"))
 HARD_NEG_MAX_PER_LANDMARK = int(os.environ.get("HARD_NEG_MAX_PER_LANDMARK", "25"))
 
@@ -72,10 +90,10 @@ HARD_NEG_MAX_PER_LANDMARK = int(os.environ.get("HARD_NEG_MAX_PER_LANDMARK", "25"
 
 BALANCE_STRATEGY = os.environ.get("BALANCE_STRATEGY", "none").lower()
 
-# CAPPING: Maximum number of images allowed per class
+# CAPPING: Maximum number of images allowed per class (cuts down huge classes like Treadmills)
 MAX_IMAGES_PER_CLASS = int(os.environ.get("MAX_IMAGES_PER_CLASS", "500"))
 
-# BOOSTING: Minimum number of images per class (upsamples tiny classes)
+# BOOSTING: Minimum number of images per class (upsamples tiny classes by copying them)
 MIN_IMAGES_PER_CLASS = int(os.environ.get("MIN_IMAGES_PER_CLASS", "400"))
 
 # ---------------------------------------------------------------------------
@@ -105,6 +123,7 @@ def list_objects(bucket: str, prefix: str) -> List[str]:
     for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
         for obj in page.get("Contents", []):
             key = obj["Key"]
+            # Avoid folder-marker objects.
             if not key.endswith("/"):
                 keys.append(key)
 
@@ -162,6 +181,16 @@ def write_text(bucket: str, key: str, text: str, content_type: str = "text/plain
 # ---------------------------------------------------------------------------
 
 def label_to_s3_folder(label: str) -> str:
+    """
+    Convert a landmark label to its S3 folder name.
+
+    This matches the current behavior from your existing batch job:
+      spaces -> underscores
+
+    Important:
+    If other parts of your pipeline sanitize punctuation differently,
+    this should eventually be centralized into one shared sanitizer.
+    """
     return label.replace(" ", "_")
 
 
@@ -182,6 +211,13 @@ def scan_all(table, scan_kwargs: dict) -> List[dict]:
 
 
 def coerce_optional_float(value, field_name: str, landmark_id: str) -> Optional[float]:
+    """
+    Convert a DynamoDB numeric value into a normal Python float.
+
+    boto3 returns DynamoDB Number attributes as Decimal. Missing values are
+    preserved as None so unmapped/stale landmark rows do not fail the scan.
+    Required coordinate validation happens after the cluster mapping is joined.
+    """
     if value is None:
         return None
 
@@ -211,6 +247,13 @@ def coerce_optional_float(value, field_name: str, landmark_id: str) -> Optional[
 
 
 def validate_required_coordinates(metadata: dict) -> Tuple[float, float]:
+    """
+    Require valid WGS84 latitude/longitude for a mapped trainable landmark.
+
+    Schema version 2 guarantees that every class entry can be used later for
+    geographic class filtering. We intentionally fail instead of substituting
+    0,0 or silently omitting a coordinate.
+    """
     landmark_id = metadata.get("landmarkId", "<unknown>")
     label = metadata.get("label", "")
     raw_latitude = metadata.get("latitude")
@@ -229,22 +272,70 @@ def validate_required_coordinates(metadata: dict) -> Tuple[float, float]:
             f"landmarkId={landmark_id!r}, label={label!r}, missing={missing!r}."
         )
 
-    latitude = coerce_optional_float(raw_latitude, "latitude", landmark_id)
-    longitude = coerce_optional_float(raw_longitude, "longitude", landmark_id)
+    latitude = coerce_optional_float(
+        raw_latitude,
+        field_name="latitude",
+        landmark_id=landmark_id
+    )
+    longitude = coerce_optional_float(
+        raw_longitude,
+        field_name="longitude",
+        landmark_id=landmark_id
+    )
 
+    # The None case was handled above, but keep this explicit for type safety.
     if latitude is None or longitude is None:
-        raise ValueError(f"Landmark {landmark_id!r} ({label!r}) is missing required coordinates.")
+        raise ValueError(
+            f"Landmark {landmark_id!r} ({label!r}) is missing required coordinates."
+        )
 
     if not -90.0 <= latitude <= 90.0:
-        raise ValueError(f"Landmark {landmark_id!r} ({label!r}) has latitude outside [-90, 90]: {latitude}.")
+        raise ValueError(
+            f"Landmark {landmark_id!r} ({label!r}) has latitude "
+            f"outside [-90, 90]: {latitude}."
+        )
 
     if not -180.0 <= longitude <= 180.0:
-        raise ValueError(f"Landmark {landmark_id!r} ({label!r}) has longitude outside [-180, 180]: {longitude}.")
+        raise ValueError(
+            f"Landmark {landmark_id!r} ({label!r}) has longitude "
+            f"outside [-180, 180]: {longitude}."
+        )
 
     return latitude, longitude
 
 
 def load_cluster_metadata() -> Tuple[Dict[str, int], Dict[str, dict]]:
+    """
+    Join canonical landmark records to cluster assignments.
+
+    Returns:
+      folder_to_cluster:
+        {landmark_folder_name: cluster_id}
+
+      folder_to_landmark:
+        {
+          landmark_folder_name: {
+            "landmarkId": str,
+            "label": str,
+            "shortDescription": str,
+            "latitude": float,
+            "longitude": float,
+            "folderName": str,
+            "isActive": bool | None
+          }
+        }
+
+    Duplicate labels are not rejected while scanning LookSeeLandmarks because
+    stale or unmapped landmark records do not affect training. Ambiguity is
+    checked only after joining against LookSeeClusterMappings.
+
+    Resolution rules for duplicate mapped folder names:
+      1. One mapped landmark -> use it.
+      2. Multiple mapped landmarks, but exactly one isActive=True -> use the
+         active landmark and log a warning.
+      3. Otherwise -> fail, because the class-to-landmark mapping is genuinely
+         ambiguous and should be corrected in DynamoDB.
+    """
     landmarks_table = dynamodb.Table(LANDMARKS_TABLE)
     mappings_table = dynamodb.Table(CLUSTER_MAPPINGS_TABLE)
 
@@ -291,18 +382,35 @@ def load_cluster_metadata() -> Tuple[Dict[str, int], Dict[str, dict]]:
         duplicate_folder_records[folder].append(landmark_id)
 
         if not short_description:
-            print(f"WARNING: Landmark {landmark_id} ({label}) has no shortDescription.")
+            print(
+                f"WARNING: Landmark {landmark_id} ({label}) has no shortDescription; "
+                "the generated landmark manifest will contain an empty string."
+            )
 
-    duplicate_folder_count = sum(1 for ids in duplicate_folder_records.values() if len(set(ids)) > 1)
+    duplicate_folder_count = sum(
+        1 for ids in duplicate_folder_records.values() if len(set(ids)) > 1
+    )
+
     print(f"Loaded {len(landmark_id_to_metadata)} usable landmarks from DynamoDB")
 
     if duplicate_folder_count:
-        print(f"WARNING: Found {duplicate_folder_count} duplicate dataset folder name(s) in LookSeeLandmarks.")
+        print(
+            f"WARNING: Found {duplicate_folder_count} duplicate dataset folder "
+            "name(s) in LookSeeLandmarks. They will be evaluated after joining "
+            "against LookSeeClusterMappings."
+        )
 
     print("Loading cluster mappings from DynamoDB...")
 
-    mapping_items = scan_all(mappings_table, {"ProjectionExpression": "landmarkId, clusterId"})
+    mapping_items = scan_all(
+        mappings_table,
+        {
+            "ProjectionExpression": "landmarkId, clusterId"
+        }
+    )
 
+    # A duplicate label only matters if multiple matching landmark IDs are
+    # actually mapped into the trainable cluster set.
     mapped_candidates_by_folder: Dict[str, List[dict]] = defaultdict(list)
 
     for item in mapping_items:
@@ -315,7 +423,10 @@ def load_cluster_metadata() -> Tuple[Dict[str, int], Dict[str, dict]]:
         metadata = landmark_id_to_metadata.get(landmark_id)
 
         if not metadata:
-            print(f"WARNING: Cluster mapping references landmarkId={landmark_id!r}, but no usable LookSeeLandmarks record was found.")
+            print(
+                f"WARNING: Cluster mapping references landmarkId={landmark_id!r}, "
+                "but no usable LookSeeLandmarks record was found."
+            )
             continue
 
         mapped_candidates_by_folder[metadata["folderName"]].append({
@@ -327,6 +438,7 @@ def load_cluster_metadata() -> Tuple[Dict[str, int], Dict[str, dict]]:
     folder_to_landmark: Dict[str, dict] = {}
 
     for folder, raw_candidates in mapped_candidates_by_folder.items():
+        # Deduplicate repeated mapping rows for the same landmark and cluster.
         unique_candidates: Dict[Tuple[str, int], dict] = {}
 
         for candidate in raw_candidates:
@@ -347,14 +459,49 @@ def load_cluster_metadata() -> Tuple[Dict[str, int], Dict[str, dict]]:
 
             if len(active_candidates) == 1:
                 chosen = active_candidates[0]
-                ignored_ids = [c["metadata"]["landmarkId"] for c in candidates if c is not chosen]
-                print(f"WARNING: Duplicate mapped dataset folder resolved using the only active landmark: {folder!r}")
+                ignored_ids = [
+                    candidate["metadata"]["landmarkId"]
+                    for candidate in candidates
+                    if candidate is not chosen
+                ]
+                print(
+                    "WARNING: Duplicate mapped dataset folder resolved using the "
+                    "only active landmark: "
+                    f"folder={folder!r}, selectedLandmarkId="
+                    f"{chosen['metadata']['landmarkId']!r}, ignoredLandmarkIds="
+                    f"{ignored_ids!r}."
+                )
             else:
-                raise ValueError(f"Ambiguous mapped dataset folder name: {folder!r}.")
+                details = [
+                    {
+                        "landmarkId": candidate["metadata"]["landmarkId"],
+                        "clusterId": candidate["clusterId"],
+                        "isActive": candidate["metadata"].get("isActive"),
+                        "label": candidate["metadata"].get("label", "")
+                    }
+                    for candidate in sorted(
+                        candidates,
+                        key=lambda value: (
+                            value["clusterId"],
+                            value["metadata"]["landmarkId"]
+                        )
+                    )
+                ]
+
+                raise ValueError(
+                    "Ambiguous mapped dataset folder name. Multiple landmark "
+                    "records that collapse to the same class folder are present "
+                    "in LookSeeClusterMappings, and there is not exactly one "
+                    "active record to select. "
+                    f"folder={folder!r}, candidates={details!r}. "
+                    "Remove the stale cluster mapping, deactivate the stale "
+                    "landmark, or give the records unique labels before rerunning."
+                )
 
         chosen_metadata = chosen["metadata"]
         latitude, longitude = validate_required_coordinates(chosen_metadata)
 
+        # Store normalized JSON-safe numbers after validation.
         chosen_metadata["latitude"] = latitude
         chosen_metadata["longitude"] = longitude
 
@@ -387,6 +534,9 @@ def deterministic_sample(keys: List[str], k: int, salt: str) -> List[str]:
 
 
 def safe_name(prefix: str, filename: str) -> str:
+    """
+    Prevent filename collisions across landmark folders and negative sources.
+    """
     return f"{prefix}__{filename}"
 
 
@@ -407,6 +557,14 @@ def label_key_for_image(src_prefix: str, class_name: str, image_key: str) -> str
 
 
 def rewrite_label_contents(label_text: str, class_id: int) -> str:
+    """
+    Rewrites YOLO class IDs to the cluster-local class ID.
+
+    Expected input line:
+      class_id x_center y_center width height
+
+    If a line is malformed, it is ignored.
+    """
     new_lines = []
 
     for line in label_text.splitlines():
@@ -426,15 +584,23 @@ def compute_cap(class_to_keys: Dict[str, List[str]]) -> int:
         return 0
 
     if BALANCE_STRATEGY == "none":
+        # No balancing down to smallest class.
+        # Optional max cap only.
         return MAX_IMAGES_PER_CLASS if MAX_IMAGES_PER_CLASS > 0 else 0
 
     if BALANCE_STRATEGY == "fixed":
+        # Fixed cap per class if provided.
+        # Otherwise fallback to min count.
         return MAX_IMAGES_PER_CLASS if MAX_IMAGES_PER_CLASS > 0 else min(counts)
 
     if BALANCE_STRATEGY == "min":
+        # Existing behavior:
+        # cap all classes to smallest class count.
         cap = min(counts)
+
         if MAX_IMAGES_PER_CLASS > 0:
             cap = min(cap, MAX_IMAGES_PER_CLASS)
+
         return cap
 
     print(f"WARNING: Unknown BALANCE_STRATEGY={BALANCE_STRATEGY}; no cap applied.")
@@ -451,7 +617,8 @@ def process_class(
 ) -> Tuple[int, int]:
     """
     Copies positive class images and writes rewritten labels.
-    Handles Boosting by duplicating images up to MIN_IMAGES_PER_CLASS.
+    If the class has fewer than MIN_IMAGES_PER_CLASS, it boosts (duplicates) 
+    the images to reach the threshold, ensuring copies stay in the same train/val split.
     """
     if not keys:
         return 0, 0
@@ -459,6 +626,7 @@ def process_class(
     target_count = len(keys)
     is_boosting = False
     
+    # Check if we need to apply the Boosting logic
     if target_count < MIN_IMAGES_PER_CLASS:
         target_count = MIN_IMAGES_PER_CLASS
         is_boosting = True
@@ -469,6 +637,7 @@ def process_class(
     count = 0
     missing_label_count = 0
 
+    # Loop until we hit the target count (which handles both standard copying and boosting)
     for i in range(target_count):
         original_index = i % len(keys)
         copy_number = i // len(keys)
@@ -476,8 +645,12 @@ def process_class(
 
         original_filename = image_key.rsplit("/", 1)[-1]
         
+        # VERY IMPORTANT: Determine the split using the ORIGINAL filename.
+        # This guarantees that the original image and all its copies go into 
+        # the same train/val folder, preventing data leakage!
         split = stable_split(f"{class_name}/{original_filename}", TRAIN_SPLIT)
 
+        # If this is a duplicate loop, append _copyX to the filename so S3 doesn't overwrite it
         if copy_number > 0:
             name_part, ext_part = os.path.splitext(original_filename)
             filename = f"{name_part}_copy{copy_number}{ext_part}"
@@ -497,6 +670,7 @@ def process_class(
         try:
             original_label = read_text(bucket, src_lbl_key)
         except Exception as exc:
+            # Only print warning on the first pass so we don't spam the logs for copies
             if copy_number == 0:
                 print(f"    WARNING: Missing/unreadable label for {image_key}: {src_lbl_key} ({exc})")
             original_label = ""
@@ -521,6 +695,13 @@ def copy_negative_images(
     split_salt_prefix: str,
     output_name_prefix: str
 ) -> int:
+    """
+    Copies negative images into YOLO output and writes empty label files.
+
+    Negative YOLO labels should be present but empty:
+      images/train/foo.jpg
+      labels/train/foo.txt  ← empty
+    """
     count = 0
 
     for image_key in keys:
@@ -578,7 +759,10 @@ def process_global_negatives(
         salt=f"global-negatives|cluster-{cluster_id}|{dest_prefix}"
     )
 
-    print(f"  Adding {len(chosen)} global negatives (desired={desired}, available={len(neg_keys)})")
+    print(
+        f"  Adding {len(chosen)} global negatives "
+        f"(desired={desired}, available={len(neg_keys)})"
+    )
 
     return copy_negative_images(
         bucket=bucket,
@@ -601,6 +785,12 @@ def process_hard_negatives_for_cluster(
     folders: List[str],
     per_class_positive_counts: Dict[str, int]
 ) -> Tuple[int, Dict[str, int]]:
+    """
+    Pulls by-landmark hard negatives only for landmarks included in this cluster.
+
+    Returns:
+      (total_hard_negative_count, per_landmark_hard_negative_counts)
+    """
     if not INCLUDE_HARD_NEGATIVES:
         print("  Hard negatives disabled.")
         return 0, {}
@@ -617,10 +807,16 @@ def process_hard_negatives_for_cluster(
             continue
 
         class_pos_count = int(per_class_positive_counts.get(folder, 0) or 0)
-        desired = min(HARD_NEG_MAX_PER_LANDMARK, int(class_pos_count * HARD_NEG_RATIO))
+        desired = min(
+            HARD_NEG_MAX_PER_LANDMARK,
+            int(class_pos_count * HARD_NEG_RATIO)
+        )
 
         if desired <= 0:
-            print(f"  [{folder}] hard negatives desired=0")
+            print(
+                f"  [{folder}] hard negatives desired=0 "
+                f"(class_pos_count={class_pos_count}, HARD_NEG_RATIO={HARD_NEG_RATIO})"
+            )
             per_landmark_counts[folder] = 0
             continue
 
@@ -630,7 +826,10 @@ def process_hard_negatives_for_cluster(
             salt=f"hard-negatives|cluster-{cluster_id}|{folder}|{dest_prefix}"
         )
 
-        print(f"  [{folder}] adding {len(chosen)} hard negatives (available={len(available_keys)})")
+        print(
+            f"  [{folder}] adding {len(chosen)} hard negatives "
+            f"(desired={desired}, available={len(available_keys)})"
+        )
 
         copied = copy_negative_images(
             bucket=bucket,
@@ -716,6 +915,13 @@ def write_landmark_manifest(
     folder_to_landmark: Dict[str, dict],
     per_class_positive_counts: Dict[str, int]
 ) -> str:
+    """
+    Write the app-facing class-index lookup beside data.yaml.
+
+    class_names is the same ordered list passed to write_data_yaml(), so each
+    enumerate() index is guaranteed to match the YOLO class ID used in the
+    rewritten labels and in the trained model output.
+    """
     landmarks: Dict[str, dict] = {}
 
     for class_index, folder in enumerate(class_names):
@@ -759,7 +965,10 @@ def write_landmark_manifest(
         content_type="application/json"
     )
 
-    print(f"  Wrote landmark-manifest.json ({len(class_names)} class mappings) → s3://{bucket}/{manifest_key}")
+    print(
+        f"  Wrote landmark-manifest.json ({len(class_names)} class mappings) "
+        f"→ s3://{bucket}/{manifest_key}"
+    )
 
     return manifest_key
 
@@ -772,14 +981,17 @@ def main():
     src_prefix = normalize_prefix(SRC_PREFIX)
     dest_prefix = normalize_prefix(DEST_PREFIX)
 
-    print("=== LookSee YOLO Dataset Packager (With Threshold Capping & Boosting) ===")
+    print("=== LookSee YOLO Dataset Packager (With Boosting & Capping) ===")
     print(f"BUCKET={BUCKET}")
     print(f"SRC_PREFIX={src_prefix}")
     print(f"DEST_PREFIX={dest_prefix}")
     print(f"TRAINING_RUN_ID={TRAINING_RUN_ID}")
     print(f"TRAIN_SPLIT={TRAIN_SPLIT}")
     print(f"CLEAR_DEST={CLEAR_DEST}")
-    print(f"LANDMARK_MANIFEST_SCHEMA_VERSION={LANDMARK_MANIFEST_SCHEMA_VERSION}")
+    print(
+        "LANDMARK_MANIFEST_SCHEMA_VERSION="
+        f"{LANDMARK_MANIFEST_SCHEMA_VERSION}"
+    )
 
     print("\n--- Global negatives ---")
     print(f"INCLUDE_NEGATIVES={INCLUDE_NEGATIVES}")
@@ -800,6 +1012,10 @@ def main():
     print(f"MAX_IMAGES_PER_CLASS={MAX_IMAGES_PER_CLASS}")
     print(f"MIN_IMAGES_PER_CLASS={MIN_IMAGES_PER_CLASS}")
 
+    # Build run-level dest root:
+    #   dataset-yolo-negtest/{trainingRunId}/
+    # or:
+    #   dataset-yolo-negtest/
     run_dest_root = (
         f"{dest_prefix.rstrip('/')}/{TRAINING_RUN_ID}/"
         if TRAINING_RUN_ID
@@ -906,7 +1122,8 @@ def main():
                 "discoveredPositiveCounts": discovered_positive_counts
             })
 
-            print(f"  WARNING: Cluster {cluster_id} has no positive images. data.yaml will still be written, but this cluster may not train successfully.")
+            print(f"  WARNING: Cluster {cluster_id} has no positive images. Skipping this cluster completely to prevent SageMaker crashes.")
+            continue # <--- THIS IS THE MISSING PIECE!
 
         global_negative_count = process_global_negatives(
             bucket=BUCKET,
@@ -943,16 +1160,23 @@ def main():
             "classNames": folders,
             "landmarkManifestKey": landmark_manifest_key,
             "landmarkManifestSchemaVersion": LANDMARK_MANIFEST_SCHEMA_VERSION,
+
+            # Legacy field used by the current finalizer/training pipeline.
+            # Keep this as positive image count for backward compatibility.
             "imageCount": total_pos,
+
+            # New richer manifest fields.
             "positiveImageCount": total_pos,
             "globalNegativeCount": global_negative_count,
             "hardNegativeCount": hard_negative_count,
             "totalImageCount": total_image_count,
+
             "discoveredPositiveCounts": discovered_positive_counts,
             "perClassPositiveCounts": per_class_positive_counts,
             "perClassMissingLabelCounts": per_class_missing_label_counts,
             "missingLabelCount": total_missing_labels,
             "perLandmarkHardNegativeCounts": per_landmark_hard_negative_counts,
+
             "balanceStrategy": BALANCE_STRATEGY,
             "capPerClass": cap,
             "globalNegPrefix": normalize_prefix(GLOBAL_NEG_PREFIX),

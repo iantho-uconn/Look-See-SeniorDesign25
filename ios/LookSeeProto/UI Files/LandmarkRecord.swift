@@ -3,7 +3,6 @@
 //  LookSeeProto
 //
 
-
 import SwiftUI
 import CoreLocation
 import Photos
@@ -297,16 +296,34 @@ struct LandmarkRecord: View {
 
             do {
                 let positiveResult: PositiveSubmissionResult
+                
+                await vm.fetchUserEmail()
+                let idToken = await vm.fetchIdToken()
+                
                 if let existingResult = completedPositiveResult {
                     positiveResult = existingResult
                 } else {
                     let trimmedLabel = labelText.trimmingCharacters(in: .whitespacesAndNewlines)
                     let trimmedShortDescription = shortDescription.trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !trimmedLabel.isEmpty, !trimmedShortDescription.isEmpty else { return }
-                    await vm.fetchUserEmail()
+                    
+                    if idToken.isEmpty {
+                        print("⚠️ WARNING: ID Token is empty. The upload may fail with a 401 Unauthorized.")
+                    }
+
                     positiveResult = try await uploadService.upload(
-                        userEmail: vm.userEmail, label: trimmedLabel, landmarkId: generatedLandmarkId, landmarkLabel: trimmedLabel, shortDescription: trimmedShortDescription, userDescription: nil,
-                        latitude: extractedLatitude ?? locationManager.latitude, longitude: extractedLongitude ?? locationManager.longitude, horizontalAccuracy: locationManager.horizontalAccuracy, videoURL: pickedVideoURL, image: pickedImage
+                        userEmail: vm.userEmail,
+                        idToken: idToken,
+                        label: trimmedLabel,
+                        landmarkId: generatedLandmarkId,
+                        landmarkLabel: trimmedLabel,
+                        shortDescription: trimmedShortDescription,
+                        userDescription: nil,
+                        latitude: extractedLatitude ?? locationManager.latitude,
+                        longitude: extractedLongitude ?? locationManager.longitude,
+                        horizontalAccuracy: locationManager.horizontalAccuracy,
+                        videoURL: pickedVideoURL,
+                        image: pickedImage
                     )
                     completedPositiveResult = positiveResult
                     statusText = "Landmark media saved. Uploading negative reference video…"
@@ -315,7 +332,12 @@ struct LandmarkRecord: View {
                 let finalLandmarkId = positiveResult.landmarkId ?? generatedLandmarkId
                 
                 if let negativeVideo = capturedNegativeVideo {
-                    _ = try await hardNegativeUploadService.upload(landmarkId: finalLandmarkId, video: negativeVideo)
+                    // --- NEGATIVE TOKEN FIX: Pass the VIP token to the negative service! ---
+                    _ = try await hardNegativeUploadService.upload(
+                        landmarkId: finalLandmarkId,
+                        idToken: idToken, // <-- Add this!
+                        video: negativeVideo
+                    )
                 }
                 
                 completedLandmarkId = finalLandmarkId
@@ -356,7 +378,6 @@ struct LandmarkRecord: View {
         }
     }
 
-    // THIS FIXES THE MISSING OVERALL COMPLETION CARD ERROR
     @ViewBuilder private var overallCompletionCard: some View {
         if isFullSubmissionComplete {
             HStack {

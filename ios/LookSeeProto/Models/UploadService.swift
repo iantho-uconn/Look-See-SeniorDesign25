@@ -151,6 +151,7 @@ final class UploadService: ObservableObject {
 
     func upload(
         userEmail: String,
+        idToken: String,
         label: String,
         landmarkId: String? = nil,
         landmarkLabel: String? = nil,
@@ -248,7 +249,8 @@ final class UploadService: ObservableObject {
             )
 
             let initResponse = try await initSubmission(
-                initRequest
+                initRequest,
+                token: idToken
             )
 
             print(
@@ -320,7 +322,8 @@ final class UploadService: ObservableObject {
             )
 
             try await completeSubmission(
-                completeRequest
+                completeRequest,
+                token: idToken
             )
 
             updateStage(
@@ -423,7 +426,8 @@ final class UploadService: ObservableObject {
     // MARK: - Initialize submission
 
     private func initSubmission(
-        _ requestBody: InitSubmissionRequest
+        _ requestBody: InitSubmissionRequest,
+        token: String
     ) async throws -> InitSubmissionResponse {
         let url = baseURL
             .appendingPathComponent("submissions")
@@ -440,6 +444,13 @@ final class UploadService: ObservableObject {
             "application/json",
             forHTTPHeaderField: "Accept"
         )
+        
+        // Attach the Cognito ID Token so API Gateway lets us in!
+        request.setValue(
+            token,
+            forHTTPHeaderField: "Authorization"
+        )
+        
         request.httpBody = try JSONEncoder().encode(
             requestBody
         )
@@ -548,7 +559,8 @@ final class UploadService: ObservableObject {
     // MARK: - Complete submission
 
     private func completeSubmission(
-        _ requestBody: CompleteSubmissionRequest
+        _ requestBody: CompleteSubmissionRequest,
+        token: String
     ) async throws {
         let url = baseURL
             .appendingPathComponent("submissions")
@@ -565,6 +577,13 @@ final class UploadService: ObservableObject {
             "application/json",
             forHTTPHeaderField: "Accept"
         )
+        
+        // Attach the Cognito ID Token here as well
+        request.setValue(
+            token,
+            forHTTPHeaderField: "Authorization"
+        )
+        
         request.httpBody = try JSONEncoder().encode(
             requestBody
         )

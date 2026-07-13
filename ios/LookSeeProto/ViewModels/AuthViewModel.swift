@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import Amplify
+import AWSPluginsCore // <-- This is the core AWS module required to unlock the token!
 
 @MainActor
 class AuthViewModel: ObservableObject {
@@ -34,6 +35,7 @@ class AuthViewModel: ObservableObject {
             }
         }
     }
+
     // Updated: accepts authState so tier resets cleanly on sign out
     func signOut(authState: AuthState) {
         Task {
@@ -42,6 +44,7 @@ class AuthViewModel: ObservableObject {
             isSignedIn = false
         }
     }
+
     func fetchUserEmail() async {
         do {
             let attributes = try await Amplify.Auth.fetchUserAttributes()
@@ -52,6 +55,23 @@ class AuthViewModel: ObservableObject {
             print("❌ Failed to fetch user email: \(error)")
         }
     }
+
+    // MARK: - NEW TOKEN FETCH METHOD
+    func fetchIdToken() async -> String {
+        do {
+            let session = try await Amplify.Auth.fetchAuthSession()
+            
+            // AWSPluginsCore provides this specific protocol to expose the tokens
+            if let tokenProvider = session as? AuthCognitoTokensProvider {
+                let tokens = try tokenProvider.getCognitoTokens().get()
+                return tokens.idToken
+            }
+        } catch {
+            print("❌ Failed to fetch session token: \(error)")
+        }
+        return ""
+    }
+
     // MARK: - Private
 
     private func friendlyMessage(for error: AuthError) -> String {

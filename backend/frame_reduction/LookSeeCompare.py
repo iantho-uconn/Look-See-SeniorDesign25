@@ -30,17 +30,37 @@ TEMP_FRAME_DIR = "/tmp/kept_frames"
 
 orb = cv2.ORB_create(nfeatures=500)
 
-def are_frames_similar(frame1, frame2):
+def are_frames_similar(frame1, frame2, frame_index):
     gray1 = cv2.cvtColor(frame1, cv2.COLOR_BGR2GRAY)
     gray2 = cv2.cvtColor(frame2, cv2.COLOR_BGR2GRAY)
+    
+    # --- NEW FAILSAFE: Fast Pixel Check ---
+    if cv2.mean(cv2.absdiff(gray1, gray2))[0] < 5.0:
+        print(f"  -> Frame {frame_index}: 100.0% similar (Fast Pixel Check)")
+        return True
+        
     k1, d1 = orb.detectAndCompute(gray1, None)
     k2, d2 = orb.detectAndCompute(gray2, None)
-    if d1 is None or d2 is None: return False
+    
+    # --- THE BUG FIX FOR FEATURELESS FRAMES ---
+    if d1 is None and d2 is None: 
+        print(f"  -> Frame {frame_index}: 100.0% similar (Featureless/Blank)")
+        return True 
+    if d1 is None or d2 is None: 
+        print(f"  -> Frame {frame_index}: 0.0% similar (One frame blank)")
+        return False 
+        
     bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
     matches = bf.match(d1, d2)
-    if len(matches) == 0: return False
+    if len(matches) == 0: 
+        print(f"  -> Frame {frame_index}: 0.0% similar (No matches)")
+        return False
+        
     score = np.mean([m.distance for m in matches])
-    return (1 - (score / 100)) >= SIMILARITY_THRESHOLD
+    similarity_pct = 1 - (score / 100)
+    
+    print(f"  -> Frame {frame_index}: {similarity_pct * 100:.1f}% similar")
+    return similarity_pct >= SIMILARITY_THRESHOLD
 
 def save_and_upload(frame, output_bucket, folder_path, frame_index, file_prefix):
     unique_name = f"{file_prefix}__frame_{frame_index}.jpg"
@@ -69,7 +89,7 @@ def process_video(input_bucket, video_key, output_bucket, folder_path, file_pref
         
         frame = cv2.resize(frame, (new_width, new_height))
 
-        if previous_frame is None or not are_frames_similar(previous_frame, frame):
+        if previous_frame is None or not are_frames_similar(previous_frame, frame, frame_index):
             save_and_upload(frame, output_bucket, folder_path, frame_index, file_prefix)
             previous_frame = frame
             

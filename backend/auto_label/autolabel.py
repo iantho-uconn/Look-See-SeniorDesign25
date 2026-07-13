@@ -5,7 +5,12 @@ import boto3
 import json
 import gc
 import time 
+import sys
 from botocore.exceptions import ClientError
+
+# --- CRITICAL FIX 1: Instant CloudWatch Logging ---
+# Forces Python to flush print statements to CloudWatch immediately
+sys.stdout.reconfigure(line_buffering=True)
 
 from autodistill_grounding_dino import GroundingDINO
 from autodistill.detection import CaptionOntology
@@ -20,11 +25,11 @@ BUCKET_NAME = 'looksee-models'
 QUEUE_URL = os.environ.get('QUEUE_URL')
 
 if not QUEUE_URL:
-    print("Error: No QUEUE_URL environment variable found.")
+    print("❌ Error: No QUEUE_URL environment variable found.")
     exit(1)
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
-print("Booting up LookSee Worker. Checking SQS queue...")
+print(f"🚀 Booting up LookSee Worker on {device}. Checking SQS queue for tasks...")
 
 # -----------------------------------------
 # SQS POLLING LOOP
@@ -45,9 +50,18 @@ while True:
     message = response['Messages'][0]
     receipt_handle = message['ReceiptHandle']
     SUBMISSION_FOLDER = message['Body']
+    
+    # FAILSAFE: Safely unpack JSON if needed
+    try:
+        parsed = json.loads(SUBMISSION_FOLDER)
+        if isinstance(parsed, dict) and "folder_name" in parsed:
+            SUBMISSION_FOLDER = parsed["folder_name"]
+    except (json.JSONDecodeError, TypeError):
+        pass # It's a standard string, which is correct!
+
     INPUT_PREFIX = f"clean-frames/{SUBMISSION_FOLDER}/"
 
-    print(f"Picked up folder from queue: {SUBMISSION_FOLDER}")
+    print(f"📦 Picked up folder from queue: {SUBMISSION_FOLDER}")
 
     # -----------------------------------------
     # 2. LOAD SUBMISSION METADATA
@@ -61,29 +75,28 @@ while True:
         with open(local_metadata_path, 'r') as f:
             metadata = json.load(f)
     except Exception as e:
-        print(f"Error: Missing or corrupt metadata in {SUBMISSION_FOLDER}. Deleting message and skipping.")
+        print(f"❌ Error: Missing or corrupt metadata in {SUBMISSION_FOLDER}. Deleting message.")
         sqs.delete_message(QueueUrl=QUEUE_URL, ReceiptHandle=receipt_handle)
         continue 
 
     class_name = metadata.get('class_name', 'UnknownObject').replace(" ", "_")
     prompt = metadata.get('prompt', class_name)
 
-    print(f"Processing submission: {SUBMISSION_FOLDER}")
-    print(f"Target Object: {class_name} | AI Prompt: {prompt}")
+    print(f"🎯 Target Object: {class_name} | AI Prompt: {prompt}")
 
     # -----------------------------------------
-    # 3. SETUP MODEL
+    # 3. INITIALIZE MODEL PER TASK
     # -----------------------------------------
+    # To prevent autodistill ontology swap memory leaks, we load the model fresh per task.
     ontology = CaptionOntology({prompt: class_name})
-    
     model = GroundingDINO(
         ontology=ontology,
-        box_threshold=0.15,
-        text_threshold=0.15
+        box_threshold=0.35,
+        text_threshold=0.35
     )
 
     # -----------------------------------------
-    # 4. PROCESS FOLDER (BULLETPROOF EDITION)
+    # 4. PROCESS FOLDER 
     # -----------------------------------------
     print("Fetching frame list using S3 Paginator...")
     paginator = s3.get_paginator('list_objects_v2')
@@ -96,11 +109,20 @@ while True:
                 all_keys.append(obj['Key'])
 
     if not all_keys:
-        print("No frames found. Deleting message.")
+        print("⚠️ No frames found. Deleting message.")
+        del model
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
         sqs.delete_message(QueueUrl=QUEUE_URL, ReceiptHandle=receipt_handle)
         continue
 
+    total_frames = len(all_keys)
+    print(f"📸 Found {total_frames} frames to process. Starting Auto-Labeling...")
+
     count = 0
+    labeled_count = 0
+    
     for img_key in all_keys:
         img_name = os.path.basename(img_key)
         local_img_path = f"/tmp/{img_name}"
@@ -108,14 +130,13 @@ while True:
         label_name = os.path.splitext(img_name)[0] + ".txt"
         s3_label_out = f"neg-dataset/{class_name}/labels/{label_name}"
 
-        # --- UPGRADE 1: S3 CHECKPOINTING ---
+        # --- S3 CHECKPOINTING ---
         try:
             s3.head_object(Bucket=BUCKET_NAME, Key=s3_label_out)
             # If no error is thrown, the file exists! Skip this frame.
             count += 1
             continue
         except ClientError as e:
-            # A 404 error means the file doesn't exist yet, which is expected.
             if e.response['Error']['Code'] != '404':
                 print(f"Unexpected S3 error checking checkpoint: {e}")
             pass
@@ -132,27 +153,43 @@ while True:
             os.remove(local_img_path)
             del image
             del detections
-            gc.collect()
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+            count += 1
             continue
+
+        # --- EXTRACT CONFIDENCE SCORE ---
+        try:
+            # Get the maximum confidence score from the detections array for logging
+            max_conf = max(detections.confidence)
+            print(f"  -> Frame {img_name}: Object found with {max_conf * 100:.1f}% confidence")
+        except Exception:
+            pass # Failsafe just in case the confidence array format varies
 
         # --- MASTER BOX MATH ---
         h, w, _ = image.shape
+        img_area = w * h
         yolo_lines = []
         
-        if len(detections.xyxy) > 0:
-            x_min = min(box[0] for box in detections.xyxy)
-            y_min = min(box[1] for box in detections.xyxy)
-            x_max = max(box[2] for box in detections.xyxy)
-            y_max = max(box[3] for box in detections.xyxy)
-            
-            x_center = ((x_min + x_max) / 2) / w
-            y_center = ((y_min + y_max) / 2) / h
-            bw = (x_max - x_min) / w
-            bh = (y_max - y_min) / h
-            
-            yolo_lines.append(f"0 {x_center:.6f} {y_center:.6f} {bw:.6f} {bh:.6f}")
+        valid_boxes = []
+        for box in detections.xyxy:
+            box_w = box[2] - box[0]
+            box_h = box[3] - box[1]
+            box_area = box_w * box_h
+            if box_area < (0.9 * img_area):
+                valid_boxes.append(box)
+                
+        boxes_to_use = valid_boxes if valid_boxes else detections.xyxy
+        
+        x_min = min(box[0] for box in boxes_to_use)
+        y_min = min(box[1] for box in boxes_to_use)
+        x_max = max(box[2] for box in boxes_to_use)
+        y_max = max(box[3] for box in boxes_to_use)
+        
+        x_center = ((x_min + x_max) / 2) / w
+        y_center = ((y_min + y_max) / 2) / h
+        bw = (x_max - x_min) / w
+        bh = (y_max - y_min) / h
+        
+        yolo_lines.append(f"0 {x_center:.6f} {y_center:.6f} {bw:.6f} {bh:.6f}")
 
         # Save label file locally
         local_label_path = f"/tmp/{label_name}"
@@ -172,16 +209,13 @@ while True:
         # --- TRUE MEMORY WIPE ---
         del image
         del detections
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
             
         count += 1
+        labeled_count += 1
         
-        # --- UPGRADE 2: DYNAMIC HEARTBEAT ---
-        # Every 25 frames, tell SQS to add 15 minutes to the countdown timer
+        # --- DYNAMIC HEARTBEAT ---
         if count % 25 == 0:
-            print(f"Heartbeat: Processed {count}/{len(all_keys)} frames. Extending timeout by 15 mins.")
+            print(f"⏳ Processed {count}/{total_frames} frames. Extending SQS visibility timeout by 15 mins...")
             try:
                 sqs.change_message_visibility(
                     QueueUrl=QUEUE_URL,
@@ -189,12 +223,25 @@ while True:
                     VisibilityTimeout=900
                 )
             except Exception as e:
-                print(f"Warning: Failed to extend heartbeat: {e}")
+                print(f"⚠️ Warning: Failed to extend heartbeat: {e}")
 
-    print(f"DONE: Successfully labeled {count} images for {class_name}.")
+    # --- COMPLETE GPU WIPE ---
+    del model
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+    # --- VERIFICATION LOGS ---
+    print(f"🏁 VERIFICATION: Loop finished. Processed {count} out of {total_frames} frames.")
+    if count == total_frames:
+        print("✅ SUCCESS: 100% of frames ran through the AutoLabeler pipeline.")
+    else:
+        print(f"⚠️ WARNING: Only {count} out of {total_frames} frames were accounted for.")
+
+    print(f"🏷️ Labeled {labeled_count} objects total for {class_name}.")
     
     # -----------------------------------------
     # 5. MARK MESSAGE AS DONE (DELETE FROM QUEUE)
     # -----------------------------------------
     sqs.delete_message(QueueUrl=QUEUE_URL, ReceiptHandle=receipt_handle)
-    print(f"SUCCESS: Removed {SUBMISSION_FOLDER} from queue.")
+    print(f"🗑️ SUCCESS: Removed {SUBMISSION_FOLDER} from queue.")
