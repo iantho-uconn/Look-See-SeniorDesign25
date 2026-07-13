@@ -166,6 +166,12 @@ private struct PositiveUploadCompleteBody: Encodable {
     let s3Key: String
 }
 
+private struct BusinessLandmarkPatchBody: Encodable {
+    let shortDescription: String?
+    let isActive: Bool?
+    let promotionEnabled: Bool?
+}
+
 private struct BusinessHardNegativeFileBody: Encodable {
     let filename: String
     let contentType: String
@@ -248,11 +254,40 @@ final class BusinessLandmarkService {
         return try JSONDecoder().decode(BusinessLandmarkListResponse.self, from: data)
     }
 
-    // MARK: - Landmark Description Editing
+    // MARK: - Landmark Editing / Settings
 
     func updateShortDescription(
         landmarkId: String,
         shortDescription: String
+    ) async throws -> BusinessLandmark {
+        return try await patchBusinessLandmark(
+            landmarkId: landmarkId,
+            body: BusinessLandmarkPatchBody(
+                shortDescription: shortDescription,
+                isActive: nil,
+                promotionEnabled: nil
+            )
+        )
+    }
+
+    func updateLandmarkSettings(
+        landmarkId: String,
+        isActive: Bool? = nil,
+        promotionEnabled: Bool? = nil
+    ) async throws -> BusinessLandmark {
+        return try await patchBusinessLandmark(
+            landmarkId: landmarkId,
+            body: BusinessLandmarkPatchBody(
+                shortDescription: nil,
+                isActive: isActive,
+                promotionEnabled: promotionEnabled
+            )
+        )
+    }
+
+    private func patchBusinessLandmark(
+        landmarkId: String,
+        body: BusinessLandmarkPatchBody
     ) async throws -> BusinessLandmark {
         let idToken = try await getCognitoIDToken()
 
@@ -266,10 +301,6 @@ final class BusinessLandmarkService {
         request.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-
-        let body: [String: String] = [
-            "shortDescription": shortDescription
-        ]
 
         request.httpBody = try JSONEncoder().encode(body)
 
