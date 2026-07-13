@@ -222,9 +222,9 @@ struct Buttons: View {
             tabButton(title: "Map", icon: "map", tab: 1, locked: false)
             if authState.tier == .business {
                 tabButton(title: "Record", icon: "video", tab: 2, locked: false)
+                tabButton(title: "Upload", icon: "arrow.up.circle", tab: authState.tier == .business ? 3 : 2, locked: authState.tier == .guest)
+                tabButton(title: "Archive", icon: "folder.fill", tab: authState.tier == .business ? 4 : 3, locked: authState.tier == .guest)
             }
-            tabButton(title: "Upload", icon: "arrow.up.circle", tab: authState.tier == .business ? 3 : 2, locked: authState.tier == .guest)
-            tabButton(title: "Archive", icon: "folder.fill", tab: authState.tier == .business ? 4 : 3, locked: authState.tier == .guest)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)

@@ -72,57 +72,7 @@ struct LandmarkScan: View {
                         }
                 }
 
-                // --- THE ALWAYS-ON STICKY AD BANNER ---
-                if !infoView.infoView {
-                    VStack {
-                        Spacer()
-                        
-                        HStack(spacing: 16) {
-                            Rectangle()
-                                .fill(Color.gray.opacity(0.3))
-                                .frame(width: 50, height: 50)
-                                .cornerRadius(8)
-                                .overlay(
-                                    Image(systemName: "building.2.crop.circle")
-                                        .font(.title2)
-                                        .foregroundStyle(.white.opacity(0.8))
-                                )
-                            
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Sponsored Ad")
-                                    .font(.system(size: 11, weight: .bold))
-                                    .foregroundStyle(Color(red: 0.22, green: 0.49, blue: 1.00))
-                                
-                                Text("Visit Local Business")
-                                    .font(.system(size: 15, weight: .bold, design: .rounded))
-                                    .foregroundStyle(.white)
-                            }
-                            
-                            Spacer()
-                        }
-                        .padding(12)
-                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
-                        .environment(\.colorScheme, .dark)
-                        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.2), lineWidth: 1))
-                        .shadow(color: .black.opacity(0.4), radius: 10, y: 5)
-                        .padding(.horizontal, 20)
-                        // DYNAMIC PADDING: Slides up cleanly when the bottom nav appears
-                        .padding(.bottom, isNavVisible ? 100 : 40)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                        .onTapGesture {
-                            // Tapping the Ad also opens the info popup
-                            if let bestDetection = detector.detections.first {
-                                infoView.landmarkName = bestDetection.displayLabel
-                                infoView.landmarkConfidence = bestDetection.confidence * 100
-                                infoView.landmarkDescription = bestDetection.landmarkEntry?.shortDescription ?? "Discover more about this location."
-                                infoView.promoName = "Checking promotions..."
-                                infoView.infoView = true
-                                if !isNavVisible { onTap() }
-                            }
-                        }
-                    }
-                }
-
+               
                 if infoView.infoView { PopUp() }
 
                 if !infoView.infoView && zoomIndicatorVisible {
