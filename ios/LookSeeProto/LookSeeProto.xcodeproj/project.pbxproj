@@ -12,6 +12,8 @@
 		3C19EB412F981FA400D1AA43 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = 3C19EB402F981FA400D1AA43 /* ZIPFoundation */; };
 		3C19EB492F9943F400D1AA43 /* FinalDetector.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3C19EB482F9943F400D1AA43 /* FinalDetector.mlpackage */; };
 		3C1FC9CC2F42C9E70006C1D3 /* PhotoPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C1FC9CB2F42C9DA0006C1D3 /* PhotoPicker.swift */; };
+		3C3D161E2FFCA97900C8A544 /* BusinessLandmarksView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C3D161D2FFCA97200C8A544 /* BusinessLandmarksView.swift */; };
+		3C3D16202FFCA9C300C8A544 /* BusinessLandmarkDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C3D161F2FFCA9B700C8A544 /* BusinessLandmarkDetailView.swift */; };
 		3C4E57012FE443230045B2D4 /* TextScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C4E57002FE443230045B2D4 /* TextScannerView.swift */; };
 		3C4E57072FE443E70045B2D4 /* LandmarkRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C4E57062FE443E70045B2D4 /* LandmarkRecord.swift */; };
 		3C5FED6B2F907D270018FF06 /* Tier2LandmarkRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C5FED6A2F907D270018FF06 /* Tier2LandmarkRecord.swift */; };
@@ -84,6 +86,8 @@
 		374FCAFA2FFE98CB0035A674 /* VideoMerge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoMerge.swift; sourceTree = "<group>"; };
 		3C19EB482F9943F400D1AA43 /* FinalDetector.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = FinalDetector.mlpackage; sourceTree = "<group>"; };
 		3C1FC9CB2F42C9DA0006C1D3 /* PhotoPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoPicker.swift; sourceTree = "<group>"; };
+		3C3D161D2FFCA97200C8A544 /* BusinessLandmarksView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BusinessLandmarksView.swift; sourceTree = "<group>"; };
+		3C3D161F2FFCA9B700C8A544 /* BusinessLandmarkDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BusinessLandmarkDetailView.swift; sourceTree = "<group>"; };
 		3C4E57002FE443230045B2D4 /* TextScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextScannerView.swift; sourceTree = "<group>"; };
 		3C4E57062FE443E70045B2D4 /* LandmarkRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LandmarkRecord.swift; sourceTree = "<group>"; };
 		3C5FED6A2F907D270018FF06 /* Tier2LandmarkRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tier2LandmarkRecord.swift; sourceTree = "<group>"; };
@@ -241,6 +245,8 @@
 		56C3FA072EA6CA3100EA6153 /* UI Files */ = {
 			isa = PBXGroup;
 			children = (
+				3C3D161F2FFCA9B700C8A544 /* BusinessLandmarkDetailView.swift */,
+				3C3D161D2FFCA97200C8A544 /* BusinessLandmarksView.swift */,
 				374FCAFA2FFE98CB0035A674 /* VideoMerge.swift */,
 				D0E7888C2FF2E3C000E5FE00 /* NegativeVideoCameraView.swift */,
 				D0B0B1312FE59EF800C75E25 /* QuickUploadView.swift */,
@@ -457,6 +463,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				562DAAAD2F2A71750083A71E /* Main.swift in Sources */,
+				3C3D16202FFCA9C300C8A544 /* BusinessLandmarkDetailView.swift in Sources */,
 				B0DE8C0D2F516FDD008E1512 /* Signup.swift in Sources */,
 				562DAAB32F2A89600083A71E /* LandmarkScan.swift in Sources */,
 				3C63C8A82F91875E0006C5DD /* VariableContainer.swift in Sources */,
@@ -479,6 +486,7 @@
 				3C72AA372F5141A000A90328 /* best.mlpackage in Sources */,
 				56C3FA082EA6CA3100EA6153 /* Settings.swift in Sources */,
 				3CE8899C2F3FEE2B00B66044 /* VideoPicker.swift in Sources */,
+				3C3D161E2FFCA97900C8A544 /* BusinessLandmarksView.swift in Sources */,
 				3C5FED6B2F907D270018FF06 /* Tier2LandmarkRecord.swift in Sources */,
 				3C4E57012FE443230045B2D4 /* TextScannerView.swift in Sources */,
 				B002FA112F91D23700120C4F /* AuthState.swift in Sources */,
@@ -668,7 +676,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 74S483TXSF;
+				DEVELOPMENT_TEAM = C66T6ZH83N;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
@@ -686,7 +694,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = looksee.nisarg.com;
+				PRODUCT_BUNDLE_IDENTIFIER = looksee.ian.com;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -707,7 +715,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 74S483TXSF;
+				DEVELOPMENT_TEAM = C66T6ZH83N;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
@@ -725,7 +733,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = looksee.nisarg.com;
+				PRODUCT_BUNDLE_IDENTIFIER = looksee.ian.com;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;

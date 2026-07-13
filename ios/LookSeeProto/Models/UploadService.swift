@@ -577,6 +577,11 @@ final class UploadService: ObservableObject {
             "application/json",
             forHTTPHeaderField: "Accept"
         )
+
+        try await addAuthorizationHeader(
+            to: &request
+        )
+
         
         // Attach the Cognito ID Token so API Gateway lets us in!
         request.setValue(
@@ -710,6 +715,11 @@ final class UploadService: ObservableObject {
             "application/json",
             forHTTPHeaderField: "Accept"
         )
+
+        try await addAuthorizationHeader(
+            to: &request
+        )
+
         
         // Attach the Cognito ID Token here as well
         request.setValue(
