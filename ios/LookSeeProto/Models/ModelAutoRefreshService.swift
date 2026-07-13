@@ -16,13 +16,13 @@ final class ModelAutoRefreshService: ObservableObject {
     // MARK: - Tunables
 
     // Poll backend every 10 minutes while active.
-    private let pollIntervalSeconds: UInt64 = 10 * 60
+    private let pollIntervalSeconds: UInt64 = 1 * 60
 
     // Only refresh after meaningful movement.
     private let minimumMovementBeforeRefreshMeters: Double = 50.0
 
     // Avoid accidental double-refreshes from view lifecycle overlap.
-    private let minimumTimeBetweenRefreshesSeconds: TimeInterval = 10 * 60
+    private let minimumTimeBetweenRefreshesSeconds: TimeInterval = 1 * 60
 
     // MARK: - State
 
