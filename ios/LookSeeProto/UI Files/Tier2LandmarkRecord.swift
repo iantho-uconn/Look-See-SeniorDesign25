@@ -385,7 +385,7 @@ struct Tier2LandmarkRecord: View {
                         latitude: extractedLatitude ?? locationManager.latitude,
                         longitude: extractedLongitude ?? locationManager.longitude,
                         horizontalAccuracy: locationManager.horizontalAccuracy,
-                        videoURL: pickedVideoURL,
+                        videoURLs: pickedVideoURL.map { [$0] } ?? [], // <--- UPDATED!
                         image: pickedImage
                     )
                 }

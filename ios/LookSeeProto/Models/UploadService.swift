@@ -276,7 +276,10 @@ final class UploadService: ObservableObject {
                     detail: "This should only take a moment."
                 )
 
-                let initResponse = try await initSubmission(initRequest)
+                let initResponse = try await initSubmission(
+                    initRequest,
+                    token: idToken // <--- ADDED TOKEN HERE
+                )
 
                 print("✅ Positive init completed:", initResponse.submissionId)
 
@@ -316,7 +319,10 @@ final class UploadService: ObservableObject {
                     horizontalAccuracy: horizontalAccuracy
                 )
 
-                try await completeSubmission(completeRequest)
+                try await completeSubmission(
+                    completeRequest,
+                    token: idToken // <--- ADDED TOKEN HERE
+                )
 
                 updateStage(
                     .complete,
