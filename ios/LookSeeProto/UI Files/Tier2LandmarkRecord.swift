@@ -97,10 +97,8 @@ struct Tier2LandmarkRecord: View {
                     
                     Spacer(minLength: 30)
                 }
-                // FIX: Matched identically to the 40 used in LandmarkRecord.swift
                 .padding(.top, 10)
             }
-            // FIX: Locks the ScrollView to the Top so the AWS loading jump doesn't happen
             .defaultScrollAnchor(.top)
             .scrollDismissesKeyboard(.interactively)
             .safeAreaInset(edge: .top) { Color.clear.frame(height: 50) }
@@ -370,16 +368,35 @@ struct Tier2LandmarkRecord: View {
         guard let selectedLandmark else { return }
         Task {
             await vm.fetchUserEmail()
+            
+            // --- TOKEN FIX: Fetch token from AuthViewModel and pass it down ---
+            let idToken = await vm.fetchIdToken()
+            
             do {
                 if hasMedia {
                     _ = try await uploadService.upload(
-                        userEmail: vm.userEmail, label: selectedLandmark.label, landmarkId: selectedLandmark.landmarkId, landmarkLabel: selectedLandmark.label, shortDescription: selectedLandmark.shortDescription, userDescription: nil,
-                        latitude: extractedLatitude ?? locationManager.latitude, longitude: extractedLongitude ?? locationManager.longitude, horizontalAccuracy: locationManager.horizontalAccuracy, videoURLs: pickedVideoURL.map { [$0] } ?? [], image: pickedImage
+                        userEmail: vm.userEmail,
+                        idToken: idToken, // <-- Passed right here!
+                        label: selectedLandmark.label,
+                        landmarkId: selectedLandmark.landmarkId,
+                        landmarkLabel: selectedLandmark.label,
+                        shortDescription: selectedLandmark.shortDescription,
+                        userDescription: nil,
+                        latitude: extractedLatitude ?? locationManager.latitude,
+                        longitude: extractedLongitude ?? locationManager.longitude,
+                        horizontalAccuracy: locationManager.horizontalAccuracy,
+                        videoURL: pickedVideoURL,
+                        image: pickedImage
                     )
                 }
                 
                 if let negativeVideo = capturedNegativeVideo {
-                    _ = try await hardNegativeUploadService.upload(landmarkId: selectedLandmark.landmarkId, video: negativeVideo)
+                    // --- NEGATIVE TOKEN FIX: Pass the VIP token to the negative service! ---
+                    _ = try await hardNegativeUploadService.upload(
+                        landmarkId: selectedLandmark.landmarkId,
+                        idToken: idToken, // <-- Add this!
+                        video: negativeVideo
+                    )
                 }
                 
                 print("✅ Tier-2 upload completed!")

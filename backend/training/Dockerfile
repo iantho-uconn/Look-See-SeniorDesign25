@@ -8,6 +8,8 @@ WORKDIR /app
 
 COPY train_yolo_sagemaker.py /app/train_yolo_sagemaker.py
 COPY requirements.txt /app/requirements.txt
+# Copy the tuning recipe directly into the Docker image!
+COPY looksee_best_hyperparameters.yaml /app/looksee_best_hyperparameters.yaml
 
 # 2. THE FIX: Force pip to lock in the CUDA 12.1 versions of PyTorch and Torchvision FIRST
 RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cu121

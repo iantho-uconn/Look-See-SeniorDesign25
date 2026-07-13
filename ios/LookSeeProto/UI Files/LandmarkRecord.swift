@@ -3,7 +3,6 @@
 //  LookSeeProto
 //
 
-
 import SwiftUI
 import CoreLocation
 import Photos
@@ -409,16 +408,24 @@ struct LandmarkRecord: View {
 
             do {
                 let positiveResult: PositiveSubmissionResult
+                
+                await vm.fetchUserEmail()
+                let idToken = await vm.fetchIdToken()
+                
                 if let existingResult = completedPositiveResult {
                     positiveResult = existingResult
                 } else {
                     let trimmedLabel = labelText.trimmingCharacters(in: .whitespacesAndNewlines)
                     let trimmedShortDescription = shortDescription.trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !trimmedLabel.isEmpty, !trimmedShortDescription.isEmpty else { return }
-                    guard hasMinimumClipDuration else { return }
-                    await vm.fetchUserEmail()
+                    
+                    if idToken.isEmpty {
+                        print("⚠️ WARNING: ID Token is empty. The upload may fail with a 401 Unauthorized.")
+                    }
+
                     positiveResult = try await uploadService.upload(
                         userEmail: vm.userEmail,
+                        idToken: idToken,
                         label: trimmedLabel,
                         landmarkId: generatedLandmarkId,
                         landmarkLabel: trimmedLabel,
@@ -437,7 +444,12 @@ struct LandmarkRecord: View {
                 let finalLandmarkId = positiveResult.landmarkId ?? generatedLandmarkId
 
                 if let negativeVideo = capturedNegativeVideo {
-                    _ = try await hardNegativeUploadService.upload(landmarkId: finalLandmarkId, video: negativeVideo)
+                    // --- NEGATIVE TOKEN FIX: Pass the VIP token to the negative service! ---
+                    _ = try await hardNegativeUploadService.upload(
+                        landmarkId: finalLandmarkId,
+                        idToken: idToken, // <-- Add this!
+                        video: negativeVideo
+                    )
                 }
 
                 completedLandmarkId = finalLandmarkId

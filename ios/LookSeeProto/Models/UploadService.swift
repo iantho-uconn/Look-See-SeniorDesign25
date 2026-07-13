@@ -173,6 +173,7 @@ final class UploadService: ObservableObject {
     /// submission — matching the backend's one-file-per-submission contract.
     func upload(
         userEmail: String,
+        idToken: String,
         label: String,
         landmarkId: String? = nil,
         landmarkLabel: String? = nil,
@@ -375,7 +376,10 @@ final class UploadService: ObservableObject {
                 detail: "This should only take a moment."
             )
 
-            let initResponse = try await initSubmission(initRequest)
+            let initResponse = try await initSubmission(
+                initRequest,
+                token: idToken
+            )
 
             print("✅ Positive init completed:", initResponse.submissionId)
 
@@ -415,7 +419,10 @@ final class UploadService: ObservableObject {
                 horizontalAccuracy: horizontalAccuracy
             )
 
-            try await completeSubmission(completeRequest)
+            try await completeSubmission(
+                completeRequest,
+                token: idToken
+            )
 
             updateStage(
                 .complete,
@@ -546,7 +553,8 @@ final class UploadService: ObservableObject {
     // MARK: - Initialize submission
 
     private func initSubmission(
-        _ requestBody: InitSubmissionRequest
+        _ requestBody: InitSubmissionRequest,
+        token: String
     ) async throws -> InitSubmissionResponse {
         let url = baseURL
             .appendingPathComponent("submissions")
@@ -563,11 +571,13 @@ final class UploadService: ObservableObject {
             "application/json",
             forHTTPHeaderField: "Accept"
         )
-
-        try await addAuthorizationHeader(
-            to: &request
+        
+        // Attach the Cognito ID Token so API Gateway lets us in!
+        request.setValue(
+            token,
+            forHTTPHeaderField: "Authorization"
         )
-
+        
         request.httpBody = try JSONEncoder().encode(
             requestBody
         )
@@ -676,7 +686,8 @@ final class UploadService: ObservableObject {
     // MARK: - Complete submission
 
     private func completeSubmission(
-        _ requestBody: CompleteSubmissionRequest
+        _ requestBody: CompleteSubmissionRequest,
+        token: String
     ) async throws {
         let url = baseURL
             .appendingPathComponent("submissions")
@@ -693,11 +704,13 @@ final class UploadService: ObservableObject {
             "application/json",
             forHTTPHeaderField: "Accept"
         )
-
-        try await addAuthorizationHeader(
-            to: &request
+        
+        // Attach the Cognito ID Token here as well
+        request.setValue(
+            token,
+            forHTTPHeaderField: "Authorization"
         )
-
+        
         request.httpBody = try JSONEncoder().encode(
             requestBody
         )
