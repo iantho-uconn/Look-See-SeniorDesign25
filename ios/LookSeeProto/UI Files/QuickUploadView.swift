@@ -253,7 +253,7 @@ struct QuickUploadView: View {
                 latitude: landmark.latitude,
                 longitude: landmark.longitude,
                 horizontalAccuracy: 10.0,
-                videoURL: uploadVideoURL,
+                videoURLs: uploadVideoURL.map { [$0] } ?? [],
                 image: uploadImage
             )
             print("✅ QuickUpload Completed Successfully")
