@@ -228,6 +228,7 @@ final class BusinessLandmarkService {
         }
 
         let tokens = try tokenProvider.getCognitoTokens().get()
+        print("ID TOKEN:", tokens.idToken)
         return tokens.idToken
     }
 

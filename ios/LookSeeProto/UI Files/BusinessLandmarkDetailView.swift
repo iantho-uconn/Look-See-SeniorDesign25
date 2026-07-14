@@ -19,6 +19,11 @@ struct BusinessLandmarkDetailView: View {
     @State private var isSavingDescription = false
     @State private var saveErrorMessage: String?
 
+    @State private var displayedIsActive: Bool
+    @State private var displayedPromotionEnabled: Bool
+    @State private var isSavingManagement = false
+    @State private var managementErrorMessage: String?
+
     @State private var showPositivePicker = false
     @State private var showNegativePicker = false
     @State private var selectedPositiveMediaItems: [PhotosPickerItem] = []
@@ -45,6 +50,8 @@ struct BusinessLandmarkDetailView: View {
 
         _displayedShortDescription = State(initialValue: initialDescription)
         _draftShortDescription = State(initialValue: initialDescription)
+        _displayedIsActive = State(initialValue: landmark.isActive ?? true)
+        _displayedPromotionEnabled = State(initialValue: landmark.promotionEnabled ?? false)
     }
 
     var body: some View {
@@ -90,16 +97,61 @@ struct BusinessLandmarkDetailView: View {
                 }
             }
 
-            Section(header: Text("Management")) {
-                Label(
-                    landmark.displayStatus,
-                    systemImage: landmark.isActive == false ? "pause.circle" : "checkmark.circle"
-                )
+            Section(
+                header: Text("Management"),
+                footer: Text("Active landmarks can be used by the app. Promotions Enabled controls whether this landmark is allowed to show promotions once promotion records are added.")
+            ) {
+                Toggle(isOn: Binding(
+                    get: { displayedIsActive },
+                    set: { newValue in
+                        updateManagementSetting(
+                            isActive: newValue,
+                            promotionEnabled: nil
+                        )
+                    }
+                )) {
+                    Label(
+                        displayedIsActive ? "Active Landmark" : "Inactive Landmark",
+                        systemImage: displayedIsActive ? "checkmark.circle" : "pause.circle"
+                    )
+                }
+                .disabled(isSavingManagement)
 
-                Label(
-                    landmark.displayPromotionStatus,
-                    systemImage: landmark.promotionEnabled == true ? "tag.fill" : "tag"
-                )
+                Toggle(isOn: Binding(
+                    get: { displayedPromotionEnabled },
+                    set: { newValue in
+                        updateManagementSetting(
+                            isActive: nil,
+                            promotionEnabled: newValue
+                        )
+                    }
+                )) {
+                    Label(
+                        displayedPromotionEnabled ? "Promotions Enabled" : "Promotions Disabled",
+                        systemImage: displayedPromotionEnabled ? "tag.fill" : "tag"
+                    )
+                }
+                .disabled(isSavingManagement)
+
+                if isSavingManagement {
+                    HStack(spacing: 10) {
+                        ProgressView()
+                        Text("Saving management setting...")
+                            .font(.footnote)
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                if let managementErrorMessage {
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(.orange)
+
+                        Text(managementErrorMessage)
+                            .font(.footnote)
+                            .foregroundColor(.secondary)
+                    }
+                }
             }
 
             Section(header: Text("Location")) {
@@ -427,6 +479,53 @@ struct BusinessLandmarkDetailView: View {
                 await MainActor.run {
                     saveErrorMessage = error.localizedDescription
                     isSavingDescription = false
+                }
+            }
+        }
+    }
+
+    // MARK: - Management Settings
+
+    private func updateManagementSetting(
+        isActive: Bool?,
+        promotionEnabled: Bool?
+    ) {
+        guard !isSavingManagement else { return }
+
+        let previousIsActive = displayedIsActive
+        let previousPromotionEnabled = displayedPromotionEnabled
+
+        if let isActive {
+            displayedIsActive = isActive
+        }
+
+        if let promotionEnabled {
+            displayedPromotionEnabled = promotionEnabled
+        }
+
+        isSavingManagement = true
+        managementErrorMessage = nil
+
+        Task {
+            do {
+                let updatedLandmark = try await service.updateLandmarkSettings(
+                    landmarkId: landmark.landmarkId,
+                    isActive: isActive,
+                    promotionEnabled: promotionEnabled
+                )
+
+                await MainActor.run {
+                    displayedIsActive = updatedLandmark.isActive ?? displayedIsActive
+                    displayedPromotionEnabled = updatedLandmark.promotionEnabled ?? displayedPromotionEnabled
+                    onLandmarkUpdated(updatedLandmark)
+                    isSavingManagement = false
+                }
+            } catch {
+                await MainActor.run {
+                    displayedIsActive = previousIsActive
+                    displayedPromotionEnabled = previousPromotionEnabled
+                    managementErrorMessage = error.localizedDescription
+                    isSavingManagement = false
                 }
             }
         }
