@@ -7,7 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		374D85FA2FF7D1150009620F /* Nisarg_cluster_3.gpx in Resources */ = {isa = PBXBuildFile; fileRef = 374D85F92FF7D10D0009620F /* Nisarg_cluster_3.gpx */; };
 		374FCAFB2FFE98CB0035A674 /* VideoMerge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 374FCAFA2FFE98CB0035A674 /* VideoMerge.swift */; };
 		3C19EB412F981FA400D1AA43 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = 3C19EB402F981FA400D1AA43 /* ZIPFoundation */; };
 		3C19EB492F9943F400D1AA43 /* FinalDetector.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3C19EB482F9943F400D1AA43 /* FinalDetector.mlpackage */; };
@@ -36,6 +35,7 @@
 		3CE8899C2F3FEE2B00B66044 /* VideoPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CE8899B2F3FEE2300B66044 /* VideoPicker.swift */; };
 		3CF188BE2FE19AAD00FED231 /* CapturedNegativePhoto.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CF188BC2FE19AA300FED231 /* CapturedNegativePhoto.swift */; };
 		3CF188C32FE19B6D00FED231 /* MultiPhotoCameraView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CF188C22FE19B5A00FED231 /* MultiPhotoCameraView.swift */; };
+		3CF3703C300683FB005780B3 /* ITlo.gpx in Resources */ = {isa = PBXBuildFile; fileRef = 3CF3703B300683FB005780B3 /* ITlo.gpx */; };
 		561FF74B2EB258D400411CF8 /* Library.swift in Sources */ = {isa = PBXBuildFile; fileRef = 561FF74A2EB258CC00411CF8 /* Library.swift */; };
 		562AD38C2ECBAF1B00D5144C /* Login.swift in Sources */ = {isa = PBXBuildFile; fileRef = 562AD38B2ECBAF1800D5144C /* Login.swift */; };
 		562DAAAD2F2A71750083A71E /* Main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 562DAAAC2F2A71740083A71E /* Main.swift */; };
@@ -62,7 +62,6 @@
 		D0E788892FF2E1CD00E5FE00 /* NegativeVideoCameraService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0E788872FF2E1C700E5FE00 /* NegativeVideoCameraService.swift */; };
 		D0E7888D2FF2E3C800E5FE00 /* NegativeVideoCameraView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0E7888C2FF2E3C000E5FE00 /* NegativeVideoCameraView.swift */; };
 		D0E7888F2FF39A9A00E5FE00 /* NegativeGalleryPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0E7888E2FF39A9500E5FE00 /* NegativeGalleryPicker.swift */; };
-		D0E788932FF5073000E5FE00 /* GymLocation.gpx in Resources */ = {isa = PBXBuildFile; fileRef = D0E788922FF5073000E5FE00 /* GymLocation.gpx */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -83,7 +82,6 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		374D85F92FF7D10D0009620F /* Nisarg_cluster_3.gpx */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = Nisarg_cluster_3.gpx; sourceTree = "<group>"; };
 		374FCAFA2FFE98CB0035A674 /* VideoMerge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoMerge.swift; sourceTree = "<group>"; };
 		3C19EB482F9943F400D1AA43 /* FinalDetector.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = FinalDetector.mlpackage; sourceTree = "<group>"; };
 		3C1FC9CB2F42C9DA0006C1D3 /* PhotoPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoPicker.swift; sourceTree = "<group>"; };
@@ -108,6 +106,7 @@
 		3CE8899B2F3FEE2300B66044 /* VideoPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoPicker.swift; sourceTree = "<group>"; };
 		3CF188BC2FE19AA300FED231 /* CapturedNegativePhoto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CapturedNegativePhoto.swift; sourceTree = "<group>"; };
 		3CF188C22FE19B5A00FED231 /* MultiPhotoCameraView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultiPhotoCameraView.swift; sourceTree = "<group>"; };
+		3CF3703B300683FB005780B3 /* ITlo.gpx */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = ITlo.gpx; sourceTree = "<group>"; };
 		561FF74A2EB258CC00411CF8 /* Library.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Library.swift; sourceTree = "<group>"; };
 		562AD38B2ECBAF1800D5144C /* Login.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Login.swift; sourceTree = "<group>"; };
 		562DAAAC2F2A71740083A71E /* Main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Main.swift; sourceTree = "<group>"; };
@@ -133,7 +132,6 @@
 		D0E788872FF2E1C700E5FE00 /* NegativeVideoCameraService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NegativeVideoCameraService.swift; sourceTree = "<group>"; };
 		D0E7888C2FF2E3C000E5FE00 /* NegativeVideoCameraView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NegativeVideoCameraView.swift; sourceTree = "<group>"; };
 		D0E7888E2FF39A9500E5FE00 /* NegativeGalleryPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NegativeGalleryPicker.swift; sourceTree = "<group>"; };
-		D0E788922FF5073000E5FE00 /* GymLocation.gpx */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = GymLocation.gpx; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -217,8 +215,7 @@
 		3C918F942E9ECE5F00AF5DAF = {
 			isa = PBXGroup;
 			children = (
-				D0E788922FF5073000E5FE00 /* GymLocation.gpx */,
-				374D85F92FF7D10D0009620F /* Nisarg_cluster_3.gpx */,
+				3CF3703B300683FB005780B3 /* ITlo.gpx */,
 				3C9020BF2F3AC88600EE30BF /* MachineLearningModels */,
 				3C90209B2F3ABC8B00EE30BF /* Detection */,
 				565542BF2EBD8384007DBA98 /* Models */,
@@ -439,8 +436,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				D0E788932FF5073000E5FE00 /* GymLocation.gpx in Resources */,
-				374D85FA2FF7D1150009620F /* Nisarg_cluster_3.gpx in Resources */,
+				3CF3703C300683FB005780B3 /* ITlo.gpx in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
