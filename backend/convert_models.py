@@ -10,11 +10,11 @@ from ultralytics import YOLO
 AWS_REGION = "us-east-1"
 BUCKET = "looksee-models"
 
-# --- S3 LINKS AUTO-FILLED FROM YOUR SAGEMAKER RUN ---
+# --- S3 LINKS UPDATED FOR RUN a9fc503e-aa58-4586-854f-cc2d0f91b291 ---
 TARGET_CLUSTERS = {
-    "0": "s3://looksee-models/sagemaker-training-output-negtest/ls-7756c37f-271b-4d64-81fb-330ac3c32edd-c0/output/model.tar.gz",
-    "2": "s3://looksee-models/sagemaker-training-output-negtest/ls-7756c37f-271b-4d64-81fb-330ac3c32edd-c2/output/model.tar.gz",
-    "3": "s3://looksee-models/sagemaker-training-output-negtest/ls-7756c37f-271b-4d64-81fb-330ac3c32edd-c3/output/model.tar.gz",
+    "0": "s3://looksee-models/sagemaker-training-output-negtest/ls-a9fc503e-aa58-4586-854f-cc2d0f91b291-c0/output/model.tar.gz",
+    "2": "s3://looksee-models/sagemaker-training-output-negtest/ls-a9fc503e-aa58-4586-854f-cc2d0f91b291-c2/output/model.tar.gz",
+    "3": "s3://looksee-models/sagemaker-training-output-negtest/ls-a9fc503e-aa58-4586-854f-cc2d0f91b291-c3/output/model.tar.gz",
 }
 
 s3 = boto3.client('s3', region_name=AWS_REGION)
@@ -114,7 +114,7 @@ def process_cluster(cluster_id_str, s3_tar_uri):
     with open(os.path.join(extract_dir, "conversion-manifest.json"), "w") as f:
         json.dump(conversion_manifest, f, ensure_ascii=False, indent=2)
 
-    # 5. Upload all 6 files to the strict S3 Path!
+    # 5. Upload all 6 files to the strict S3 Path
     dest_prefix = f"ml_conversions/cluster-{cluster_id_str}/{training_run_id}/"
 
     files_to_upload = [

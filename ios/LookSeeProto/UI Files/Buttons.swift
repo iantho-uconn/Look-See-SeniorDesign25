@@ -25,22 +25,21 @@ struct Buttons: View {
     
     var tabCount: Int {
         switch authState.tier {
-        case .guest: return 4
-        case .authenticated: return 4
-        case .business: return 5
+        case .guest: return 3 // Dropped by 1 since we removed Upload
+        case .authenticated: return 3 // Dropped by 1
+        case .business: return 4 // Dropped by 1 (Scan, Map, Record, Queue)
         }
     }
     
     private var isScanTab: Bool { currentTab == 0 }
     
-    // DYNAMIC TITLE
+    // DYNAMIC TITLE - Updated for Queue
     private var topBarTitle: String {
         switch currentTab {
         case 0: return "LookSee"
         case 1: return "Map"
-        case 2: return authState.tier == .business ? "Record" : "Upload"
-        case 3: return authState.tier == .business ? "Upload" : "Offline Archive"
-        case 4: return "Offline Archive"
+        case 2: return authState.tier == .business ? "Record" : "Upload Queue"
+        case 3: return "Upload Queue"
         default: return "LookSee"
         }
     }
@@ -70,14 +69,15 @@ struct Buttons: View {
                     if authState.tier == .business {
                         LandmarkRecord { landmarkId in
                             pendingUploadLandmarkId = landmarkId
-                            withAnimation(.easeInOut(duration: 0.25)) { currentTab = 3 }
+                            withAnimation(.easeInOut(duration: 0.25)) { currentTab = 3 } // Jumps to Queue now
                         }
                         .safeAreaInset(edge: .top) { Color.clear.frame(height: 45) }
                         .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 90) }
                         .tag(2)
                     }
                     
-                    // Tab 3 (or 2) — Upload
+                    // COMMENTED OUT - Upload Tab
+                    /*
                     if authState.tier == .authenticated || authState.tier == .business {
                         Tier2LandmarkRecord(
                             initialLandmarkId: pendingUploadLandmarkId,
@@ -91,21 +91,21 @@ struct Buttons: View {
                             .ignoresSafeArea()
                             .tag(authState.tier == .business ? 3 : 2)
                     }
+                    */
                     
-                    // Tab 4 (or 3) — Archive
+                    // Tab 3 (or 2) — Queue (Formerly Archive)
                     if authState.tier == .authenticated || authState.tier == .business {
                         ArchiveView()
                             .safeAreaInset(edge: .top) { Color.clear.frame(height: 45) }
                             .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 90) }
-                            .tag(authState.tier == .business ? 4 : 3)
+                            .tag(authState.tier == .business ? 3 : 2) // Shifted down 1
                     } else {
                         Color(red: 0.06, green: 0.06, blue: 0.10)
                             .ignoresSafeArea()
-                            .tag(authState.tier == .business ? 4 : 3)
+                            .tag(authState.tier == .business ? 3 : 2)
                     }
                 }
                 .scrollDismissesKeyboard(.immediately)
-                // FIX: Deleted the .defaultScrollAnchor(.bottom) that was hijacking the page
                 .ignoresSafeArea()
                 .toolbar(.hidden, for: .tabBar)
                 .animation(.easeInOut(duration: 0.2), value: currentTab)
@@ -222,8 +222,12 @@ struct Buttons: View {
             tabButton(title: "Map", icon: "map", tab: 1, locked: false)
             if authState.tier == .business {
                 tabButton(title: "Record", icon: "video", tab: 2, locked: false)
-                tabButton(title: "Upload", icon: "arrow.up.circle", tab: authState.tier == .business ? 3 : 2, locked: authState.tier == .guest)
-                tabButton(title: "Archive", icon: "folder.fill", tab: authState.tier == .business ? 4 : 3, locked: authState.tier == .guest)
+                
+                // COMMENTED OUT - Upload Button
+                // tabButton(title: "Upload", icon: "arrow.up.circle", tab: 3, locked: authState.tier == .guest)
+                
+                // Renamed to Queue and shifted index to 3
+                tabButton(title: "Queue", icon: "folder.fill", tab: 3, locked: authState.tier == .guest)
             }
         }
         .padding(.horizontal, 16)
@@ -247,14 +251,25 @@ struct Buttons: View {
                     Image(systemName: "map").font(.system(size: 40))
                     Text("Explore the Map").font(.title2.weight(.bold))
                     Text("Find valid landmarks around you to scan. Use the search bar or filters to narrow down locations.")
-                case 2, 3:
-                    Image(systemName: "arrow.up.circle").font(.system(size: 40))
-                    Text("Upload Media").font(.title2.weight(.bold))
-                    Text("Record a short video or take a photo of a nearby landmark to help improve our recognition models.")
+                case 2:
+                    if authState.tier == .business {
+                        Image(systemName: "video.fill").font(.system(size: 40))
+                        Text("Record Landmark").font(.title2.weight(.bold))
+                        Text("Record a short video or take a photo of a nearby landmark to help improve our recognition models.")
+                    } else {
+                        Image(systemName: "folder.fill").font(.system(size: 40))
+                        Text("Upload Queue").font(.title2.weight(.bold))
+                        Text("This is your upload queue. Media you capture while offline will sit here and automatically upload when service returns.")
+                    }
+                // Updated case 3 to reflect Queue logic for business users
+                case 3:
+                    Image(systemName: "folder.fill").font(.system(size: 40))
+                    Text("Upload Queue").font(.title2.weight(.bold))
+                    Text("This is your upload queue. Media you capture while offline will sit here and automatically upload when service returns.")
                 default:
                     Image(systemName: "folder.fill").font(.system(size: 40))
-                    Text("Offline Archive").font(.title2.weight(.bold))
-                    Text("This is your offline folder. You can record and save videos here to upload later when you have a better connection.")
+                    Text("Upload Queue").font(.title2.weight(.bold))
+                    Text("This is your upload queue. Media you capture while offline will sit here and automatically upload when service returns.")
                 }
             }
             .foregroundStyle(Color(red: 0.22, green: 0.49, blue: 1.00))
