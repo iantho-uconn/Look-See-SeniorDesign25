@@ -37,6 +37,7 @@
 		3CF188C32FE19B6D00FED231 /* MultiPhotoCameraView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CF188C22FE19B5A00FED231 /* MultiPhotoCameraView.swift */; };
 		3CF3703C300683FB005780B3 /* ITlo.gpx in Resources */ = {isa = PBXBuildFile; fileRef = 3CF3703B300683FB005780B3 /* ITlo.gpx */; };
 		3CF3703E3006BE24005780B3 /* AccountSecurityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CF3703D3006BE24005780B3 /* AccountSecurityView.swift */; };
+		3CF370423006BE7F005780B3 /* ForgotPasswordView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CF370413006BE7F005780B3 /* ForgotPasswordView.swift */; };
 		561FF74B2EB258D400411CF8 /* Library.swift in Sources */ = {isa = PBXBuildFile; fileRef = 561FF74A2EB258CC00411CF8 /* Library.swift */; };
 		562AD38C2ECBAF1B00D5144C /* Login.swift in Sources */ = {isa = PBXBuildFile; fileRef = 562AD38B2ECBAF1800D5144C /* Login.swift */; };
 		562DAAAD2F2A71750083A71E /* Main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 562DAAAC2F2A71740083A71E /* Main.swift */; };
@@ -109,6 +110,7 @@
 		3CF188C22FE19B5A00FED231 /* MultiPhotoCameraView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultiPhotoCameraView.swift; sourceTree = "<group>"; };
 		3CF3703B300683FB005780B3 /* ITlo.gpx */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = ITlo.gpx; sourceTree = "<group>"; };
 		3CF3703D3006BE24005780B3 /* AccountSecurityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountSecurityView.swift; sourceTree = "<group>"; };
+		3CF370413006BE7F005780B3 /* ForgotPasswordView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForgotPasswordView.swift; sourceTree = "<group>"; };
 		561FF74A2EB258CC00411CF8 /* Library.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Library.swift; sourceTree = "<group>"; };
 		562AD38B2ECBAF1800D5144C /* Login.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Login.swift; sourceTree = "<group>"; };
 		562DAAAC2F2A71740083A71E /* Main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Main.swift; sourceTree = "<group>"; };
@@ -264,6 +266,7 @@
 				562AD38B2ECBAF1800D5144C /* Login.swift */,
 				562DAAB22F2A895B0083A71E /* LandmarkScan.swift */,
 				3C1FC9CB2F42C9DA0006C1D3 /* PhotoPicker.swift */,
+				3CF370413006BE7F005780B3 /* ForgotPasswordView.swift */,
 				3CE8899B2F3FEE2300B66044 /* VideoPicker.swift */,
 				562DAAAC2F2A71740083A71E /* Main.swift */,
 				3C5FED6A2F907D270018FF06 /* Tier2LandmarkRecord.swift */,
@@ -474,6 +477,7 @@
 				562AD38C2ECBAF1B00D5144C /* Login.swift in Sources */,
 				B0DC9CA62F4F849A004A9452 /* AuthService.swift in Sources */,
 				D0B0B12C2FE48EC100C75E25 /* OfflineMediaManager.swift in Sources */,
+				3CF370423006BE7F005780B3 /* ForgotPasswordView.swift in Sources */,
 				D0B0B1322FE59F0300C75E25 /* QuickUploadView.swift in Sources */,
 				568CE2D12F56554E009A8775 /* PromotionEditor.swift in Sources */,
 				3C9020A02F3ABCD300EE30BF /* CameraPreview.swift in Sources */,
