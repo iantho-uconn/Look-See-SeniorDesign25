@@ -188,15 +188,14 @@ struct LandmarkRecord: View {
         ZStack {
             Color.black.opacity(0.6).ignoresSafeArea()
             VStack(spacing: 20) {
-                ZStack { Circle().fill(primaryColor.opacity(0.12)).frame(width: 70, height: 70); Image(systemName: "folder.badge.plus").font(.system(size: 32)).foregroundStyle(primaryColor) }
+                ZStack { Circle().fill(primaryColor.opacity(0.12)).frame(width: 70, height: 70); Image(systemName: "checkmark.circle").font(.system(size: 32)).foregroundStyle(primaryColor) }
                 VStack(spacing: 8) {
                     Text("Media Captured").font(.system(size: 20, weight: .bold, design: .rounded)).foregroundStyle(.white)
-                    Text("What would you like to do with this media? You can upload it now or save it to your archive.")
+                    Text("Continue to fill out the landmark details. You can upload it or queue it for later when you're done.")
                         .font(.subheadline).foregroundStyle(Color.white.opacity(0.5)).multilineTextAlignment(.center).padding(.horizontal, 8)
                 }
                 VStack(spacing: 10) {
-                    Button { withAnimation(.easeInOut(duration: 0.2)) { showArchivePrompt = false }; applyPendingMedia() } label: { Text("Upload Now").font(.system(size: 16, weight: .semibold)).foregroundStyle(.white).frame(maxWidth: .infinity).padding(.vertical, 14).background(Color(red: 0.22, green: 0.49, blue: 1.00)).cornerRadius(14) }
-                    Button { withAnimation(.easeInOut(duration: 0.2)) { showArchivePrompt = false }; saveToArchiveFromPrompt() } label: { Text("Save to Offline Archive").font(.system(size: 15)).foregroundStyle(.white).frame(maxWidth: .infinity).padding(.vertical, 14).background(Color.white.opacity(0.15)).cornerRadius(14) }
+                    Button { withAnimation(.easeInOut(duration: 0.2)) { showArchivePrompt = false }; applyPendingMedia() } label: { Text("Continue").font(.system(size: 16, weight: .semibold)).foregroundStyle(.white).frame(maxWidth: .infinity).padding(.vertical, 14).background(Color(red: 0.22, green: 0.49, blue: 1.00)).cornerRadius(14) }
                     Button { withAnimation(.easeInOut(duration: 0.2)) { showArchivePrompt = false }; discardPendingMedia() } label: { Text("Discard").font(.system(size: 15)).foregroundStyle(.red).frame(maxWidth: .infinity).padding(.vertical, 14).background(Color.red.opacity(0.15)).cornerRadius(14) }
                 }
             }.padding(24).background(Color(red: 0.11, green: 0.11, blue: 0.16)).cornerRadius(24).overlay(RoundedRectangle(cornerRadius: 24).stroke(Color.white.opacity(0.07), lineWidth: 0.5)).padding(.horizontal, 28)
@@ -381,8 +380,9 @@ struct LandmarkRecord: View {
                 }
             } else if hasPositiveMedia && !isSubmissionRunning && !isFullSubmissionComplete {
                 Button { saveToArchiveFromForm() } label: {
-                    Image(systemName: "folder.badge.plus").font(.title2).foregroundStyle(.white).frame(width: 54, height: 52).background(primaryColor).clipShape(RoundedRectangle(cornerRadius: 15))
+                    Image(systemName: "tray.and.arrow.up.fill").font(.title2).foregroundStyle(.white).frame(width: 54, height: 52).background(canUpload ? primaryColor : Color.gray).clipShape(RoundedRectangle(cornerRadius: 15))
                 }
+                .disabled(!canUpload)
             }
 
             Button { startFullSubmission() } label: {
@@ -447,7 +447,7 @@ struct LandmarkRecord: View {
                     // --- NEGATIVE TOKEN FIX: Pass the VIP token to the negative service! ---
                     _ = try await hardNegativeUploadService.upload(
                         landmarkId: finalLandmarkId,
-                        idToken: idToken, // <-- Add this!
+                        idToken: idToken,
                         video: negativeVideo
                     )
                 }
@@ -598,32 +598,49 @@ struct LandmarkRecord: View {
         pendingArchiveURL = nil; pendingArchiveImage = nil; pendingArchiveLocation = nil
     }
 
-    private func saveToArchiveFromPrompt() {
-        let lat = pendingArchiveLocation?.latitude ?? locationManager.latitude ?? 0.0
-        let lon = pendingArchiveLocation?.longitude ?? locationManager.longitude ?? 0.0
-        if let url = pendingArchiveURL { _ = OfflineMediaManager.shared.archiveVideo(tempURL: url, lat: lat, lon: lon) } else if let img = pendingArchiveImage { _ = OfflineMediaManager.shared.archivePhoto(image: img, lat: lat, lon: lon) }
-        discardPendingMedia(); statusText = "Media securely saved to Offline Archive."
-    }
-
     private func saveToArchiveFromForm() {
         let lat = extractedLatitude ?? locationManager.latitude ?? 0.0
         let lon = extractedLongitude ?? locationManager.longitude ?? 0.0
 
         if let firstURL = pickedVideoURLs.first {
-            // NOTE: only the first clip is archived offline right now. If you
-            // need full multi-clip offline drafts, OfflineMediaManager needs
-            // a matching update to store/restore the whole array.
-            _ = OfflineMediaManager.shared.archiveVideo(tempURL: firstURL, lat: lat, lon: lon, label: labelText, desc: shortDescription)
+            // NOTE: only the first clip is archived offline right now.
+            _ = OfflineMediaManager.shared.archiveVideo(
+                tempURL: firstURL,
+                lat: lat,
+                lon: lon,
+                landmarkId: businessLandmarkId,
+                label: labelText,
+                shortDesc: shortDescription,
+                userDesc: nil, // Update if you add user description to Tier 1 form
+                negativeVideoURL: capturedNegativeVideo?.fileURL,
+                isTier2: false
+            )
         } else if let img = pickedImage {
-            _ = OfflineMediaManager.shared.archivePhoto(image: img, lat: lat, lon: lon, label: labelText, desc: shortDescription)
+            _ = OfflineMediaManager.shared.archivePhoto(
+                image: img,
+                lat: lat,
+                lon: lon,
+                landmarkId: businessLandmarkId,
+                label: labelText,
+                shortDesc: shortDescription,
+                userDesc: nil,
+                negativeVideoURL: capturedNegativeVideo?.fileURL,
+                isTier2: false
+            )
         } else { return }
 
-        clearScreen(); statusText = "Media securely saved to Offline Archive."
+        clearScreen()
+        statusText = "Landmark safely queued in Outbox for upload."
     }
 
     private func saveDraftAndDismiss() {
         if let archive = archivedMedia {
-            OfflineMediaManager.shared.updateDraft(media: archive, label: labelText, desc: shortDescription)
+            OfflineMediaManager.shared.updateDraft(
+                media: archive,
+                label: labelText,
+                shortDesc: shortDescription,
+                userDesc: nil
+            )
         }
         dismiss()
     }

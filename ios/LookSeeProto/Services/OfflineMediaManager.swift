@@ -3,6 +3,7 @@
 //  LookSeeProto
 //
 //  Created by Angel Pineda on 6/18/26.
+//  Updated for Outbox/Queue functionality
 //
 
 import Foundation
@@ -37,22 +38,51 @@ class OfflineMediaManager: ObservableObject {
         getDocumentsDirectory().appendingPathComponent(media.thumbnailFileName)
     }
     
-    // MARK: - Archive Video
-    func archiveVideo(tempURL: URL, lat: Double, lon: Double, label: String? = nil, desc: String? = nil, isTier2: Bool = false) -> ArchivedMedia? {
+    func getNegativeVideoURL(for media: ArchivedMedia) -> URL? {
+        guard let negName = media.negativeVideoFileName else { return nil }
+        return getDocumentsDirectory().appendingPathComponent(negName)
+    }
+    
+    // MARK: - Archive Video (Queue)
+    func archiveVideo(
+        tempURL: URL,
+        lat: Double,
+        lon: Double,
+        landmarkId: String?,
+        label: String,
+        shortDesc: String,
+        userDesc: String?,
+        negativeVideoURL: URL?,
+        isTier2: Bool = false
+    ) -> ArchivedMedia? {
+        
         let uniqueID = UUID().uuidString
         let fileName = uniqueID + ".mov"
         let thumbName = uniqueID + "_thumb.jpg"
         let permanentURL = getDocumentsDirectory().appendingPathComponent(fileName)
         
+        var permanentNegName: String? = nil
+        
         do {
+            // 1. Copy Positive Video
             try FileManager.default.copyItem(at: tempURL, to: permanentURL)
             
+            // 2. Generate Thumbnail
             if let thumbnail = generateVideoThumbnail(for: permanentURL) {
                 _ = saveImageToDisk(image: thumbnail, fileName: thumbName)
             }
             
+            // 3. Copy Negative Video (if one was recorded)
+            if let negURL = negativeVideoURL {
+                let negName = uniqueID + "_negative.mov"
+                let permanentNegURL = getDocumentsDirectory().appendingPathComponent(negName)
+                try FileManager.default.copyItem(at: negURL, to: permanentNegURL)
+                permanentNegName = negName
+            }
+            
+            // 4. Create Queue Record
             let newEntry = ArchivedMedia(
-                title: "Archived Video",
+                title: label,
                 fileName: fileName,
                 thumbnailFileName: thumbName,
                 isVideo: true,
@@ -60,9 +90,12 @@ class OfflineMediaManager: ObservableObject {
                 longitude: lon,
                 dateSaved: Date(),
                 isFavorite: false,
+                landmarkId: landmarkId,
                 savedLabel: label,
-                savedDescription: desc,
-                isTier2: isTier2 // Saves the flag
+                savedDescription: shortDesc,
+                savedUserDescription: userDesc,
+                negativeVideoFileName: permanentNegName,
+                isTier2: isTier2
             )
             
             DispatchQueue.main.async {
@@ -77,17 +110,42 @@ class OfflineMediaManager: ObservableObject {
         }
     }
     
-    // MARK: - Archive Photo
-    func archivePhoto(image: UIImage, lat: Double, lon: Double, label: String? = nil, desc: String? = nil, isTier2: Bool = false) -> ArchivedMedia? {
+    // MARK: - Archive Photo (Queue)
+    func archivePhoto(
+        image: UIImage,
+        lat: Double,
+        lon: Double,
+        landmarkId: String?,
+        label: String,
+        shortDesc: String,
+        userDesc: String?,
+        negativeVideoURL: URL?,
+        isTier2: Bool = false
+    ) -> ArchivedMedia? {
+        
         let uniqueID = UUID().uuidString
         let fileName = uniqueID + ".jpg"
         let thumbName = uniqueID + "_thumb.jpg"
         
+        var permanentNegName: String? = nil
+        
         guard saveImageToDisk(image: image, fileName: fileName) else { return nil }
         _ = saveImageToDisk(image: image, fileName: thumbName, compression: 0.3)
         
+        do {
+            // Copy Negative Video (if one was recorded)
+            if let negURL = negativeVideoURL {
+                let negName = uniqueID + "_negative.mov"
+                let permanentNegURL = getDocumentsDirectory().appendingPathComponent(negName)
+                try FileManager.default.copyItem(at: negURL, to: permanentNegURL)
+                permanentNegName = negName
+            }
+        } catch {
+            print("❌ Failed to archive negative video with photo: \(error)")
+        }
+        
         let newEntry = ArchivedMedia(
-            title: "Archived Photo",
+            title: label,
             fileName: fileName,
             thumbnailFileName: thumbName,
             isVideo: false,
@@ -95,9 +153,12 @@ class OfflineMediaManager: ObservableObject {
             longitude: lon,
             dateSaved: Date(),
             isFavorite: false,
+            landmarkId: landmarkId,
             savedLabel: label,
-            savedDescription: desc,
-            isTier2: isTier2 // Saves the flag
+            savedDescription: shortDesc,
+            savedUserDescription: userDesc,
+            negativeVideoFileName: permanentNegName,
+            isTier2: isTier2
         )
         
         DispatchQueue.main.async {
@@ -108,10 +169,12 @@ class OfflineMediaManager: ObservableObject {
     }
     
     // MARK: - Draft Updates
-    func updateDraft(media: ArchivedMedia, label: String, desc: String) {
+    func updateDraft(media: ArchivedMedia, label: String, shortDesc: String, userDesc: String?) {
         if let index = archivedItems.firstIndex(where: { $0.id == media.id }) {
             archivedItems[index].savedLabel = label
-            archivedItems[index].savedDescription = desc
+            archivedItems[index].savedDescription = shortDesc
+            archivedItems[index].savedUserDescription = userDesc
+            archivedItems[index].title = label
             saveArchive()
         }
     }
@@ -156,8 +219,15 @@ class OfflineMediaManager: ObservableObject {
     }
     
     func deleteArchive(media: ArchivedMedia) {
+        // Delete positive media
         try? FileManager.default.removeItem(at: getFileURL(for: media))
         try? FileManager.default.removeItem(at: getThumbnailURL(for: media))
+        
+        // Delete negative video
+        if let negURL = getNegativeVideoURL(for: media) {
+            try? FileManager.default.removeItem(at: negURL)
+        }
+        
         negativeCache.removeValue(forKey: media.id)
         
         DispatchQueue.main.async {
