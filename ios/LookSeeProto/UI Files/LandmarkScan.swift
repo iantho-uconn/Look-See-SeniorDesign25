@@ -6,7 +6,7 @@ struct LandmarkScan: View {
     var onPinch: () -> Void = {}
     
     @Binding var isDetecting: Bool
-    @Binding var isNavVisible: Bool // Tells the Ad if the bottom nav is currently on screen
+    @Binding var isNavVisible: Bool
     
     @StateObject private var detector = Detector()
     @ObservedObject var infoView = VariableContainer.shared
@@ -14,9 +14,9 @@ struct LandmarkScan: View {
     @State private var zoomLevel: CGFloat = 1.0
     @State private var zoomIndicatorVisible = false
     @State private var zoomFadeTask: Task<Void, Never>?
+    @State private var promotionFetchTask: Task<Void, Never>?
 
     var body: some View {
-        // GeometryReader fixes the iOS 26 UIScreen warning and perfectly aligns taps
         GeometryReader { geo in
             let lockedSafeZone = CGRect(
                 x: geo.size.width * 0.15,
@@ -34,7 +34,6 @@ struct LandmarkScan: View {
                     showSafeZone: .constant(false),
                     safeZoneRect: .constant(lockedSafeZone),
                     onTap: {
-                        // Tapping the background toggles the navigation menus
                         onTap()
                     },
                     onPinch: onPinch,
@@ -52,28 +51,23 @@ struct LandmarkScan: View {
                     }
                 }
 
-                // --- THE GREEN BOX TAP TARGET ---
-                // If an object is found, this invisible button sits perfectly over the safe zone
                 if let bestDetection = detector.detections.first, !infoView.infoView {
                     Rectangle()
-                        .fill(Color.white.opacity(0.001)) // Invisible to the eye, but catches taps
+                        .fill(Color.white.opacity(0.001))
                         .frame(width: lockedSafeZone.width, height: lockedSafeZone.height)
                         .position(x: lockedSafeZone.midX, y: lockedSafeZone.midY)
                         .onTapGesture {
-                            // Open the PopUp!
-                            infoView.landmarkName = bestDetection.displayLabel
-                            infoView.landmarkConfidence = bestDetection.confidence * 100
-                            infoView.landmarkDescription = bestDetection.landmarkEntry?.shortDescription ?? "Discover more about this location."
-                            infoView.promoName = "Checking promotions..."
-                            infoView.infoView = true
-                            
-                            // Bring the navigation back so it's ready when they close the popup
-                            if !isNavVisible { onTap() }
+                            openPopup(for: bestDetection)
+
+                            if !isNavVisible {
+                                onTap()
+                            }
                         }
                 }
 
-               
-                if infoView.infoView { PopUp() }
+                if infoView.infoView {
+                    PopUp()
+                }
 
                 if !infoView.infoView && zoomIndicatorVisible {
                     VStack {
@@ -91,19 +85,94 @@ struct LandmarkScan: View {
                 }
             }
             .animation(.easeOut(duration: 0.25), value: zoomIndicatorVisible)
-            .onAppear { detector.dynamicSafeZone = lockedSafeZone }
-            .onChange(of: geo.size) { _, _ in detector.dynamicSafeZone = lockedSafeZone }
+            .onAppear {
+                detector.dynamicSafeZone = lockedSafeZone
+            }
+            .onChange(of: geo.size) { _, _ in
+                detector.dynamicSafeZone = lockedSafeZone
+            }
+        }
+    }
+
+    private func openPopup(for bestDetection: Detection) {
+        promotionFetchTask?.cancel()
+
+        let landmarkId = bestDetection.landmarkEntry?.landmarkId ?? ""
+
+        infoView.landmarkId = landmarkId
+        infoView.landmarkName = bestDetection.displayLabel
+        infoView.landmarkConfidence = bestDetection.confidence * 100
+        infoView.landmarkDescription = bestDetection.landmarkEntry?.shortDescription ?? "Discover more about this location."
+        infoView.landmarkURL = ""
+
+        if landmarkId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            infoView.promoName = "No active promotion"
+            infoView.promoDescription = ""
+        } else {
+            infoView.promoName = "Checking promotions..."
+            infoView.promoDescription = ""
+            fetchActivePromotion(for: landmarkId)
+        }
+
+        infoView.infoView = true
+    }
+
+    private func fetchActivePromotion(for landmarkId: String) {
+        promotionFetchTask = Task {
+            do {
+                let promotion = try await ActivePromotionService()
+                    .fetchTopActivePromotion(landmarkId: landmarkId)
+
+                guard !Task.isCancelled else {
+                    return
+                }
+
+                await MainActor.run {
+                    guard infoView.landmarkId == landmarkId else {
+                        return
+                    }
+
+                    if let promotion {
+                        infoView.promoName = promotion.name
+                        infoView.promoDescription = promotion.description
+                    } else {
+                        infoView.promoName = "No active promotion"
+                        infoView.promoDescription = ""
+                    }
+                }
+            } catch {
+                guard !Task.isCancelled else {
+                    return
+                }
+
+                await MainActor.run {
+                    guard infoView.landmarkId == landmarkId else {
+                        return
+                    }
+
+                    print("⚠️ Failed to fetch active promotion for \(landmarkId): \(error)")
+                    infoView.promoName = "No active promotion"
+                    infoView.promoDescription = ""
+                }
+            }
         }
     }
 
     private func showZoomIndicatorThenFade() {
         zoomFadeTask?.cancel()
         zoomIndicatorVisible = true
+
         zoomFadeTask = Task {
             try? await Task.sleep(nanoseconds: 1_200_000_000)
-            guard !Task.isCancelled else { return }
+
+            guard !Task.isCancelled else {
+                return
+            }
+
             await MainActor.run {
-                withAnimation(.easeOut(duration: 0.25)) { zoomIndicatorVisible = false }
+                withAnimation(.easeOut(duration: 0.25)) {
+                    zoomIndicatorVisible = false
+                }
             }
         }
     }
