@@ -24,6 +24,13 @@ struct BusinessLandmarkDetailView: View {
     @State private var isSavingManagement = false
     @State private var managementErrorMessage: String?
 
+    @State private var promotions: [BusinessPromotion] = []
+    @State private var isLoadingPromotions = false
+    @State private var promotionErrorMessage: String?
+    @State private var promotionEditorContext: BusinessPromotionEditorContext?
+    @State private var promotionPendingDelete: BusinessPromotion?
+    @State private var savingPromotionIds: Set<String> = []
+
     @State private var showPositivePicker = false
     @State private var showNegativePicker = false
     @State private var selectedPositiveMediaItems: [PhotosPickerItem] = []
@@ -36,6 +43,7 @@ struct BusinessLandmarkDetailView: View {
     @State private var uploadProgressText: String?
 
     private let service = BusinessLandmarkService()
+    private let promotionService = BusinessPromotionService()
     private let maxSelectionCount = 10
 
     init(
@@ -154,6 +162,13 @@ struct BusinessLandmarkDetailView: View {
                 }
             }
 
+            Section(
+                header: Text("Promotions"),
+                footer: Text(displayedPromotionEnabled ? "Promotions can be shown for this landmark when enabled and within their date range." : "Promotions are currently disabled for this landmark. You can still create and edit promotion records here.")
+            ) {
+                promotionsContent
+            }
+
             Section(header: Text("Location")) {
                 detailRow(
                     title: "Latitude",
@@ -211,6 +226,255 @@ struct BusinessLandmarkDetailView: View {
         .sheet(isPresented: $isEditingDescription) {
             editDescriptionSheet
         }
+        .sheet(item: $promotionEditorContext) { context in
+            BusinessPromotionEditor(
+                landmark: landmark,
+                context: context
+            ) {
+                Task {
+                    await loadPromotions()
+                }
+            }
+        }
+        .alert("Delete Promotion?", isPresented: deletePromotionAlertBinding) {
+            Button("Cancel", role: .cancel) {
+                promotionPendingDelete = nil
+            }
+
+            Button("Delete", role: .destructive) {
+                if let promotion = promotionPendingDelete {
+                    Task {
+                        await deletePromotion(promotion)
+                    }
+                }
+            }
+        } message: {
+            Text("This promotion will be permanently removed.")
+        }
+        .task {
+            await loadPromotions()
+        }
+    }
+
+    // MARK: - Promotions
+
+    private var promotionsContent: some View {
+        Group {
+            Button {
+                promotionEditorContext = .create
+            } label: {
+                HStack {
+                    Label("Add Promotion", systemImage: "plus.circle")
+
+                    Spacer()
+
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            if isLoadingPromotions {
+                HStack(spacing: 10) {
+                    ProgressView()
+                    Text("Loading promotions...")
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+                }
+            } else if promotions.isEmpty {
+                Text("No promotions have been added for this landmark yet.")
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
+            } else {
+                ForEach(promotions) { promotion in
+                    promotionRow(promotion)
+                }
+            }
+
+            if let promotionErrorMessage {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundColor(.orange)
+
+                    Text(promotionErrorMessage)
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+    }
+
+    private func promotionRow(_ promotion: BusinessPromotion) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(promotion.name.isEmpty ? "Untitled Promotion" : promotion.name)
+                        .font(.headline)
+
+                    if !promotion.description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Text(promotion.description)
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+
+                    Text(promotionDateSummary(promotion))
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                Spacer()
+
+                Toggle("", isOn: Binding(
+                    get: { promotion.enabled },
+                    set: { newValue in
+                        Task {
+                            await updatePromotionEnabled(promotion, enabled: newValue)
+                        }
+                    }
+                ))
+                .labelsHidden()
+                .disabled(savingPromotionIds.contains(promotion.id))
+            }
+
+            HStack(spacing: 12) {
+                Button {
+                    promotionEditorContext = .edit(promotion)
+                } label: {
+                    Label("Edit", systemImage: "square.and.pencil")
+                }
+                .buttonStyle(.bordered)
+                .disabled(savingPromotionIds.contains(promotion.id))
+
+                Button(role: .destructive) {
+                    promotionPendingDelete = promotion
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+                .buttonStyle(.bordered)
+                .disabled(savingPromotionIds.contains(promotion.id))
+            }
+        }
+        .padding(.vertical, 6)
+    }
+
+    private var deletePromotionAlertBinding: Binding<Bool> {
+        Binding(
+            get: { promotionPendingDelete != nil },
+            set: { newValue in
+                if !newValue {
+                    promotionPendingDelete = nil
+                }
+            }
+        )
+    }
+
+    private func loadPromotions() async {
+        await MainActor.run {
+            isLoadingPromotions = true
+            promotionErrorMessage = nil
+        }
+
+        do {
+            let response = try await promotionService.fetchPromotions(landmarkId: landmark.landmarkId)
+
+            await MainActor.run {
+                promotions = response.items
+                isLoadingPromotions = false
+            }
+        } catch {
+            await MainActor.run {
+                promotionErrorMessage = error.localizedDescription
+                isLoadingPromotions = false
+            }
+        }
+    }
+
+    private func updatePromotionEnabled(_ promotion: BusinessPromotion, enabled: Bool) async {
+        await MainActor.run {
+            savingPromotionIds.insert(promotion.id)
+            promotionErrorMessage = nil
+
+            if let index = promotions.firstIndex(where: { $0.id == promotion.id }) {
+                promotions[index] = promotions[index].copy(enabled: enabled)
+            }
+        }
+
+        do {
+            let updated = try await promotionService.updatePromotion(
+                landmarkId: landmark.landmarkId,
+                promotionId: promotion.id,
+                name: nil,
+                description: nil,
+                imageUrl: nil,
+                startDate: nil,
+                endDate: nil,
+                enabled: enabled
+            )
+
+            await MainActor.run {
+                if let index = promotions.firstIndex(where: { $0.id == promotion.id }) {
+                    promotions[index] = updated
+                }
+
+                savingPromotionIds.remove(promotion.id)
+            }
+        } catch {
+            await MainActor.run {
+                if let index = promotions.firstIndex(where: { $0.id == promotion.id }) {
+                    promotions[index] = promotion
+                }
+
+                promotionErrorMessage = error.localizedDescription
+                savingPromotionIds.remove(promotion.id)
+            }
+        }
+    }
+
+    private func deletePromotion(_ promotion: BusinessPromotion) async {
+        await MainActor.run {
+            savingPromotionIds.insert(promotion.id)
+            promotionErrorMessage = nil
+        }
+
+        do {
+            try await promotionService.deletePromotion(
+                landmarkId: landmark.landmarkId,
+                promotionId: promotion.id
+            )
+
+            await MainActor.run {
+                promotions.removeAll { $0.id == promotion.id }
+                promotionPendingDelete = nil
+                savingPromotionIds.remove(promotion.id)
+            }
+        } catch {
+            await MainActor.run {
+                promotionErrorMessage = error.localizedDescription
+                promotionPendingDelete = nil
+                savingPromotionIds.remove(promotion.id)
+            }
+        }
+    }
+
+    private func promotionDateSummary(_ promotion: BusinessPromotion) -> String {
+        let start = promotion.startDate.trimmingCharacters(in: .whitespacesAndNewlines)
+        let end = promotion.endDate.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if start.isEmpty && end.isEmpty {
+            return promotion.enabled ? "Enabled, no dates set" : "Disabled, no dates set"
+        }
+
+        let dateText: String
+
+        if !start.isEmpty && !end.isEmpty {
+            dateText = "\(start) to \(end)"
+        } else if !start.isEmpty {
+            dateText = "Starts \(start)"
+        } else {
+            dateText = "Ends \(end)"
+        }
+
+        return promotion.enabled ? "Enabled • \(dateText)" : "Disabled • \(dateText)"
     }
 
     // MARK: - Picker Buttons
