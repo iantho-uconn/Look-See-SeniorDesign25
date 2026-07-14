@@ -7,10 +7,11 @@ import SwiftUI
 struct RootView: View {
     @EnvironmentObject var vm: AuthViewModel
     @EnvironmentObject var authState: AuthState
-    @State private var appState: AppState = .login
+    @State private var appState: AppState = .checkingSession
     @State private var pendingEmail = ""
 
     enum AppState {
+        case checkingSession
         case login
         case signup
         case confirmSignup
@@ -20,6 +21,21 @@ struct RootView: View {
 
     var body: some View {
         switch appState {
+        case .checkingSession:
+            // Blank/loading state while we determine if the user already
+            // has a valid session, so returning users never see the Login
+            // screen flash before being redirected.
+            ProgressView()
+                .task {
+                    await vm.checkSession()
+                    if vm.isSignedIn {
+                        await authState.resolveTier()
+                        appState = .loadingModel
+                    } else {
+                        appState = .login
+                    }
+                }
+
         case .login:
             Login(
                 vm: vm,
@@ -37,13 +53,6 @@ struct RootView: View {
                     appState = .loadingModel
                 }
             )
-            .task {
-                await vm.checkSession()
-                if vm.isSignedIn {
-                    await authState.resolveTier()
-                    appState = .loadingModel
-                }
-            }
 
         case .signup:
             Signup(
