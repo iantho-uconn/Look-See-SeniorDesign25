@@ -64,9 +64,15 @@ struct BusinessLandmarksView: View {
             Section {
                 ForEach(viewModel.landmarks) { landmark in
                     NavigationLink {
-                        BusinessLandmarkDetailView(landmark: landmark) { updatedLandmark in
-                            viewModel.replaceLandmark(updatedLandmark)
-                        }
+                        BusinessLandmarkDetailView(
+                            landmark: landmark,
+                            onLandmarkUpdated: { updatedLandmark in
+                                viewModel.replaceLandmark(updatedLandmark)
+                            },
+                            onLandmarkDeleted: { landmarkId in
+                                viewModel.removeLandmark(landmarkId: landmarkId)
+                            }
+                        )
                     } label: {
                         BusinessLandmarkRow(landmark: landmark)
                     }

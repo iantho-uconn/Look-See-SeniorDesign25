@@ -55,4 +55,8 @@ final class BusinessLandmarksViewModel: ObservableObject {
             return comparison == .orderedAscending
         }
     }
+
+    func removeLandmark(landmarkId: String) {
+        landmarks.removeAll { $0.landmarkId == landmarkId }
+    }
 }

@@ -12,6 +12,9 @@ import UniformTypeIdentifiers
 struct BusinessLandmarkDetailView: View {
     let landmark: BusinessLandmark
     let onLandmarkUpdated: (BusinessLandmark) -> Void
+    let onLandmarkDeleted: (String) -> Void
+
+    @Environment(\.dismiss) private var dismiss
 
     @State private var displayedShortDescription: String
     @State private var draftShortDescription: String
@@ -31,6 +34,11 @@ struct BusinessLandmarkDetailView: View {
     @State private var promotionPendingDelete: BusinessPromotion?
     @State private var savingPromotionIds: Set<String> = []
 
+    @State private var isShowingDeleteLandmarkSheet = false
+    @State private var deleteConfirmationText = ""
+    @State private var isDeletingLandmark = false
+    @State private var deleteErrorMessage: String?
+
     @State private var showPositivePicker = false
     @State private var showNegativePicker = false
     @State private var selectedPositiveMediaItems: [PhotosPickerItem] = []
@@ -48,10 +56,12 @@ struct BusinessLandmarkDetailView: View {
 
     init(
         landmark: BusinessLandmark,
-        onLandmarkUpdated: @escaping (BusinessLandmark) -> Void = { _ in }
+        onLandmarkUpdated: @escaping (BusinessLandmark) -> Void = { _ in },
+        onLandmarkDeleted: @escaping (String) -> Void = { _ in }
     ) {
         self.landmark = landmark
         self.onLandmarkUpdated = onLandmarkUpdated
+        self.onLandmarkDeleted = onLandmarkDeleted
 
         let initialDescription = landmark.shortDescription?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -202,6 +212,8 @@ struct BusinessLandmarkDetailView: View {
                 uploadStatusArea
             }
 
+            dangerZoneSection
+
             Section(header: Text("Identifiers")) {
                 detailRow(title: "Landmark ID", value: landmark.landmarkId)
 
@@ -225,6 +237,9 @@ struct BusinessLandmarkDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $isEditingDescription) {
             editDescriptionSheet
+        }
+        .sheet(isPresented: $isShowingDeleteLandmarkSheet) {
+            deleteLandmarkSheet
         }
         .sheet(item: $promotionEditorContext) { context in
             BusinessPromotionEditor(
@@ -972,6 +987,142 @@ struct BusinessLandmarkDetailView: View {
         let labelComponent = cleanedLabel.isEmpty ? landmark.landmarkId : cleanedLabel
 
         return "\(labelComponent)_\(datasetRole.filenameComponent)_\(index)_\(UUID().uuidString).\(fileExtension)"
+    }
+
+    // MARK: - Landmark Delete
+
+    private var dangerZoneSection: some View {
+        Section(
+            header: Text("Danger Zone"),
+            footer: Text("Deleting a landmark removes it from your account and starts backend cleanup for cluster mappings, dataset files, hard negatives, and promotions. This cannot be undone.")
+        ) {
+            Button(role: .destructive) {
+                deleteConfirmationText = ""
+                deleteErrorMessage = nil
+                isShowingDeleteLandmarkSheet = true
+            } label: {
+                Label("Delete Landmark", systemImage: "trash")
+            }
+            .disabled(isDeletingLandmark)
+
+            if let deleteErrorMessage {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundColor(.orange)
+
+                    Text(deleteErrorMessage)
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+    }
+
+    private var deleteLandmarkSheet: some View {
+        NavigationStack {
+            Form {
+                Section(
+                    header: Text("Confirm Landmark Deletion"),
+                    footer: Text("To confirm, type exactly: delete landmark")
+                ) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(landmark.label.isEmpty ? "Untitled Landmark" : landmark.label)
+                            .font(.headline)
+
+                        Text(landmark.landmarkId)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.vertical, 4)
+
+                    TextField("delete landmark", text: $deleteConfirmationText)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled(true)
+                        .disabled(isDeletingLandmark)
+                }
+
+                Section {
+                    Button(role: .destructive) {
+                        Task {
+                            await deleteLandmark()
+                        }
+                    } label: {
+                        HStack {
+                            Spacer()
+
+                            if isDeletingLandmark {
+                                ProgressView()
+                            } else {
+                                Label("Confirm Delete Landmark", systemImage: "trash.fill")
+                            }
+
+                            Spacer()
+                        }
+                    }
+                    .disabled(!isDeleteConfirmationValid || isDeletingLandmark)
+                }
+
+                if let deleteErrorMessage {
+                    Section {
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(.orange)
+
+                            Text(deleteErrorMessage)
+                                .font(.footnote)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Delete Landmark")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        isShowingDeleteLandmarkSheet = false
+                    }
+                    .disabled(isDeletingLandmark)
+                }
+            }
+        }
+    }
+
+    private var isDeleteConfirmationValid: Bool {
+        deleteConfirmationText.trimmingCharacters(in: .whitespacesAndNewlines) == "delete landmark"
+    }
+
+    private func deleteLandmark() async {
+        guard isDeleteConfirmationValid else {
+            await MainActor.run {
+                deleteErrorMessage = "Type exactly: delete landmark"
+            }
+            return
+        }
+
+        await MainActor.run {
+            isDeletingLandmark = true
+            deleteErrorMessage = nil
+        }
+
+        do {
+            _ = try await service.deleteLandmark(
+                landmarkId: landmark.landmarkId,
+                confirmation: deleteConfirmationText
+            )
+
+            await MainActor.run {
+                isDeletingLandmark = false
+                isShowingDeleteLandmarkSheet = false
+                onLandmarkDeleted(landmark.landmarkId)
+                dismiss()
+            }
+        } catch {
+            await MainActor.run {
+                isDeletingLandmark = false
+                deleteErrorMessage = error.localizedDescription
+            }
+        }
     }
 
     // MARK: - Small UI Helpers

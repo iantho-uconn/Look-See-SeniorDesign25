@@ -31,7 +31,7 @@ struct ClusterLandmarkManifest: Codable, Equatable {
 
     /// Validates the mapping before the app registers or activates it.
     func validate() throws {
-        guard schemaVersion == 1 else {
+        guard schemaVersion == 1 || schemaVersion == 2 else {
             throw LandmarkManifestValidationError.unsupportedSchemaVersion(schemaVersion)
         }
 

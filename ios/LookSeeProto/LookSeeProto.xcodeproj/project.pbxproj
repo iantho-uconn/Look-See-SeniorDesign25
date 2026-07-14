@@ -36,6 +36,7 @@
 		3CF188BE2FE19AAD00FED231 /* CapturedNegativePhoto.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CF188BC2FE19AA300FED231 /* CapturedNegativePhoto.swift */; };
 		3CF188C32FE19B6D00FED231 /* MultiPhotoCameraView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CF188C22FE19B5A00FED231 /* MultiPhotoCameraView.swift */; };
 		3CF3703C300683FB005780B3 /* ITlo.gpx in Resources */ = {isa = PBXBuildFile; fileRef = 3CF3703B300683FB005780B3 /* ITlo.gpx */; };
+		3CF3703E3006BE24005780B3 /* AccountSecurityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CF3703D3006BE24005780B3 /* AccountSecurityView.swift */; };
 		561FF74B2EB258D400411CF8 /* Library.swift in Sources */ = {isa = PBXBuildFile; fileRef = 561FF74A2EB258CC00411CF8 /* Library.swift */; };
 		562AD38C2ECBAF1B00D5144C /* Login.swift in Sources */ = {isa = PBXBuildFile; fileRef = 562AD38B2ECBAF1800D5144C /* Login.swift */; };
 		562DAAAD2F2A71750083A71E /* Main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 562DAAAC2F2A71740083A71E /* Main.swift */; };
@@ -107,6 +108,7 @@
 		3CF188BC2FE19AA300FED231 /* CapturedNegativePhoto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CapturedNegativePhoto.swift; sourceTree = "<group>"; };
 		3CF188C22FE19B5A00FED231 /* MultiPhotoCameraView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultiPhotoCameraView.swift; sourceTree = "<group>"; };
 		3CF3703B300683FB005780B3 /* ITlo.gpx */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = ITlo.gpx; sourceTree = "<group>"; };
+		3CF3703D3006BE24005780B3 /* AccountSecurityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountSecurityView.swift; sourceTree = "<group>"; };
 		561FF74A2EB258CC00411CF8 /* Library.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Library.swift; sourceTree = "<group>"; };
 		562AD38B2ECBAF1800D5144C /* Login.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Login.swift; sourceTree = "<group>"; };
 		562DAAAC2F2A71740083A71E /* Main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Main.swift; sourceTree = "<group>"; };
@@ -245,6 +247,7 @@
 			isa = PBXGroup;
 			children = (
 				3C56010E3005BEDB00EB4493 /* BusinessPromotionEditor.swift */,
+				3CF3703D3006BE24005780B3 /* AccountSecurityView.swift */,
 				3C3D161F2FFCA9B700C8A544 /* BusinessLandmarkDetailView.swift */,
 				3C3D161D2FFCA97200C8A544 /* BusinessLandmarksView.swift */,
 				374FCAFA2FFE98CB0035A674 /* VideoMerge.swift */,
@@ -482,6 +485,7 @@
 				374FCAFB2FFE98CB0035A674 /* VideoMerge.swift in Sources */,
 				561FF74B2EB258D400411CF8 /* Library.swift in Sources */,
 				3CF188C32FE19B6D00FED231 /* MultiPhotoCameraView.swift in Sources */,
+				3CF3703E3006BE24005780B3 /* AccountSecurityView.swift in Sources */,
 				3C56010F3005BEE500EB4493 /* BusinessPromotionEditor.swift in Sources */,
 				3C72AA372F5141A000A90328 /* best.mlpackage in Sources */,
 				56C3FA082EA6CA3100EA6153 /* Settings.swift in Sources */,
