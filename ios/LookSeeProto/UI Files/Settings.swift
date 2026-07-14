@@ -82,6 +82,22 @@ struct Settings: View {
                     }
                 }
 
+                // MARK: - Account & Security
+                if authState.tier != .guest {
+                    Section {
+                        NavigationLink {
+                            AccountSecurityView()
+                                .environmentObject(vm)
+                        } label: {
+                            Label("Account & Security", systemImage: "person.badge.key")
+                        }
+                    } header: {
+                        Text("Account")
+                    } footer: {
+                        Text("Change your email, add or update a phone number, and change your password.")
+                    }
+                }
+
                 // MARK: - Business Management
                 if authState.tier == .business {
                     Section {
