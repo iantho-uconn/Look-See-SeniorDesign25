@@ -94,7 +94,7 @@ struct Settings: View {
                     } header: {
                         Text("Account")
                     } footer: {
-                        Text("Change your email, add or update a phone number, and change your password.")
+                        Text("Change your email or password.")
                     }
                 }
 

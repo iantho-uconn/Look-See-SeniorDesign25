@@ -11,63 +11,88 @@ import Amplify
 struct ForgotPasswordView: View {
     @Environment(\.dismiss) private var dismiss
 
-    @State private var username = ""
+    @State private var username: String
     @State private var confirmationCode = ""
     @State private var newPassword = ""
     @State private var confirmedPassword = ""
 
     @State private var awaitingCode = false
+    @State private var resetCompleted = false
     @State private var isWorking = false
     @State private var statusMessage: String?
     @State private var isError = false
 
+    init(initialUsername: String = "") {
+        _username = State(initialValue: initialUsername)
+    }
+
     var body: some View {
         NavigationStack {
             Form {
-                Section(awaitingCode ? "Reset Password" : "Find Your Account") {
-                    TextField("Email, phone number, or username", text: $username)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled(true)
-                        .disabled(awaitingCode)
+                if resetCompleted {
+                    Section {
+                        Label(
+                            "Your password has been reset successfully.",
+                            systemImage: "checkmark.circle.fill"
+                        )
+                        .foregroundStyle(.green)
 
-                    if awaitingCode {
-                        TextField("Verification code", text: $confirmationCode)
-                            .keyboardType(.numberPad)
-                            .textContentType(.oneTimeCode)
-
-                        SecureField("New password", text: $newPassword)
-                            .textContentType(.newPassword)
-
-                        SecureField("Confirm new password", text: $confirmedPassword)
-                            .textContentType(.newPassword)
-                    }
-                } footer: {
-                    Text(
-                        awaitingCode
-                            ? "Enter the code Cognito sent to your verified email address or phone number."
-                            : "Cognito will send a code to the verified recovery method on the account."
-                    )
-                }
-
-                Section {
-                    Button(awaitingCode ? "Reset Password" : "Send Reset Code") {
-                        Task {
-                            if awaitingCode {
-                                await confirmReset()
-                            } else {
-                                await requestReset()
-                            }
+                        Button("Return to Sign In") {
+                            dismiss()
                         }
+                    } footer: {
+                        Text("Use your new password the next time you sign in.")
                     }
-                    .disabled(!canSubmit || isWorking)
+                } else {
+                    Section {
+                        TextField("Email address", text: $username)
+                            .keyboardType(.emailAddress)
+                            .textContentType(.username)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled(true)
+                            .disabled(awaitingCode)
 
-                    if awaitingCode {
-                        Button("Send Another Code") {
+                        if awaitingCode {
+                            TextField("Verification code", text: $confirmationCode)
+                                .keyboardType(.numberPad)
+                                .textContentType(.oneTimeCode)
+
+                            SecureField("New password", text: $newPassword)
+                                .textContentType(.newPassword)
+
+                            SecureField("Confirm new password", text: $confirmedPassword)
+                                .textContentType(.newPassword)
+                        }
+                    } header: {
+                        Text(awaitingCode ? "Reset Password" : "Find Your Account")
+                    } footer: {
+                        Text(
+                            awaitingCode
+                                ? "Enter the verification code Cognito sent to your email."
+                                : "We will send a password-reset code to the verified email on your account."
+                        )
+                    }
+
+                    Section {
+                        Button(awaitingCode ? "Reset Password" : "Send Reset Code") {
                             Task {
-                                await requestReset()
+                                if awaitingCode {
+                                    await confirmReset()
+                                } else {
+                                    await requestReset()
+                                }
                             }
                         }
-                        .disabled(isWorking)
+                        .disabled(!canSubmit || isWorking)
+
+                        if awaitingCode {
+                            Button("Send Another Code") {
+                                Task {
+                                    await requestReset()
+                                }
+                            }
+                            .disabled(isWorking)
+                        }
                     }
                 }
 
@@ -81,7 +106,7 @@ struct ForgotPasswordView: View {
                     }
                 }
 
-                if let statusMessage {
+                if let statusMessage, !resetCompleted {
                     Section {
                         Label(
                             statusMessage,
@@ -95,27 +120,34 @@ struct ForgotPasswordView: View {
             }
             .navigationTitle("Forgot Password")
             .navigationBarTitleDisplayMode(.inline)
+            .interactiveDismissDisabled(isWorking)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
                         dismiss()
                     }
+                    .disabled(isWorking)
                 }
             }
         }
     }
 
-    private var canSubmit: Bool {
-        let cleanedUsername = username.trimmingCharacters(in: .whitespacesAndNewlines)
+    private var cleanedUsername: String {
+        username
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 
+    private var canSubmit: Bool {
         guard !cleanedUsername.isEmpty else {
             return false
         }
 
         if awaitingCode {
-            return !confirmationCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-                !newPassword.isEmpty &&
-                !confirmedPassword.isEmpty
+            return !confirmationCode
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .isEmpty
+                && !newPassword.isEmpty
+                && !confirmedPassword.isEmpty
         }
 
         return true
@@ -123,7 +155,9 @@ struct ForgotPasswordView: View {
 
     @MainActor
     private func requestReset() async {
-        let cleanedUsername = username.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanedUsername.isEmpty else {
+            return
+        }
 
         isWorking = true
         isError = false
@@ -141,16 +175,14 @@ struct ForgotPasswordView: View {
             switch result.nextStep {
             case .confirmResetPasswordWithCode:
                 awaitingCode = true
-                statusMessage = "A password-reset code was sent to the account's verified recovery method."
+                statusMessage = "A password-reset code was sent to your verified email."
 
             case .done:
-                statusMessage = "Password reset is already complete."
+                resetCompleted = true
             }
         } catch {
-            // For production, consider using a generic message so the UI does not
-            // reveal whether a particular account exists.
             isError = true
-            statusMessage = error.localizedDescription
+            statusMessage = friendlyMessage(for: error)
         }
     }
 
@@ -172,15 +204,40 @@ struct ForgotPasswordView: View {
 
         do {
             try await Amplify.Auth.confirmResetPassword(
-                for: username.trimmingCharacters(in: .whitespacesAndNewlines),
+                for: cleanedUsername,
                 with: newPassword,
-                confirmationCode: confirmationCode.trimmingCharacters(in: .whitespacesAndNewlines)
+                confirmationCode: confirmationCode
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
             )
 
-            statusMessage = "Password reset successfully. You can now sign in."
+            resetCompleted = true
         } catch {
             isError = true
-            statusMessage = error.localizedDescription
+            statusMessage = friendlyMessage(for: error)
         }
+    }
+
+    private func friendlyMessage(for error: Error) -> String {
+        let description = error.localizedDescription
+        let fullDescription = String(describing: error)
+
+        if fullDescription.contains("CodeMismatchException") {
+            return "That verification code is incorrect. Please try again."
+        }
+
+        if fullDescription.contains("ExpiredCodeException") {
+            return "That verification code has expired. Send a new code and try again."
+        }
+
+        if fullDescription.contains("LimitExceededException")
+            || fullDescription.contains("TooManyRequestsException") {
+            return "Too many attempts. Please wait a moment and try again."
+        }
+
+        if fullDescription.contains("InvalidPasswordException") {
+            return "The new password does not meet the Cognito password requirements."
+        }
+
+        return description
     }
 }

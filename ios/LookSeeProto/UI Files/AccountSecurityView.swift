@@ -2,7 +2,7 @@
 //  AccountSecurityView.swift
 //  LookSeeProto
 //
-//  Account contact and password management backed by Amplify/Cognito.
+//  Signed-in email and password management backed by Amplify/Cognito.
 //
 
 import SwiftUI
@@ -12,58 +12,41 @@ struct AccountSecurityView: View {
     @EnvironmentObject private var vm: AuthViewModel
 
     @State private var currentEmail = ""
-    @State private var currentPhone = ""
     @State private var isLoading = true
     @State private var errorMessage: String?
 
     var body: some View {
         Form {
-            Section("Contact Information") {
-                LabeledContent("Email") {
+            Section {
+                LabeledContent("Current email") {
                     Text(currentEmail.isEmpty ? "Not set" : currentEmail)
                         .foregroundStyle(.secondary)
                 }
 
-                LabeledContent("Phone") {
-                    Text(currentPhone.isEmpty ? "Not set" : currentPhone)
-                        .foregroundStyle(.secondary)
-                }
-
                 NavigationLink {
-                    UpdateContactAttributeView(
-                        kind: .email,
-                        currentValue: currentEmail
-                    ) {
-                        await reloadAttributes()
-                        await vm.fetchUserEmail()
-                    }
+                    UpdateEmailView(
+                        currentEmail: currentEmail,
+                        onCompleted: refreshAccount
+                    )
                 } label: {
                     Label("Change Email", systemImage: "envelope")
                 }
-
-                NavigationLink {
-                    UpdateContactAttributeView(
-                        kind: .phone,
-                        currentValue: currentPhone
-                    ) {
-                        await reloadAttributes()
-                    }
-                } label: {
-                    Label(
-                        currentPhone.isEmpty ? "Add Phone Number" : "Change Phone Number",
-                        systemImage: "phone"
-                    )
-                }
+            } header: {
+                Text("Email")
             } footer: {
-                Text("New email addresses and phone numbers must be verified before the change is complete.")
+                Text("Cognito will send a verification code to the new email address before completing the change.")
             }
 
-            Section("Password") {
+            Section {
                 NavigationLink {
                     ChangePasswordView()
                 } label: {
                     Label("Change Password", systemImage: "key")
                 }
+            } header: {
+                Text("Password")
+            } footer: {
+                Text("Changing your password requires your current password.")
             }
 
             if isLoading {
@@ -78,20 +61,23 @@ struct AccountSecurityView: View {
 
             if let errorMessage {
                 Section {
-                    Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
+                    Label(
+                        errorMessage,
+                        systemImage: "exclamationmark.triangle.fill"
+                    )
+                    .foregroundStyle(.orange)
                 }
             }
         }
         .navigationTitle("Account & Security")
         .navigationBarTitleDisplayMode(.inline)
         .task {
-            await reloadAttributes()
+            await refreshAccount()
         }
     }
 
     @MainActor
-    private func reloadAttributes() async {
+    private func refreshAccount() async {
         isLoading = true
         errorMessage = nil
 
@@ -100,103 +86,30 @@ struct AccountSecurityView: View {
         }
 
         do {
+            _ = try? await Amplify.Auth.fetchAuthSession(
+                options: .forceRefresh()
+            )
+
             let attributes = try await Amplify.Auth.fetchUserAttributes()
 
-            currentEmail = attributes.first(where: { $0.key == .email })?.value ?? ""
-            currentPhone = attributes.first(where: { $0.key == .phoneNumber })?.value ?? ""
+            currentEmail = attributes
+                .first(where: { $0.key == .email })?
+                .value ?? ""
+
+            await vm.fetchUserEmail()
         } catch {
             errorMessage = error.localizedDescription
         }
     }
 }
 
-private enum ContactAttributeKind {
-    case email
-    case phone
-
-    var title: String {
-        switch self {
-        case .email:
-            return "Change Email"
-        case .phone:
-            return "Phone Number"
-        }
-    }
-
-    var fieldTitle: String {
-        switch self {
-        case .email:
-            return "New email address"
-        case .phone:
-            return "Phone number (+1…)"
-        }
-    }
-
-    var key: AuthUserAttributeKey {
-        switch self {
-        case .email:
-            return .email
-        case .phone:
-            return .phoneNumber
-        }
-    }
-
-    var keyboardType: UIKeyboardType {
-        switch self {
-        case .email:
-            return .emailAddress
-        case .phone:
-            return .phonePad
-        }
-    }
-
-    func normalized(_ value: String) -> String {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        switch self {
-        case .email:
-            return trimmed.lowercased()
-        case .phone:
-            return trimmed
-                .replacingOccurrences(of: " ", with: "")
-                .replacingOccurrences(of: "-", with: "")
-                .replacingOccurrences(of: "(", with: "")
-                .replacingOccurrences(of: ")", with: "")
-        }
-    }
-
-    func validationMessage(for value: String) -> String? {
-        let normalizedValue = normalized(value)
-
-        switch self {
-        case .email:
-            guard normalizedValue.contains("@"),
-                  normalizedValue.contains(".") else {
-                return "Enter a valid email address."
-            }
-
-        case .phone:
-            let pattern = #"^\+[1-9][0-9]{7,14}$"#
-            guard normalizedValue.range(
-                of: pattern,
-                options: .regularExpression
-            ) != nil else {
-                return "Use E.164 format, such as +18605551234."
-            }
-        }
-
-        return nil
-    }
-}
-
-private struct UpdateContactAttributeView: View {
-    let kind: ContactAttributeKind
-    let currentValue: String
+private struct UpdateEmailView: View {
+    let currentEmail: String
     let onCompleted: () async -> Void
 
     @Environment(\.dismiss) private var dismiss
 
-    @State private var newValue = ""
+    @State private var newEmail = ""
     @State private var confirmationCode = ""
     @State private var awaitingConfirmation = false
     @State private var isWorking = false
@@ -205,27 +118,31 @@ private struct UpdateContactAttributeView: View {
 
     var body: some View {
         Form {
-            if !currentValue.isEmpty {
-                Section("Current") {
-                    Text(currentValue)
+            if !currentEmail.isEmpty {
+                Section {
+                    Text(currentEmail)
                         .foregroundStyle(.secondary)
+                } header: {
+                    Text("Current Email")
                 }
             }
 
-            Section(awaitingConfirmation ? "Verify Change" : "New Value") {
+            Section {
                 if awaitingConfirmation {
                     TextField("Verification code", text: $confirmationCode)
                         .keyboardType(.numberPad)
                         .textContentType(.oneTimeCode)
 
-                    Button("Verify Code") {
+                    Button("Verify Email") {
                         Task {
-                            await confirmChange()
+                            await confirmEmailChange()
                         }
                     }
                     .disabled(
-                        isWorking ||
-                        confirmationCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        isWorking
+                            || confirmationCode
+                                .trimmingCharacters(in: .whitespacesAndNewlines)
+                                .isEmpty
                     )
 
                     Button("Resend Code") {
@@ -235,24 +152,31 @@ private struct UpdateContactAttributeView: View {
                     }
                     .disabled(isWorking)
                 } else {
-                    TextField(kind.fieldTitle, text: $newValue)
-                        .keyboardType(kind.keyboardType)
+                    TextField("New email address", text: $newEmail)
+                        .keyboardType(.emailAddress)
+                        .textContentType(.emailAddress)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled(true)
 
                     Button("Send Verification Code") {
                         Task {
-                            await beginChange()
+                            await beginEmailChange()
                         }
                     }
                     .disabled(
-                        isWorking ||
-                        newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        isWorking
+                            || newEmail
+                                .trimmingCharacters(in: .whitespacesAndNewlines)
+                                .isEmpty
                     )
                 }
+            } header: {
+                Text(awaitingConfirmation ? "Verify New Email" : "New Email")
             } footer: {
-                if kind == .phone {
-                    Text("Phone numbers must use international E.164 format, for example +18605551234.")
+                if awaitingConfirmation {
+                    Text("Enter the code sent to the new email address.")
+                } else {
+                    Text("Your current account remains signed in while the new address is verified.")
                 }
             }
 
@@ -278,17 +202,28 @@ private struct UpdateContactAttributeView: View {
                 }
             }
         }
-        .navigationTitle(kind.title)
+        .navigationTitle("Change Email")
         .navigationBarTitleDisplayMode(.inline)
+        .interactiveDismissDisabled(isWorking)
+    }
+
+    private var cleanedEmail: String {
+        newEmail
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
     }
 
     @MainActor
-    private func beginChange() async {
-        let value = kind.normalized(newValue)
-
-        if let validationMessage = kind.validationMessage(for: value) {
+    private func beginEmailChange() async {
+        guard isValidEmail(cleanedEmail) else {
             isError = true
-            statusMessage = validationMessage
+            statusMessage = "Enter a valid email address."
+            return
+        }
+
+        guard cleanedEmail != currentEmail.lowercased() else {
+            isError = true
+            statusMessage = "That is already the email address on this account."
             return
         }
 
@@ -302,27 +237,29 @@ private struct UpdateContactAttributeView: View {
 
         do {
             let result = try await Amplify.Auth.update(
-                userAttribute: AuthUserAttribute(kind.key, value: value)
+                userAttribute: AuthUserAttribute(
+                    .email,
+                    value: cleanedEmail
+                )
             )
 
             switch result.nextStep {
             case .confirmAttributeWithCode:
                 awaitingConfirmation = true
-                statusMessage = "A verification code was sent to the new \(kind == .email ? "email address" : "phone number")."
+                statusMessage = "A verification code was sent to the new email address."
 
             case .done:
-                statusMessage = "Your \(kind == .email ? "email address" : "phone number") was updated."
                 await onCompleted()
                 dismiss()
             }
         } catch {
             isError = true
-            statusMessage = error.localizedDescription
+            statusMessage = friendlyMessage(for: error)
         }
     }
 
     @MainActor
-    private func confirmChange() async {
+    private func confirmEmailChange() async {
         isWorking = true
         isError = false
         statusMessage = nil
@@ -333,16 +270,16 @@ private struct UpdateContactAttributeView: View {
 
         do {
             try await Amplify.Auth.confirm(
-                userAttribute: kind.key,
-                confirmationCode: confirmationCode.trimmingCharacters(in: .whitespacesAndNewlines)
+                userAttribute: .email,
+                confirmationCode: confirmationCode
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
             )
 
-            statusMessage = "Verification complete."
             await onCompleted()
             dismiss()
         } catch {
             isError = true
-            statusMessage = error.localizedDescription
+            statusMessage = friendlyMessage(for: error)
         }
     }
 
@@ -358,13 +295,47 @@ private struct UpdateContactAttributeView: View {
 
         do {
             _ = try await Amplify.Auth.sendVerificationCode(
-                forUserAttributeKey: kind.key
+                forUserAttributeKey: .email
             )
+
             statusMessage = "A new verification code was sent."
         } catch {
             isError = true
-            statusMessage = error.localizedDescription
+            statusMessage = friendlyMessage(for: error)
         }
+    }
+
+    private func isValidEmail(_ value: String) -> Bool {
+        let pattern = #"^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$"#
+
+        return value.range(
+            of: pattern,
+            options: [.regularExpression, .caseInsensitive]
+        ) != nil
+    }
+
+    private func friendlyMessage(for error: Error) -> String {
+        let description = error.localizedDescription
+        let fullDescription = String(describing: error)
+
+        if fullDescription.contains("AliasExistsException") {
+            return "That email address is already connected to another account."
+        }
+
+        if fullDescription.contains("CodeMismatchException") {
+            return "That verification code is incorrect."
+        }
+
+        if fullDescription.contains("ExpiredCodeException") {
+            return "That verification code has expired. Send a new code and try again."
+        }
+
+        if fullDescription.contains("LimitExceededException")
+            || fullDescription.contains("TooManyRequestsException") {
+            return "Too many attempts. Please wait a moment and try again."
+        }
+
+        return description
     }
 }
 
@@ -377,32 +348,49 @@ private struct ChangePasswordView: View {
     @State private var isWorking = false
     @State private var statusMessage: String?
     @State private var isError = false
+    @State private var passwordChanged = false
 
     var body: some View {
         Form {
-            Section("Password") {
-                SecureField("Current password", text: $currentPassword)
-                    .textContentType(.password)
+            if passwordChanged {
+                Section {
+                    Label(
+                        "Password updated successfully.",
+                        systemImage: "checkmark.circle.fill"
+                    )
+                    .foregroundStyle(.green)
 
-                SecureField("New password", text: $newPassword)
-                    .textContentType(.newPassword)
-
-                SecureField("Confirm new password", text: $confirmedPassword)
-                    .textContentType(.newPassword)
-
-                Button("Update Password") {
-                    Task {
-                        await updatePassword()
+                    Button("Done") {
+                        dismiss()
                     }
                 }
-                .disabled(
-                    isWorking ||
-                    currentPassword.isEmpty ||
-                    newPassword.isEmpty ||
-                    confirmedPassword.isEmpty
-                )
-            } footer: {
-                Text("The new password must satisfy the password policy configured in your Cognito user pool.")
+            } else {
+                Section {
+                    SecureField("Current password", text: $currentPassword)
+                        .textContentType(.password)
+
+                    SecureField("New password", text: $newPassword)
+                        .textContentType(.newPassword)
+
+                    SecureField("Confirm new password", text: $confirmedPassword)
+                        .textContentType(.newPassword)
+
+                    Button("Update Password") {
+                        Task {
+                            await updatePassword()
+                        }
+                    }
+                    .disabled(
+                        isWorking
+                            || currentPassword.isEmpty
+                            || newPassword.isEmpty
+                            || confirmedPassword.isEmpty
+                    )
+                } header: {
+                    Text("Password")
+                } footer: {
+                    Text("The new password must satisfy the password policy configured in your Cognito user pool.")
+                }
             }
 
             if isWorking {
@@ -415,20 +403,19 @@ private struct ChangePasswordView: View {
                 }
             }
 
-            if let statusMessage {
+            if let statusMessage, !passwordChanged {
                 Section {
                     Label(
                         statusMessage,
-                        systemImage: isError
-                            ? "exclamationmark.triangle.fill"
-                            : "checkmark.circle.fill"
+                        systemImage: "exclamationmark.triangle.fill"
                     )
-                    .foregroundStyle(isError ? .orange : .green)
+                    .foregroundStyle(.orange)
                 }
             }
         }
         .navigationTitle("Change Password")
         .navigationBarTitleDisplayMode(.inline)
+        .interactiveDismissDisabled(isWorking)
     }
 
     @MainActor
@@ -436,6 +423,12 @@ private struct ChangePasswordView: View {
         guard newPassword == confirmedPassword else {
             isError = true
             statusMessage = "The new passwords do not match."
+            return
+        }
+
+        guard currentPassword != newPassword else {
+            isError = true
+            statusMessage = "Your new password must be different from your current password."
             return
         }
 
@@ -453,11 +446,33 @@ private struct ChangePasswordView: View {
                 to: newPassword
             )
 
-            statusMessage = "Password updated successfully."
-            dismiss()
+            currentPassword = ""
+            newPassword = ""
+            confirmedPassword = ""
+            passwordChanged = true
         } catch {
             isError = true
-            statusMessage = error.localizedDescription
+            statusMessage = friendlyMessage(for: error)
         }
+    }
+
+    private func friendlyMessage(for error: Error) -> String {
+        let description = error.localizedDescription
+        let fullDescription = String(describing: error)
+
+        if fullDescription.contains("NotAuthorizedException") {
+            return "The current password is incorrect."
+        }
+
+        if fullDescription.contains("InvalidPasswordException") {
+            return "The new password does not meet the Cognito password requirements."
+        }
+
+        if fullDescription.contains("LimitExceededException")
+            || fullDescription.contains("TooManyRequestsException") {
+            return "Too many attempts. Please wait a moment and try again."
+        }
+
+        return description
     }
 }
