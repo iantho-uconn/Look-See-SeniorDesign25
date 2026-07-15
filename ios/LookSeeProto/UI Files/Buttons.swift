@@ -240,46 +240,50 @@ struct Buttons: View {
     
     // MARK: - Dynamic Tutorial Half-Sheet Content
     private var tutorialContent: some View {
-        VStack(spacing: 16) {
-            Group {
-                switch currentTab {
-                case 0:
-                    Image(systemName: "viewfinder").font(.system(size: 40))
-                    Text("How to Scan").font(.title2.weight(.bold))
-                    Text("Point your camera at a landmark. Keep the object well-lit and steady. LookSee will identify it automatically.")
-                case 1:
-                    Image(systemName: "map").font(.system(size: 40))
-                    Text("Explore the Map").font(.title2.weight(.bold))
-                    Text("Find valid landmarks around you to scan. Use the search bar or filters to narrow down locations.")
-                case 2:
-                    if authState.tier == .business {
-                        Image(systemName: "video.fill").font(.system(size: 40))
-                        Text("Record Landmark").font(.title2.weight(.bold))
-                        Text("Record a short video or take a photo of a nearby landmark to help improve our recognition models.")
-                    } else {
+        ZStack {
+            // FIX: This forces the background to stretch across the entire sheet
+            Color(red: 0.11, green: 0.11, blue: 0.16).ignoresSafeArea()
+            
+            VStack(spacing: 16) {
+                Group {
+                    switch currentTab {
+                    case 0:
+                        Image(systemName: "viewfinder").font(.system(size: 40))
+                        Text("How to Scan").font(.title2.weight(.bold))
+                        Text("Point your camera at a landmark. Keep the object well-lit and steady. LookSee will identify it automatically.")
+                    case 1:
+                        Image(systemName: "map").font(.system(size: 40))
+                        Text("Explore the Map").font(.title2.weight(.bold))
+                        Text("Find valid landmarks around you to scan. Use the search bar or filters to narrow down locations.")
+                    case 2:
+                        if authState.tier == .business {
+                            Image(systemName: "video.fill").font(.system(size: 40))
+                            Text("Record Landmark").font(.title2.weight(.bold))
+                            Text("Record a short video or take a photo of a nearby landmark to help improve our recognition models.")
+                        } else {
+                            Image(systemName: "folder.fill").font(.system(size: 40))
+                            Text("Upload Queue").font(.title2.weight(.bold))
+                            Text("This is your upload queue. Media you capture while offline will sit here and automatically upload when service returns.")
+                        }
+                    // Updated case 3 to reflect Queue logic for business users
+                    case 3:
+                        Image(systemName: "folder.fill").font(.system(size: 40))
+                        Text("Upload Queue").font(.title2.weight(.bold))
+                        Text("This is your upload queue. Media you capture while offline will sit here and automatically upload when service returns.")
+                    default:
                         Image(systemName: "folder.fill").font(.system(size: 40))
                         Text("Upload Queue").font(.title2.weight(.bold))
                         Text("This is your upload queue. Media you capture while offline will sit here and automatically upload when service returns.")
                     }
-                // Updated case 3 to reflect Queue logic for business users
-                case 3:
-                    Image(systemName: "folder.fill").font(.system(size: 40))
-                    Text("Upload Queue").font(.title2.weight(.bold))
-                    Text("This is your upload queue. Media you capture while offline will sit here and automatically upload when service returns.")
-                default:
-                    Image(systemName: "folder.fill").font(.system(size: 40))
-                    Text("Upload Queue").font(.title2.weight(.bold))
-                    Text("This is your upload queue. Media you capture while offline will sit here and automatically upload when service returns.")
                 }
+                .foregroundStyle(Color(red: 0.22, green: 0.49, blue: 1.00))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+                
+                Spacer()
             }
-            .foregroundStyle(Color(red: 0.22, green: 0.49, blue: 1.00))
-            .multilineTextAlignment(.center)
-            .padding(.horizontal, 32)
-            
-            Spacer()
+            .padding(.top, 24)
         }
-        .padding(.top, 24)
-        .background(Color(red: 0.11, green: 0.11, blue: 0.16).ignoresSafeArea())
         .environment(\.colorScheme, .dark)
     }
     

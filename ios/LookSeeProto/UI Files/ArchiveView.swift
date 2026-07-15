@@ -12,6 +12,8 @@ struct ArchiveView: View {
     @ObservedObject private var autoUploader = AutoUploadManager.shared
     
     @State private var showInfoSheet = false
+    @State private var selectedMedia: ArchivedMedia?
+    @State private var editingMedia: ArchivedMedia?
     
     private let backgroundColor = Color(red: 0.08, green: 0.08, blue: 0.12)
     private let cardColor = Color(red: 0.12, green: 0.12, blue: 0.18)
@@ -25,7 +27,7 @@ struct ArchiveView: View {
                 ScrollView {
                     VStack(spacing: 0) {
                         statusHeader
-                            .padding(.top, 16) // <-- FIX: Pushes the header down to stop the overlap!
+                            .padding(.top, 16)
                         
                         if offlineManager.archivedItems.isEmpty {
                             emptyStateView.padding(.top, 80)
@@ -60,6 +62,18 @@ struct ArchiveView: View {
             }
         }
         .sheet(isPresented: $showInfoSheet) { QueueInfoSheet() }
+        .sheet(item: $selectedMedia) { media in
+            QueueDetailSheet(media: media, onEdit: {
+                selectedMedia = nil
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    if autoUploader.isUploading { autoUploader.stopProcessing() }
+                    editingMedia = media
+                }
+            })
+        }
+        .fullScreenCover(item: $editingMedia) { media in
+            LandmarkRecord(archivedMedia: media)
+        }
         .onAppear {
             if !autoUploader.isUploading && !offlineManager.archivedItems.isEmpty {
                 Task { await autoUploader.startProcessing(authViewModel: vm) }
@@ -95,33 +109,38 @@ struct ArchiveView: View {
     
     private func queueItemCard(for media: ArchivedMedia) -> some View {
         let isCurrentlyUploading = (autoUploader.currentlyUploadingId == media.id)
-        return HStack(spacing: 16) {
-            ZStack {
-                if media.isVideo { Color.black; Image(systemName: "video.fill").foregroundStyle(.white) }
-                else {
-                    if let image = UIImage(contentsOfFile: offlineManager.getFileURL(for: media).path) { Image(uiImage: image).resizable().scaledToFill() }
-                    else { Color.gray; Image(systemName: "photo.fill") }
-                }
-            }.frame(width: 70, height: 70).clipShape(RoundedRectangle(cornerRadius: 12))
-            
-            VStack(alignment: .leading, spacing: 6) {
-                Text(media.savedLabel ?? "Untitled Landmark").font(.headline).foregroundStyle(.white).lineLimit(1)
-                if isCurrentlyUploading {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Uploading...").font(.caption).bold().foregroundStyle(.blue)
-                        ProgressView(value: autoUploader.currentUploadProgress, total: 1.0).tint(.blue)
+        return Button(action: {
+            selectedMedia = media
+        }) {
+            HStack(spacing: 16) {
+                ZStack {
+                    if media.isVideo { Color.black; Image(systemName: "video.fill").foregroundStyle(.white) }
+                    else {
+                        if let image = UIImage(contentsOfFile: offlineManager.getFileURL(for: media).path) { Image(uiImage: image).resizable().scaledToFill() }
+                        else { Color.gray; Image(systemName: "photo.fill") }
                     }
-                } else {
-                    HStack(spacing: 4) { Image(systemName: "clock.fill").foregroundStyle(.orange); Text("Queued").foregroundStyle(.orange) }.font(.caption.bold())
+                }.frame(width: 70, height: 70).clipShape(RoundedRectangle(cornerRadius: 12))
+                
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(media.savedLabel ?? "Untitled Landmark").font(.headline).foregroundStyle(.white).lineLimit(1)
+                    if isCurrentlyUploading {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Uploading...").font(.caption).bold().foregroundStyle(.blue)
+                            ProgressView(value: autoUploader.currentUploadProgress, total: 1.0).tint(.blue)
+                        }
+                    } else {
+                        HStack(spacing: 4) { Image(systemName: "clock.fill").foregroundStyle(.orange); Text("Queued").foregroundStyle(.orange) }.font(.caption.bold())
+                    }
                 }
-            }
-            Spacer()
-            if !isCurrentlyUploading {
-                Button(role: .destructive) { offlineManager.deleteArchive(media: media) }
-                label: { Image(systemName: "trash.circle.fill").font(.title2).foregroundStyle(Color.red.opacity(0.8)) }
-            }
-        }.padding(12).background(cardColor).clipShape(RoundedRectangle(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(isCurrentlyUploading ? Color.blue.opacity(0.5) : Color.white.opacity(0.1), lineWidth: 1))
+                Spacer()
+                if !isCurrentlyUploading {
+                    Button(role: .destructive) { offlineManager.deleteArchive(media: media) }
+                    label: { Image(systemName: "trash.circle.fill").font(.title2).foregroundStyle(Color.red.opacity(0.8)) }
+                }
+            }.padding(12).background(cardColor).clipShape(RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(isCurrentlyUploading ? Color.blue.opacity(0.5) : Color.white.opacity(0.1), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
     }
     
     private var emptyStateView: some View {
@@ -168,5 +187,62 @@ struct QueueInfoSheet: View {
             Image(systemName: icon).font(.title2).foregroundStyle(.blue).frame(width: 30)
             VStack(alignment: .leading, spacing: 4) { Text(title).font(.headline).foregroundStyle(.white); Text(desc).font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
         }
+    }
+}
+
+struct QueueDetailSheet: View {
+    let media: ArchivedMedia
+    let onEdit: () -> Void
+    @Environment(\.dismiss) var dismiss
+    
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color(red: 0.11, green: 0.11, blue: 0.16).ignoresSafeArea()
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 24) {
+                        
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Label").font(.caption).foregroundStyle(.secondary)
+                            Text(media.savedLabel ?? "No Label").font(.title3.bold()).foregroundStyle(.white)
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Description").font(.caption).foregroundStyle(.secondary)
+                            Text(media.savedDescription ?? "No Description").font(.body).foregroundStyle(.white)
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Location Coordinates").font(.caption).foregroundStyle(.secondary)
+                            Text("\(media.latitude), \(media.longitude)").font(.body).foregroundStyle(.white)
+                        }
+                        
+                        Button {
+                            onEdit()
+                        } label: {
+                            Text("Edit Landmark")
+                                .font(.headline)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 16)
+                                .background(Color.blue)
+                                .foregroundStyle(.white)
+                                .clipShape(RoundedRectangle(cornerRadius: 16))
+                        }
+                        .padding(.top, 16)
+                        
+                    }
+                    .padding(24)
+                }
+            }
+            .navigationTitle("Submission Details")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") { dismiss() }.foregroundStyle(.blue)
+                }
+            }
+            .environment(\.colorScheme, .dark)
+        }
+        .presentationDetents([.medium, .large])
     }
 }
