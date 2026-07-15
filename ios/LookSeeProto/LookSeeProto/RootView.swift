@@ -32,7 +32,7 @@ struct RootView: View {
                         await authState.resolveTier()
                         appState = .loadingModel
                     } else {
-                        appState = .login
+                        appState = .loadingModel
                     }
                 }
 
