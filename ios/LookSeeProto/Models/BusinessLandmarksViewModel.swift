@@ -85,4 +85,8 @@ final class BusinessLandmarksViewModel: ObservableObject {
         }
         saveToCache(landmarks)
     }
+
+    func removeLandmark(landmarkId: String) {
+        landmarks.removeAll { $0.landmarkId == landmarkId }
+    }
 }

@@ -1,0 +1,33 @@
+{
+  "SnapshotClusterMappings": {
+    "Type": "Task",
+    "Resource": "arn:aws:states:::lambda:invoke",
+    "Parameters": {
+      "FunctionName": "YOUR_SNAPSHOT_LAMBDA_ARN",
+      "Payload": {
+        "trainingRunId.$": "$.trainingRunId",
+        "mappingVersion.$": "$.trainingRunId"
+      }
+    },
+    "ResultSelector": {
+      "mappingVersion.$": "$.Payload.mappingVersion",
+      "sourceRevision.$": "$.Payload.sourceRevision",
+      "mappingCount.$": "$.Payload.mappingCount",
+      "status.$": "$.Payload.status"
+    },
+    "ResultPath": "$.mappingSnapshot",
+    "Retry": [
+      {
+        "ErrorEquals": [
+          "Lambda.ServiceException",
+          "Lambda.AWSLambdaException",
+          "Lambda.SdkClientException"
+        ],
+        "IntervalSeconds": 2,
+        "MaxAttempts": 3,
+        "BackoffRate": 2
+      }
+    ],
+    "Next": "YOUR_EXISTING_DATASET_BUILD_STATE"
+  }
+}

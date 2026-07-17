@@ -12,12 +12,32 @@ import UniformTypeIdentifiers
 struct BusinessLandmarkDetailView: View {
     let landmark: BusinessLandmark
     let onLandmarkUpdated: (BusinessLandmark) -> Void
+    let onLandmarkDeleted: (String) -> Void
+
+    @Environment(\.dismiss) private var dismiss
 
     @State private var displayedShortDescription: String
     @State private var draftShortDescription: String
     @State private var isEditingDescription = false
     @State private var isSavingDescription = false
     @State private var saveErrorMessage: String?
+
+    @State private var displayedIsActive: Bool
+    @State private var displayedPromotionEnabled: Bool
+    @State private var isSavingManagement = false
+    @State private var managementErrorMessage: String?
+
+    @State private var promotions: [BusinessPromotion] = []
+    @State private var isLoadingPromotions = false
+    @State private var promotionErrorMessage: String?
+    @State private var promotionEditorContext: BusinessPromotionEditorContext?
+    @State private var promotionPendingDelete: BusinessPromotion?
+    @State private var savingPromotionIds: Set<String> = []
+
+    @State private var isShowingDeleteLandmarkSheet = false
+    @State private var deleteConfirmationText = ""
+    @State private var isDeletingLandmark = false
+    @State private var deleteErrorMessage: String?
 
     @State private var showPositivePicker = false
     @State private var showNegativePicker = false
@@ -31,20 +51,25 @@ struct BusinessLandmarkDetailView: View {
     @State private var uploadProgressText: String?
 
     private let service = BusinessLandmarkService()
+    private let promotionService = BusinessPromotionService()
     private let maxSelectionCount = 10
 
     init(
         landmark: BusinessLandmark,
-        onLandmarkUpdated: @escaping (BusinessLandmark) -> Void = { _ in }
+        onLandmarkUpdated: @escaping (BusinessLandmark) -> Void = { _ in },
+        onLandmarkDeleted: @escaping (String) -> Void = { _ in }
     ) {
         self.landmark = landmark
         self.onLandmarkUpdated = onLandmarkUpdated
+        self.onLandmarkDeleted = onLandmarkDeleted
 
         let initialDescription = landmark.shortDescription?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
 
         _displayedShortDescription = State(initialValue: initialDescription)
         _draftShortDescription = State(initialValue: initialDescription)
+        _displayedIsActive = State(initialValue: landmark.isActive ?? true)
+        _displayedPromotionEnabled = State(initialValue: landmark.promotionEnabled ?? false)
     }
 
     var body: some View {
@@ -90,16 +115,68 @@ struct BusinessLandmarkDetailView: View {
                 }
             }
 
-            Section(header: Text("Management")) {
-                Label(
-                    landmark.displayStatus,
-                    systemImage: landmark.isActive == false ? "pause.circle" : "checkmark.circle"
-                )
+            Section(
+                header: Text("Management"),
+                footer: Text("Active landmarks can be used by the app. Promotions Enabled controls whether this landmark is allowed to show promotions once promotion records are added.")
+            ) {
+                Toggle(isOn: Binding(
+                    get: { displayedIsActive },
+                    set: { newValue in
+                        updateManagementSetting(
+                            isActive: newValue,
+                            promotionEnabled: nil
+                        )
+                    }
+                )) {
+                    Label(
+                        displayedIsActive ? "Active Landmark" : "Inactive Landmark",
+                        systemImage: displayedIsActive ? "checkmark.circle" : "pause.circle"
+                    )
+                }
+                .disabled(isSavingManagement)
 
-                Label(
-                    landmark.displayPromotionStatus,
-                    systemImage: landmark.promotionEnabled == true ? "tag.fill" : "tag"
-                )
+                Toggle(isOn: Binding(
+                    get: { displayedPromotionEnabled },
+                    set: { newValue in
+                        updateManagementSetting(
+                            isActive: nil,
+                            promotionEnabled: newValue
+                        )
+                    }
+                )) {
+                    Label(
+                        displayedPromotionEnabled ? "Promotions Enabled" : "Promotions Disabled",
+                        systemImage: displayedPromotionEnabled ? "tag.fill" : "tag"
+                    )
+                }
+                .disabled(isSavingManagement)
+
+                if isSavingManagement {
+                    HStack(spacing: 10) {
+                        ProgressView()
+                        Text("Saving management setting...")
+                            .font(.footnote)
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                if let managementErrorMessage {
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(.orange)
+
+                        Text(managementErrorMessage)
+                            .font(.footnote)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+
+            Section(
+                header: Text("Promotions"),
+                footer: Text(displayedPromotionEnabled ? "Promotions can be shown for this landmark when enabled and within their date range." : "Promotions are currently disabled for this landmark. You can still create and edit promotion records here.")
+            ) {
+                promotionsContent
             }
 
             Section(header: Text("Location")) {
@@ -135,6 +212,8 @@ struct BusinessLandmarkDetailView: View {
                 uploadStatusArea
             }
 
+            dangerZoneSection
+
             Section(header: Text("Identifiers")) {
                 detailRow(title: "Landmark ID", value: landmark.landmarkId)
 
@@ -159,6 +238,258 @@ struct BusinessLandmarkDetailView: View {
         .sheet(isPresented: $isEditingDescription) {
             editDescriptionSheet
         }
+        .sheet(isPresented: $isShowingDeleteLandmarkSheet) {
+            deleteLandmarkSheet
+        }
+        .sheet(item: $promotionEditorContext) { context in
+            BusinessPromotionEditor(
+                landmark: landmark,
+                context: context
+            ) {
+                Task {
+                    await loadPromotions()
+                }
+            }
+        }
+        .alert("Delete Promotion?", isPresented: deletePromotionAlertBinding) {
+            Button("Cancel", role: .cancel) {
+                promotionPendingDelete = nil
+            }
+
+            Button("Delete", role: .destructive) {
+                if let promotion = promotionPendingDelete {
+                    Task {
+                        await deletePromotion(promotion)
+                    }
+                }
+            }
+        } message: {
+            Text("This promotion will be permanently removed.")
+        }
+        .task {
+            await loadPromotions()
+        }
+    }
+
+    // MARK: - Promotions
+
+    private var promotionsContent: some View {
+        Group {
+            Button {
+                promotionEditorContext = .create
+            } label: {
+                HStack {
+                    Label("Add Promotion", systemImage: "plus.circle")
+
+                    Spacer()
+
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            if isLoadingPromotions {
+                HStack(spacing: 10) {
+                    ProgressView()
+                    Text("Loading promotions...")
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+                }
+            } else if promotions.isEmpty {
+                Text("No promotions have been added for this landmark yet.")
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
+            } else {
+                ForEach(promotions) { promotion in
+                    promotionRow(promotion)
+                }
+            }
+
+            if let promotionErrorMessage {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundColor(.orange)
+
+                    Text(promotionErrorMessage)
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+    }
+
+    private func promotionRow(_ promotion: BusinessPromotion) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(promotion.name.isEmpty ? "Untitled Promotion" : promotion.name)
+                        .font(.headline)
+
+                    if !promotion.description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Text(promotion.description)
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+
+                    Text(promotionDateSummary(promotion))
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                Spacer()
+
+                Toggle("", isOn: Binding(
+                    get: { promotion.enabled },
+                    set: { newValue in
+                        Task {
+                            await updatePromotionEnabled(promotion, enabled: newValue)
+                        }
+                    }
+                ))
+                .labelsHidden()
+                .disabled(savingPromotionIds.contains(promotion.id))
+            }
+
+            HStack(spacing: 12) {
+                Button {
+                    promotionEditorContext = .edit(promotion)
+                } label: {
+                    Label("Edit", systemImage: "square.and.pencil")
+                }
+                .buttonStyle(.bordered)
+                .disabled(savingPromotionIds.contains(promotion.id))
+
+                Button(role: .destructive) {
+                    promotionPendingDelete = promotion
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+                .buttonStyle(.bordered)
+                .disabled(savingPromotionIds.contains(promotion.id))
+            }
+        }
+        .padding(.vertical, 6)
+    }
+
+    private var deletePromotionAlertBinding: Binding<Bool> {
+        Binding(
+            get: { promotionPendingDelete != nil },
+            set: { newValue in
+                if !newValue {
+                    promotionPendingDelete = nil
+                }
+            }
+        )
+    }
+
+    private func loadPromotions() async {
+        await MainActor.run {
+            isLoadingPromotions = true
+            promotionErrorMessage = nil
+        }
+
+        do {
+            let response = try await promotionService.fetchPromotions(landmarkId: landmark.landmarkId)
+
+            await MainActor.run {
+                promotions = response.items
+                isLoadingPromotions = false
+            }
+        } catch {
+            await MainActor.run {
+                promotionErrorMessage = error.localizedDescription
+                isLoadingPromotions = false
+            }
+        }
+    }
+
+    private func updatePromotionEnabled(_ promotion: BusinessPromotion, enabled: Bool) async {
+        await MainActor.run {
+            savingPromotionIds.insert(promotion.id)
+            promotionErrorMessage = nil
+
+            if let index = promotions.firstIndex(where: { $0.id == promotion.id }) {
+                promotions[index] = promotions[index].copy(enabled: enabled)
+            }
+        }
+
+        do {
+            let updated = try await promotionService.updatePromotion(
+                landmarkId: landmark.landmarkId,
+                promotionId: promotion.id,
+                name: nil,
+                description: nil,
+                imageUrl: nil,
+                startDate: nil,
+                endDate: nil,
+                enabled: enabled
+            )
+
+            await MainActor.run {
+                if let index = promotions.firstIndex(where: { $0.id == promotion.id }) {
+                    promotions[index] = updated
+                }
+
+                savingPromotionIds.remove(promotion.id)
+            }
+        } catch {
+            await MainActor.run {
+                if let index = promotions.firstIndex(where: { $0.id == promotion.id }) {
+                    promotions[index] = promotion
+                }
+
+                promotionErrorMessage = error.localizedDescription
+                savingPromotionIds.remove(promotion.id)
+            }
+        }
+    }
+
+    private func deletePromotion(_ promotion: BusinessPromotion) async {
+        await MainActor.run {
+            savingPromotionIds.insert(promotion.id)
+            promotionErrorMessage = nil
+        }
+
+        do {
+            try await promotionService.deletePromotion(
+                landmarkId: landmark.landmarkId,
+                promotionId: promotion.id
+            )
+
+            await MainActor.run {
+                promotions.removeAll { $0.id == promotion.id }
+                promotionPendingDelete = nil
+                savingPromotionIds.remove(promotion.id)
+            }
+        } catch {
+            await MainActor.run {
+                promotionErrorMessage = error.localizedDescription
+                promotionPendingDelete = nil
+                savingPromotionIds.remove(promotion.id)
+            }
+        }
+    }
+
+    private func promotionDateSummary(_ promotion: BusinessPromotion) -> String {
+        let start = promotion.startDate.trimmingCharacters(in: .whitespacesAndNewlines)
+        let end = promotion.endDate.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if start.isEmpty && end.isEmpty {
+            return promotion.enabled ? "Enabled, no dates set" : "Disabled, no dates set"
+        }
+
+        let dateText: String
+
+        if !start.isEmpty && !end.isEmpty {
+            dateText = "\(start) to \(end)"
+        } else if !start.isEmpty {
+            dateText = "Starts \(start)"
+        } else {
+            dateText = "Ends \(end)"
+        }
+
+        return promotion.enabled ? "Enabled • \(dateText)" : "Disabled • \(dateText)"
     }
 
     // MARK: - Picker Buttons
@@ -432,6 +763,53 @@ struct BusinessLandmarkDetailView: View {
         }
     }
 
+    // MARK: - Management Settings
+
+    private func updateManagementSetting(
+        isActive: Bool?,
+        promotionEnabled: Bool?
+    ) {
+        guard !isSavingManagement else { return }
+
+        let previousIsActive = displayedIsActive
+        let previousPromotionEnabled = displayedPromotionEnabled
+
+        if let isActive {
+            displayedIsActive = isActive
+        }
+
+        if let promotionEnabled {
+            displayedPromotionEnabled = promotionEnabled
+        }
+
+        isSavingManagement = true
+        managementErrorMessage = nil
+
+        Task {
+            do {
+                let updatedLandmark = try await service.updateLandmarkSettings(
+                    landmarkId: landmark.landmarkId,
+                    isActive: isActive,
+                    promotionEnabled: promotionEnabled
+                )
+
+                await MainActor.run {
+                    displayedIsActive = updatedLandmark.isActive ?? displayedIsActive
+                    displayedPromotionEnabled = updatedLandmark.promotionEnabled ?? displayedPromotionEnabled
+                    onLandmarkUpdated(updatedLandmark)
+                    isSavingManagement = false
+                }
+            } catch {
+                await MainActor.run {
+                    displayedIsActive = previousIsActive
+                    displayedPromotionEnabled = previousPromotionEnabled
+                    managementErrorMessage = error.localizedDescription
+                    isSavingManagement = false
+                }
+            }
+        }
+    }
+
     // MARK: - Media Upload Logic
 
     private var uploadingText: String {
@@ -609,6 +987,142 @@ struct BusinessLandmarkDetailView: View {
         let labelComponent = cleanedLabel.isEmpty ? landmark.landmarkId : cleanedLabel
 
         return "\(labelComponent)_\(datasetRole.filenameComponent)_\(index)_\(UUID().uuidString).\(fileExtension)"
+    }
+
+    // MARK: - Landmark Delete
+
+    private var dangerZoneSection: some View {
+        Section(
+            header: Text("Danger Zone"),
+            footer: Text("Deleting a landmark removes it from your account and starts backend cleanup for cluster mappings, dataset files, hard negatives, and promotions. This cannot be undone.")
+        ) {
+            Button(role: .destructive) {
+                deleteConfirmationText = ""
+                deleteErrorMessage = nil
+                isShowingDeleteLandmarkSheet = true
+            } label: {
+                Label("Delete Landmark", systemImage: "trash")
+            }
+            .disabled(isDeletingLandmark)
+
+            if let deleteErrorMessage {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundColor(.orange)
+
+                    Text(deleteErrorMessage)
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+    }
+
+    private var deleteLandmarkSheet: some View {
+        NavigationStack {
+            Form {
+                Section(
+                    header: Text("Confirm Landmark Deletion"),
+                    footer: Text("To confirm, type exactly: delete landmark")
+                ) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(landmark.label.isEmpty ? "Untitled Landmark" : landmark.label)
+                            .font(.headline)
+
+                        Text(landmark.landmarkId)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.vertical, 4)
+
+                    TextField("delete landmark", text: $deleteConfirmationText)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled(true)
+                        .disabled(isDeletingLandmark)
+                }
+
+                Section {
+                    Button(role: .destructive) {
+                        Task {
+                            await deleteLandmark()
+                        }
+                    } label: {
+                        HStack {
+                            Spacer()
+
+                            if isDeletingLandmark {
+                                ProgressView()
+                            } else {
+                                Label("Confirm Delete Landmark", systemImage: "trash.fill")
+                            }
+
+                            Spacer()
+                        }
+                    }
+                    .disabled(!isDeleteConfirmationValid || isDeletingLandmark)
+                }
+
+                if let deleteErrorMessage {
+                    Section {
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(.orange)
+
+                            Text(deleteErrorMessage)
+                                .font(.footnote)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Delete Landmark")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        isShowingDeleteLandmarkSheet = false
+                    }
+                    .disabled(isDeletingLandmark)
+                }
+            }
+        }
+    }
+
+    private var isDeleteConfirmationValid: Bool {
+        deleteConfirmationText.trimmingCharacters(in: .whitespacesAndNewlines) == "delete landmark"
+    }
+
+    private func deleteLandmark() async {
+        guard isDeleteConfirmationValid else {
+            await MainActor.run {
+                deleteErrorMessage = "Type exactly: delete landmark"
+            }
+            return
+        }
+
+        await MainActor.run {
+            isDeletingLandmark = true
+            deleteErrorMessage = nil
+        }
+
+        do {
+            _ = try await service.deleteLandmark(
+                landmarkId: landmark.landmarkId,
+                confirmation: deleteConfirmationText
+            )
+
+            await MainActor.run {
+                isDeletingLandmark = false
+                isShowingDeleteLandmarkSheet = false
+                onLandmarkDeleted(landmark.landmarkId)
+                dismiss()
+            }
+        } catch {
+            await MainActor.run {
+                isDeletingLandmark = false
+                deleteErrorMessage = error.localizedDescription
+            }
+        }
     }
 
     // MARK: - Small UI Helpers

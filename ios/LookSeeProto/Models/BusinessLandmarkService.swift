@@ -22,7 +22,14 @@ struct BusinessLandmarkUpdateResponse: Decodable {
     let item: BusinessLandmark
 }
 
-struct BusinessLandmark: Codable, Identifiable, Hashable {
+struct BusinessLandmarkDeleteResponse: Decodable {
+    let ok: Bool
+    let message: String?
+    let landmarkId: String
+    let status: String?
+}
+
+struct BusinessLandmark: Decodable, Identifiable, Hashable {
     let landmarkId: String
     let label: String
     let shortDescription: String?
@@ -167,6 +174,16 @@ private struct PositiveUploadCompleteBody: Encodable {
     let s3Key: String
 }
 
+private struct BusinessLandmarkPatchBody: Encodable {
+    let shortDescription: String?
+    let isActive: Bool?
+    let promotionEnabled: Bool?
+}
+
+private struct BusinessLandmarkDeleteBody: Encodable {
+    let confirmation: String
+}
+
 private struct BusinessHardNegativeFileBody: Encodable {
     let filename: String
     let contentType: String
@@ -249,11 +266,40 @@ final class BusinessLandmarkService {
         return try JSONDecoder().decode(BusinessLandmarkListResponse.self, from: data)
     }
 
-    // MARK: - Landmark Description Editing
+    // MARK: - Landmark Editing / Settings
 
     func updateShortDescription(
         landmarkId: String,
         shortDescription: String
+    ) async throws -> BusinessLandmark {
+        return try await patchBusinessLandmark(
+            landmarkId: landmarkId,
+            body: BusinessLandmarkPatchBody(
+                shortDescription: shortDescription,
+                isActive: nil,
+                promotionEnabled: nil
+            )
+        )
+    }
+
+    func updateLandmarkSettings(
+        landmarkId: String,
+        isActive: Bool? = nil,
+        promotionEnabled: Bool? = nil
+    ) async throws -> BusinessLandmark {
+        return try await patchBusinessLandmark(
+            landmarkId: landmarkId,
+            body: BusinessLandmarkPatchBody(
+                shortDescription: nil,
+                isActive: isActive,
+                promotionEnabled: promotionEnabled
+            )
+        )
+    }
+
+    private func patchBusinessLandmark(
+        landmarkId: String,
+        body: BusinessLandmarkPatchBody
     ) async throws -> BusinessLandmark {
         let idToken = try await getCognitoIDToken()
 
@@ -268,10 +314,6 @@ final class BusinessLandmarkService {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
-        let body: [String: String] = [
-            "shortDescription": shortDescription
-        ]
-
         request.httpBody = try JSONEncoder().encode(body)
 
         let (data, response) = try await URLSession.shared.data(for: request)
@@ -285,6 +327,41 @@ final class BusinessLandmarkService {
 
         let decoded = try JSONDecoder().decode(BusinessLandmarkUpdateResponse.self, from: data)
         return decoded.item
+    }
+
+    func deleteLandmark(
+        landmarkId: String,
+        confirmation: String
+    ) async throws -> BusinessLandmarkDeleteResponse {
+        let idToken = try await getCognitoIDToken()
+
+        let url = baseURL
+            .appendingPathComponent("business")
+            .appendingPathComponent("landmarks")
+            .appendingPathComponent(landmarkId)
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        request.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        request.httpBody = try JSONEncoder().encode(
+            BusinessLandmarkDeleteBody(
+                confirmation: confirmation
+            )
+        )
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
+        let responseBody = String(data: data, encoding: .utf8) ?? ""
+
+        guard (200...299).contains(statusCode) else {
+            throw BusinessLandmarkServiceError.badStatus(statusCode, responseBody)
+        }
+
+        return try JSONDecoder().decode(BusinessLandmarkDeleteResponse.self, from: data)
     }
 
     // MARK: - Unified Media Upload Entry Point

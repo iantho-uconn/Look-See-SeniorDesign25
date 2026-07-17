@@ -82,6 +82,29 @@ struct Settings: View {
                             .frame(width: 48, height: 48)
                             .shadow(color: Color(red: 0.22, green: 0.49, blue: 1.00).opacity(0.5), radius: 8, x: 0, y: 4)
 
+                // MARK: - Account & Security
+                if authState.tier != .guest {
+                    Section {
+                        NavigationLink {
+                            AccountSecurityView()
+                                .environmentObject(vm)
+                        } label: {
+                            Label("Account & Security", systemImage: "person.badge.key")
+                        }
+                    } header: {
+                        Text("Account")
+                    } footer: {
+                        Text("Change your email or password.")
+                    }
+                }
+
+                // MARK: - Business Management
+                if authState.tier == .business {
+                    Section {
+                        NavigationLink {
+                            BusinessLandmarksView()
+                        } label: {
+                            Label("Manage My Landmarks", systemImage: "building.2.crop.circle")
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("Join LookSee Premium")
                                     .font(.system(size: 18, weight: .bold, design: .rounded))

@@ -138,6 +138,20 @@ struct BusinessLandmarksView: View {
         .padding(.horizontal, 4)
     }
 
+            Section {
+                ForEach(viewModel.landmarks) { landmark in
+                    NavigationLink {
+                        BusinessLandmarkDetailView(
+                            landmark: landmark,
+                            onLandmarkUpdated: { updatedLandmark in
+                                viewModel.replaceLandmark(updatedLandmark)
+                            },
+                            onLandmarkDeleted: { landmarkId in
+                                viewModel.removeLandmark(landmarkId: landmarkId)
+                            }
+                        )
+                    } label: {
+                        BusinessLandmarkRow(landmark: landmark)
     @ViewBuilder
     private func pendingRow(for item: ArchivedMedia) -> some View {
         let isUploading = uploadManager.currentlyUploadingId == item.id
