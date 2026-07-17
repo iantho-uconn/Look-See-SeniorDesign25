@@ -8,6 +8,8 @@
 
 /* Begin PBXBuildFile section */
 		374FCAFB2FFE98CB0035A674 /* VideoMerge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 374FCAFA2FFE98CB0035A674 /* VideoMerge.swift */; };
+		374FCE50300A94C60035A674 /* AnimatedBackground_2.swift in Sources */ = {isa = PBXBuildFile; fileRef = 374FCE4E300A94C60035A674 /* AnimatedBackground_2.swift */; };
+		374FCE51300A94C60035A674 /* LoadingAnimation_2.swift in Sources */ = {isa = PBXBuildFile; fileRef = 374FCE4F300A94C60035A674 /* LoadingAnimation_2.swift */; };
 		3C19EB412F981FA400D1AA43 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = 3C19EB402F981FA400D1AA43 /* ZIPFoundation */; };
 		3C19EB492F9943F400D1AA43 /* FinalDetector.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3C19EB482F9943F400D1AA43 /* FinalDetector.mlpackage */; };
 		3C1FC9CC2F42C9E70006C1D3 /* PhotoPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C1FC9CB2F42C9DA0006C1D3 /* PhotoPicker.swift */; };
@@ -64,7 +66,6 @@
 		D0E788892FF2E1CD00E5FE00 /* NegativeVideoCameraService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0E788872FF2E1C700E5FE00 /* NegativeVideoCameraService.swift */; };
 		D0E7888D2FF2E3C800E5FE00 /* NegativeVideoCameraView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0E7888C2FF2E3C000E5FE00 /* NegativeVideoCameraView.swift */; };
 		D0E7888F2FF39A9A00E5FE00 /* NegativeGalleryPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0E7888E2FF39A9500E5FE00 /* NegativeGalleryPicker.swift */; };
-		D0E788932FF5073000E5FE00 /* GymLocation.gpx in Resources */ = {isa = PBXBuildFile; fileRef = D0E788922FF5073000E5FE00 /* GymLocation.gpx */; };
 		D0E78B7B300545F500E5FE00 /* NetworkMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0E78B7A300545E200E5FE00 /* NetworkMonitor.swift */; };
 		D0E78B7C300545F500E5FE00 /* NetworkMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0E78B7A300545E200E5FE00 /* NetworkMonitor.swift */; };
 		D0E78B7D300545F500E5FE00 /* NetworkMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0E78B7A300545E200E5FE00 /* NetworkMonitor.swift */; };
@@ -96,6 +97,8 @@
 
 /* Begin PBXFileReference section */
 		374FCAFA2FFE98CB0035A674 /* VideoMerge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoMerge.swift; sourceTree = "<group>"; };
+		374FCE4E300A94C60035A674 /* AnimatedBackground_2.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AnimatedBackground_2.swift; path = /Users/looksee3/Desktop/AnimatedBackground_2.swift; sourceTree = "<absolute>"; };
+		374FCE4F300A94C60035A674 /* LoadingAnimation_2.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LoadingAnimation_2.swift; path = /Users/looksee3/Desktop/LoadingAnimation_2.swift; sourceTree = "<absolute>"; };
 		3C19EB482F9943F400D1AA43 /* FinalDetector.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = FinalDetector.mlpackage; sourceTree = "<group>"; };
 		3C1FC9CB2F42C9DA0006C1D3 /* PhotoPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoPicker.swift; sourceTree = "<group>"; };
 		3C3D161D2FFCA97200C8A544 /* BusinessLandmarksView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BusinessLandmarksView.swift; sourceTree = "<group>"; };
@@ -147,7 +150,6 @@
 		D0E788872FF2E1C700E5FE00 /* NegativeVideoCameraService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NegativeVideoCameraService.swift; sourceTree = "<group>"; };
 		D0E7888C2FF2E3C000E5FE00 /* NegativeVideoCameraView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NegativeVideoCameraView.swift; sourceTree = "<group>"; };
 		D0E7888E2FF39A9500E5FE00 /* NegativeGalleryPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NegativeGalleryPicker.swift; sourceTree = "<group>"; };
-		D0E788922FF5073000E5FE00 /* GymLocation.gpx */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = GymLocation.gpx; sourceTree = "<group>"; };
 		D0E78B7A300545E200E5FE00 /* NetworkMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkMonitor.swift; sourceTree = "<group>"; };
 		D0E78B7E3005462200E5FE00 /* AutoUploadManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutoUploadManager.swift; sourceTree = "<group>"; };
 		D0E78BCC3006A63200E5FE00 /* GuidedCaptureOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuidedCaptureOverlay.swift; sourceTree = "<group>"; };
@@ -276,6 +278,8 @@
 				3C3D161F2FFCA9B700C8A544 /* BusinessLandmarkDetailView.swift */,
 				3C3D161D2FFCA97200C8A544 /* BusinessLandmarksView.swift */,
 				374FCAFA2FFE98CB0035A674 /* VideoMerge.swift */,
+				374FCE4E300A94C60035A674 /* AnimatedBackground_2.swift */,
+				374FCE4F300A94C60035A674 /* LoadingAnimation_2.swift */,
 				D0E7888C2FF2E3C000E5FE00 /* NegativeVideoCameraView.swift */,
 				D0B0B1312FE59EF800C75E25 /* QuickUploadView.swift */,
 				D0B0B12F2FE51DB500C75E25 /* LandmarkMapView.swift */,
@@ -524,6 +528,8 @@
 				3C72AA372F5141A000A90328 /* best.mlpackage in Sources */,
 				56C3FA082EA6CA3100EA6153 /* Settings.swift in Sources */,
 				3CE8899C2F3FEE2B00B66044 /* VideoPicker.swift in Sources */,
+				374FCE50300A94C60035A674 /* AnimatedBackground_2.swift in Sources */,
+				374FCE51300A94C60035A674 /* LoadingAnimation_2.swift in Sources */,
 				3C3D161E2FFCA97900C8A544 /* BusinessLandmarksView.swift in Sources */,
 				3C5FED6B2F907D270018FF06 /* Tier2LandmarkRecord.swift in Sources */,
 				3C4E57012FE443230045B2D4 /* TextScannerView.swift in Sources */,
@@ -718,7 +724,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = ZLBPU9JP27;
+				DEVELOPMENT_TEAM = 74S483TXSF;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
@@ -736,7 +742,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = looksee.angell.com;
+				PRODUCT_BUNDLE_IDENTIFIER = looksee.nisarg.com;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -757,7 +763,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = ZLBPU9JP27;
+				DEVELOPMENT_TEAM = 74S483TXSF;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
@@ -775,7 +781,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = looksee.angell.com;
+				PRODUCT_BUNDLE_IDENTIFIER = looksee.nisarg.com;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
