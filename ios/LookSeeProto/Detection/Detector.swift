@@ -114,7 +114,7 @@ final class Detector: NSObject, ObservableObject {
     private let detectionLogInterval: TimeInterval = 2.0
 
     private let inputSize = CGSize(width: 640, height: 640)
-    private let confidenceThreshold: Float = 0.35
+    private let confidenceThreshold: Float = 0.80
     private let iouThreshold: Float = 0.45
 
     private var smoothers: [String: BoundingBoxSmoother] = [:]

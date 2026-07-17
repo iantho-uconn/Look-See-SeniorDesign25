@@ -116,7 +116,7 @@ struct Tier2LandmarkRecord: View {
         } message: { Text("This will remove the media and clear the form.") }
         .alert("Connection Offline", isPresented: $showAutoQueueAlert) {
             Button("OK", role: .cancel) { }
-        } message: { Text("You currently have no internet connection. This media has been securely added to your Upload Queue and will automatically sync when service returns!") }
+        } message: { Text("You currently have no internet connection. This media has been securely added to your Upload Queue in your business management tab and will automatically sync when service returns!") }
     }
 
     var archivePromptOverlay: some View {

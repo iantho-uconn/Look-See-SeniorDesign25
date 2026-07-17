@@ -17,7 +17,7 @@ enum NegativeCameraPhase: Equatable {
     var title: String {
         switch self {
         case .first: return "Background Pan"
-        case .additional(let index): return "Extra Pan \(index - 1)"
+        case .additional(let index): return "Background Pan"
         }
     }
     

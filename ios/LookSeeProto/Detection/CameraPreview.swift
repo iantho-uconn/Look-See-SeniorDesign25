@@ -97,7 +97,8 @@ final class OverlayView: UIView {
                 perimeter.lineWidth = 4.0
                 perimeter.stroke()
 
-                let labelText = "\(bestTarget.displayLabel) \(Int(bestTarget.confidence * 100))%"
+                // Removed confidence score from label
+                let labelText = "\(bestTarget.displayLabel)"
                 let font = UIFont.systemFont(ofSize: 16, weight: .bold)
                 let textStyle: [NSAttributedString.Key: Any] = [
                     .font: font,
@@ -222,7 +223,6 @@ struct CameraPreview: UIViewRepresentable {
         let onPinch: () -> Void
 
         private var zoomFactorAtGestureStart: CGFloat = 1.0
-        private let promotionService = PromotionService()
 
         lazy var boundingBoxTapGesture: UITapGestureRecognizer = {
             UITapGestureRecognizer(target: self, action: #selector(bbClick(_:)))
@@ -275,32 +275,23 @@ struct CameraPreview: UIViewRepresentable {
                 DispatchQueue.main.async {
                     infoView.landmarkName = "Class \(detection.classIndex)"
                     infoView.landmarkDescription = "The matching landmark metadata could not be loaded."
-                    infoView.promoName = "No active promotion"
+                    // Removed promoName, promoDescription, and landmarkConfidence
+                    infoView.promoName = ""
                     infoView.promoDescription = ""
-                    infoView.landmarkConfidence = detection.confidence * 100
                     infoView.infoView = true
                 }
                 return
             }
 
-            Task {
-                let promotions = await promotionService.fetchPromotionsByLabel(label: landmark.label)
-                await MainActor.run {
-                    infoView.landmarkName = landmark.label
-                    let trimmed = landmark.shortDescription.trimmingCharacters(in: .whitespacesAndNewlines)
-                    infoView.landmarkDescription = trimmed.isEmpty ? "No description available." : trimmed
-
-                    if let promo = promotions.first {
-                        infoView.promoName = promo.name
-                        infoView.promoDescription = promo.description
-                    } else {
-                        infoView.promoName = "No active promotion"
-                        infoView.promoDescription = ""
-                    }
-
-                    infoView.landmarkConfidence = detection.confidence * 100
-                    infoView.infoView = true
-                }
+            // Simple popup logic without promotion fetching
+            DispatchQueue.main.async {
+                infoView.landmarkName = landmark.label
+                let trimmed = landmark.shortDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+                infoView.landmarkDescription = trimmed.isEmpty ? "No description available." : trimmed
+                
+                infoView.promoName = ""
+                infoView.promoDescription = ""
+                infoView.infoView = true
             }
         }
     }

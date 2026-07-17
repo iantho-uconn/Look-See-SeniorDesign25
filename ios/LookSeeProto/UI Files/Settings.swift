@@ -81,30 +81,7 @@ struct Settings: View {
                             }
                             .frame(width: 48, height: 48)
                             .shadow(color: Color(red: 0.22, green: 0.49, blue: 1.00).opacity(0.5), radius: 8, x: 0, y: 4)
-
-                // MARK: - Account & Security
-                if authState.tier != .guest {
-                    Section {
-                        NavigationLink {
-                            AccountSecurityView()
-                                .environmentObject(vm)
-                        } label: {
-                            Label("Account & Security", systemImage: "person.badge.key")
-                        }
-                    } header: {
-                        Text("Account")
-                    } footer: {
-                        Text("Change your email or password.")
-                    }
-                }
-
-                // MARK: - Business Management
-                if authState.tier == .business {
-                    Section {
-                        NavigationLink {
-                            BusinessLandmarksView()
-                        } label: {
-                            Label("Manage My Landmarks", systemImage: "building.2.crop.circle")
+                            
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("Join LookSee Premium")
                                     .font(.system(size: 18, weight: .bold, design: .rounded))
@@ -116,9 +93,7 @@ struct Settings: View {
                         }
                         
                         HStack(spacing: 12) {
-                            Button {
-                                presenter.showSubscriptionFlow = true
-                            } label: {
+                            Button { presenter.showSubscriptionFlow = true } label: {
                                 Text("Join Now")
                                     .font(.system(size: 14, weight: .semibold))
                                     .foregroundStyle(.white)
@@ -129,9 +104,7 @@ struct Settings: View {
                             }
                             .buttonStyle(.plain)
                             
-                            Button {
-                                presenter.showLoginSheet = true
-                            } label: {
+                            Button { presenter.showLoginSheet = true } label: {
                                 Text("Log In")
                                     .font(.system(size: 14, weight: .semibold))
                                     .foregroundStyle(.white)
@@ -155,122 +128,85 @@ struct Settings: View {
                 .padding(.vertical, 8)
             }
 
+            // MARK: - Account & Security
+            if authState.tier != .guest {
+                Section {
+                    NavigationLink {
+                        AccountSecurityView().environmentObject(vm)
+                    } label: {
+                        Label("Account & Security", systemImage: "person.badge.key")
+                    }
+                } header: {
+                    Text("Account")
+                } footer: {
+                    Text("Change your email or password.")
+                }
+            }
+
+            // MARK: - Business Management
             if authState.tier == .business {
                 Section {
                     HStack {
                         Text("Current Plan")
                         Spacer()
-                        Text("Intermediate")
-                            .foregroundStyle(.secondary)
+                        Text("Intermediate").foregroundStyle(.secondary)
                     }
-                    
                     HStack {
                         Text("Renewal Date")
                         Spacer()
-                        Text("Aug 16, 2026")
-                            .foregroundStyle(.secondary)
+                        Text("Aug 16, 2026").foregroundStyle(.secondary)
                     }
-
-                    Button {
-                        presenter.showSubscriptionFlow = true
-                    } label: {
-                        Text("Change Plan")
-                            .foregroundStyle(Color(red: 0.22, green: 0.49, blue: 1.00))
-                    }
-
-                    Button(role: .destructive) {
-                        showCancelAlert = true
-                    } label: {
-                        Text("Cancel Subscription")
-                    }
-                    .alert("Cancel Subscription?", isPresented: $showCancelAlert) {
-                        Button("Keep Plan", role: .cancel) {}
-                        Button("Cancel Plan", role: .destructive) {
-                            withAnimation {
-                                authState.tier = .guest
-                            }
+                    Button("Change Plan") { presenter.showSubscriptionFlow = true }
+                        .foregroundStyle(Color(red: 0.22, green: 0.49, blue: 1.00))
+                    
+                    Button("Cancel Subscription", role: .destructive) { showCancelAlert = true }
+                        .alert("Cancel Subscription?", isPresented: $showCancelAlert) {
+                            Button("Keep Plan", role: .cancel) {}
+                            Button("Cancel Plan", role: .destructive) { withAnimation { authState.tier = .guest } }
+                        } message: {
+                            Text("Your business features will be disabled immediately.")
                         }
-                    } message: {
-                        Text("Your business features will be disabled immediately.")
-                    }
                 } header: {
                     Text("Membership")
                 }
                 
                 Section {
-                    NavigationLink {
-                        BusinessLandmarksView()
-                    } label: {
+                    NavigationLink { BusinessLandmarksView() } label: {
                         Label("Manage My Landmarks", systemImage: "building.2.crop.circle")
                     }
                 } header: {
                     Text("Business Management")
                 } footer: {
-                    Text("View the landmarks assigned to your business account. Remote media uploads will be added in the next phase.")
+                    Text("View the landmarks assigned to your business account.")
                 }
             }
 
             Section {
-                NavigationLink {
-                    Text("Help & Support Center")
-                } label: {
-                    Label("Help & Support", systemImage: "questionmark.circle")
-                }
-                NavigationLink {
-                    Text("Privacy Policy")
-                } label: {
-                    Label("Privacy Policy", systemImage: "hand.raised")
-                }
-                NavigationLink {
-                    Text("Terms of Service")
-                } label: {
-                    Label("Terms of Service", systemImage: "doc.text")
-                }
+                NavigationLink { Text("Help & Support Center") } label: { Label("Help & Support", systemImage: "questionmark.circle") }
+                NavigationLink { Text("Privacy Policy") } label: { Label("Privacy Policy", systemImage: "hand.raised") }
+                NavigationLink { Text("Terms of Service") } label: { Label("Terms of Service", systemImage: "doc.text") }
             }
 
             Section {
-                NavigationLink {
-                    DeepSettingsView()
-                } label: {
-                    Label("Settings & Preferences", systemImage: "gearshape")
-                }
+                NavigationLink { DeepSettingsView() } label: { Label("Settings & Preferences", systemImage: "gearshape") }
             }
         }
         .navigationTitle("Menu")
-        .onChange(of: authState.didSignOut) { _, didSignOut in
-            if didSignOut {
-                dismiss()
-            }
-        }
-        .sheet(isPresented: $presenter.showSubscriptionFlow) {
-            SubscriptionPlans()
-        }
+        .onChange(of: authState.didSignOut) { _, didSignOut in if didSignOut { dismiss() } }
+        .sheet(isPresented: $presenter.showSubscriptionFlow) { SubscriptionPlans() }
         .sheet(isPresented: $presenter.showLoginSheet) {
             NavigationStack {
-                Login(
-                    vm: vm,
-                    onSignedIn: {
-                        presenter.showLoginSheet = false
-                        dismiss() // Drops the Settings menu instantly to land on the Scan screen
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.85) {
-                            authState.tier = .business
-                        }
-                    },
-                    onGoToSignup: {
-                        presenter.showLoginSheet = false
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                            presenter.showSignUpSheet = true
-                        }
-                    },
-                    onContinueAsGuest: {
-                        presenter.showLoginSheet = false
-                    }
-                )
+                Login(vm: vm, onSignedIn: {
+                    presenter.showLoginSheet = false
+                    dismiss()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.85) { authState.tier = .business }
+                }, onGoToSignup: {
+                    presenter.showLoginSheet = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { presenter.showSignUpSheet = true }
+                }, onContinueAsGuest: { presenter.showLoginSheet = false })
             }
         }
-        .sheet(isPresented: $presenter.showSignUpSheet) {
-            GuestSignUpView()
-        }
+        .sheet(isPresented: $presenter.showSignUpSheet) { GuestSignUpView() }
     }
 }
 

@@ -29,7 +29,8 @@ struct BusinessLandmarkDeleteResponse: Decodable {
     let status: String?
 }
 
-struct BusinessLandmark: Decodable, Identifiable, Hashable {
+// Updated to Codable to support JSONEncoder in BusinessLandmarksViewModel
+struct BusinessLandmark: Codable, Identifiable, Hashable {
     let landmarkId: String
     let label: String
     let shortDescription: String?
