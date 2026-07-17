@@ -219,7 +219,6 @@
 		3C918F942E9ECE5F00AF5DAF = {
 			isa = PBXGroup;
 			children = (
-				3CF3703B300683FB005780B3 /* ITlo.gpx */,
 				3C9020BF2F3AC88600EE30BF /* MachineLearningModels */,
 				3C90209B2F3ABC8B00EE30BF /* Detection */,
 				565542BF2EBD8384007DBA98 /* Models */,
@@ -442,7 +441,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				3CF3703C300683FB005780B3 /* ITlo.gpx in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
