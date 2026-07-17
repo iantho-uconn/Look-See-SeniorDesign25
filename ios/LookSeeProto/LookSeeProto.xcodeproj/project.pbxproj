@@ -70,6 +70,8 @@
 		D0E78B813005462600E5FE00 /* AutoUploadManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0E78B7E3005462200E5FE00 /* AutoUploadManager.swift */; };
 		D0E78BCD3006A63A00E5FE00 /* GuidedCaptureOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0E78BCC3006A63200E5FE00 /* GuidedCaptureOverlay.swift */; };
 		D0E78BCF3006F92800E5FE00 /* PositiveVideoCameraView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0E78BCE3006F92500E5FE00 /* PositiveVideoCameraView.swift */; };
+		D0E78BDB3008C6E800E5FE00 /* StripePaymentSheet in Frameworks */ = {isa = PBXBuildFile; productRef = D0E78BDA3008C6E800E5FE00 /* StripePaymentSheet */; };
+		D0E78BE23008FF9100E5FE00 /* GuestSignUpView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0E78BE13008FF8D00E5FE00 /* GuestSignUpView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -144,6 +146,7 @@
 		D0E78B7E3005462200E5FE00 /* AutoUploadManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutoUploadManager.swift; sourceTree = "<group>"; };
 		D0E78BCC3006A63200E5FE00 /* GuidedCaptureOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuidedCaptureOverlay.swift; sourceTree = "<group>"; };
 		D0E78BCE3006F92500E5FE00 /* PositiveVideoCameraView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PositiveVideoCameraView.swift; sourceTree = "<group>"; };
+		D0E78BE13008FF8D00E5FE00 /* GuestSignUpView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuestSignUpView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -179,6 +182,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D0E78BDB3008C6E800E5FE00 /* StripePaymentSheet in Frameworks */,
 				B02344EB2F46355C00F4230E /* Amplify in Frameworks */,
 				B02344ED2F46356400F4230E /* AWSCognitoAuthPlugin in Frameworks */,
 				3C19EB412F981FA400D1AA43 /* ZIPFoundation in Frameworks */,
@@ -259,6 +263,7 @@
 		56C3FA072EA6CA3100EA6153 /* UI Files */ = {
 			isa = PBXGroup;
 			children = (
+				D0E78BE13008FF8D00E5FE00 /* GuestSignUpView.swift */,
 				D0E78BCE3006F92500E5FE00 /* PositiveVideoCameraView.swift */,
 				D0E78BCC3006A63200E5FE00 /* GuidedCaptureOverlay.swift */,
 				3C3D161F2FFCA9B700C8A544 /* BusinessLandmarkDetailView.swift */,
@@ -348,6 +353,7 @@
 				B02344EA2F46355C00F4230E /* Amplify */,
 				B02344EC2F46356400F4230E /* AWSCognitoAuthPlugin */,
 				3C19EB402F981FA400D1AA43 /* ZIPFoundation */,
+				D0E78BDA3008C6E800E5FE00 /* StripePaymentSheet */,
 			);
 			productName = LookSeeProto;
 			productReference = 3C918F9D2E9ECE5F00AF5DAF /* LookSeeProto.app */;
@@ -434,6 +440,7 @@
 			packageReferences = (
 				B03AD91D2F462B2B0009E3AE /* XCRemoteSwiftPackageReference "amplify-swift" */,
 				3C19EB3F2F981FA400D1AA43 /* XCRemoteSwiftPackageReference "ZIPFoundation" */,
+				D0E78BD93008C65A00E5FE00 /* XCRemoteSwiftPackageReference "stripe-ios-spm" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 3C918F9E2E9ECE5F00AF5DAF /* Products */;
@@ -482,6 +489,7 @@
 				3C3D16202FFCA9C300C8A544 /* BusinessLandmarkDetailView.swift in Sources */,
 				B0DE8C0D2F516FDD008E1512 /* Signup.swift in Sources */,
 				D0E78BCD3006A63A00E5FE00 /* GuidedCaptureOverlay.swift in Sources */,
+				D0E78BE23008FF9100E5FE00 /* GuestSignUpView.swift in Sources */,
 				D0E78BCF3006F92800E5FE00 /* PositiveVideoCameraView.swift in Sources */,
 				562DAAB32F2A89600083A71E /* LandmarkScan.swift in Sources */,
 				3C63C8A82F91875E0006C5DD /* VariableContainer.swift in Sources */,
@@ -912,6 +920,14 @@
 				minimumVersion = 2.53.3;
 			};
 		};
+		D0E78BD93008C65A00E5FE00 /* XCRemoteSwiftPackageReference "stripe-ios-spm" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/stripe/stripe-ios-spm";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 26.3.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -929,6 +945,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = B03AD91D2F462B2B0009E3AE /* XCRemoteSwiftPackageReference "amplify-swift" */;
 			productName = AWSCognitoAuthPlugin;
+		};
+		D0E78BDA3008C6E800E5FE00 /* StripePaymentSheet */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D0E78BD93008C65A00E5FE00 /* XCRemoteSwiftPackageReference "stripe-ios-spm" */;
+			productName = StripePaymentSheet;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

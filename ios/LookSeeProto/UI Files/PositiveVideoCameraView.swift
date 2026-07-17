@@ -5,30 +5,47 @@
 //  Created by Angel Pineda on 7/14/26.
 //
 
-
 import AVFoundation
 import SwiftUI
 import UIKit
 import AVKit
 
-enum CameraPhase: Int, CaseIterable {
-    case front = 0, left, right, last
+enum CameraPhase: Equatable {
+    case front
+    case left
+    case right
+    case back
+    case additional(Int)
     
     var title: String {
         switch self {
         case .front: return "Step 1: Front"
         case .left: return "Step 2: Left Side"
         case .right: return "Step 3: Right Side"
-        case .last: return "Step 4: Details"
+        case .back: return "Step 4: Back Side"
+        case .additional(let index): return "Step \(index): Extra Coverage"
         }
     }
     
     var instruction: String {
         switch self {
-        case .front: return "Record the very front of the landmark."
-        case .left: return "Move over to record the left side."
-        case .right: return "Move over to record the right side."
-        case .last: return "Capture any remaining angles or details!"
+        case .front: return "Pan video across the front of the landmark"
+        case .left: return "Move to left side of landmark and pan video across the left side of the landmark"
+        case .right: return "Move to right side of landmark and pan video across the right side of the landmark"
+        case .back: return "Move to back side of landmark, if unavailable, move to another location around the landmark and pan video across the landmark"
+        case .additional: return "Pan across the landmark to capture missing angles or details."
+        }
+    }
+
+    
+    
+    var indexPos: Int {
+        switch self {
+        case .front: return 0
+        case .left: return 1
+        case .right: return 2
+        case .back: return 3
+        case .additional(let x): return 3 + (x - 4)
         }
     }
 }
@@ -36,6 +53,7 @@ enum CameraPhase: Int, CaseIterable {
 enum CameraFlowState: Equatable {
     case instruction
     case recording
+    case choice
     case preview(URL)
 }
 
@@ -48,33 +66,58 @@ struct PositiveVideoCameraView: View {
     
     @State private var recordingTimer: Timer?
     @State private var timeElapsed: Int = 0
+    @State private var totalDurationElapsed: Double = 0.0
     @State private var collectedURLs: [URL] = []
-    
     @State private var isCancelled = false
-    @State private var isRetaking = false
 
     private let onDone: ([URL]) -> Void
+    private let maxTotalTimeLimit: Int = 60
 
     init(onDone: @escaping ([URL]) -> Void) {
         self.onDone = onDone
     }
 
-    private var currentPhaseTimeLimit: Int {
-        currentPhase == .front ? 6 : 3
+    private var totalDurationElapsedInt: Int {
+        var total = 0
+        for i in 0..<min(collectedURLs.count, currentPhase.indexPos) {
+            let asset = AVURLAsset(url: collectedURLs[i])
+            total += Int(CMTimeGetSeconds(asset.duration))
+        }
+        return total
+    }
+
+    private var minPhaseTimeLimit: Int {
+        switch currentPhase {
+        case .front: return 7
+        case .left: return 4
+        case .right: return 4
+        default: return 0
+        }
+    }
+    
+    private var maxPhaseTimeLimit: Int {
+        let remaining = maxTotalTimeLimit - totalDurationElapsedInt
+        return min(15, remaining)
+    }
+
+    private var isReviewingClip: Bool {
+        if case .preview = flowState { return true }
+        return false
     }
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            if case .preview = flowState {} else {
-                PositiveVideoCameraPreview(session: cameraService.session)
-                    .ignoresSafeArea()
-            }
+            PositiveVideoCameraPreview(session: cameraService.session)
+                .ignoresSafeArea()
+                .opacity(isReviewingClip ? 0 : 1)
             
             if case .preview(let url) = flowState {
-                VideoPlayer(player: AVPlayer(url: url))
+                PositiveSafeVideoPlayer(url: url)
+                    .equatable()
                     .ignoresSafeArea()
+                    .zIndex(1)
             }
 
             VStack {
@@ -86,13 +129,17 @@ struct PositiveVideoCameraView: View {
                     instructionCard
                 case .recording:
                     recordingControls
+                case .choice:
+                    choiceCard
                 case .preview(let url):
                     previewControls(for: url)
                 }
             }
+            .zIndex(2)
 
             if let errorMessage = cameraService.errorMessage {
                 cameraErrorOverlay(message: errorMessage)
+                    .zIndex(3)
             }
         }
         .interactiveDismissDisabled()
@@ -101,12 +148,6 @@ struct PositiveVideoCameraView: View {
                 if isCancelled {
                     try? FileManager.default.removeItem(at: url)
                     dismiss()
-                } else if isRetaking {
-                    try? FileManager.default.removeItem(at: url)
-                    isRetaking = false
-                    withAnimation(.spring()) {
-                        flowState = .instruction
-                    }
                 } else {
                     withAnimation(.spring()) {
                         flowState = .preview(url)
@@ -155,21 +196,91 @@ struct PositiveVideoCameraView: View {
         .transition(.scale.combined(with: .opacity))
     }
     
-    private var recordingControls: some View {
-        HStack {
-            Spacer()
-            Button {
-                isRetaking = true
-                stopTimer()
-                cameraService.stopRecording()
-            } label: {
-                ZStack {
-                    Circle().fill(.white).frame(width: 76, height: 76)
-                    Circle().stroke(.black.opacity(0.8), lineWidth: 3).frame(width: 64, height: 64)
-                    RoundedRectangle(cornerRadius: 4).fill(.red).frame(width: 24, height: 24)
+    private var choiceCard: some View {
+        VStack(spacing: 20) {
+            Text("Add More Coverage?")
+                .font(.title3.bold())
+                .foregroundStyle(.white)
+            
+            Text("Would you like to add another video clip to capture extra details of this landmark?")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 10)
+            
+            VStack(spacing: 12) {
+                Button {
+                    if currentPhase == .right {
+                        currentPhase = .back
+                        flowState = .instruction
+                    } else if case .back = currentPhase {
+                        currentPhase = .additional(5)
+                        flowState = .instruction
+                    } else if case .additional(let index) = currentPhase {
+                        currentPhase = .additional(index + 1)
+                        flowState = .instruction
+                    }
+                } label: {
+                    Text("Yes, Add Clip")
+                        .fontWeight(.bold)
+                        .frame(maxWidth: .infinity)
                 }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                
+                Button {
+                    onDone(collectedURLs)
+                    dismiss()
+                } label: {
+                    Text("No, Finish Submission")
+                        .fontWeight(.semibold)
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .foregroundColor(.white)
+                .controlSize(.large)
             }
-            Spacer()
+        }
+        .padding(30)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 32))
+        .padding(.horizontal, 24)
+        .padding(.bottom, 60)
+    }
+    
+    private var recordingControls: some View {
+        VStack(spacing: 12) {
+            if timeElapsed < minPhaseTimeLimit {
+                Text("Keep recording for \(minPhaseTimeLimit - timeElapsed)s...")
+                    .font(.caption.bold())
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(.black.opacity(0.6))
+                    .foregroundStyle(.white)
+                    .clipShape(Capsule())
+            } else {
+                Text(" ")
+                    .font(.caption.bold())
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+            }
+            
+            HStack {
+                Spacer()
+                Button {
+                    let durationAdded = Double(timeElapsed)
+                    totalDurationElapsed += durationAdded
+                    stopTimer()
+                    cameraService.stopRecording()
+                } label: {
+                    ZStack {
+                        Circle().fill(timeElapsed >= minPhaseTimeLimit ? .white : .white.opacity(0.5)).frame(width: 76, height: 76)
+                        Circle().stroke(.black.opacity(0.8), lineWidth: 3).frame(width: 64, height: 64)
+                        RoundedRectangle(cornerRadius: 4).fill(timeElapsed >= minPhaseTimeLimit ? .red : .gray).frame(width: 24, height: 24)
+                    }
+                }
+                .disabled(timeElapsed < minPhaseTimeLimit)
+                Spacer()
+            }
         }
         .padding(.bottom, 40)
         .background(LinearGradient(colors: [.black.opacity(0.8), .clear], startPoint: .bottom, endPoint: .top))
@@ -178,6 +289,7 @@ struct PositiveVideoCameraView: View {
     private func previewControls(for url: URL) -> some View {
         HStack(spacing: 16) {
             Button(role: .destructive) {
+                totalDurationElapsed -= Double(timeElapsed)
                 try? FileManager.default.removeItem(at: url)
                 withAnimation(.spring()) { flowState = .instruction }
             } label: {
@@ -190,8 +302,22 @@ struct PositiveVideoCameraView: View {
             .controlSize(.large)
             
             Button {
-                collectedURLs.append(url)
-                if let nextPhase = CameraPhase(rawValue: currentPhase.rawValue + 1) {
+                if collectedURLs.count > currentPhase.indexPos {
+                    collectedURLs[currentPhase.indexPos] = url
+                } else {
+                    collectedURLs.append(url)
+                }
+                
+                let timeRemaining = maxTotalTimeLimit - totalDurationElapsedInt
+                var isEligibleForChoice = false
+                switch currentPhase {
+                case .right, .back, .additional: isEligibleForChoice = true
+                default: isEligibleForChoice = false
+                }
+                
+                if isEligibleForChoice && timeRemaining >= 3 {
+                    withAnimation(.spring()) { flowState = .choice }
+                } else if let nextPhase = getPhaseFromIndex(currentPhase.indexPos + 1), timeRemaining >= 3 {
                     withAnimation(.spring()) {
                         currentPhase = nextPhase
                         flowState = .instruction
@@ -201,7 +327,7 @@ struct PositiveVideoCameraView: View {
                     dismiss()
                 }
             } label: {
-                Text(currentPhase == .last ? "Finish" : "Accept & Next")
+                Text("Accept Clip")
                     .fontWeight(.semibold)
                     .frame(maxWidth: .infinity)
             }
@@ -240,7 +366,7 @@ struct PositiveVideoCameraView: View {
             Spacer()
             
             if flowState == .recording {
-                Text("00:\(String(format: "%02d", timeElapsed)) / 00:0\(currentPhaseTimeLimit)")
+                Text("00:\(String(format: "%02d", timeElapsed)) / 00:\(String(format: "%02d", maxPhaseTimeLimit))")
                     .font(.headline.monospacedDigit())
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
@@ -256,7 +382,7 @@ struct PositiveVideoCameraView: View {
         timeElapsed = 0
         recordingTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
             timeElapsed += 1
-            if timeElapsed >= currentPhaseTimeLimit {
+            if timeElapsed >= maxPhaseTimeLimit {
                 stopTimer()
                 cameraService.stopRecording()
             }
@@ -266,6 +392,14 @@ struct PositiveVideoCameraView: View {
     private func stopTimer() {
         recordingTimer?.invalidate()
         recordingTimer = nil
+    }
+
+    private func getPhaseFromIndex(_ index: Int) -> CameraPhase? {
+        if index == 0 { return .front }
+        if index == 1 { return .left }
+        if index == 2 { return .right }
+        if index == 3 { return .back }
+        return .additional(index + 1)
     }
 
     private func cameraErrorOverlay(message: String) -> some View {
@@ -365,5 +499,33 @@ private final class PositiveCameraPreviewUIView: UIView {
             }
             device.unlockForConfiguration()
         } catch {}
+    }
+}
+
+private struct PositiveSafeVideoPlayer: UIViewControllerRepresentable, Equatable {
+    let url: URL
+
+    static func == (lhs: PositiveSafeVideoPlayer, rhs: PositiveSafeVideoPlayer) -> Bool {
+        return lhs.url == rhs.url
+    }
+
+    func makeUIViewController(context: Context) -> AVPlayerViewController {
+        let controller = AVPlayerViewController()
+        controller.player = AVPlayer(url: url)
+        controller.videoGravity = .resizeAspectFill
+        if #available(iOS 16.0, *) {
+            controller.allowsVideoFrameAnalysis = false
+        }
+        return controller
+    }
+
+    func updateUIViewController(_ uiViewController: AVPlayerViewController, context: Context) {}
+
+    static func dismantleUIViewController(_ uiViewController: AVPlayerViewController, coordinator: ()) {
+        let player = uiViewController.player
+        uiViewController.player = nil
+        DispatchQueue.global(qos: .background).async {
+            player?.pause()
+        }
     }
 }

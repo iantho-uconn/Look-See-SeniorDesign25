@@ -6,15 +6,17 @@
 //
 
 
+
 import SwiftUI
 
 enum RecordingPhase: String, CaseIterable {
-    case front = "Step 1: Record the FRONT of the landmark."
-    case left = "Step 2: Move to the LEFT side."
-    case right = "Step 3: Move to the RIGHT side."
-    case last = "Step 4: Capture any remaining details!"
-    case negative = "Pan around the room slowly. Do NOT include the landmark in the frame."
+    case front = "Step 1: Pan video across the front of the landmark"
+    case left = "Step 2: Move to left side of landmark and pan video across the left side of the landmark"
+    case right = "Step 3: Move to right side of landmark and pan video across the right side of the landmark"
+    case last = "Step 4: Move to back side of landmark, if unavailable, move to another location around the landmark and pan video across the landmark"
+    case negative = "Pan the area. Do not include the landmark in the video."
 }
+
 
 struct GuidedCaptureOverlay: View {
     let isNegative: Bool
@@ -62,25 +64,6 @@ struct GuidedCaptureOverlay: View {
                 .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.blue.opacity(0.5), lineWidth: 2))
                 .offset(y: -120) // Positioned higher up
                 .transition(.scale.combined(with: .opacity))
-            } else {
-                // Recall button in top right
-                VStack {
-                    HStack {
-                        Spacer()
-                        Button {
-                            withAnimation(.spring()) { showPopup = true }
-                        } label: {
-                            Image(systemName: "questionmark.circle.fill")
-                                .font(.system(size: 32))
-                                .foregroundStyle(.white)
-                                .background(Circle().fill(Color.black.opacity(0.5)))
-                                .shadow(radius: 4)
-                        }
-                        .padding(.top, 50)
-                        .padding(.trailing, 20)
-                    }
-                    Spacer()
-                }
             }
         }
         .onChange(of: isRecording) { _, recording in

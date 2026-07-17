@@ -5,6 +5,7 @@
 //  Handles authenticated business landmark management APIs.
 //
 
+
 import Foundation
 import Amplify
 import AWSPluginsCore
@@ -21,7 +22,7 @@ struct BusinessLandmarkUpdateResponse: Decodable {
     let item: BusinessLandmark
 }
 
-struct BusinessLandmark: Decodable, Identifiable, Hashable {
+struct BusinessLandmark: Codable, Identifiable, Hashable {
     let landmarkId: String
     let label: String
     let shortDescription: String?

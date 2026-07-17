@@ -15,9 +15,35 @@ final class BusinessLandmarksViewModel: ObservableObject {
     @Published var errorMessage: String?
 
     private let service: BusinessLandmarkService
+    private let cacheKey = "BusinessLandmarksCache"
 
     init(service: BusinessLandmarkService = BusinessLandmarkService()) {
         self.service = service
+        loadFromCache()
+    }
+
+    private func loadFromCache() {
+        guard let data = UserDefaults.standard.data(forKey: cacheKey) else {
+            print("⚠️ Cache diagnostic: No cached data found in UserDefaults.")
+            return
+        }
+        do {
+            let cached = try JSONDecoder().decode([BusinessLandmark].self, from: data)
+            self.landmarks = cached
+            print("✅ Cache diagnostic: Successfully loaded \(cached.count) landmarks from cache.")
+        } catch {
+            print("❌ Cache diagnostic: Failed to decode cached landmarks: \(error)")
+        }
+    }
+
+    private func saveToCache(_ items: [BusinessLandmark]) {
+        do {
+            let data = try JSONEncoder().encode(items)
+            UserDefaults.standard.set(data, forKey: cacheKey)
+            print("💾 Cache diagnostic: Successfully saved \(items.count) landmarks to cache.")
+        } catch {
+            print("❌ Cache diagnostic: Failed to encode landmarks for caching: \(error)")
+        }
     }
 
     func loadLandmarks() async {
@@ -28,12 +54,15 @@ final class BusinessLandmarksViewModel: ObservableObject {
 
         do {
             let response = try await service.fetchBusinessLandmarks()
-            landmarks = response.items.sorted {
+            let sorted = response.items.sorted {
                 let comparison = $0.label.localizedCaseInsensitiveCompare($1.label)
                 return comparison == .orderedAscending
             }
+            landmarks = sorted
+            saveToCache(sorted)
         } catch {
             errorMessage = error.localizedDescription
+            print("⚠️ API fetch failed: \(error.localizedDescription)")
         }
 
         isLoading = false
@@ -54,5 +83,6 @@ final class BusinessLandmarksViewModel: ObservableObject {
             let comparison = $0.label.localizedCaseInsensitiveCompare($1.label)
             return comparison == .orderedAscending
         }
+        saveToCache(landmarks)
     }
 }

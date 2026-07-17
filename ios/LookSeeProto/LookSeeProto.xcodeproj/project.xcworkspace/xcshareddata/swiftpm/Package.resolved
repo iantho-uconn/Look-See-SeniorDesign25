@@ -1,5 +1,5 @@
 {
-  "originHash" : "ff0ecfe68cef74add0c6fb69137eb2e252753040a14f3c22cc2f8ea6c5445a3d",
+  "originHash" : "8748bd393bcdd312f0d660db5c9c862fb0678d33412b059b123d1577acb1141a",
   "pins" : [
     {
       "identity" : "amplify-swift",
@@ -62,6 +62,15 @@
       "state" : {
         "revision" : "392dd6058624d9f6c5b4c769d165ddd8c7293394",
         "version" : "0.15.4"
+      }
+    },
+    {
+      "identity" : "stripe-ios-spm",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/stripe/stripe-ios-spm",
+      "state" : {
+        "revision" : "03d261e01eb65d6ff17b90614179e885cb0316f0",
+        "version" : "26.3.0"
       }
     },
     {

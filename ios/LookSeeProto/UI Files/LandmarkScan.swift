@@ -6,7 +6,8 @@ struct LandmarkScan: View {
     var onPinch: () -> Void = {}
     
     @Binding var isDetecting: Bool
-    @Binding var isNavVisible: Bool // Tells the Ad if the bottom nav is currently on screen
+    @Binding var isNavVisible: Bool
+    var isActive: Bool = true
     
     @StateObject private var detector = Detector()
     @ObservedObject var infoView = VariableContainer.shared
@@ -16,7 +17,6 @@ struct LandmarkScan: View {
     @State private var zoomFadeTask: Task<Void, Never>?
 
     var body: some View {
-        // GeometryReader fixes the iOS 26 UIScreen warning and perfectly aligns taps
         GeometryReader { geo in
             let lockedSafeZone = CGRect(
                 x: geo.size.width * 0.15,
@@ -34,65 +34,71 @@ struct LandmarkScan: View {
                     showSafeZone: .constant(false),
                     safeZoneRect: .constant(lockedSafeZone),
                     onTap: {
-                        // Tapping the background toggles the navigation menus
                         onTap()
                     },
                     onPinch: onPinch,
-                    isAIPaused: .constant(false)
+                    isAIPaused: .constant(!isActive)
                 )
                 .ignoresSafeArea()
                 .blur(radius: blurAmount)
-                .onChange(of: zoomLevel) { _, _ in
-                    showZoomIndicatorThenFade()
-                    onTap()
-                }
-                .onChange(of: detector.currentLabel) { _, newLabel in
-                    withAnimation(.easeOut(duration: 0.1)) {
-                        isDetecting = (newLabel != nil && !(newLabel!.isEmpty))
-                    }
+                
+                if !isActive {
+                    Color.black.ignoresSafeArea()
                 }
 
-                // --- THE GREEN BOX TAP TARGET ---
-                // If an object is found, this invisible button sits perfectly over the safe zone
-                if let bestDetection = detector.detections.first, !infoView.infoView {
-                    Rectangle()
-                        .fill(Color.white.opacity(0.001)) // Invisible to the eye, but catches taps
-                        .frame(width: lockedSafeZone.width, height: lockedSafeZone.height)
-                        .position(x: lockedSafeZone.midX, y: lockedSafeZone.midY)
-                        .onTapGesture {
-                            // Open the PopUp!
-                            infoView.landmarkName = bestDetection.displayLabel
-                            infoView.landmarkConfidence = bestDetection.confidence * 100
-                            infoView.landmarkDescription = bestDetection.landmarkEntry?.shortDescription ?? "Discover more about this location."
-                            infoView.promoName = "Checking promotions..."
-                            infoView.infoView = true
-                            
-                            // Bring the navigation back so it's ready when they close the popup
-                            if !isNavVisible { onTap() }
+                if isActive {
+                    Color.clear
+                        .onChange(of: zoomLevel) { _, _ in
+                            showZoomIndicatorThenFade()
+                            onTap()
                         }
-                }
+                        .onChange(of: detector.currentLabel) { _, newLabel in
+                            withAnimation(.easeOut(duration: 0.1)) {
+                                isDetecting = (newLabel != nil && !(newLabel!.isEmpty))
+                            }
+                        }
 
-               
-                if infoView.infoView { PopUp() }
+                    if let bestDetection = detector.detections.first, !infoView.infoView {
+                        Rectangle()
+                            .fill(Color.white.opacity(0.001))
+                            .frame(width: lockedSafeZone.width, height: lockedSafeZone.height)
+                            .position(x: lockedSafeZone.midX, y: lockedSafeZone.midY)
+                            .onTapGesture {
+                                infoView.landmarkName = bestDetection.displayLabel
+                                infoView.landmarkConfidence = bestDetection.confidence * 100
+                                infoView.landmarkDescription = bestDetection.landmarkEntry?.shortDescription ?? "Discover more about this location."
+                                infoView.promoName = "Checking promotions..."
+                                infoView.infoView = true
+                                
+                                if !isNavVisible { onTap() }
+                            }
+                    }
 
-                if !infoView.infoView && zoomIndicatorVisible {
-                    VStack {
-                        Spacer()
-                        Text(String(format: "%.1fx", zoomLevel))
-                            .font(.caption.monospacedDigit())
-                            .fontWeight(.bold)
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
-                            .background(Color.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 12))
-                            .padding(.bottom, 110)
-                            .transition(.opacity)
+                    if infoView.infoView { PopUp() }
+
+                    if !infoView.infoView && zoomIndicatorVisible {
+                        VStack {
+                            Spacer()
+                            Text(String(format: "%.1fx", zoomLevel))
+                                .font(.caption.monospacedDigit())
+                                .fontWeight(.bold)
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                                .background(Color.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 12))
+                                .padding(.bottom, 110)
+                                .transition(.opacity)
+                        }
                     }
                 }
             }
             .animation(.easeOut(duration: 0.25), value: zoomIndicatorVisible)
-            .onAppear { detector.dynamicSafeZone = lockedSafeZone }
-            .onChange(of: geo.size) { _, _ in detector.dynamicSafeZone = lockedSafeZone }
+            .onAppear {
+                detector.dynamicSafeZone = lockedSafeZone
+            }
+            .onChange(of: geo.size) { _, _ in
+                detector.dynamicSafeZone = lockedSafeZone
+            }
         }
     }
 
