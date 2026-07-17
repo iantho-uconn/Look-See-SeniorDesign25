@@ -5,6 +5,7 @@
 //  Created by Christian Barbara on 1/25/26.
 //
 
+
 import SwiftUI
 
 struct Buttons: View {
@@ -17,32 +18,30 @@ struct Buttons: View {
     @State private var currentTab = 0
     @State private var pendingUploadLandmarkId: String?
     
-    // Chrome visibility & Detection State
     @State private var chromeVisible = true
     @State private var chromeFadeTask: Task<Void, Never>?
-    @State private var isDetecting = false // Triggers focus mode when scanning
-    @State private var showTutorial = false // Triggers Info sheet
+    @State private var isDetecting = false
+    @State private var showTutorial = false
+    
+    @State private var showSideMenu = false
     
     var tabCount: Int {
         switch authState.tier {
-        case .guest: return 4
-        case .authenticated: return 4
-        case .business: return 5
+        case .guest, .authenticated: return 2
+        case .business: return 3
         }
     }
     
     private var isScanTab: Bool { currentTab == 0 }
     
-    // DYNAMIC TITLE
+    private var mapTabIndex: Int {
+        return tabCount - 1
+    }
+    
     private var topBarTitle: String {
-        switch currentTab {
-        case 0: return "LookSee"
-        case 1: return "Map"
-        case 2: return authState.tier == .business ? "Record" : "Upload"
-        case 3: return authState.tier == .business ? "Upload" : "Offline Archive"
-        case 4: return "Offline Archive"
-        default: return "LookSee"
-        }
+        if currentTab == 0 { return "LookSee" }
+        if currentTab == mapTabIndex { return "Map" }
+        return "Record"
     }
     
     var body: some View {
@@ -52,60 +51,30 @@ struct Buttons: View {
                     .ignoresSafeArea()
                 
                 TabView(selection: $currentTab) {
-                    // Tab 0 — Scan
                     LandmarkScan(
                         onTap: revealChromeThenFade,
                         isDetecting: $isDetecting,
-                        isNavVisible: $chromeVisible
+                        isNavVisible: $chromeVisible,
+                        isActive: currentTab == 0
                     )
                     .tag(0)
                     
-                    // Tab 1 — Map
-                    LandmarkMapView()
-                        .safeAreaInset(edge: .top) { Color.clear.frame(height: 45) }
-                        .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 90) }
-                        .tag(1)
-                    
-                    // Tab 2 — Record (business only)
                     if authState.tier == .business {
                         LandmarkRecord { landmarkId in
                             pendingUploadLandmarkId = landmarkId
-                            withAnimation(.easeInOut(duration: 0.25)) { currentTab = 3 }
+                            withAnimation(.easeInOut(duration: 0.25)) { currentTab = 0 }
                         }
                         .safeAreaInset(edge: .top) { Color.clear.frame(height: 45) }
                         .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 90) }
-                        .tag(2)
+                        .tag(1)
                     }
                     
-                    // Tab 3 (or 2) — Upload
-                    if authState.tier == .authenticated || authState.tier == .business {
-                        Tier2LandmarkRecord(
-                            initialLandmarkId: pendingUploadLandmarkId,
-                            onInitialLandmarkConsumed: { pendingUploadLandmarkId = nil }
-                        )
+                    LandmarkMapView()
                         .safeAreaInset(edge: .top) { Color.clear.frame(height: 45) }
                         .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 90) }
-                        .tag(authState.tier == .business ? 3 : 2)
-                    } else {
-                        Color(red: 0.06, green: 0.06, blue: 0.10)
-                            .ignoresSafeArea()
-                            .tag(authState.tier == .business ? 3 : 2)
-                    }
-                    
-                    // Tab 4 (or 3) — Archive
-                    if authState.tier == .authenticated || authState.tier == .business {
-                        ArchiveView()
-                            .safeAreaInset(edge: .top) { Color.clear.frame(height: 45) }
-                            .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 90) }
-                            .tag(authState.tier == .business ? 4 : 3)
-                    } else {
-                        Color(red: 0.06, green: 0.06, blue: 0.10)
-                            .ignoresSafeArea()
-                            .tag(authState.tier == .business ? 4 : 3)
-                    }
+                        .tag(mapTabIndex)
                 }
                 .scrollDismissesKeyboard(.immediately)
-                // FIX: Deleted the .defaultScrollAnchor(.bottom) that was hijacking the page
                 .ignoresSafeArea()
                 .toolbar(.hidden, for: .tabBar)
                 .animation(.easeInOut(duration: 0.2), value: currentTab)
@@ -118,7 +87,7 @@ struct Buttons: View {
                     }
                 }
                 
-                if currentTab == 1 { mapEdgeSwipeZones }
+                if currentTab == mapTabIndex { mapEdgeSwipeZones }
                 
                 VStack(spacing: 0) {
                     if chromeVisible {
@@ -132,10 +101,39 @@ struct Buttons: View {
                 .animation(.easeOut(duration: 0.3), value: chromeVisible)
                 
                 if showSignUpPrompt { signUpPromptOverlay }
+                
+                if showSideMenu {
+                    Color.black.opacity(0.6)
+                        .ignoresSafeArea()
+                        .onTapGesture {
+                            withAnimation(.easeOut(duration: 0.25)) { showSideMenu = false }
+                        }
+                        .transition(.opacity)
+                }
+                
+                GeometryReader { proxy in
+                    HStack(spacing: 0) {
+                        Spacer()
+                        Settings()
+                            .environmentObject(vm)
+                            .frame(width: proxy.size.width * 0.75)
+                            .background(Color(red: 0.11, green: 0.11, blue: 0.16).ignoresSafeArea())
+                            .offset(x: showSideMenu ? 0 : proxy.size.width)
+                    }
+                }
+                .animation(.easeOut(duration: 0.25), value: showSideMenu)
+                
             }
             .simultaneousGesture(
                 DragGesture(minimumDistance: 30).onEnded { value in
-                    guard currentTab != 1 else { return }
+                    if showSideMenu {
+                        if value.translation.width > 40 {
+                            withAnimation(.easeOut(duration: 0.25)) { showSideMenu = false }
+                        }
+                        return
+                    }
+                    
+                    guard currentTab != mapTabIndex else { return }
                     if abs(value.translation.width) > abs(value.translation.height) {
                         if value.translation.width > 40 && currentTab > 0 {
                             withAnimation(.interactiveSpring(response: 0.35, dampingFraction: 0.85, blendDuration: 0.2)) { currentTab -= 1 }
@@ -163,7 +161,6 @@ struct Buttons: View {
         }
     }
     
-    // MARK: - Edge Swipe Zones (Map Only)
     private var mapEdgeSwipeZones: some View {
         HStack {
             Color.white.opacity(0.001).frame(width: 40).frame(maxHeight: .infinity)
@@ -179,12 +176,14 @@ struct Buttons: View {
         .ignoresSafeArea()
     }
     
-    // MARK: - Top Bar
     private var topBar: some View {
         HStack(spacing: 0) {
-            NavigationLink { Settings().environmentObject(vm) } label: {
-                NavButton(icon: "gearshape.fill", label: "Settings")
+            Button {
+                showTutorial = true
+            } label: {
+                NavButton(icon: "info.circle", label: "Info")
             }
+            
             Spacer()
             Text(topBarTitle)
                 .font(.system(size: 22, weight: .bold, design: .rounded))
@@ -204,10 +203,13 @@ struct Buttons: View {
                     Text("You need a business account to access the Promotion Editor.")
                 }
             Spacer()
+            
             Button {
-                showTutorial = true
+                withAnimation(.easeOut(duration: 0.25)) {
+                    showSideMenu = true
+                }
             } label: {
-                NavButton(icon: "questionmark.circle.fill", label: "Info")
+                NavButton(icon: "line.3.horizontal", label: "Menu")
             }
         }
         .padding(.horizontal, 24)
@@ -215,16 +217,13 @@ struct Buttons: View {
         .padding(.bottom, 10)
     }
     
-    // MARK: - Bottom Bar
     private var bottomBar: some View {
         HStack(spacing: 0) {
             tabButton(title: "Scan", icon: "camera.aperture", tab: 0, locked: false)
-            tabButton(title: "Map", icon: "map", tab: 1, locked: false)
             if authState.tier == .business {
-                tabButton(title: "Record", icon: "video", tab: 2, locked: false)
-                tabButton(title: "Upload", icon: "arrow.up.circle", tab: authState.tier == .business ? 3 : 2, locked: authState.tier == .guest)
-                tabButton(title: "Archive", icon: "folder.fill", tab: authState.tier == .business ? 4 : 3, locked: authState.tier == .guest)
+                tabButton(title: "Record", icon: "video", tab: 1, locked: false)
             }
+            tabButton(title: "Map", icon: "map", tab: mapTabIndex, locked: false)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
@@ -234,41 +233,37 @@ struct Buttons: View {
         .padding(.bottom, 12)
     }
     
-    // MARK: - Dynamic Tutorial Half-Sheet Content
     private var tutorialContent: some View {
-        VStack(spacing: 16) {
-            Group {
-                switch currentTab {
-                case 0:
-                    Image(systemName: "viewfinder").font(.system(size: 40))
-                    Text("How to Scan").font(.title2.weight(.bold))
-                    Text("Point your camera at a landmark. Keep the object well-lit and steady. LookSee will identify it automatically.")
-                case 1:
-                    Image(systemName: "map").font(.system(size: 40))
-                    Text("Explore the Map").font(.title2.weight(.bold))
-                    Text("Find valid landmarks around you to scan. Use the search bar or filters to narrow down locations.")
-                case 2, 3:
-                    Image(systemName: "arrow.up.circle").font(.system(size: 40))
-                    Text("Upload Media").font(.title2.weight(.bold))
-                    Text("Record a short video or take a photo of a nearby landmark to help improve our recognition models.")
-                default:
-                    Image(systemName: "folder.fill").font(.system(size: 40))
-                    Text("Offline Archive").font(.title2.weight(.bold))
-                    Text("This is your offline folder. You can record and save videos here to upload later when you have a better connection.")
-                }
-            }
-            .foregroundStyle(Color(red: 0.22, green: 0.49, blue: 1.00))
-            .multilineTextAlignment(.center)
-            .padding(.horizontal, 32)
+        ZStack {
+            Color(red: 0.11, green: 0.11, blue: 0.16).ignoresSafeArea()
             
-            Spacer()
+            VStack(spacing: 16) {
+                Group {
+                    if currentTab == 0 {
+                        Image(systemName: "viewfinder").font(.system(size: 40))
+                        Text("How to Scan").font(.title2.weight(.bold))
+                        Text("Point your camera at a landmark. Keep the object well-lit and steady. LookSee will identify it automatically.")
+                    } else if currentTab == mapTabIndex {
+                        Image(systemName: "map").font(.system(size: 40))
+                        Text("Explore the Map").font(.title2.weight(.bold))
+                        Text("Find valid landmarks around you to scan. Use the search bar or filters to narrow down locations.")
+                    } else {
+                        Image(systemName: "video.fill").font(.system(size: 40))
+                        Text("Record Landmark").font(.title2.weight(.bold))
+                        Text("Record a short video of a nearby landmark to help improve our recognition models.")
+                    }
+                }
+                .foregroundStyle(Color(red: 0.22, green: 0.49, blue: 1.00))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+                
+                Spacer()
+            }
+            .padding(.top, 24)
         }
-        .padding(.top, 24)
-        .background(Color(red: 0.11, green: 0.11, blue: 0.16).ignoresSafeArea())
         .environment(\.colorScheme, .dark)
     }
     
-    // MARK: - Chrome Auto-Fade
     private func revealChromeThenFade() {
         chromeFadeTask?.cancel()
         chromeVisible = true
@@ -288,7 +283,6 @@ struct Buttons: View {
         }
     }
     
-    // MARK: - Sign Up Prompt Overlay
     var signUpPromptOverlay: some View {
         ZStack {
             Color.black.opacity(0.6).ignoresSafeArea()
@@ -326,7 +320,6 @@ struct Buttons: View {
         }
     }
     
-    // MARK: - Tab Button
     @ViewBuilder
     func tabButton(title: String, icon: String, tab: Int, locked: Bool) -> some View {
         VStack(spacing: 4) {
@@ -346,7 +339,6 @@ struct Buttons: View {
         })
     }
     
-    // MARK: - Nav Button
     private struct NavButton: View {
         let icon: String
         let label: String

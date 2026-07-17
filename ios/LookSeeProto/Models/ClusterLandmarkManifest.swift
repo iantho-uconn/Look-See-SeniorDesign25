@@ -15,6 +15,7 @@ struct ClusterLandmarkManifest: Codable, Equatable {
     let trainingRunId: String
     let generatedAt: String?
     let classCount: Int
+    let coordinateSystem: String?
     let landmarks: [String: LandmarkManifestEntry]
 
     var releaseKey: ClusterReleaseKey {
@@ -31,6 +32,7 @@ struct ClusterLandmarkManifest: Codable, Equatable {
 
     /// Validates the mapping before the app registers or activates it.
     func validate() throws {
+        // Updated to accept both schema versions 1 and 2
         guard schemaVersion == 1 || schemaVersion == 2 else {
             throw LandmarkManifestValidationError.unsupportedSchemaVersion(schemaVersion)
         }
@@ -75,11 +77,13 @@ struct ClusterLandmarkManifest: Codable, Equatable {
             guard !entry.label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 throw LandmarkManifestValidationError.emptyDisplayLabel(classIndex: classIndex)
             }
+            
+            // Note: Schema 2 guarantees `latitude` and `longitude` are present, but since your
+            // struct defines them as non-optional Doubles, Swift's Codable handles that check automatically.
         }
     }
 }
 
-/// The display information associated with one cluster-local class index.
 /// The display information associated with one cluster-local class index.
 struct LandmarkManifestEntry: Codable, Equatable, Identifiable {
     let classIndex: Int

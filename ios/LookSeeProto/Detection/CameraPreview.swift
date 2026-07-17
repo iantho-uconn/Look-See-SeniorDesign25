@@ -73,8 +73,6 @@ final class OverlayView: UIView {
         ctx.clear(rect)
         ctx.setLineWidth(2.0)
 
-        // REMOVED: The red debug boxes that were drawing over the screen
-
         let activeSafeZone = safeZoneRect == .zero ? bounds : safeZoneRect
 
         // Safe zone dimming overlay
@@ -141,8 +139,8 @@ struct CameraPreview: UIViewRepresentable {
     @Binding var zoomLevel: CGFloat
     @Binding var showSafeZone: Bool
     @Binding var safeZoneRect: CGRect
-    let onTap: () -> Void    // ← was onInteraction
-    let onPinch: () -> Void  // ← new, separate
+    let onTap: () -> Void
+    let onPinch: () -> Void
     @Binding var isAIPaused: Bool
 
     static let sharedSession = CameraSessionCoordinator()
@@ -161,28 +159,26 @@ struct CameraPreview: UIViewRepresentable {
         context.coordinator.view = view
 
         detector.attach(to: CameraPreview.sharedSession.videoOutput)
-        CameraPreview.sharedSession.start()
+        
+        if !isAIPaused {
+            CameraPreview.sharedSession.start()
+        }
 
-        // Tap gesture for opening landmark popup.
-        // Starts disabled — enabled as soon as a detection appears,
-        // disabled again when the popup is open.
         let tapGesture = context.coordinator.boundingBoxTapGesture
         tapGesture.isEnabled = false
         view.addGestureRecognizer(tapGesture)
 
-        // Pinch gesture for zoom
         let pinch = UIPinchGestureRecognizer(
             target: context.coordinator,
             action: #selector(Coordinator.handlePinch(_:))
         )
         view.addGestureRecognizer(pinch)
         
-        // Always-on tap just for revealing chrome — separate from the detection tap
         let chromeTap = UITapGestureRecognizer(
             target: context.coordinator,
             action: #selector(Coordinator.handleChromeTap(_:))
         )
-        chromeTap.cancelsTouchesInView = false  // lets detection tap also fire
+        chromeTap.cancelsTouchesInView = false
         view.addGestureRecognizer(chromeTap)
 
         return view
@@ -191,22 +187,23 @@ struct CameraPreview: UIViewRepresentable {
     func updateUIView(_ uiView: Preview, context: Context) {
         let infoView = VariableContainer.shared
 
-        // Always sync overlay state
         uiView.overlay.showSafeZone = showSafeZone
         uiView.overlay.safeZoneRect = safeZoneRect
-
-        if infoView.infoView {
-            // Popup is open — clear boxes and disable tap so tapping
-            // inside the popup doesn't re-trigger detection handling
+        
+        if isAIPaused {
+            CameraPreview.sharedSession.stop()
             uiView.overlay.detections.removeAll()
             context.coordinator.boundingBoxTapGesture.isEnabled = false
         } else {
-            // Popup is closed — push latest detections to the overlay
-            uiView.overlay.detections = detector.detections
-
-            // Enable tap whenever there's at least one visible detection,
-            // disable when there's nothing to tap on
-            context.coordinator.boundingBoxTapGesture.isEnabled = !detector.detections.isEmpty
+            CameraPreview.sharedSession.start()
+            
+            if infoView.infoView {
+                uiView.overlay.detections.removeAll()
+                context.coordinator.boundingBoxTapGesture.isEnabled = false
+            } else {
+                uiView.overlay.detections = detector.detections
+                context.coordinator.boundingBoxTapGesture.isEnabled = !detector.detections.isEmpty
+            }
         }
     }
 
@@ -225,7 +222,6 @@ struct CameraPreview: UIViewRepresentable {
         let onPinch: () -> Void
 
         private var zoomFactorAtGestureStart: CGFloat = 1.0
-
         private let promotionService = PromotionService()
 
         lazy var boundingBoxTapGesture: UITapGestureRecognizer = {
@@ -243,12 +239,10 @@ struct CameraPreview: UIViewRepresentable {
         }
         
         @objc func handleChromeTap(_ recognizer: UITapGestureRecognizer) {
-            print("chromeTap registered")
-            onTap()  // always reveals chrome, regardless of whether a detection was hit
+            onTap()
         }
         
         @objc func handlePinch(_ recognizer: UIPinchGestureRecognizer) {
-            // Tell the parent view something happened (resets chrome fade timer)
             guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) else { return }
             switch recognizer.state {
             case .began:
@@ -265,14 +259,11 @@ struct CameraPreview: UIViewRepresentable {
         }
 
         @objc func bbClick(_ recognizer: UITapGestureRecognizer) {
-            // Tell the parent view something happened (resets chrome fade timer)
             onTap()
 
             guard let view, let overlay else { return }
-
             let tapLocation = recognizer.location(in: view)
 
-            // Confirm tap landed inside the overlay and there's a detection to act on
             guard overlay.frame.contains(tapLocation),
                   let detection = overlay.detections.first else {
                 return
@@ -280,9 +271,7 @@ struct CameraPreview: UIViewRepresentable {
 
             let infoView = VariableContainer.shared
 
-            // If the manifest couldn't resolve this class, show a fallback popup
             guard let landmark = detection.landmarkEntry else {
-                print("❌ [bbClick] Local landmark resolution failed for classIndex \(detection.classIndex)")
                 DispatchQueue.main.async {
                     infoView.landmarkName = "Class \(detection.classIndex)"
                     infoView.landmarkDescription = "The matching landmark metadata could not be loaded."
@@ -294,15 +283,10 @@ struct CameraPreview: UIViewRepresentable {
                 return
             }
 
-            print("🧭 [bbClick] Tapped: \(landmark.label) (\(String(format: "%.2f", detection.confidence * 100))%)")
-
-            // Fetch promotions from backend (landmark metadata comes from local manifest)
             Task {
                 let promotions = await promotionService.fetchPromotionsByLabel(label: landmark.label)
-
                 await MainActor.run {
                     infoView.landmarkName = landmark.label
-
                     let trimmed = landmark.shortDescription.trimmingCharacters(in: .whitespacesAndNewlines)
                     infoView.landmarkDescription = trimmed.isEmpty ? "No description available." : trimmed
 

@@ -18,10 +18,13 @@ struct ArchivedMedia: Identifiable, Codable {
     var dateSaved: Date
     var isFavorite: Bool?
     
-    // Draft Memory Fields
+    // --- NEW QUEUE FIELDS ---
+    var landmarkId: String?
     var savedLabel: String?
     var savedDescription: String?
+    var savedUserDescription: String?
+    var negativeVideoFileName: String?
     
-    // NEW: Differentiates between Tier-1 (Record) and Tier-2 (Uploads)
+    // Differentiates between Tier-1 (Record) and Tier-2 (Uploads)
     var isTier2: Bool?
 }

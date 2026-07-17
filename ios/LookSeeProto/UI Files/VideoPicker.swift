@@ -30,6 +30,12 @@ struct VideoPicker: UIViewControllerRepresentable {
             picker.sourceType = .camera
             picker.cameraCaptureMode = .video
             picker.videoMaximumDuration = maxDuration
+            
+            let overlayView = UIHostingController(rootView: GuidedCaptureOverlay(isNegative: false, isRecording: true))
+            overlayView.view.frame = picker.view.bounds
+            overlayView.view.backgroundColor = .clear
+            picker.cameraOverlayView = overlayView.view
+            
         } else {
             picker.sourceType = .photoLibrary
         }

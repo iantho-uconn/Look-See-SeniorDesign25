@@ -5,7 +5,6 @@
 
 import SwiftUI
 import CoreLocation
-import Photos
 import UIKit
 import AVKit
 import AVFoundation
@@ -17,10 +16,7 @@ struct LandmarkRecord: View {
     private let onAddMoreMedia: (String) -> Void
     var archivedMedia: ArchivedMedia?
 
-    init(
-        archivedMedia: ArchivedMedia? = nil,
-        onAddMoreMedia: @escaping (String) -> Void = { _ in }
-    ) {
+    init(archivedMedia: ArchivedMedia? = nil, onAddMoreMedia: @escaping (String) -> Void = { _ in }) {
         self.archivedMedia = archivedMedia
         self.onAddMoreMedia = onAddMoreMedia
     }
@@ -29,81 +25,52 @@ struct LandmarkRecord: View {
     @State private var businessLandmarkId: String?
     @State private var shortDescription = ""
     @State private var showTextScanner = false
-
     @State private var pickedVideoURLs: [URL] = []
     @State private var pickedImage: UIImage?
-
-    // Duration (in seconds) of each clip, keyed by its URL. Populated
-    // asynchronously as clips are added so the running total can be shown
-    // and the 15s combined-minimum can be enforced before upload.
     @State private var clipDurations: [URL: Double] = [:]
-
-    @State private var showVideoPicker = false
-    @State private var showPhotoPicker = false
-    @State private var showGalleryPicker = false
-
-    // When true, the next video returned by VideoPicker/galleryPicker is
-    // appended as an additional clip instead of going through the
-    // archive-prompt / replace-everything flow.
-    @State private var isAddingAdditionalClip = false
-
+    
+    @State private var showVideoCamera = false
+    
     @State private var extractedLatitude: Double? = nil
     @State private var extractedLongitude: Double? = nil
     @State private var statusText = "No landmark media selected."
-
     @State private var showArchivePrompt = false
     @State private var showDiscardAlert = false
-    @State private var pendingArchiveURL: URL?
-    @State private var pendingArchiveImage: UIImage?
-    @State private var pendingArchiveLocation: CLLocationCoordinate2D?
-
-    // Negative Video State
+    
+    @State private var pendingArchiveURLs: [URL] = []
+    @State private var isStitchingVideos = false
+    
+    @State private var showAutoQueueAlert = false
     @State private var capturedNegativeVideo: CapturedNegativeVideo? = nil
     @State private var showNegativeCamera = false
-    @State private var showNegativeGalleryPicker = false
-
+    
     @State private var completedPositiveResult: PositiveSubmissionResult?
     @State private var completedLandmarkId: String?
     @State private var isFullSubmissionComplete = false
     @State private var showCompletionPopup = false
-
-    @State private var showVideoDurationAlert = false
-    @State private var videoDurationAlertMessage = ""
+    
+    @State private var isFormVisible = false
 
     @StateObject private var uploadService = UploadService()
     @StateObject private var hardNegativeUploadService = HardNegativeUploadService()
     @StateObject private var locationManager = LocationManager()
 
     private let primaryColor = Color(red: 0.11, green: 0.22, blue: 0.55)
-    private let minimumCombinedVideoDuration: Double = 15
+    
+    private let minimumCombinedVideoDuration: Double = 14.0
 
     private var hasPositiveMedia: Bool { !pickedVideoURLs.isEmpty || pickedImage != nil }
     private var hasLabel: Bool { !labelText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     private var hasRequiredShortDescription: Bool { !shortDescription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     private var hasRequiredNegativeVideo: Bool { capturedNegativeVideo != nil }
-
-    private var totalClipDuration: Double {
-        pickedVideoURLs.reduce(0) { $0 + (clipDurations[$1] ?? 0) }
-    }
-
-    /// True once enough clips have loaded durations to know the combined
-    /// video meets the 15s minimum. If a photo is selected instead, this
-    /// requirement doesn't apply.
-    private var hasMinimumClipDuration: Bool {
-        pickedImage != nil || totalClipDuration >= minimumCombinedVideoDuration
-    }
-
-    private var isSubmissionRunning: Bool { uploadService.isUploading || hardNegativeUploadService.isUploading }
-
+    private var totalClipDuration: Double { pickedVideoURLs.reduce(0) { $0 + (clipDurations[$1] ?? 0) } }
+    private var hasMinimumClipDuration: Bool { pickedImage != nil || totalClipDuration >= minimumCombinedVideoDuration }
+    private var isSubmissionRunning: Bool { uploadService.isUploading || hardNegativeUploadService.isUploading || isStitchingVideos }
     private var canUpload: Bool {
         guard !isSubmissionRunning, !isFullSubmissionComplete else { return false }
         if completedPositiveResult != nil { return hasRequiredNegativeVideo }
-        // Must have both positive and negative to create a BRAND NEW landmark,
-        // and if the positive media is video, the combined clips must total
-        // at least 15 seconds.
         return hasPositiveMedia && hasLabel && hasRequiredShortDescription && hasRequiredNegativeVideo && hasMinimumClipDuration
     }
-
     private var arePositiveDetailsLocked: Bool { isSubmissionRunning || completedPositiveResult != nil || isFullSubmissionComplete }
     private var areNegativePhotosLocked: Bool { isSubmissionRunning || isFullSubmissionComplete }
 
@@ -111,92 +78,139 @@ struct LandmarkRecord: View {
         ZStack {
             ScrollView {
                 VStack(spacing: 18) {
-
-                    if archivedMedia == nil {
+                    
+                    if !hasPositiveMedia {
                         positiveMediaInstructions
                         positiveMediaButtons
                     }
-
+                    
                     positiveMediaPreview
-
                     Text(statusText).font(.footnote).foregroundStyle(.secondary).padding(.horizontal)
                     locationSection
-
-                    if hasPositiveMedia || completedPositiveResult != nil {
+                    
+                    if isFormVisible {
                         landmarkForm
+                        uploadButtonRow
+                        positiveUploadStatusCard
+                        negativeUploadStatusCard
+                        overallCompletionCard
                     }
+                    
                     Spacer(minLength: 30)
                 }.padding(.top, 8)
             }
-            .scrollDismissesKeyboard(.interactively)
+            .scrollDismissesKeyboard(.immediately)
             .safeAreaInset(edge: .top) { Color.clear.frame(height: 50) }
-
+            
             if showArchivePrompt { archivePromptOverlay }
+            if isStitchingVideos { processingOverlay }
         }
         .task {
             if let archive = archivedMedia {
-                if archive.isVideo {
-                    let url = OfflineMediaManager.shared.getFileURL(for: archive)
-                    pickedVideoURLs = [url]
-                    await loadDuration(for: url)
-                } else {
-                    let imgPath = OfflineMediaManager.shared.getFileURL(for: archive).path
-                    if let savedImage = UIImage(contentsOfFile: imgPath) { pickedImage = savedImage }
+                isFormVisible = true
+                
+                Task.detached {
+                    let fileURL = OfflineMediaManager.shared.getFileURL(for: archive)
+                    var videoURLs: [URL] = []
+                    var loadedImage: UIImage? = nil
+                    var negVideo: CapturedNegativeVideo? = nil
+
+                    if archive.isVideo {
+                        videoURLs = [fileURL]
+                    } else {
+                        if let savedImage = UIImage(contentsOfFile: fileURL.path) {
+                            loadedImage = savedImage
+                        }
+                    }
+
+                    if let negURL = OfflineMediaManager.shared.getNegativeVideoURL(for: archive) {
+                        if FileManager.default.fileExists(atPath: negURL.path) {
+                            negVideo = CapturedNegativeVideo(fileURL: negURL)
+                        }
+                    }
+
+                    let finalURLs = videoURLs
+                    let finalImage = loadedImage
+                    let finalNeg = negVideo
+
+                    await MainActor.run {
+                        self.pickedVideoURLs = finalURLs
+                        self.pickedImage = finalImage
+                        self.capturedNegativeVideo = finalNeg
+                        self.extractedLatitude = archive.latitude
+                        self.extractedLongitude = archive.longitude
+                        self.labelText = archive.savedLabel ?? ""
+                        self.shortDescription = archive.savedDescription ?? ""
+                        if self.businessLandmarkId == nil { self.businessLandmarkId = self.makeBusinessLandmarkId() }
+                        self.statusText = "Loaded archived media."
+                    }
+
+                    for url in finalURLs {
+                        await self.loadDuration(for: url)
+                    }
                 }
-                extractedLatitude = archive.latitude
-                extractedLongitude = archive.longitude
-
-                labelText = archive.savedLabel ?? ""
-                shortDescription = archive.savedDescription ?? ""
-
-                if businessLandmarkId == nil { businessLandmarkId = makeBusinessLandmarkId() }
-                statusText = "Loaded archived media."
             }
         }
-        .sheet(isPresented: $showVideoPicker) { videoPicker }
-        .sheet(isPresented: $showGalleryPicker) { galleryPicker }
-        .sheet(isPresented: $showPhotoPicker) { photoPicker }
+        .fullScreenCover(isPresented: $showVideoCamera) {
+            PositiveVideoCameraView { urls in
+                withAnimation {
+                    pendingArchiveURLs = urls
+                    showArchivePrompt = true
+                }
+            }
+        }
         .sheet(isPresented: $showTextScanner) { ScannerSheet(scannedText: $shortDescription) }
-
-        .fullScreenCover(isPresented: $showNegativeCamera) {
-            NegativeVideoCameraView(onDone: { video in
-                capturedNegativeVideo = video
-                if !hardNegativeUploadService.isUploading { hardNegativeUploadService.reset() }
-            })
-        }
-        .sheet(isPresented: $showNegativeGalleryPicker) {
-            NegativeGalleryPicker(onPicked: { url in
-                capturedNegativeVideo = CapturedNegativeVideo(fileURL: url)
-                if !hardNegativeUploadService.isUploading { hardNegativeUploadService.reset() }
-            }, onInvalidDuration: { message in
-                showVideoDurationAlert = true
-                videoDurationAlertMessage = message
-            })
-        }
-        .alert("Invalid Video Length", isPresented: $showVideoDurationAlert) { Button("OK", role: .cancel) { } } message: { Text(videoDurationAlertMessage) }
-        .alert("Discard this upload?", isPresented: $showDiscardAlert) {
-            Button("Discard", role: .destructive) { clearScreen() }
-            Button("Cancel", role: .cancel) { }
-        } message: { Text("This will remove the media and clear the form.") }
+        .fullScreenCover(isPresented: $showNegativeCamera) { NegativeVideoCameraView(onDone: { video in capturedNegativeVideo = video; if !hardNegativeUploadService.isUploading { hardNegativeUploadService.reset() } }) }
+        .alert("Discard this upload?", isPresented: $showDiscardAlert) { Button("Discard", role: .destructive) { clearScreen() }; Button("Cancel", role: .cancel) { } } message: { Text("This will remove the media and clear the form.") }
         .alert("Landmark Uploaded!", isPresented: $showCompletionPopup) {
-            Button("Create Another Landmark") { resetForAnotherLandmark() }
-            Button("Add More Photos or Videos") { openAdditionalMediaUpload() }
+            if archivedMedia != nil {
+                Button("Done", role: .cancel) { dismiss() }
+            } else {
+                Button("Create Another Landmark") { resetForAnotherLandmark() }
+                Button("Add More Photos or Videos") { openAdditionalMediaUpload() }
+            }
         } message: { Text("Your landmark media and negative reference video were uploaded successfully.") }
+        .alert("Connection Offline", isPresented: $showAutoQueueAlert) {
+            Button("OK", role: .cancel) {
+                if archivedMedia != nil {
+                    dismiss()
+                }
+            }
+        } message: { Text("You currently have no internet connection. This landmark has been securely added to your Upload Queue and will automatically sync when service returns!") }
+    }
+
+    var processingOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.8).ignoresSafeArea(.all)
+            VStack(spacing: 20) {
+                ProgressView().tint(.white).scaleEffect(1.5)
+                Text("Processing videos").font(.title3.bold()).foregroundStyle(.white)
+                Text("Please wait a moment.")
+                    .font(.subheadline).foregroundStyle(.gray)
+                    .multilineTextAlignment(.center)
+            }
+            .padding(30)
+            .background(Color(red: 0.11, green: 0.11, blue: 0.16))
+            .clipShape(RoundedRectangle(cornerRadius: 24))
+            .overlay(RoundedRectangle(cornerRadius: 24).stroke(Color.white.opacity(0.1), lineWidth: 1))
+            .shadow(color: .black.opacity(0.4), radius: 20)
+            .padding(.horizontal, 40)
+        }
+        .zIndex(100)
     }
 
     var archivePromptOverlay: some View {
         ZStack {
             Color.black.opacity(0.6).ignoresSafeArea()
             VStack(spacing: 20) {
-                ZStack { Circle().fill(primaryColor.opacity(0.12)).frame(width: 70, height: 70); Image(systemName: "folder.badge.plus").font(.system(size: 32)).foregroundStyle(primaryColor) }
+                ZStack { Circle().fill(primaryColor.opacity(0.12)).frame(width: 70, height: 70); Image(systemName: "checkmark.circle").font(.system(size: 32)).foregroundStyle(primaryColor) }
                 VStack(spacing: 8) {
-                    Text("Media Captured").font(.system(size: 20, weight: .bold, design: .rounded)).foregroundStyle(.white)
-                    Text("What would you like to do with this media? You can upload it now or save it to your archive.")
+                    Text("Capture Complete").font(.system(size: 20, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                    Text("Continue to fill out the landmark details. You can upload it when you're done.")
                         .font(.subheadline).foregroundStyle(Color.white.opacity(0.5)).multilineTextAlignment(.center).padding(.horizontal, 8)
                 }
                 VStack(spacing: 10) {
-                    Button { withAnimation(.easeInOut(duration: 0.2)) { showArchivePrompt = false }; applyPendingMedia() } label: { Text("Upload Now").font(.system(size: 16, weight: .semibold)).foregroundStyle(.white).frame(maxWidth: .infinity).padding(.vertical, 14).background(Color(red: 0.22, green: 0.49, blue: 1.00)).cornerRadius(14) }
-                    Button { withAnimation(.easeInOut(duration: 0.2)) { showArchivePrompt = false }; saveToArchiveFromPrompt() } label: { Text("Save to Offline Archive").font(.system(size: 15)).foregroundStyle(.white).frame(maxWidth: .infinity).padding(.vertical, 14).background(Color.white.opacity(0.15)).cornerRadius(14) }
+                    Button { withAnimation(.easeInOut(duration: 0.2)) { showArchivePrompt = false }; processAndStitchPendingMedia() } label: { Text("Continue").font(.system(size: 16, weight: .semibold)).foregroundStyle(.white).frame(maxWidth: .infinity).padding(.vertical, 14).background(Color(red: 0.22, green: 0.49, blue: 1.00)).cornerRadius(14) }
                     Button { withAnimation(.easeInOut(duration: 0.2)) { showArchivePrompt = false }; discardPendingMedia() } label: { Text("Discard").font(.system(size: 15)).foregroundStyle(.red).frame(maxWidth: .infinity).padding(.vertical, 14).background(Color.red.opacity(0.15)).cornerRadius(14) }
                 }
             }.padding(24).background(Color(red: 0.11, green: 0.11, blue: 0.16)).cornerRadius(24).overlay(RoundedRectangle(cornerRadius: 24).stroke(Color.white.opacity(0.07), lineWidth: 0.5)).padding(.horizontal, 28)
@@ -204,103 +218,72 @@ struct LandmarkRecord: View {
     }
 
     private var positiveMediaInstructions: some View {
-        RoundedRectangle(cornerRadius: 25).stroke(Color(red: 0.75, green: 0.85, blue: 1.00)).fill(Color(red: 0.94, green: 0.96, blue: 1.00)).frame(height: 135)
-            .overlay { Text("Record one or more short videos (combined at least 15s), or take one photo, of the landmark. This will be used as positive recognition data.").padding().multilineTextAlignment(.center).foregroundStyle(primaryColor) }.padding(.horizontal)
+        Text("Follow the on-screen steps to capture the different angles of the landmark. This will be used as a positive video. A positive video should be from a typical place where a user may see the landmark.")
+            .padding()
+            .multilineTextAlignment(.center)
+            .foregroundStyle(primaryColor)
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 25)
+                    .fill(Color(red: 0.94, green: 0.96, blue: 1.00))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 25)
+                    .stroke(Color(red: 0.75, green: 0.85, blue: 1.00))
+            )
+            .padding(.horizontal)
     }
 
     private var positiveMediaButtons: some View {
-        HStack(spacing: 12) {
-            Button { isAddingAdditionalClip = false; showVideoPicker = true } label: { Label("Record", systemImage: "video").frame(maxWidth: .infinity).padding(.vertical, 14) }.foregroundStyle(.white).background(primaryColor).clipShape(RoundedRectangle(cornerRadius: 15)).disabled(arePositiveDetailsLocked || archivedMedia != nil).opacity(arePositiveDetailsLocked || archivedMedia != nil ? 0.6 : 1)
-            //Button { PHPhotoLibrary.requestAuthorization(for: .readWrite) { status in DispatchQueue.main.async { isAddingAdditionalClip = false; showGalleryPicker = true } } } label: { Label("Gallery", systemImage: "photo.on.rectangle").frame(maxWidth: .infinity).padding(.vertical, 14) }.foregroundStyle(.white).background(primaryColor).clipShape(RoundedRectangle(cornerRadius: 15)).disabled(arePositiveDetailsLocked || archivedMedia != nil).opacity(arePositiveDetailsLocked || archivedMedia != nil ? 0.6 : 1)
-            //Button { showPhotoPicker = true } label: { Label("Photo", systemImage: "camera").frame(maxWidth: .infinity).padding(.vertical, 14) }.foregroundStyle(.white).background(primaryColor).clipShape(RoundedRectangle(cornerRadius: 15)).disabled(arePositiveDetailsLocked || archivedMedia != nil).opacity(arePositiveDetailsLocked || archivedMedia != nil ? 0.6 : 1)
+        HStack {
+            Button { showVideoCamera = true } label: {
+                Label("Start Recording Process", systemImage: "video").frame(maxWidth: .infinity).padding(.vertical, 14)
+            }
+            .foregroundStyle(.white).background(primaryColor).clipShape(RoundedRectangle(cornerRadius: 15))
+            .disabled(arePositiveDetailsLocked)
+            .opacity(arePositiveDetailsLocked ? 0.6 : 1)
         }.padding(.horizontal)
     }
 
-    // MARK: - Positive media preview (multiple clips with durations, or single photo)
     @ViewBuilder private var positiveMediaPreview: some View {
         if !pickedVideoURLs.isEmpty {
             VStack(spacing: 10) {
                 durationSummaryBanner
-
-                ForEach(Array(pickedVideoURLs.enumerated()), id: \.offset) { index, url in
+                ForEach(Array(pickedVideoURLs.enumerated()), id: \.element) { index, url in
                     ZStack(alignment: .topTrailing) {
-                        VideoPlayer(player: AVPlayer(url: url))
-                            .frame(height: 200)
-                            .clipShape(RoundedRectangle(cornerRadius: 15))
-
-                        if !arePositiveDetailsLocked {
-                            Button { removeClip(at: index) } label: {
-                                Image(systemName: "xmark.circle.fill")
-                                    .font(.title2)
-                                    .foregroundStyle(.white, .red)
-                            }
-                            .padding(8)
-                        }
-                    }
-                    .overlay(alignment: .bottomLeading) {
-                        Text(clipLabel(index: index, url: url))
-                            .font(.caption.bold())
-                            .padding(.horizontal, 8).padding(.vertical, 4)
-                            .background(.black.opacity(0.6))
-                            .foregroundStyle(.white)
-                            .clipShape(Capsule())
-                            .padding(8)
-                    }
-                }
-
-                if archivedMedia == nil {
-                    Button {
-                        isAddingAdditionalClip = true
-                        showVideoPicker = true
-                    } label: {
-                        Label("Record Another Video", systemImage: "plus.circle")
+                        SafeVideoPlayer(url: url)
+                            .equatable()
+                            .id(url.absoluteString)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
+                            .frame(height: 200)
+                            .clipped()
+                            .clipShape(RoundedRectangle(cornerRadius: 15))
+                            .ignoresSafeArea(.keyboard)
+                        
+                        if !arePositiveDetailsLocked { Button { removeClip(url: url) } label: { Image(systemName: "xmark.circle.fill").font(.title2).foregroundStyle(.white, .red) }.padding(8) }
                     }
-                    .foregroundStyle(primaryColor)
-                    .background(primaryColor.opacity(0.1))
-                    .clipShape(RoundedRectangle(cornerRadius: 15))
-                    .disabled(arePositiveDetailsLocked)
-                    .opacity(arePositiveDetailsLocked ? 0.6 : 1)
+                    .overlay(alignment: .bottomLeading) { Text(clipLabel(index: index, url: url)).font(.caption.bold()).padding(.horizontal, 8).padding(.vertical, 4).background(.black.opacity(0.6)).foregroundStyle(.white).clipShape(Capsule()).padding(8) }
                 }
-            }
-            .padding(.horizontal)
-        } else if let img = pickedImage {
-            Image(uiImage: img)
-                .resizable()
-                .scaledToFill()
-                .frame(height: 220)
-                .clipShape(RoundedRectangle(cornerRadius: 15))
-                .padding(.horizontal)
-        }
+            }.padding(.horizontal)
+        } else if let img = pickedImage { Image(uiImage: img).resizable().scaledToFill().frame(height: 220).clipShape(RoundedRectangle(cornerRadius: 15)).padding(.horizontal) }
     }
 
     private var durationSummaryBanner: some View {
         HStack {
-            Image(systemName: hasMinimumClipDuration ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
-                .foregroundStyle(hasMinimumClipDuration ? Color.green : Color.orange)
-            Text(durationSummaryText)
-                .font(.footnote.bold())
-                .foregroundStyle(hasMinimumClipDuration ? Color.green : Color.orange)
+            Image(systemName: hasMinimumClipDuration ? "checkmark.circle.fill" : "exclamationmark.circle.fill").foregroundStyle(hasMinimumClipDuration ? Color.green : Color.orange)
+            Text(durationSummaryText).font(.footnote.bold()).foregroundStyle(hasMinimumClipDuration ? Color.green : Color.orange)
             Spacer()
-        }
-        .padding(.horizontal, 4)
+        }.padding(.horizontal, 4)
     }
 
     private var durationSummaryText: String {
         let total = totalClipDuration
-        if hasMinimumClipDuration {
-            return "\(String(format: "%.1f", total))s total — ready to upload"
-        } else {
-            let remaining = max(0, minimumCombinedVideoDuration - total)
-            return "\(String(format: "%.1f", total))s total — need \(String(format: "%.1f", remaining))s more"
-        }
+        if hasMinimumClipDuration { return "\(String(format: "%.1f", total))s total — ready to upload" }
+        else { return "\(String(format: "%.1f", total))s total — need \(String(format: "%.1f", max(0, minimumCombinedVideoDuration - total)))s more" }
     }
 
     private func clipLabel(index: Int, url: URL) -> String {
-        if let duration = clipDurations[url] {
-            return "Clip \(index + 1) · \(String(format: "%.1f", duration))s"
-        }
+        if let duration = clipDurations[url] { return "Clip \(index + 1) · \(String(format: "%.1f", duration))s" }
         return "Clip \(index + 1) · loading…"
     }
 
@@ -321,17 +304,10 @@ struct LandmarkRecord: View {
             Text("Short description (required)").padding(.horizontal)
             ZStack(alignment: .bottomTrailing) {
                 TextField("e.g., Front entrance", text: $shortDescription, axis: .vertical).lineLimit(3...6).textFieldStyle(.roundedBorder).disabled(arePositiveDetailsLocked)
-                Button { showTextScanner = true } label: { Image(systemName: "text.viewfinder").font(.system(size: 17, weight: .semibold)).foregroundStyle(.white).padding(9).background(primaryColor).clipShape(Circle()).shadow(radius: 2) }
-                .padding(.trailing, 8).padding(.bottom, 8).disabled(arePositiveDetailsLocked).opacity(arePositiveDetailsLocked ? 0.5 : 1)
+                Button { showTextScanner = true } label: { Image(systemName: "text.viewfinder").font(.system(size: 17, weight: .semibold)).foregroundStyle(.white).padding(9).background(primaryColor).clipShape(Circle()).shadow(radius: 2) }.padding(.trailing, 8).padding(.bottom, 8).disabled(arePositiveDetailsLocked).opacity(arePositiveDetailsLocked ? 0.5 : 1)
             }.padding(.horizontal)
-
             if completedPositiveResult != nil && !isFullSubmissionComplete { positiveAlreadySavedCard }
-
             negativePhotoSection
-            uploadButtonRow
-            positiveUploadStatusCard
-            negativeUploadStatusCard
-            overallCompletionCard
         }
     }
 
@@ -345,28 +321,26 @@ struct LandmarkRecord: View {
 
     private var negativePhotoSection: some View {
         VStack(alignment: .leading, spacing: 12) {
+            HStack { Label("Negative Background Video", systemImage: "video.fill").font(.headline); Spacer(); Image(systemName: hasRequiredNegativeVideo ? "checkmark.circle.fill" : "exclamationmark.circle.fill").foregroundStyle(hasRequiredNegativeVideo ? Color.green : Color.orange) }
+            Text("Record a >= 10s video panning around the area. Do NOT include the landmark in the video.").font(.footnote).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            
             HStack {
-                Label("Negative Background Video", systemImage: "video.fill").font(.headline); Spacer()
-                Image(systemName: hasRequiredNegativeVideo ? "checkmark.circle.fill" : "exclamationmark.circle.fill").foregroundStyle(hasRequiredNegativeVideo ? Color.green : Color.orange)
-            }
-            Text("Record a >= 10s video panning around the area. Do NOT include the landmark in the frame.").font(.footnote).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-
-            HStack(spacing: 12) {
                 Button { showNegativeCamera = true } label: {
-                    Label(capturedNegativeVideo == nil ? "Record" : "Re-record", systemImage: "camera.fill").frame(maxWidth: .infinity).padding(.vertical, 13)
+                    Label(capturedNegativeVideo == nil ? "Record" : "Retake", systemImage: "camera.fill").frame(maxWidth: .infinity).padding(.vertical, 13)
                 }
                 .foregroundStyle(.white).background(primaryColor).clipShape(RoundedRectangle(cornerRadius: 14))
-
-                Button { PHPhotoLibrary.requestAuthorization(for: .readWrite) { status in DispatchQueue.main.async { showNegativeGalleryPicker = true } } } label: {
-                    Label("Gallery", systemImage: "photo.on.rectangle").frame(maxWidth: .infinity).padding(.vertical, 13)
-                }
-                .foregroundStyle(.white).background(primaryColor).clipShape(RoundedRectangle(cornerRadius: 14))
-            }
-            .disabled(areNegativePhotosLocked).opacity(areNegativePhotosLocked ? 0.6 : 1)
-
+            }.disabled(areNegativePhotosLocked).opacity(areNegativePhotosLocked ? 0.6 : 1)
+            
             if let video = capturedNegativeVideo {
                 ZStack(alignment: .topTrailing) {
-                    VideoPlayer(player: AVPlayer(url: video.fileURL)).frame(height: 220).clipShape(RoundedRectangle(cornerRadius: 15))
+                    SafeVideoPlayer(url: video.fileURL)
+                        .equatable()
+                        .id(video.fileURL.absoluteString)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 220)
+                        .clipped()
+                        .clipShape(RoundedRectangle(cornerRadius: 15))
+                        .ignoresSafeArea(.keyboard)
                     Button { video.deleteLocalFile(); capturedNegativeVideo = nil } label: { Image(systemName: "xmark.circle.fill").font(.title2).foregroundStyle(.white, .red) }.padding(12).disabled(areNegativePhotosLocked)
                 }.padding(.top, 8)
             }
@@ -375,91 +349,61 @@ struct LandmarkRecord: View {
 
     private var uploadButtonRow: some View {
         HStack(spacing: 12) {
+            
             if archivedMedia != nil {
-                Button(role: .cancel) { saveDraftAndDismiss() } label: {
-                    Image(systemName: "arrow.uturn.backward").font(.title2).foregroundStyle(.white).frame(width: 54, height: 52).background(Color.white.opacity(0.2)).clipShape(RoundedRectangle(cornerRadius: 15))
-                }
-            } else if hasPositiveMedia && !isSubmissionRunning && !isFullSubmissionComplete {
-                Button { saveToArchiveFromForm() } label: {
-                    Image(systemName: "folder.badge.plus").font(.title2).foregroundStyle(.white).frame(width: 54, height: 52).background(primaryColor).clipShape(RoundedRectangle(cornerRadius: 15))
-                }
+                Button(role: .cancel) { saveDraftAndDismiss() } label: { Image(systemName: "arrow.uturn.backward").font(.title2).foregroundStyle(.white).frame(width: 54, height: 52).background(Color.white.opacity(0.2)).clipShape(RoundedRectangle(cornerRadius: 15)) }
             }
-
-            Button { startFullSubmission() } label: {
-                HStack(spacing: 10) {
-                    if isSubmissionRunning { ProgressView().tint(.white); Text(hardNegativeUploadService.isUploading ? "Uploading reference video…" : uploadService.status).fontWeight(.semibold)
-                    } else { Label(isFullSubmissionComplete ? "Submission Complete" : (completedPositiveResult != nil ? "Retry Negative Video" : "Upload Landmark"), systemImage: isFullSubmissionComplete ? "checkmark.circle.fill" : "arrow.up.circle").fontWeight(.semibold) }
-                }.frame(maxWidth: .infinity).padding(.vertical, 14)
-            }.foregroundStyle(.white).background(canUpload ? primaryColor : Color.gray).clipShape(RoundedRectangle(cornerRadius: 15)).disabled(!canUpload)
-
-            if archivedMedia == nil && hasPositiveMedia && !uploadService.isUploading && !isFullSubmissionComplete {
-                Button(role: .destructive) { showDiscardAlert = true } label: {
-                    Image(systemName: "trash.fill").font(.title2).foregroundStyle(.red).frame(width: 54, height: 52).background(Color.red.opacity(0.15)).clipShape(RoundedRectangle(cornerRadius: 15))
-                }
+            
+            if hasPositiveMedia || completedPositiveResult != nil {
+                Button { startFullSubmission() } label: {
+                    HStack(spacing: 10) {
+                        if isSubmissionRunning { ProgressView().tint(.white); Text(hardNegativeUploadService.isUploading ? "Uploading reference video…" : (isStitchingVideos ? "Processing..." : uploadService.status)).fontWeight(.semibold)
+                        } else { Label(isFullSubmissionComplete ? "Submission Complete" : (completedPositiveResult != nil ? "Retry Negative Video" : "Upload Landmark"), systemImage: isFullSubmissionComplete ? "checkmark.circle.fill" : "arrow.up.circle").fontWeight(.semibold) }
+                    }.frame(maxWidth: .infinity).padding(.vertical, 14)
+                }.foregroundStyle(.white).background(canUpload ? primaryColor : Color.gray).clipShape(RoundedRectangle(cornerRadius: 15)).disabled(!canUpload)
+            } else if archivedMedia != nil {
+                Spacer()
             }
+            
+            if archivedMedia == nil && !uploadService.isUploading && !isFullSubmissionComplete {
+                Button(role: .destructive) { showDiscardAlert = true } label: { Image(systemName: "trash.fill").font(.title2).foregroundStyle(.red).frame(width: 54, height: 52).background(Color.red.opacity(0.15)).clipShape(RoundedRectangle(cornerRadius: 15)) }
+            }
+            
         }.padding(.horizontal)
     }
 
     private func startFullSubmission() {
+        if !NetworkMonitor.shared.isConnected {
+            if let archive = archivedMedia {
+                OfflineMediaManager.shared.updateDraft(media: archive, label: labelText, shortDesc: shortDescription, userDesc: nil)
+            } else {
+                saveToArchiveFromForm()
+            }
+            
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 300_000_000)
+                showAutoQueueAlert = true
+            }
+            return
+        }
         Task {
             guard !isSubmissionRunning, !isFullSubmissionComplete else { return }
             if businessLandmarkId == nil { businessLandmarkId = makeBusinessLandmarkId() }
             guard let generatedLandmarkId = businessLandmarkId else { return }
-
             do {
                 let positiveResult: PositiveSubmissionResult
-                
-                await vm.fetchUserEmail()
-                let idToken = await vm.fetchIdToken()
-                
-                if let existingResult = completedPositiveResult {
-                    positiveResult = existingResult
-                } else {
-                    let trimmedLabel = labelText.trimmingCharacters(in: .whitespacesAndNewlines)
-                    let trimmedShortDescription = shortDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+                await vm.fetchUserEmail(); let idToken = await vm.fetchIdToken()
+                if let existingResult = completedPositiveResult { positiveResult = existingResult } else {
+                    let trimmedLabel = labelText.trimmingCharacters(in: .whitespacesAndNewlines); let trimmedShortDescription = shortDescription.trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !trimmedLabel.isEmpty, !trimmedShortDescription.isEmpty else { return }
-                    
-                    if idToken.isEmpty {
-                        print("⚠️ WARNING: ID Token is empty. The upload may fail with a 401 Unauthorized.")
-                    }
-
-                    positiveResult = try await uploadService.upload(
-                        userEmail: vm.userEmail,
-                        idToken: idToken,
-                        label: trimmedLabel,
-                        landmarkId: generatedLandmarkId,
-                        landmarkLabel: trimmedLabel,
-                        shortDescription: trimmedShortDescription,
-                        userDescription: nil,
-                        latitude: extractedLatitude ?? locationManager.latitude,
-                        longitude: extractedLongitude ?? locationManager.longitude,
-                        horizontalAccuracy: locationManager.horizontalAccuracy,
-                        videoURLs: pickedVideoURLs,
-                        image: pickedImage
-                    )
-                    completedPositiveResult = positiveResult
-                    statusText = "Landmark media saved. Uploading negative reference video…"
+                    positiveResult = try await uploadService.upload(userEmail: vm.userEmail, idToken: idToken, label: trimmedLabel, landmarkId: generatedLandmarkId, landmarkLabel: trimmedLabel, shortDescription: trimmedShortDescription, userDescription: nil, latitude: extractedLatitude ?? locationManager.latitude, longitude: extractedLongitude ?? locationManager.longitude, horizontalAccuracy: locationManager.horizontalAccuracy, videoURLs: pickedVideoURLs, image: pickedImage)
+                    completedPositiveResult = positiveResult; statusText = "Landmark media saved. Uploading negative reference video…"
                 }
-
                 let finalLandmarkId = positiveResult.landmarkId ?? generatedLandmarkId
-
-                if let negativeVideo = capturedNegativeVideo {
-                    // --- NEGATIVE TOKEN FIX: Pass the VIP token to the negative service! ---
-                    _ = try await hardNegativeUploadService.upload(
-                        landmarkId: finalLandmarkId,
-                        idToken: idToken, // <-- Add this!
-                        video: negativeVideo
-                    )
-                }
-
-                completedLandmarkId = finalLandmarkId
-                isFullSubmissionComplete = true
-                statusText = "Landmark and reference video uploaded successfully."
-                showCompletionPopup = true
-
+                if let negativeVideo = capturedNegativeVideo { _ = try await hardNegativeUploadService.upload(landmarkId: finalLandmarkId, idToken: idToken, video: negativeVideo) }
+                completedLandmarkId = finalLandmarkId; isFullSubmissionComplete = true; statusText = "Landmark and reference video uploaded successfully."; showCompletionPopup = true
                 if let media = archivedMedia { OfflineMediaManager.shared.deleteArchive(media: media) }
-
-            } catch { print("❌ Full landmark submission failed:", error.localizedDescription) }
+            } catch { print("Full landmark submission failed:", error.localizedDescription) }
         }
     }
 
@@ -492,169 +436,205 @@ struct LandmarkRecord: View {
 
     @ViewBuilder private var overallCompletionCard: some View {
         if isFullSubmissionComplete {
-            HStack {
-                Image(systemName: "checkmark.seal.fill").foregroundStyle(.green)
-                Text("Submission complete").font(.headline)
-                Spacer()
-            }
-            .padding()
-            .background(Color.green.opacity(0.08))
-            .clipShape(RoundedRectangle(cornerRadius: 16))
-            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.green.opacity(0.3)))
-            .padding(.horizontal)
+            HStack { Image(systemName: "checkmark.seal.fill").foregroundStyle(.green); Text("Submission complete").font(.headline); Spacer() }
+            .padding().background(Color.green.opacity(0.08)).clipShape(RoundedRectangle(cornerRadius: 16)).overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.green.opacity(0.3))).padding(.horizontal)
         }
     }
 
-    private var videoPicker: some View {
-        VideoPicker(useCamera: true, onPicked: { url, location in
-            if isAddingAdditionalClip {
-                isAddingAdditionalClip = false
-                appendAdditionalClip(url: url, location: location)
-            } else {
-                withAnimation { pendingArchiveURL = url; pendingArchiveImage = nil; pendingArchiveLocation = location; showArchivePrompt = true }
-            }
-        }, onInvalidDuration: { message in showVideoDurationAlert = true; videoDurationAlertMessage = message })
-    }
-
-    private var galleryPicker: some View {
-        VideoPicker(useCamera: false, onPicked: { url, location in
-            if isAddingAdditionalClip {
-                isAddingAdditionalClip = false
-                appendAdditionalClip(url: url, location: location)
-            } else {
-                pendingArchiveURL = url; pendingArchiveImage = nil; pendingArchiveLocation = location; applyPendingMedia()
-            }
-        }, onInvalidDuration: { message in showVideoDurationAlert = true; videoDurationAlertMessage = message })
-    }
-
-    private var photoPicker: some View {
-        PhotoPicker { image in
-            withAnimation { pendingArchiveImage = image; pendingArchiveURL = nil; pendingArchiveLocation = nil; showArchivePrompt = true }
-        }
-    }
-
-    // MARK: - Duration loading
-
-    /// Reads a clip's duration asynchronously and stores it in clipDurations.
     private func loadDuration(for url: URL) async {
         let asset = AVURLAsset(url: url)
-        do {
-            let duration = try await asset.load(.duration)
-            let seconds = CMTimeGetSeconds(duration)
-            guard seconds.isFinite else { return }
-            await MainActor.run {
-                clipDurations[url] = seconds
+        do { let duration = try await asset.load(.duration); let seconds = CMTimeGetSeconds(duration); guard seconds.isFinite else { return }; await MainActor.run { clipDurations[url] = seconds } } catch { print("Could not read duration for \(url.lastPathComponent): \(error)") }
+    }
+
+    private func processAndStitchPendingMedia() {
+        guard !pendingArchiveURLs.isEmpty else { return }
+        isFormVisible = false
+        isStitchingVideos = true
+        
+        let urlsToStitch = pendingArchiveURLs
+        
+        Task.detached {
+            if urlsToStitch.count > 1 {
+                if let stitchedURL = await self.stitchVideos(urls: urlsToStitch) {
+                    await MainActor.run {
+                        self.deleteAllTemporaryVideos(self.pickedVideoURLs)
+                        self.deleteAllTemporaryVideos(self.pendingArchiveURLs)
+                        self.pickedVideoURLs = [stitchedURL]
+                        self.statusText = "Selected combined video."
+                    }
+                } else {
+                    await MainActor.run {
+                        self.pickedVideoURLs = urlsToStitch
+                        self.statusText = "Selected \(self.pickedVideoURLs.count) videos."
+                    }
+                }
+            } else {
+                await MainActor.run {
+                    self.pickedVideoURLs = urlsToStitch
+                    self.statusText = "Selected video."
+                }
             }
-        } catch {
-            print("⚠️ Could not read duration for \(url.lastPathComponent): \(error)")
+            
+            let finalURLs = await MainActor.run { self.pickedVideoURLs }
+            for url in finalURLs {
+                await self.loadDuration(for: url)
+            }
+            
+            await MainActor.run {
+                if self.extractedLatitude == nil { self.extractedLatitude = self.locationManager.latitude }
+                if self.extractedLongitude == nil { self.extractedLongitude = self.locationManager.longitude }
+                if self.businessLandmarkId == nil { self.businessLandmarkId = self.makeBusinessLandmarkId() }
+                self.uploadService.reset()
+                self.pendingArchiveURLs = []
+                self.isStitchingVideos = false
+                self.isFormVisible = true
+            }
         }
     }
 
-    // MARK: - Additional clip handling
-
-    /// Appends a clip to an already-in-progress landmark without resetting
-    /// the label/description/businessLandmarkId — used by "Record Another Video".
-    private func appendAdditionalClip(url: URL, location: CLLocationCoordinate2D?) {
-        pickedVideoURLs.append(url)
-        if extractedLatitude == nil, let loc = location {
-            extractedLatitude = loc.latitude
-            extractedLongitude = loc.longitude
+    private func stitchVideos(urls: [URL]) async -> URL? {
+        let composition = AVMutableComposition()
+        guard let videoTrack = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) else { return nil }
+        
+        var currentTime = CMTime.zero
+        var renderSize = CGSize(width: 1080, height: 1920)
+        
+        for url in urls {
+            let asset = AVURLAsset(url: url)
+            do {
+                guard let assetVideoTrack = try await asset.loadTracks(withMediaType: .video).first else { continue }
+                let duration = try await asset.load(.duration)
+                let timeRange = CMTimeRange(start: .zero, duration: duration)
+                try videoTrack.insertTimeRange(timeRange, of: assetVideoTrack, at: currentTime)
+                
+                let transform = try await assetVideoTrack.load(.preferredTransform)
+                videoTrack.preferredTransform = transform
+                
+                let naturalSize = try await assetVideoTrack.load(.naturalSize)
+                if transform.a == 0 && transform.d == 0 && (transform.b == 1.0 || transform.b == -1.0) {
+                    renderSize = CGSize(width: naturalSize.height, height: naturalSize.width)
+                } else {
+                    renderSize = naturalSize
+                }
+                
+                currentTime = CMTimeAdd(currentTime, duration)
+            } catch {
+                print("Failed to load track for stitching: \(error)")
+                return nil
+            }
         }
-        statusText = "Added clip \(pickedVideoURLs.count)."
-        Task { await loadDuration(for: url) }
-    }
-
-    private func removeClip(at index: Int) {
-        guard pickedVideoURLs.indices.contains(index) else { return }
-        let url = pickedVideoURLs[index]
-        deleteTemporaryVideoIfNeeded(url)
-        clipDurations.removeValue(forKey: url)
-        pickedVideoURLs.remove(at: index)
-        statusText = pickedVideoURLs.isEmpty ? "No media selected." : "Removed clip. \(pickedVideoURLs.count) remaining."
-    }
-
-    // MARK: - First-pick / replace-everything flow
-
-    private func applyPendingMedia() {
-        deleteAllTemporaryVideos(pickedVideoURLs)
-        pickedVideoURLs = []
-        clipDurations = [:]
-        pickedImage = nil
-
-        if let url = pendingArchiveURL {
-            pickedVideoURLs = [url]
-            statusText = "Selected video."
-            Task { await loadDuration(for: url) }
-        } else if let img = pendingArchiveImage {
-            pickedImage = img
-            statusText = "Selected photo."
+        
+        composition.naturalSize = renderSize
+        
+        let outputURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + "_stitched.mov")
+        
+        guard let exporter = AVAssetExportSession(asset: composition, presetName: AVAssetExportPreset1920x1080) else { return nil }
+        
+        exporter.outputURL = outputURL
+        exporter.outputFileType = .mov
+        exporter.shouldOptimizeForNetworkUse = true
+        
+        await exporter.export()
+        
+        if exporter.status == .completed {
+            return outputURL
+        } else {
+            print("Stitch export failed: \(String(describing: exporter.error))")
+            return nil
         }
-
-        extractedLatitude = pendingArchiveLocation?.latitude ?? locationManager.latitude
-        extractedLongitude = pendingArchiveLocation?.longitude ?? locationManager.longitude
-
-        labelText = ""; shortDescription = ""; businessLandmarkId = makeBusinessLandmarkId()
-        uploadService.reset(); hardNegativeUploadService.reset()
-        pendingArchiveURL = nil; pendingArchiveImage = nil; pendingArchiveLocation = nil
-    }
-
-    private func saveToArchiveFromPrompt() {
-        let lat = pendingArchiveLocation?.latitude ?? locationManager.latitude ?? 0.0
-        let lon = pendingArchiveLocation?.longitude ?? locationManager.longitude ?? 0.0
-        if let url = pendingArchiveURL { _ = OfflineMediaManager.shared.archiveVideo(tempURL: url, lat: lat, lon: lon) } else if let img = pendingArchiveImage { _ = OfflineMediaManager.shared.archivePhoto(image: img, lat: lat, lon: lon) }
-        discardPendingMedia(); statusText = "Media securely saved to Offline Archive."
     }
 
     private func saveToArchiveFromForm() {
         let lat = extractedLatitude ?? locationManager.latitude ?? 0.0
         let lon = extractedLongitude ?? locationManager.longitude ?? 0.0
-
-        if let firstURL = pickedVideoURLs.first {
-            // NOTE: only the first clip is archived offline right now. If you
-            // need full multi-clip offline drafts, OfflineMediaManager needs
-            // a matching update to store/restore the whole array.
-            _ = OfflineMediaManager.shared.archiveVideo(tempURL: firstURL, lat: lat, lon: lon, label: labelText, desc: shortDescription)
-        } else if let img = pickedImage {
-            _ = OfflineMediaManager.shared.archivePhoto(image: img, lat: lat, lon: lon, label: labelText, desc: shortDescription)
-        } else { return }
-
-        clearScreen(); statusText = "Media securely saved to Offline Archive."
+        
+        Task.detached {
+            let firstURL = await MainActor.run { pickedVideoURLs.first }
+            let img = await MainActor.run { pickedImage }
+            let id = await MainActor.run { businessLandmarkId }
+            let lbl = await MainActor.run { labelText }
+            let desc = await MainActor.run { shortDescription }
+            let negURL = await MainActor.run { capturedNegativeVideo?.fileURL }
+            
+            if let firstURL = firstURL {
+                _ = await OfflineMediaManager.shared.archiveVideo(tempURL: firstURL, lat: lat, lon: lon, landmarkId: id, label: lbl, shortDesc: desc, userDesc: nil, negativeVideoURL: negURL, isTier2: false)
+            } else if let img = img {
+                _ = await OfflineMediaManager.shared.archivePhoto(image: img, lat: lat, lon: lon, landmarkId: id, label: lbl, shortDesc: desc, userDesc: nil, negativeVideoURL: negURL, isTier2: false)
+            } else {
+                return
+            }
+            
+            await MainActor.run {
+                clearScreen()
+                statusText = "Landmark safely queued in Outbox for upload."
+            }
+        }
     }
 
     private func saveDraftAndDismiss() {
-        if let archive = archivedMedia {
-            OfflineMediaManager.shared.updateDraft(media: archive, label: labelText, desc: shortDescription)
-        }
+        if let archive = archivedMedia { OfflineMediaManager.shared.updateDraft(media: archive, label: labelText, shortDesc: shortDescription, userDesc: nil) }
         dismiss()
     }
 
     private func discardPendingMedia() {
-        if let url = pendingArchiveURL { deleteTemporaryVideoIfNeeded(url) }
-        pendingArchiveURL = nil; pendingArchiveImage = nil; pendingArchiveLocation = nil
-        pickedVideoURLs = []; clipDurations = [:]; pickedImage = nil
-        statusText = "No media selected."
+        deleteAllTemporaryVideos(pendingArchiveURLs)
+        pendingArchiveURLs = []
     }
 
     private func clearScreen() {
-        deleteAllTemporaryVideos(pickedVideoURLs)
-        capturedNegativeVideo?.deleteLocalFile()
-        pickedVideoURLs = []; clipDurations = [:]; pickedImage = nil
-        extractedLatitude = nil; extractedLongitude = nil; labelText = ""; shortDescription = ""
-        businessLandmarkId = nil; capturedNegativeVideo = nil
-        completedPositiveResult = nil; completedLandmarkId = nil; isFullSubmissionComplete = false
-        statusText = "No landmark media selected."; uploadService.reset(); hardNegativeUploadService.reset()
+        deleteAllTemporaryVideos(pickedVideoURLs); capturedNegativeVideo?.deleteLocalFile(); pickedVideoURLs = []; clipDurations = [:]
+        pickedImage = nil; extractedLatitude = nil; extractedLongitude = nil; labelText = ""; shortDescription = ""
+        businessLandmarkId = nil; capturedNegativeVideo = nil; completedPositiveResult = nil; completedLandmarkId = nil
+        isFullSubmissionComplete = false
+        isFormVisible = false
+        statusText = "No landmark media selected."
+        uploadService.reset(); hardNegativeUploadService.reset()
     }
-
+    
+    private func resetForAnotherLandmark() { clearScreen() }
     private func openAdditionalMediaUpload() { guard let id = completedLandmarkId else { return }; resetForAnotherLandmark(); onAddMoreMedia(id) }
-    private func resetForAnotherLandmark() { clearScreen(); showVideoDurationAlert = false }
-    private func makeBusinessLandmarkId() -> String { "landmark_\(UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(8))" }
 
-    private func deleteTemporaryVideoIfNeeded(_ videoURL: URL?) {
-        guard let url = videoURL, archivedMedia == nil else { return }
-        if url.standardizedFileURL.path.hasPrefix(FileManager.default.temporaryDirectory.standardizedFileURL.path) { try? FileManager.default.removeItem(at: url) }
+    private func makeBusinessLandmarkId() -> String { "landmark_\(UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(8))" }
+    
+    private func removeClip(url: URL) {
+        guard let index = pickedVideoURLs.firstIndex(of: url) else { return }
+        deleteTemporaryVideoIfNeeded(url)
+        clipDurations.removeValue(forKey: url)
+        pickedVideoURLs.remove(at: index)
+        statusText = pickedVideoURLs.isEmpty ? "No media selected." : "Removed clip. \(pickedVideoURLs.count) remaining."
+    }
+    
+    private func deleteTemporaryVideoIfNeeded(_ videoURL: URL?) { guard let url = videoURL, archivedMedia == nil else { return }; if url.standardizedFileURL.path.hasPrefix(FileManager.default.temporaryDirectory.standardizedFileURL.path) { try? FileManager.default.removeItem(at: url) } }
+    private func deleteAllTemporaryVideos(_ urls: [URL]) { urls.forEach { deleteTemporaryVideoIfNeeded($0) } }
+}
+
+private struct SafeVideoPlayer: UIViewControllerRepresentable, Equatable {
+    let url: URL
+
+    static func == (lhs: SafeVideoPlayer, rhs: SafeVideoPlayer) -> Bool {
+        return lhs.url == rhs.url
     }
 
-    private func deleteAllTemporaryVideos(_ urls: [URL]) {
-        urls.forEach { deleteTemporaryVideoIfNeeded($0) }
+    func makeUIViewController(context: Context) -> AVPlayerViewController {
+        let controller = AVPlayerViewController()
+        controller.player = AVPlayer(url: url)
+        controller.videoGravity = .resizeAspectFill
+        
+        if #available(iOS 16.0, *) {
+            controller.allowsVideoFrameAnalysis = false
+        }
+        
+        return controller
+    }
+
+    func updateUIViewController(_ uiViewController: AVPlayerViewController, context: Context) {
+    }
+
+    static func dismantleUIViewController(_ uiViewController: AVPlayerViewController, coordinator: ()) {
+        let player = uiViewController.player
+        uiViewController.player = nil
+        DispatchQueue.global(qos: .background).async {
+            player?.pause()
+        }
     }
 }

@@ -2,134 +2,247 @@
 //  ArchiveView.swift
 //  LookSeeProto
 //
-//  Created by Angel Pineda on 6/18/26.
-//
 
 import SwiftUI
+import AVKit
 
 struct ArchiveView: View {
-    @StateObject private var offlineManager = OfflineMediaManager.shared
+    @EnvironmentObject var vm: AuthViewModel
+    @ObservedObject private var offlineManager = OfflineMediaManager.shared
+    @ObservedObject private var autoUploader = AutoUploadManager.shared
+    
+    @State private var showInfoSheet = false
     @State private var selectedMedia: ArchivedMedia?
+    @State private var editingMedia: ArchivedMedia?
     
-    enum SortOption { case dateNewest, dateOldest, nameAZ, nameZA, videoFirst, photoFirst }
-    @State private var sortOption: SortOption = .dateNewest
-    @State private var showFavoritesOnly = false
-    
-    @State private var mediaToRename: ArchivedMedia?
-    @State private var newTitle: String = ""
-    @State private var showRenameAlert = false
-    
-    private let primaryColor = Color(red: 0.11, green: 0.22, blue: 0.55)
-    
-    var filteredAndSortedItems: [ArchivedMedia] {
-        var items = offlineManager.archivedItems
-        if showFavoritesOnly { items = items.filter { $0.isFavorite == true } }
-        
-        switch sortOption {
-        case .dateNewest: items.sort { $0.dateSaved > $1.dateSaved }
-        case .dateOldest: items.sort { $0.dateSaved < $1.dateSaved }
-        case .nameAZ: items.sort { $0.title < $1.title }
-        case .nameZA: items.sort { $0.title > $1.title }
-        case .videoFirst: items.sort { ($0.isVideo ? 0 : 1) < ($1.isVideo ? 0 : 1) }
-        case .photoFirst: items.sort { ($0.isVideo ? 1 : 0) < ($1.isVideo ? 1 : 0) }
-        }
-        return items
-    }
+    private let backgroundColor = Color(red: 0.08, green: 0.08, blue: 0.12)
+    private let cardColor = Color(red: 0.12, green: 0.12, blue: 0.18)
+    private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00)
     
     var body: some View {
-        ZStack {
-            Color(red: 0.06, green: 0.06, blue: 0.10).ignoresSafeArea()
-            
-            VStack(alignment: .leading, spacing: 0) {
-                HStack {
-                    // CHANGED: From "Offline Archive" to "Saved Media" to prevent duplication
-                    Text("Saved Media")
-                        .font(.title2.bold())
-                        .foregroundStyle(.white)
-                    
-                    Spacer()
-                    
-                    Menu {
-                        Toggle(isOn: $showFavoritesOnly) { Label("Favorites Only", systemImage: "heart.fill") }
-                        Divider()
-                        Picker("Sort By", selection: $sortOption) {
-                            Text("Date (Newest First)").tag(SortOption.dateNewest)
-                            Text("Date (Oldest First)").tag(SortOption.dateOldest)
-                            Text("Name (A-Z)").tag(SortOption.nameAZ)
-                            Text("Name (Z-A)").tag(SortOption.nameZA)
-                            Text("Media (Videos First)").tag(SortOption.videoFirst)
-                            Text("Media (Photos First)").tag(SortOption.photoFirst)
-                        }
-                    } label: { Image(systemName: "line.3.horizontal.decrease.circle").font(.title2).foregroundStyle(.white) }
-                }
-                .padding(.top, 80).padding(.horizontal, 24).padding(.bottom, 15)
+        NavigationStack {
+            ZStack {
+                backgroundColor.ignoresSafeArea()
                 
-                if filteredAndSortedItems.isEmpty {
-                    Spacer()
-                    Text("No media found.").font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: .infinity)
-                    Spacer()
-                } else {
-                    ScrollView {
-                        VStack(spacing: 20) {
-                            ForEach(filteredAndSortedItems) { media in archiveCard(for: media) }
-                        }.padding(.horizontal, 20).padding(.bottom, 100)
+                ScrollView {
+                    VStack(spacing: 0) {
+                        statusHeader
+                            .padding(.top, 16)
+                        
+                        if offlineManager.archivedItems.isEmpty {
+                            emptyStateView.padding(.top, 80)
+                        } else {
+                            queueList.padding(.top, 16)
+                        }
+                    }
+                }
+                .scrollBounceBehavior(.always)
+            }
+            .navigationTitle("Upload Queue")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(backgroundColor, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(action: {
+                        if autoUploader.isUploading { autoUploader.stopProcessing() }
+                        else { Task { await autoUploader.startProcessing(authViewModel: vm) } }
+                    }) {
+                        Image(systemName: autoUploader.isUploading ? "pause.circle.fill" : "play.circle.fill")
+                            .foregroundStyle(autoUploader.isUploading ? .orange : .green)
+                            .font(.title3)
+                    }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: { showInfoSheet = true }) {
+                        Image(systemName: "questionmark.circle").foregroundStyle(.white)
                     }
                 }
             }
         }
+        .sheet(isPresented: $showInfoSheet) { QueueInfoSheet() }
         .sheet(item: $selectedMedia) { media in
-            if media.isTier2 == true {
-                Tier2LandmarkRecord(archivedMedia: media)
-            } else {
-                LandmarkRecord(archivedMedia: media)
-            }
+            QueueDetailSheet(media: media, onEdit: {
+                selectedMedia = nil
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    if autoUploader.isUploading { autoUploader.stopProcessing() }
+                    editingMedia = media
+                }
+            })
         }
-        .alert("Rename File", isPresented: $showRenameAlert) {
-            TextField("Name", text: $newTitle)
-            Button("Save") { if let media = mediaToRename { offlineManager.renameArchive(media: media, newTitle: newTitle) } }
-            Button("Cancel", role: .cancel) {}
+        .fullScreenCover(item: $editingMedia) { media in
+            LandmarkRecord(archivedMedia: media)
+        }
+        .onAppear {
+            if !autoUploader.isUploading && !offlineManager.archivedItems.isEmpty {
+                Task { await autoUploader.startProcessing(authViewModel: vm) }
+            }
         }
     }
     
-    private func archiveCard(for media: ArchivedMedia) -> some View {
-        ZStack(alignment: .bottomLeading) {
-            let imgPath = offlineManager.getThumbnailURL(for: media).path
-            if let uiImage = UIImage(contentsOfFile: imgPath) {
-                Image(uiImage: uiImage).resizable().scaledToFill().frame(height: 200).frame(maxWidth: .infinity).clipped()
-            } else {
-                Rectangle().fill(Color(red: 0.11, green: 0.11, blue: 0.16)).frame(height: 200)
+    private var statusHeader: some View {
+        HStack(spacing: 16) {
+            ZStack {
+                Circle().fill(autoUploader.isUploading ? Color.blue.opacity(0.2) : Color.gray.opacity(0.2)).frame(width: 44, height: 44)
+                Image(systemName: autoUploader.isUploading ? "arrow.up.circle.fill" : "icloud.slash.fill")
+                    .foregroundStyle(autoUploader.isUploading ? .blue : .gray).font(.system(size: 22))
             }
-            
-            LinearGradient(colors: [Color.black.opacity(0.8), Color.clear, Color.black.opacity(0.7)], startPoint: .bottom, endPoint: .top)
-            
-            VStack {
-                HStack(alignment: .top) {
-                    HStack(spacing: 6) {
-                        Image(systemName: media.isVideo ? "video.fill" : "camera.fill")
-                        Text(media.isVideo ? "VIDEO" : "PHOTO").font(.system(size: 10, weight: .bold))
-                    }.padding(.horizontal, 10).padding(.vertical, 6).background(Color.black.opacity(0.6)).clipShape(Capsule()).foregroundStyle(.white)
-                    
-                    Spacer()
-                    
-                    HStack(spacing: 16) {
-                        Button { offlineManager.toggleFavorite(media: media) } label: { Image(systemName: media.isFavorite == true ? "heart.fill" : "heart").font(.title2).foregroundStyle(media.isFavorite == true ? .red : .white).shadow(radius: 2) }
-                        Menu {
-                            Button { mediaToRename = media; newTitle = media.title; showRenameAlert = true } label: { Label("Rename", systemImage: "pencil") }
-                            Button(role: .destructive) { offlineManager.deleteArchive(media: media) } label: { Label("Delete", systemImage: "trash") }
-                        } label: { Image(systemName: "ellipsis.circle.fill").font(.title2).foregroundStyle(.white).symbolRenderingMode(.hierarchical).shadow(radius: 2) }
+            VStack(alignment: .leading, spacing: 4) {
+                Text(autoUploader.isUploading ? "Syncing to Cloud..." : "Queue Paused").font(.headline).foregroundStyle(.white)
+                Text("\(offlineManager.archivedItems.count) items waiting to upload").font(.subheadline).foregroundStyle(.secondary)
+            }
+            Spacer()
+            if autoUploader.isUploading { ProgressView().tint(.white).padding(.trailing, 8) }
+        }
+        .padding(.vertical, 16).padding(.horizontal, 20).background(cardColor)
+        .overlay(Rectangle().frame(height: 1).foregroundColor(Color.white.opacity(0.05)), alignment: .bottom)
+    }
+    
+    private var queueList: some View {
+        LazyVStack(spacing: 16) {
+            ForEach(offlineManager.archivedItems) { media in
+                queueItemCard(for: media)
+            }
+        }.padding(.horizontal).padding(.bottom, 80)
+    }
+    
+    private func queueItemCard(for media: ArchivedMedia) -> some View {
+        let isCurrentlyUploading = (autoUploader.currentlyUploadingId == media.id)
+        return Button(action: {
+            selectedMedia = media
+        }) {
+            HStack(spacing: 16) {
+                ZStack {
+                    if media.isVideo { Color.black; Image(systemName: "video.fill").foregroundStyle(.white) }
+                    else {
+                        if let image = UIImage(contentsOfFile: offlineManager.getFileURL(for: media).path) { Image(uiImage: image).resizable().scaledToFill() }
+                        else { Color.gray; Image(systemName: "photo.fill") }
+                    }
+                }.frame(width: 70, height: 70).clipShape(RoundedRectangle(cornerRadius: 12))
+                
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(media.savedLabel ?? "Untitled Landmark").font(.headline).foregroundStyle(.white).lineLimit(1)
+                    if isCurrentlyUploading {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Uploading...").font(.caption).bold().foregroundStyle(.blue)
+                            ProgressView(value: autoUploader.currentUploadProgress, total: 1.0).tint(.blue)
+                        }
+                    } else {
+                        HStack(spacing: 4) { Image(systemName: "clock.fill").foregroundStyle(.orange); Text("Queued").foregroundStyle(.orange) }.font(.caption.bold())
                     }
                 }
                 Spacer()
-            }.padding(12)
-            
-            VStack(alignment: .leading, spacing: 4) {
-                Text(media.title).font(.title3.bold()).foregroundStyle(.white).lineLimit(1)
-                Text("Saved on \(media.dateSaved.formatted(date: .abbreviated, time: .shortened))").font(.caption).foregroundStyle(Color.white.opacity(0.7))
-            }.padding(16)
+                if !isCurrentlyUploading {
+                    Button(role: .destructive) { offlineManager.deleteArchive(media: media) }
+                    label: { Image(systemName: "trash.circle.fill").font(.title2).foregroundStyle(Color.red.opacity(0.8)) }
+                }
+            }.padding(12).background(cardColor).clipShape(RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(isCurrentlyUploading ? Color.blue.opacity(0.5) : Color.white.opacity(0.1), lineWidth: 1))
         }
-        .contentShape(RoundedRectangle(cornerRadius: 20))
-        .clipShape(RoundedRectangle(cornerRadius: 20))
-        .shadow(color: Color.black.opacity(0.3), radius: 8, x: 0, y: 4)
-        .onTapGesture { selectedMedia = media }
+        .buttonStyle(.plain)
+    }
+    
+    private var emptyStateView: some View {
+        VStack(spacing: 20) {
+            ZStack {
+                Circle().fill(cardColor).frame(width: 100, height: 100)
+                Image(systemName: "checkmark.icloud.fill").font(.system(size: 44)).foregroundStyle(.green)
+            }
+            Text("All Caught Up!").font(.title2.bold()).foregroundStyle(.white)
+            Text("There is no media waiting in the queue.\nEverything is securely synced to LookSee.").font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center).padding(.horizontal, 40)
+        }
+    }
+}
+
+struct QueueInfoSheet: View {
+    @Environment(\.dismiss) var dismiss
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color(red: 0.11, green: 0.11, blue: 0.16).ignoresSafeArea()
+                VStack(spacing: 24) {
+                    ZStack {
+                        Circle().fill(Color.blue.opacity(0.15)).frame(width: 80, height: 80)
+                        Image(systemName: "arrow.up.right.and.arrow.down.left.rectangle.fill").font(.system(size: 34)).foregroundStyle(.blue)
+                    }.padding(.top, 30)
+                    Text("How the Queue Works").font(.title2.bold()).foregroundStyle(.white)
+                    VStack(alignment: .leading, spacing: 20) {
+                        infoRow(icon: "wifi.slash", title: "Offline Ready", desc: "If you lose connection while recording, your landmarks are securely saved here automatically.")
+                        infoRow(icon: "arrow.up.circle.fill", title: "Background Sync", desc: "The app actively watches your connection and uploads queued media in the background as soon as service returns.")
+                        infoRow(icon: "battery.100.bolt", title: "Safe Storage", desc: "Media stays on your device until it is verified by the LookSee cloud, preventing data loss.")
+                    }.padding(.horizontal, 20)
+                    Spacer()
+                    Button { dismiss() } label: {
+                        Text("Got It").font(.headline).foregroundStyle(.white).frame(maxWidth: .infinity).padding(.vertical, 16).background(Color.blue).clipShape(RoundedRectangle(cornerRadius: 16)).padding(.horizontal, 24).padding(.bottom, 20)
+                    }
+                }
+            }
+            .navigationTitle("About Queue").navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .navigationBarTrailing) { Button("Done") { dismiss() }.foregroundStyle(.blue) } }
+        }.presentationDetents([.medium, .large])
+    }
+    private func infoRow(icon: String, title: String, desc: String) -> some View {
+        HStack(alignment: .top, spacing: 16) {
+            Image(systemName: icon).font(.title2).foregroundStyle(.blue).frame(width: 30)
+            VStack(alignment: .leading, spacing: 4) { Text(title).font(.headline).foregroundStyle(.white); Text(desc).font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
+        }
+    }
+}
+
+struct QueueDetailSheet: View {
+    let media: ArchivedMedia
+    let onEdit: () -> Void
+    @Environment(\.dismiss) var dismiss
+    
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color(red: 0.11, green: 0.11, blue: 0.16).ignoresSafeArea()
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 24) {
+                        
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Label").font(.caption).foregroundStyle(.secondary)
+                            Text(media.savedLabel ?? "No Label").font(.title3.bold()).foregroundStyle(.white)
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Description").font(.caption).foregroundStyle(.secondary)
+                            Text(media.savedDescription ?? "No Description").font(.body).foregroundStyle(.white)
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Location Coordinates").font(.caption).foregroundStyle(.secondary)
+                            Text("\(media.latitude), \(media.longitude)").font(.body).foregroundStyle(.white)
+                        }
+                        
+                        Button {
+                            onEdit()
+                        } label: {
+                            Text("Edit Landmark")
+                                .font(.headline)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 16)
+                                .background(Color.blue)
+                                .foregroundStyle(.white)
+                                .clipShape(RoundedRectangle(cornerRadius: 16))
+                        }
+                        .padding(.top, 16)
+                        
+                    }
+                    .padding(24)
+                }
+            }
+            .navigationTitle("Submission Details")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") { dismiss() }.foregroundStyle(.blue)
+                }
+            }
+            .environment(\.colorScheme, .dark)
+        }
+        .presentationDetents([.medium, .large])
     }
 }

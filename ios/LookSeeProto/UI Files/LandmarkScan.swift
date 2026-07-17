@@ -7,6 +7,7 @@ struct LandmarkScan: View {
     
     @Binding var isDetecting: Bool
     @Binding var isNavVisible: Bool
+    var isActive: Bool = true
     
     @StateObject private var detector = Detector()
     @ObservedObject var infoView = VariableContainer.shared
@@ -37,18 +38,13 @@ struct LandmarkScan: View {
                         onTap()
                     },
                     onPinch: onPinch,
-                    isAIPaused: .constant(false)
+                    isAIPaused: .constant(!isActive)
                 )
                 .ignoresSafeArea()
                 .blur(radius: blurAmount)
-                .onChange(of: zoomLevel) { _, _ in
-                    showZoomIndicatorThenFade()
-                    onTap()
-                }
-                .onChange(of: detector.currentLabel) { _, newLabel in
-                    withAnimation(.easeOut(duration: 0.1)) {
-                        isDetecting = (newLabel != nil && !(newLabel!.isEmpty))
-                    }
+                
+                if !isActive {
+                    Color.black.ignoresSafeArea()
                 }
 
                 if let bestDetection = detector.detections.first, !infoView.infoView {
@@ -58,29 +54,40 @@ struct LandmarkScan: View {
                         .position(x: lockedSafeZone.midX, y: lockedSafeZone.midY)
                         .onTapGesture {
                             openPopup(for: bestDetection)
+                            infoView.landmarkName = bestDetection.displayLabel
+                                
 
                             if !isNavVisible {
                                 onTap()
+                if isActive {
+                    Color.clear
+                        .onChange(of: zoomLevel) { _, _ in
+                            showZoomIndicatorThenFade()
+                            onTap()
+                        }
+                        .onChange(of: detector.currentLabel) { _, newLabel in
+                            withAnimation(.easeOut(duration: 0.1)) {
+                                isDetecting = (newLabel != nil && !(newLabel!.isEmpty))
                             }
                         }
-                }
 
                 if infoView.infoView {
                     PopUp()
                 }
 
-                if !infoView.infoView && zoomIndicatorVisible {
-                    VStack {
-                        Spacer()
-                        Text(String(format: "%.1fx", zoomLevel))
-                            .font(.caption.monospacedDigit())
-                            .fontWeight(.bold)
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
-                            .background(Color.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 12))
-                            .padding(.bottom, 110)
-                            .transition(.opacity)
+                    if !infoView.infoView && zoomIndicatorVisible {
+                        VStack {
+                            Spacer()
+                            Text(String(format: "%.1fx", zoomLevel))
+                                .font(.caption.monospacedDigit())
+                                .fontWeight(.bold)
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                                .background(Color.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 12))
+                                .padding(.bottom, 110)
+                                .transition(.opacity)
+                        }
                     }
                 }
             }

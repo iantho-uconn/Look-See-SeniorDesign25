@@ -1,8 +1,8 @@
 //
-//  NegativeVideoCameraView.swift
+//  PositiveVideoCameraView.swift
 //  LookSeeProto
 //
-//  Created by Angel Pineda on 6/29/26.
+//  Created by Angel Pineda on 7/14/26.
 //
 
 import AVFoundation
@@ -10,30 +10,58 @@ import SwiftUI
 import UIKit
 import AVKit
 
-enum NegativeCameraPhase: Equatable {
-    case first
+enum CameraPhase: Equatable {
+    case front
+    case left
+    case right
+    case back
     case additional(Int)
     
     var title: String {
         switch self {
-        case .first: return "Background Pan"
-        case .additional(let index): return "Extra Pan \(index - 1)"
+        case .front: return "Step 1: Front"
+        case .left: return "Step 2: Left Side"
+        case .right: return "Step 3: Right Side"
+        case .back: return "Step 4: Back Side"
+        case .additional(let index): return "Step \(index): Extra Coverage"
         }
     }
     
+    var instruction: String {
+        switch self {
+        case .front: return "Pan video across the front of the landmark"
+        case .left: return "Move to left side of landmark and pan video across the left side of the landmark"
+        case .right: return "Move to right side of landmark and pan video across the right side of the landmark"
+        case .back: return "Move to back side of landmark, if unavailable, move to another location around the landmark and pan video across the landmark"
+        case .additional: return "Pan across the landmark to capture missing angles or details."
+        }
+    }
+
+    
+    
     var indexPos: Int {
         switch self {
-        case .first: return 0
-        case .additional(let x): return x - 1
+        case .front: return 0
+        case .left: return 1
+        case .right: return 2
+        case .back: return 3
+        case .additional(let x): return 3 + (x - 4)
         }
     }
 }
 
-struct NegativeVideoCameraView: View {
+enum CameraFlowState: Equatable {
+    case instruction
+    case recording
+    case choice
+    case preview(URL)
+}
+
+struct PositiveVideoCameraView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var cameraService = NegativeVideoCameraService()
     
-    @State private var currentPhase: NegativeCameraPhase = .first
+    @State private var currentPhase: CameraPhase = .front
     @State private var flowState: CameraFlowState = .instruction
     
     @State private var recordingTimer: Timer?
@@ -42,24 +70,34 @@ struct NegativeVideoCameraView: View {
     @State private var collectedURLs: [URL] = []
     @State private var isCancelled = false
 
-    private let onDone: (CapturedNegativeVideo) -> Void
+    private let onDone: ([URL]) -> Void
     private let maxTotalTimeLimit: Int = 60
 
-    init(onDone: @escaping (CapturedNegativeVideo) -> Void) {
+    init(onDone: @escaping ([URL]) -> Void) {
         self.onDone = onDone
     }
 
     private var totalDurationElapsedInt: Int {
-        return Int(totalDurationElapsed)
+        var total = 0
+        for i in 0..<min(collectedURLs.count, currentPhase.indexPos) {
+            let asset = AVURLAsset(url: collectedURLs[i])
+            total += Int(CMTimeGetSeconds(asset.duration))
+        }
+        return total
     }
 
     private var minPhaseTimeLimit: Int {
-        currentPhase == .first ? 10 : 0
+        switch currentPhase {
+        case .front: return 7
+        case .left: return 4
+        case .right: return 4
+        default: return 0
+        }
     }
     
     private var maxPhaseTimeLimit: Int {
         let remaining = maxTotalTimeLimit - totalDurationElapsedInt
-        return min(20, remaining)
+        return min(15, remaining)
     }
 
     private var isReviewingClip: Bool {
@@ -71,12 +109,12 @@ struct NegativeVideoCameraView: View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            NegativeVideoCameraPreview(session: cameraService.session)
+            PositiveVideoCameraPreview(session: cameraService.session)
                 .ignoresSafeArea()
                 .opacity(isReviewingClip ? 0 : 1)
             
             if case .preview(let url) = flowState {
-                NegativeSafeVideoPlayer(url: url)
+                PositiveSafeVideoPlayer(url: url)
                     .equatable()
                     .ignoresSafeArea()
                     .zIndex(1)
@@ -126,18 +164,15 @@ struct NegativeVideoCameraView: View {
     
     private var instructionCard: some View {
         VStack(spacing: 16) {
-            Image(systemName: "video.slash.fill")
-                .font(.system(size: 32))
-                .foregroundStyle(.blue)
-            
             Text(currentPhase.title)
-                .font(.headline.bold())
-                .foregroundStyle(.primary)
+                .font(.subheadline.bold())
+                .foregroundStyle(.blue)
+                .textCase(.uppercase)
             
-            Text("Pan the area. Do not include the landmark in the video.")
-                .font(.subheadline)
+            Text(currentPhase.instruction)
+                .font(.title3.bold())
                 .multilineTextAlignment(.center)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.primary)
             
             Button {
                 withAnimation(.spring()) {
@@ -156,8 +191,8 @@ struct NegativeVideoCameraView: View {
         }
         .padding(30)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 32))
-        .padding(.horizontal, 40)
-        .padding(.bottom, 20)
+        .padding(.horizontal, 24)
+        .padding(.bottom, 60)
         .transition(.scale.combined(with: .opacity))
     }
     
@@ -175,8 +210,11 @@ struct NegativeVideoCameraView: View {
             
             VStack(spacing: 12) {
                 Button {
-                    if currentPhase == .first {
-                        currentPhase = .additional(2)
+                    if currentPhase == .right {
+                        currentPhase = .back
+                        flowState = .instruction
+                    } else if case .back = currentPhase {
+                        currentPhase = .additional(5)
                         flowState = .instruction
                     } else if case .additional(let index) = currentPhase {
                         currentPhase = .additional(index + 1)
@@ -191,9 +229,10 @@ struct NegativeVideoCameraView: View {
                 .controlSize(.large)
                 
                 Button {
-                    finishAndStitch()
+                    onDone(collectedURLs)
+                    dismiss()
                 } label: {
-                    Text("No, Finish Background")
+                    Text("No, Finish Submission")
                         .fontWeight(.semibold)
                         .frame(maxWidth: .infinity)
                 }
@@ -270,11 +309,22 @@ struct NegativeVideoCameraView: View {
                 }
                 
                 let timeRemaining = maxTotalTimeLimit - totalDurationElapsedInt
+                var isEligibleForChoice = false
+                switch currentPhase {
+                case .right, .back, .additional: isEligibleForChoice = true
+                default: isEligibleForChoice = false
+                }
                 
-                if timeRemaining >= 3 {
+                if isEligibleForChoice && timeRemaining >= 3 {
                     withAnimation(.spring()) { flowState = .choice }
+                } else if let nextPhase = getPhaseFromIndex(currentPhase.indexPos + 1), timeRemaining >= 3 {
+                    withAnimation(.spring()) {
+                        currentPhase = nextPhase
+                        flowState = .instruction
+                    }
                 } else {
-                    finishAndStitch()
+                    onDone(collectedURLs)
+                    dismiss()
                 }
             } label: {
                 Text("Accept Clip")
@@ -344,40 +394,12 @@ struct NegativeVideoCameraView: View {
         recordingTimer = nil
     }
 
-    private func finishAndStitch() {
-        Task {
-            if collectedURLs.count > 1, let stitched = await stitchVideos(urls: collectedURLs) {
-                let video = CapturedNegativeVideo(fileURL: stitched)
-                onDone(video)
-            } else if let first = collectedURLs.first {
-                let video = CapturedNegativeVideo(fileURL: first)
-                onDone(video)
-            }
-            dismiss()
-        }
-    }
-
-    private func stitchVideos(urls: [URL]) async -> URL? {
-        let composition = AVMutableComposition()
-        guard let videoTrack = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) else { return nil }
-        var currentTime = CMTime.zero
-        for url in urls {
-            let asset = AVURLAsset(url: url)
-            do {
-                guard let assetVideoTrack = try await asset.loadTracks(withMediaType: .video).first else { continue }
-                let duration = try await asset.load(.duration)
-                let timeRange = CMTimeRange(start: .zero, duration: duration)
-                try videoTrack.insertTimeRange(timeRange, of: assetVideoTrack, at: currentTime)
-                videoTrack.preferredTransform = try await assetVideoTrack.load(.preferredTransform)
-                currentTime = CMTimeAdd(currentTime, duration)
-            } catch { return nil }
-        }
-        let outputURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + "_neg_stitched.mov")
-        guard let exporter = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetHighestQuality) else { return nil }
-        exporter.outputURL = outputURL
-        exporter.outputFileType = .mov
-        await exporter.export()
-        return exporter.status == .completed ? outputURL : nil
+    private func getPhaseFromIndex(_ index: Int) -> CameraPhase? {
+        if index == 0 { return .front }
+        if index == 1 { return .left }
+        if index == 2 { return .right }
+        if index == 3 { return .back }
+        return .additional(index + 1)
     }
 
     private func cameraErrorOverlay(message: String) -> some View {
@@ -395,24 +417,24 @@ struct NegativeVideoCameraView: View {
     }
 }
 
-private struct NegativeVideoCameraPreview: UIViewRepresentable {
+private struct PositiveVideoCameraPreview: UIViewRepresentable {
     let session: AVCaptureSession
 
-    func makeUIView(context: Context) -> NegativeCameraPreviewUIView {
-        let view = NegativeCameraPreviewUIView()
+    func makeUIView(context: Context) -> PositiveCameraPreviewUIView {
+        let view = PositiveCameraPreviewUIView()
         view.previewLayer.session = session
         view.previewLayer.videoGravity = .resizeAspectFill
         return view
     }
 
-    func updateUIView(_ uiView: NegativeCameraPreviewUIView, context: Context) {
+    func updateUIView(_ uiView: PositiveCameraPreviewUIView, context: Context) {
         if uiView.previewLayer.session !== session {
             uiView.previewLayer.session = session
         }
     }
 }
 
-private final class NegativeCameraPreviewUIView: UIView {
+private final class PositiveCameraPreviewUIView: UIView {
     override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }
     var previewLayer: AVCaptureVideoPreviewLayer { layer as! AVCaptureVideoPreviewLayer }
     
@@ -480,10 +502,10 @@ private final class NegativeCameraPreviewUIView: UIView {
     }
 }
 
-private struct NegativeSafeVideoPlayer: UIViewControllerRepresentable, Equatable {
+private struct PositiveSafeVideoPlayer: UIViewControllerRepresentable, Equatable {
     let url: URL
 
-    static func == (lhs: NegativeSafeVideoPlayer, rhs: NegativeSafeVideoPlayer) -> Bool {
+    static func == (lhs: PositiveSafeVideoPlayer, rhs: PositiveSafeVideoPlayer) -> Bool {
         return lhs.url == rhs.url
     }
 
