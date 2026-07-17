@@ -8,7 +8,7 @@
         "dynamodb:GetItem",
         "dynamodb:Scan"
       ],
-      "Resource": "arn:aws:dynamodb:us-east-1:YOUR_ACCOUNT_ID:table/LookSeeClusterMappings"
+      "Resource": "arn:aws:dynamodb:us-east-1:637404140724:table/LookSeeClusterMappings"
     },
     {
       "Sid": "WritePublishedClusterMappings",
@@ -19,7 +19,7 @@
         "dynamodb:BatchWriteItem",
         "dynamodb:Query"
       ],
-      "Resource": "arn:aws:dynamodb:us-east-1:YOUR_ACCOUNT_ID:table/LookSeePublishedClusterMappings"
+      "Resource": "arn:aws:dynamodb:us-east-1:637404140724:table/LookSeePublishedClusterMappings"
     },
     {
       "Sid": "CloudWatchLogs",
