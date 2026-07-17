@@ -11,6 +11,8 @@ import Combine
 
 final class LocationManager: NSObject, ObservableObject {
     private let manager = CLLocationManager()
+    
+
 
     @Published var latitude: Double?
     @Published var longitude: Double?

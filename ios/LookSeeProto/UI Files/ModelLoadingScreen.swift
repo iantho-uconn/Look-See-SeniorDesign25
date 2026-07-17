@@ -25,22 +25,15 @@ struct ModelLoadingScreen: View {
                 .frame(width: 300, height: 300)
                 .blur(radius: 60)
 
-            VStack(spacing: 32) {
+            VStack(spacing: 3) {
                 Spacer()
 
                 // Logo
                 VStack(spacing: 14) {
-                    ZStack {
-                        Circle()
-                            .fill(Color(red: 0.22, green: 0.49, blue: 1.00).opacity(0.12))
-                            .frame(width: 110, height: 110)
-                        Image(systemName: "eye.square.fill")
-                            .font(.system(size: 58))
-                            .foregroundStyle(Color(red: 0.22, green: 0.49, blue: 1.00))
-                    }
-                    Text("LookSee")
-                        .font(.system(size: 32, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
+                    Image("LookSee_Logo")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 350, height: 300)   // Adjust as needed
                 }
 
                 Spacer()

@@ -33,25 +33,21 @@ struct Signup: View {
                 Spacer()
 
                 // Logo
-                VStack(spacing: 12) {
-                    ZStack {
-                        Circle()
-                            .fill(Color(red: 0.22, green: 0.49, blue: 1.00).opacity(0.12))
-                            .frame(width: 80, height: 80)
-                        Image(systemName: "eye.square.fill")
-                            .font(.system(size: 40))
-                            .foregroundStyle(Color(red: 0.22, green: 0.49, blue: 1.00))
-                    }
-                    Text("LookSee")
-                        .font(.system(size: 28, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
+                
+                VStack(spacing: 2) {
+                    Image("LookSee_Logo")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 350, height: 300)   // Adjust as needed
+                        
+
                     Text("Create your account")
                         .font(.subheadline)
                         .foregroundStyle(Color.white.opacity(0.4))
                 }
 
                 Spacer()
-
+                
                 VStack(spacing: 14) {
                     // Email
                     VStack(alignment: .leading, spacing: 6) {

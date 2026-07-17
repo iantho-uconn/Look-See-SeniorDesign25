@@ -235,12 +235,16 @@ struct QuickUploadView: View {
         
         await vm.fetchUserEmail()
         
+        // --- TOKEN FIX: Fetch token from AuthViewModel and pass it down ---
+        let idToken = await vm.fetchIdToken()
+        
         let uploadImage: UIImage? = isVideo ? nil : UIImage(contentsOfFile: url.path)
         let uploadVideoURL: URL? = isVideo ? url : nil
 
         do {
             let _ = try await uploadService.upload(
                 userEmail: vm.userEmail,
+                idToken: idToken, // <-- Passed right here!
                 label: landmark.label,
                 landmarkId: landmark.landmarkId,
                 landmarkLabel: landmark.label,
@@ -249,7 +253,7 @@ struct QuickUploadView: View {
                 latitude: landmark.latitude,
                 longitude: landmark.longitude,
                 horizontalAccuracy: 10.0,
-                videoURL: uploadVideoURL,
+                videoURLs: uploadVideoURL.map { [$0] } ?? [],
                 image: uploadImage
             )
             print("✅ QuickUpload Completed Successfully")
