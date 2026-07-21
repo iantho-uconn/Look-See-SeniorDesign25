@@ -1,121 +1,417 @@
-import os
-import sys
 import json
-import yaml
+import os
 import shutil
-import glob
+
+import yaml
 from ultralytics import YOLO
 
-SM_CHANNEL_TRAINING = os.environ.get("SM_CHANNEL_TRAINING", "/opt/ml/input/data/training")
-SM_MODEL_DIR = os.environ.get("SM_MODEL_DIR", "/opt/ml/model")
+
+SM_CHANNEL_TRAINING = os.environ.get(
+    "SM_CHANNEL_TRAINING",
+    "/opt/ml/input/data/training",
+)
+
+SM_MODEL_DIR = os.environ.get(
+    "SM_MODEL_DIR",
+    "/opt/ml/model",
+)
+
 
 def load_and_validate_landmark_manifest(manifest_path):
-    with open(manifest_path, 'r') as f:
-        manifest = json.load(f)
+    with open(manifest_path, "r", encoding="utf-8") as file:
+        manifest = json.load(file)
 
-    if manifest.get('schemaVersion') != 2:
+    if manifest.get("schemaVersion") != 2:
         raise ValueError(
-            f"Unsupported schemaVersion: {manifest.get('schemaVersion')}. "
+            f"Unsupported schemaVersion: "
+            f"{manifest.get('schemaVersion')}. "
             "Only schemaVersion=2 is supported by this training script."
         )
 
-    landmarks = manifest.get('landmarks', {})
-    if not landmarks:
-        raise ValueError("The 'landmarks' dictionary is empty.")
+    landmarks = manifest.get("landmarks")
 
-    print(f"Validated landmark manifest: clusterId={manifest.get('clusterId')}, "
-          f"trainingRunId={manifest.get('trainingRunId')}, "
-          f"classCount={manifest.get('classCount')}")
+    if not isinstance(landmarks, dict) or not landmarks:
+        raise ValueError(
+            "The landmark manifest must contain a non-empty "
+            "'landmarks' dictionary."
+        )
+
+    try:
+        class_count = int(manifest["classCount"])
+    except (KeyError, TypeError, ValueError) as error:
+        raise ValueError(
+            "The manifest classCount must be an integer."
+        ) from error
+
+    expected_indexes = {
+        str(index)
+        for index in range(class_count)
+    }
+
+    actual_indexes = set(landmarks.keys())
+
+    if actual_indexes != expected_indexes:
+        missing_indexes = sorted(
+            expected_indexes - actual_indexes,
+            key=int,
+        )
+        extra_indexes = sorted(
+            actual_indexes - expected_indexes,
+            key=int,
+        )
+
+        raise ValueError(
+            "Landmark manifest class indexes are not contiguous. "
+            f"missing={missing_indexes}, extra={extra_indexes}"
+        )
+
+    print(
+        "Validated landmark manifest: "
+        f"clusterId={manifest.get('clusterId')}, "
+        f"trainingRunId={manifest.get('trainingRunId')}, "
+        f"classCount={class_count}"
+    )
+
+    return manifest
+
+
+def load_and_validate_data_yaml(data_yaml_path, expected_class_count):
+    with open(data_yaml_path, "r", encoding="utf-8") as file:
+        data_config = yaml.safe_load(file)
+
+    if not isinstance(data_config, dict):
+        raise ValueError(
+            "data.yaml must contain a YAML dictionary."
+        )
+
+    for required_field in ("train", "val", "names"):
+        if required_field not in data_config:
+            raise ValueError(
+                f"data.yaml is missing required field: "
+                f"{required_field}"
+            )
+
+    names = data_config["names"]
+
+    if isinstance(names, list):
+        yaml_class_count = len(names)
+
+    elif isinstance(names, dict):
+        normalized_indexes = {
+            int(index)
+            for index in names.keys()
+        }
+
+        expected_indexes = set(
+            range(len(names))
+        )
+
+        if normalized_indexes != expected_indexes:
+            raise ValueError(
+                "data.yaml class indexes are not contiguous. "
+                f"Received indexes: {sorted(normalized_indexes)}"
+            )
+
+        yaml_class_count = len(names)
+
+    else:
+        raise ValueError(
+            "data.yaml 'names' must be either a list or dictionary."
+        )
+
+    if "nc" in data_config:
+        try:
+            declared_class_count = int(data_config["nc"])
+        except (TypeError, ValueError) as error:
+            raise ValueError(
+                "data.yaml 'nc' must be an integer."
+            ) from error
+
+        if declared_class_count != yaml_class_count:
+            raise ValueError(
+                "data.yaml class-count mismatch: "
+                f"nc={declared_class_count}, "
+                f"names count={yaml_class_count}"
+            )
+
+    if yaml_class_count != expected_class_count:
+        raise ValueError(
+            "Class-count mismatch between data.yaml and "
+            "landmark-manifest.json: "
+            f"data.yaml={yaml_class_count}, "
+            f"manifest={expected_class_count}"
+        )
+
+    print(
+        "Validated data.yaml: "
+        f"classCount={yaml_class_count}, "
+        f"train={data_config['train']}, "
+        f"val={data_config['val']}"
+    )
+
+    return data_config
+
+
+def write_data_yaml(data_yaml_path, data_config):
+    with open(data_yaml_path, "w", encoding="utf-8") as file:
+        yaml.safe_dump(
+            data_config,
+            file,
+            sort_keys=False,
+            allow_unicode=True,
+        )
 
 
 def find_best_weights(run_dir, run_name):
-    # YOLO typically saves to `runs/detect/run_name/weights/best.pt`
-    target = os.path.join(run_dir, run_name, "weights", "best.pt")
-    if os.path.exists(target):
-        return target
-    
-    # Fallback to search if the directory structure is unexpected
+    expected_path = os.path.join(
+        run_dir,
+        run_name,
+        "weights",
+        "best.pt",
+    )
+
+    if os.path.isfile(expected_path):
+        return expected_path
+
+    # Fallback if Ultralytics changes or increments the run directory.
+    matches = []
+
     for root, _, files in os.walk(run_dir):
         if "best.pt" in files:
-            return os.path.join(root, "best.pt")
-    
-    return None
+            matches.append(
+                os.path.join(root, "best.pt")
+            )
 
-def copy_artifacts_to_model_dir(best_weights_path, manifest_path):
-    if not best_weights_path or not os.path.exists(best_weights_path):
-        raise FileNotFoundError(f"Best weights not found at {best_weights_path}")
-        
-    os.makedirs(SM_MODEL_DIR, exist_ok=True)
-    
-    # Copy weights
-    dest_weights = os.path.join(SM_MODEL_DIR, "model.pt")
-    shutil.copy(best_weights_path, dest_weights)
-    print(f"Copied weights to {dest_weights}")
+    if not matches:
+        return None
 
-    # Copy manifest
-    if os.path.exists(manifest_path):
-        dest_manifest = os.path.join(SM_MODEL_DIR, "landmark-manifest.json")
-        shutil.copy(manifest_path, dest_manifest)
-        print(f"Copied manifest to {dest_manifest}")
-    else:
-        print(f"WARNING: Manifest not found at {manifest_path}, skipping copy.")
+    if len(matches) > 1:
+        print(
+            "WARNING: Multiple best.pt files found. "
+            f"Using the newest of {len(matches)} candidates."
+        )
+
+        matches.sort(
+            key=os.path.getmtime,
+            reverse=True,
+        )
+
+    return matches[0]
+
+
+def copy_artifacts_to_model_dir(
+    best_weights_path,
+    manifest_path,
+    data_yaml_path,
+):
+    required_sources = {
+        "model weights": best_weights_path,
+        "landmark manifest": manifest_path,
+        "data YAML": data_yaml_path,
+    }
+
+    for description, source_path in required_sources.items():
+        if not source_path or not os.path.isfile(source_path):
+            raise FileNotFoundError(
+                f"Required {description} not found: "
+                f"{source_path}"
+            )
+
+    os.makedirs(
+        SM_MODEL_DIR,
+        exist_ok=True,
+    )
+
+    output_artifacts = {
+        best_weights_path: os.path.join(
+            SM_MODEL_DIR,
+            "model.pt",
+        ),
+        data_yaml_path: os.path.join(
+            SM_MODEL_DIR,
+            "data.yaml",
+        ),
+        manifest_path: os.path.join(
+            SM_MODEL_DIR,
+            "landmark-manifest.json",
+        ),
+    }
+
+    for source_path, destination_path in output_artifacts.items():
+        shutil.copy2(
+            source_path,
+            destination_path,
+        )
+
+        print(
+            f"Copied {source_path} "
+            f"to {destination_path}"
+        )
+
+    expected_outputs = [
+        os.path.join(SM_MODEL_DIR, "model.pt"),
+        os.path.join(SM_MODEL_DIR, "data.yaml"),
+        os.path.join(
+            SM_MODEL_DIR,
+            "landmark-manifest.json",
+        ),
+    ]
+
+    missing_outputs = [
+        path
+        for path in expected_outputs
+        if not os.path.isfile(path)
+    ]
+
+    if missing_outputs:
+        raise FileNotFoundError(
+            "Required SageMaker model output files are missing: "
+            + ", ".join(missing_outputs)
+        )
+
+    empty_outputs = [
+        path
+        for path in expected_outputs
+        if os.path.getsize(path) == 0
+    ]
+
+    if empty_outputs:
+        raise RuntimeError(
+            "One or more SageMaker model output files are empty: "
+            + ", ".join(empty_outputs)
+        )
+
+    print("\nFiles prepared for SageMaker model.tar.gz:")
+
+    for filename in sorted(os.listdir(SM_MODEL_DIR)):
+        path = os.path.join(
+            SM_MODEL_DIR,
+            filename,
+        )
+
+        if os.path.isfile(path):
+            print(
+                f"  {filename} "
+                f"({os.path.getsize(path)} bytes)"
+            )
 
 
 def main():
     print("🚀 Starting YOLO SageMaker Training...")
-    data_yaml = os.path.join(SM_CHANNEL_TRAINING, "data.yaml")
-    landmark_manifest = os.path.join(SM_CHANNEL_TRAINING, "landmark-manifest.json")
-    
-    if not os.path.exists(data_yaml):
-        raise FileNotFoundError(f"Missing data.yaml at {data_yaml}")
 
-    # Ensure schemaVersion=2 manifest is valid
-    if os.path.exists(landmark_manifest):
-        load_and_validate_landmark_manifest(landmark_manifest)
-    else:
-        print("WARNING: landmark-manifest.json is missing!")
+    data_yaml = os.path.join(
+        SM_CHANNEL_TRAINING,
+        "data.yaml",
+    )
 
-    train_dir = os.path.join(SM_CHANNEL_TRAINING, "images", "train")
-    val_dir = os.path.join(SM_CHANNEL_TRAINING, "images", "val")
-    
-    # --- FAILSAFE 1: Empty Cluster Check ---
-    if not os.path.exists(train_dir) and not os.path.exists(val_dir):
-        raise RuntimeError("CRITICAL: Both 'train' and 'val' dirs missing. No images packaged!")
+    landmark_manifest = os.path.join(
+        SM_CHANNEL_TRAINING,
+        "landmark-manifest.json",
+    )
 
-    # --- FAILSAFE 2: Train missing (Caused by Boosting hashing all copies to val) ---
-    if not os.path.exists(train_dir):
-        print("⚠️ WARNING: 'train' directory missing! Modifying data.yaml to use 'val' for training.")
-        try:
-            with open(data_yaml, 'r') as f:
-                yaml_content = yaml.safe_load(f)
-            yaml_content['train'] = yaml_content['val']
-            with open(data_yaml, 'w') as f:
-                yaml.dump(yaml_content, f)
-            print("Successfully updated data.yaml fallback for missing train dir.")
-        except Exception as e:
-            print(f"Failed to modify data.yaml: {e}")
+    if not os.path.isfile(data_yaml):
+        raise FileNotFoundError(
+            f"Missing data.yaml at {data_yaml}"
+        )
 
-    # --- FAILSAFE 3: Val missing (Caused by Boosting hashing all copies to train) ---
-    if not os.path.exists(val_dir):
-        print("⚠️ WARNING: 'val' directory missing! Modifying data.yaml to use 'train' for validation.")
-        try:
-            with open(data_yaml, 'r') as f:
-                yaml_content = yaml.safe_load(f)
-            yaml_content['val'] = yaml_content['train']
-            with open(data_yaml, 'w') as f:
-                yaml.dump(yaml_content, f)
-            print("Successfully updated data.yaml fallback for missing val dir.")
-        except Exception as e:
-            print(f"Failed to modify data.yaml: {e}")
+    if not os.path.isfile(landmark_manifest):
+        raise FileNotFoundError(
+            "Missing required landmark manifest at "
+            f"{landmark_manifest}"
+        )
 
-    # Load YOLO
+    manifest = load_and_validate_landmark_manifest(
+        landmark_manifest
+    )
+
+    manifest_class_count = int(
+        manifest["classCount"]
+    )
+
+    train_dir = os.path.join(
+        SM_CHANNEL_TRAINING,
+        "images",
+        "train",
+    )
+
+    val_dir = os.path.join(
+        SM_CHANNEL_TRAINING,
+        "images",
+        "val",
+    )
+
+    # Both missing means there is no usable image dataset.
+    if (
+        not os.path.isdir(train_dir)
+        and not os.path.isdir(val_dir)
+    ):
+        raise RuntimeError(
+            "CRITICAL: Both train and val image directories "
+            "are missing. No images were packaged."
+        )
+
+    with open(data_yaml, "r", encoding="utf-8") as file:
+        yaml_content = yaml.safe_load(file)
+
+    if not isinstance(yaml_content, dict):
+        raise ValueError(
+            "data.yaml must contain a YAML dictionary."
+        )
+
+    # If the train split is absent, use validation images for training.
+    if not os.path.isdir(train_dir):
+        print(
+            "⚠️ WARNING: train directory is missing. "
+            "Using the validation split for training."
+        )
+
+        if "val" not in yaml_content:
+            raise ValueError(
+                "Cannot replace the missing train split because "
+                "data.yaml does not contain 'val'."
+            )
+
+        yaml_content["train"] = yaml_content["val"]
+
+    # If the validation split is absent, use training images for validation.
+    if not os.path.isdir(val_dir):
+        print(
+            "⚠️ WARNING: val directory is missing. "
+            "Using the training split for validation."
+        )
+
+        if "train" not in yaml_content:
+            raise ValueError(
+                "Cannot replace the missing val split because "
+                "data.yaml does not contain 'train'."
+            )
+
+        yaml_content["val"] = yaml_content["train"]
+
+    # Save the exact final YAML that YOLO will receive.
+    write_data_yaml(
+        data_yaml,
+        yaml_content,
+    )
+
+    # Validate after any fallback modifications.
+    load_and_validate_data_yaml(
+        data_yaml,
+        expected_class_count=manifest_class_count,
+    )
+
     model = YOLO("yolo11n.pt")
-    custom_cfg = "/app/looksee_best_hyperparameters.yaml"
-    
-    yolo_project_dir = "/opt/ml/output/data/runs"
+
+    custom_cfg = (
+        "/app/looksee_best_hyperparameters.yaml"
+    )
+
+    yolo_project_dir = (
+        "/opt/ml/output/data/runs"
+    )
+
     run_name = "training_run"
 
-    # Set up our base training arguments
     train_args = {
         "data": data_yaml,
         "epochs": 50,
@@ -124,23 +420,46 @@ def main():
         "batch": 16,
         "device": 0,
         "project": yolo_project_dir,
-        "name": run_name
+        "name": run_name,
     }
 
-    # If the file exists, inject the golden recipe!
-    if os.path.exists(custom_cfg):
-        print(f"🎯 Found tuned hyperparameters! Injecting {custom_cfg} into training...")
+    if os.path.isfile(custom_cfg):
+        print(
+            "🎯 Found tuned hyperparameters. "
+            f"Injecting {custom_cfg} into training..."
+        )
+
         train_args["cfg"] = custom_cfg
+
     else:
-        print("⚠️ No custom hyperparameters found. Falling back to standard YOLO defaults.")
+        print(
+            "⚠️ No custom hyperparameters found. "
+            "Using standard YOLO defaults."
+        )
 
-    # Notice the val flag is completely removed so YOLO relies on our edited data.yaml
-    model.train(**train_args)
+    model.train(
+        **train_args
+    )
 
-    best_weights = find_best_weights(yolo_project_dir, run_name)
-    print(f"best_weights={best_weights}")
+    best_weights = find_best_weights(
+        yolo_project_dir,
+        run_name,
+    )
 
-    copy_artifacts_to_model_dir(best_weights, landmark_manifest)
+    print(
+        f"best_weights={best_weights}"
+    )
+
+    copy_artifacts_to_model_dir(
+        best_weights_path=best_weights,
+        manifest_path=landmark_manifest,
+        data_yaml_path=data_yaml,
+    )
+
+    print(
+        "✅ Training and model artifact packaging completed."
+    )
+
 
 if __name__ == "__main__":
     main()
