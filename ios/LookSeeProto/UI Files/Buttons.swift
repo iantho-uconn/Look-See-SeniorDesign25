@@ -25,6 +25,8 @@ struct Buttons: View {
     
     @State private var showSideMenu = false
     
+    @State private var isReticlePulsing = false // Drives the AR Scanning animation
+    
     var tabCount: Int {
         switch authState.tier {
         case .guest, .authenticated: return 2
@@ -47,7 +49,7 @@ struct Buttons: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Color(red: 0.06, green: 0.06, blue: 0.10)
+                Color(uiColor: .systemBackground)
                     .ignoresSafeArea()
                 
                 TabView(selection: $currentTab) {
@@ -77,7 +79,7 @@ struct Buttons: View {
                 .scrollDismissesKeyboard(.immediately)
                 .ignoresSafeArea()
                 .toolbar(.hidden, for: .tabBar)
-                .animation(.easeInOut(duration: 0.2), value: currentTab)
+                .animation(.spring(response: 0.35, dampingFraction: 0.8), value: currentTab)
                 .onChange(of: currentTab) { _, _ in revealChromeThenFade() }
                 
                 .onChange(of: isDetecting) { _, detecting in
@@ -103,7 +105,7 @@ struct Buttons: View {
                 if showSignUpPrompt { signUpPromptOverlay }
                 
                 if showSideMenu {
-                    Color.black.opacity(0.6)
+                    Color.black.opacity(0.4)
                         .ignoresSafeArea()
                         .onTapGesture {
                             withAnimation(.easeOut(duration: 0.25)) { showSideMenu = false }
@@ -117,7 +119,7 @@ struct Buttons: View {
                         Settings()
                             .environmentObject(vm)
                             .frame(width: proxy.size.width * 0.75)
-                            .background(Color(red: 0.11, green: 0.11, blue: 0.16).ignoresSafeArea())
+                            .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
                             .offset(x: showSideMenu ? 0 : proxy.size.width)
                     }
                 }
@@ -136,8 +138,10 @@ struct Buttons: View {
                     guard currentTab != mapTabIndex else { return }
                     if abs(value.translation.width) > abs(value.translation.height) {
                         if value.translation.width > 40 && currentTab > 0 {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
                             withAnimation(.interactiveSpring(response: 0.35, dampingFraction: 0.85, blendDuration: 0.2)) { currentTab -= 1 }
                         } else if value.translation.width < -40 && currentTab < (tabCount - 1) {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
                             withAnimation(.interactiveSpring(response: 0.35, dampingFraction: 0.85, blendDuration: 0.2)) { currentTab += 1 }
                         }
                     }
@@ -150,13 +154,15 @@ struct Buttons: View {
             }
             .sheet(isPresented: $showTutorial) {
                 tutorialContent
-                    .presentationDetents([.fraction(0.35)])
+                    .presentationDetents([.fraction(0.40)])
                     .presentationDragIndicator(.visible)
+                    .presentationBackground(.ultraThinMaterial)
             }
             .toolbar(.hidden, for: .navigationBar)
         }
         .onAppear {
             scheduleChromeFadeIfNeeded()
+            viewfinderTimingReset()
             UITabBar.appearance().isHidden = true
         }
     }
@@ -165,12 +171,18 @@ struct Buttons: View {
         HStack {
             Color.white.opacity(0.001).frame(width: 40).frame(maxHeight: .infinity)
                 .highPriorityGesture(DragGesture(minimumDistance: 15).onEnded { value in
-                    if value.translation.width > 30 && currentTab > 0 { withAnimation(.easeInOut(duration: 0.2)) { currentTab -= 1 } }
+                    if value.translation.width > 30 && currentTab > 0 {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { currentTab -= 1 }
+                    }
                 })
             Spacer()
             Color.white.opacity(0.001).frame(width: 40).frame(maxHeight: .infinity)
                 .highPriorityGesture(DragGesture(minimumDistance: 15).onEnded { value in
-                    if value.translation.width < -30 && currentTab < (tabCount - 1) { withAnimation(.easeInOut(duration: 0.2)) { currentTab += 1 } }
+                    if value.translation.width < -30 && currentTab < (tabCount - 1) {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { currentTab += 1 }
+                    }
                 })
         }
         .ignoresSafeArea()
@@ -179,16 +191,18 @@ struct Buttons: View {
     private var topBar: some View {
         HStack(spacing: 0) {
             Button {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 showTutorial = true
             } label: {
                 NavButton(icon: "info.circle", label: "Info")
             }
             
             Spacer()
+            
             Text(topBarTitle)
-                .font(.system(size: 22, weight: .bold, design: .rounded))
+                .font(.system(size: 24, weight: .bold, design: .rounded))
                 .foregroundStyle(.white)
-                .shadow(color: .black.opacity(0.5), radius: 4)
+                .shadow(color: .black.opacity(0.8), radius: 4, x: 0, y: 2)
                 .contentShape(Rectangle())
                 .highPriorityGesture(
                     TapGesture().onEnded {
@@ -205,6 +219,7 @@ struct Buttons: View {
             Spacer()
             
             Button {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 withAnimation(.easeOut(duration: 0.25)) {
                     showSideMenu = true
                 }
@@ -227,41 +242,71 @@ struct Buttons: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .background(Capsule().fill(.ultraThinMaterial).environment(\.colorScheme, .dark))
-        .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 0.5))
+        .background(Capsule().fill(.ultraThinMaterial))
+        .overlay(Capsule().stroke(Color(uiColor: .separator).opacity(0.5), lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.15), radius: 20, x: 0, y: 10)
         .padding(.horizontal, 24)
         .padding(.bottom, 12)
     }
     
     private var tutorialContent: some View {
         ZStack {
-            Color(red: 0.11, green: 0.11, blue: 0.16).ignoresSafeArea()
+            Color(uiColor: .systemBackground).ignoresSafeArea()
             
-            VStack(spacing: 16) {
+            VStack(spacing: 24) {
                 Group {
                     if currentTab == 0 {
-                        Image(systemName: "viewfinder").font(.system(size: 40))
-                        Text("How to Scan").font(.title2.weight(.bold))
-                        Text("Point your camera at a landmark. Keep the object well-lit and steady. LookSee will identify it automatically.")
+                        Image(systemName: "viewfinder")
+                            .font(.system(size: 70, weight: .ultraLight))
+                            .foregroundStyle(Color(red: 0.22, green: 0.49, blue: 1.00))
+                            .scaleEffect(isReticlePulsing ? 1.15 : 0.95)
+                            .opacity(isReticlePulsing ? 1.0 : 0.4)
+                        
+                        VStack(spacing: 8) {
+                            Text("How to Scan")
+                                .font(.system(size: 24, weight: .bold, design: .rounded))
+                                .foregroundStyle(.primary)
+                            Text("Point your camera at a landmark. Keep the object well-lit and steady. LookSee will identify it automatically.")
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundStyle(.secondary)
+                        }
                     } else if currentTab == mapTabIndex {
-                        Image(systemName: "map").font(.system(size: 40))
-                        Text("Explore the Map").font(.title2.weight(.bold))
-                        Text("Find valid landmarks around you to scan. Use the search bar or filters to narrow down locations.")
+                        Image(systemName: "map.fill")
+                            .font(.system(size: 60))
+                            .foregroundStyle(Color(red: 0.22, green: 0.49, blue: 1.00))
+                            .shadow(color: Color(red: 0.22, green: 0.49, blue: 1.00).opacity(0.5), radius: 10, x: 0, y: 5)
+                        
+                        VStack(spacing: 8) {
+                            Text("Explore the Map")
+                                .font(.system(size: 24, weight: .bold, design: .rounded))
+                                .foregroundStyle(.primary)
+                            Text("Find valid landmarks around you to scan. Use the search bar or filters to narrow down locations.")
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundStyle(.secondary)
+                        }
                     } else {
-                        Image(systemName: "video.fill").font(.system(size: 40))
-                        Text("Record Landmark").font(.title2.weight(.bold))
-                        Text("Record a short video of a nearby landmark to help improve our recognition models.")
+                        Image(systemName: "video.fill")
+                            .font(.system(size: 60))
+                            .foregroundStyle(Color(red: 0.22, green: 0.49, blue: 1.00))
+                            .shadow(color: Color(red: 0.22, green: 0.49, blue: 1.00).opacity(0.5), radius: 10, x: 0, y: 5)
+                        
+                        VStack(spacing: 8) {
+                            Text("Record Landmark")
+                                .font(.system(size: 24, weight: .bold, design: .rounded))
+                                .foregroundStyle(.primary)
+                            Text("Record a short video of a nearby landmark to help improve our recognition models.")
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
-                .foregroundStyle(Color(red: 0.22, green: 0.49, blue: 1.00))
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
                 
                 Spacer()
             }
-            .padding(.top, 24)
+            .padding(.top, 32)
         }
-        .environment(\.colorScheme, .dark)
     }
     
     private func revealChromeThenFade() {
@@ -283,40 +328,69 @@ struct Buttons: View {
         }
     }
     
+    private func viewfinderTimingReset() {
+        withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) {
+            isReticlePulsing = true
+        }
+    }
+    
     var signUpPromptOverlay: some View {
         ZStack {
-            Color.black.opacity(0.6).ignoresSafeArea()
+            Color.black.opacity(0.4).ignoresSafeArea()
                 .onTapGesture {
                     showSignUpPrompt = false
                     withAnimation { currentTab = 0 }
                 }
-            VStack(spacing: 20) {
+            VStack(spacing: 24) {
                 ZStack {
-                    Circle().fill(Color(red: 0.22, green: 0.49, blue: 1.00).opacity(0.12)).frame(width: 70, height: 70)
-                    Image(systemName: "arrow.up.circle").font(.system(size: 32)).foregroundStyle(Color(red: 0.22, green: 0.49, blue: 1.00))
+                    Circle().fill(Color(red: 0.22, green: 0.49, blue: 1.00).opacity(0.15)).frame(width: 70, height: 70)
+                    Image(systemName: "arrow.up.circle.fill").font(.system(size: 32)).foregroundStyle(Color(red: 0.22, green: 0.49, blue: 1.00))
                 }
                 VStack(spacing: 8) {
-                    Text("Sign up to upload").font(.system(size: 20, weight: .bold, design: .rounded)).foregroundStyle(.white)
-                    Text("Create an account to start contributing landmarks and help improve recognition.").font(.subheadline).foregroundStyle(Color.white.opacity(0.5)).multilineTextAlignment(.center).padding(.horizontal, 8)
+                    Text("Sign up to upload")
+                        .font(.system(size: 22, weight: .bold, design: .rounded))
+                        .foregroundStyle(.primary)
+                    Text("Create an account to start contributing landmarks and help improve recognition.")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 8)
                 }
-                VStack(spacing: 10) {
+                VStack(spacing: 12) {
                     Button {
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                         showSignUpPrompt = false; showSignUp = true
                     } label: {
                         HStack(spacing: 8) {
-                            Text("Create Account").font(.system(size: 16, weight: .semibold))
-                            Image(systemName: "arrow.right").font(.system(size: 14, weight: .semibold))
+                            Text("Create Account").font(.system(size: 17, weight: .bold, design: .rounded))
+                            Image(systemName: "arrow.right").font(.system(size: 15, weight: .bold))
                         }
-                        .foregroundStyle(.white).frame(maxWidth: .infinity).padding(.vertical, 14).background(Color(red: 0.22, green: 0.49, blue: 1.00)).cornerRadius(14)
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                        .background(Color(red: 0.22, green: 0.49, blue: 1.00))
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                     }
                     Button {
-                        showSignUpPrompt = false; withAnimation(.easeInOut(duration: 0.25)) { currentTab = 0 }
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        showSignUpPrompt = false
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { currentTab = 0 }
                     } label: {
-                        Text("Not now").font(.system(size: 15)).foregroundStyle(Color.white.opacity(0.4)).frame(maxWidth: .infinity).padding(.vertical, 14).background(Color.white.opacity(0.07)).cornerRadius(14)
+                        Text("Not now")
+                            .font(.system(size: 17, weight: .semibold, design: .rounded))
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
+                            .background(Color(uiColor: .secondarySystemFill))
+                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                     }
                 }
             }
-            .padding(24).background(Color(red: 0.11, green: 0.11, blue: 0.16)).cornerRadius(24).overlay(RoundedRectangle(cornerRadius: 24).stroke(Color.white.opacity(0.07), lineWidth: 0.5)).padding(.horizontal, 28)
+            .padding(30)
+            .background(Color(uiColor: .systemBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 32, style: .continuous).stroke(Color(uiColor: .separator).opacity(0.5), lineWidth: 0.5))
+            .padding(.horizontal, 24)
         }
     }
     
@@ -324,18 +398,19 @@ struct Buttons: View {
     func tabButton(title: String, icon: String, tab: Int, locked: Bool) -> some View {
         VStack(spacing: 4) {
             ZStack(alignment: .topTrailing) {
-                Image(systemName: icon).font(.system(size: 20, weight: .medium))
-                if locked { Image(systemName: "lock.fill").font(.system(size: 8)).foregroundStyle(Color.white.opacity(0.4)).offset(x: 6, y: -4) }
+                Image(systemName: icon).font(.system(size: 22, weight: .medium))
+                if locked { Image(systemName: "lock.fill").font(.system(size: 10)).foregroundStyle(.secondary).offset(x: 8, y: -4) }
             }
-            Text(title).font(.system(size: 10, weight: .medium))
+            Text(title).font(.system(size: 11, weight: .bold, design: .rounded))
         }
-        .foregroundStyle(locked ? Color.white.opacity(0.25) : currentTab == tab ? Color(red: 0.22, green: 0.49, blue: 1.00) : Color.white.opacity(0.6))
-        .frame(maxWidth: .infinity).padding(.vertical, 8)
-        .background(Group { if currentTab == tab && !locked { RoundedRectangle(cornerRadius: 10).fill(Color(red: 0.22, green: 0.49, blue: 1.00).opacity(0.18)) } })
+        .foregroundStyle(locked ? Color(uiColor: .quaternaryLabel) : currentTab == tab ? Color(red: 0.22, green: 0.49, blue: 1.00) : Color.secondary)
+        .frame(maxWidth: .infinity).padding(.vertical, 10)
+        .background(Group { if currentTab == tab && !locked { RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(red: 0.22, green: 0.49, blue: 1.00).opacity(0.15)) } })
         .contentShape(Rectangle())
         .highPriorityGesture(TapGesture().onEnded {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
             if locked { showSignUpPrompt = true }
-            else { withAnimation(.easeInOut(duration: 0.25)) { currentTab = tab } }
+            else { withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { currentTab = tab } }
         })
     }
     
@@ -344,8 +419,14 @@ struct Buttons: View {
         let label: String
         var body: some View {
             VStack(spacing: 4) {
-                Image(systemName: icon).font(.system(size: 24, weight: .medium)).foregroundStyle(.white).shadow(color: .black.opacity(0.5), radius: 4)
-                Text(label).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.white.opacity(0.5))
+                Image(systemName: icon)
+                    .font(.system(size: 24, weight: .medium))
+                    .foregroundStyle(.white)
+                    .shadow(color: .black.opacity(0.8), radius: 4, x: 0, y: 2)
+                Text(label)
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .shadow(color: .black.opacity(0.8), radius: 4, x: 0, y: 2)
             }
             .frame(width: 56, height: 48).contentShape(Rectangle())
         }

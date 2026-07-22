@@ -15,99 +15,105 @@ struct BusinessLandmarksView: View {
     @ObservedObject private var networkMonitor = NetworkMonitor.shared
     
     @State private var draftToEdit: ArchivedMedia?
+    private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00)
 
     var body: some View {
-        List {
-            Section {
+        ScrollView {
+            VStack(spacing: 24) {
+                
+                // MARK: - Pending Uploads
                 if !offlineManager.archivedItems.isEmpty {
-                    syncBannerRow
-                    
-                    ForEach(offlineManager.archivedItems) { item in
-                        Button {
-                            if uploadManager.currentlyUploadingId != item.id {
-                                draftToEdit = item
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Pending Uploads")
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .foregroundStyle(.secondary)
+                            .textCase(.uppercase)
+                            .padding(.horizontal, 20)
+                        
+                        VStack(spacing: 0) {
+                            syncBannerRow
+                            Divider()
+                            
+                            ForEach(offlineManager.archivedItems) { item in
+                                pendingRow(for: item)
+                                if item.id != offlineManager.archivedItems.last?.id {
+                                    Divider().padding(.leading, 64)
+                                }
                             }
-                        } label: {
-                            pendingRow(for: item)
-                                .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
-                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                            Button(role: .destructive) {
-                                offlineManager.deleteArchive(media: item)
-                            } label: {
-                                Label("Delete", systemImage: "trash")
-                            }
-                        }
+                        .background(Color(uiColor: .secondarySystemGroupedBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2)
+                        .padding(.horizontal)
                     }
                 } else if !viewModel.landmarks.isEmpty {
-                    emptyView
+                    emptyQueueCard
                 }
-            } header: {
-                Text("Pending Uploads")
-                    .font(.title3.weight(.bold))
-                    .foregroundColor(.primary)
-                    .textCase(nil)
-                    .padding(.leading, -16)
-            }
 
-            Section {
-                if viewModel.isLoading && viewModel.landmarks.isEmpty {
-                    loadingView
-                } else if viewModel.landmarks.isEmpty && offlineManager.archivedItems.isEmpty {
-                    emptyView
-                } else if viewModel.landmarks.isEmpty {
-                    Text("No active business landmarks.")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                } else {
-                    ForEach(viewModel.landmarks) { landmark in
-                        NavigationLink {
-                            BusinessLandmarkDetailView(
-                                landmark: landmark,
-                                onLandmarkUpdated: { updatedLandmark in
-                                    viewModel.replaceLandmark(updatedLandmark)
-                                },
-                                onLandmarkDeleted: { landmarkId in
-                                    viewModel.removeLandmark(landmarkId: landmarkId)
-                                }
-                            )
-                        } label: {
-                            BusinessLandmarkRow(landmark: landmark)
+                // MARK: - Active Landmarks
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Text("Active Landmarks")
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .foregroundStyle(.secondary)
+                            .textCase(.uppercase)
+                        if !viewModel.landmarks.isEmpty {
+                            Text("(\(viewModel.landmarks.count))")
+                                .font(.system(size: 14, weight: .bold, design: .rounded))
+                                .foregroundStyle(.secondary)
                         }
                     }
-                }
-            } header: {
-                HStack {
-                    Text("Active Landmarks")
-                        if !viewModel.landmarks.isEmpty {
-                        Text("(\(viewModel.landmarks.count))")
+                    .padding(.horizontal, 20)
+                    
+                    if viewModel.isLoading && viewModel.landmarks.isEmpty {
+                        loadingView
+                    } else if viewModel.landmarks.isEmpty && offlineManager.archivedItems.isEmpty {
+                        emptyQueueCard
+                    } else if viewModel.landmarks.isEmpty {
+                        Text("No active business landmarks.")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal, 20)
+                    } else {
+                        VStack(spacing: 12) {
+                            ForEach(viewModel.landmarks) { landmark in
+                                NavigationLink {
+                                    BusinessLandmarkDetailView(
+                                        landmark: landmark,
+                                        onLandmarkUpdated: { updatedLandmark in
+                                            viewModel.replaceLandmark(updatedLandmark)
+                                        },
+                                        onLandmarkDeleted: { landmarkId in
+                                            viewModel.removeLandmark(landmarkId: landmarkId)
+                                        }
+                                    )
+                                } label: {
+                                    BusinessLandmarkRow(landmark: landmark)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.horizontal)
                     }
                 }
-                .font(.title3.weight(.bold))
-                .foregroundColor(.primary)
-                .textCase(nil)
-                .padding(.leading, -16)
+                Spacer(minLength: 40)
             }
+            .padding(.top, 16)
         }
-        .listStyle(.insetGrouped)
+        .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
         .animation(.default, value: offlineManager.archivedItems.isEmpty)
-        .refreshable {
-            await viewModel.refresh()
-        }
+        .refreshable { await viewModel.refresh() }
         .navigationTitle("My Landmarks")
         .navigationBarTitleDisplayMode(.inline)
-        .task {
-            if viewModel.landmarks.isEmpty {
-                await viewModel.loadLandmarks()
-            }
-        }
+        .task { if viewModel.landmarks.isEmpty { await viewModel.loadLandmarks() } }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
                     Task { await viewModel.refresh() }
                 } label: {
                     Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 16, weight: .bold))
                 }
                 .disabled(viewModel.isLoading)
             }
@@ -122,153 +128,179 @@ struct BusinessLandmarksView: View {
         let isUploading = uploadManager.currentlyUploadingId != nil
         let isOffline = !networkMonitor.isConnected
         
-        HStack(spacing: 12) {
+        HStack(spacing: 16) {
             Image(systemName: isUploading ? "arrow.up.circle.fill" : (isOffline ? "icloud.slash.fill" : "pause.circle.fill"))
-                .font(.title2)
-                .foregroundColor(isUploading ? .blue : .gray)
+                .font(.system(size: 24))
+                .foregroundColor(isUploading ? primaryColor : .gray)
             
             VStack(alignment: .leading, spacing: 2) {
                 Text(isUploading ? "Syncing to Cloud..." : (isOffline ? "Waiting for Connection" : "Queue Processing..."))
-                    .font(.subheadline.weight(.semibold))
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    .foregroundStyle(.primary)
                 Text("\(offlineManager.archivedItems.count) items waiting to upload")
-                    .font(.caption)
+                    .font(.system(size: 13, weight: .medium))
                     .foregroundColor(.secondary)
             }
             
             Spacer()
             
-            if isUploading {
-                ProgressView()
-            }
+            if isUploading { ProgressView().tint(primaryColor) }
         }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 4)
+        .padding(20)
+        .background(isUploading ? primaryColor.opacity(0.05) : Color.clear)
     }
 
     @ViewBuilder
     private func pendingRow(for item: ArchivedMedia) -> some View {
         let isUploading = uploadManager.currentlyUploadingId == item.id
         
-        HStack(spacing: 16) {
-            ZStack {
-                Color.gray.opacity(0.2)
-                Image(systemName: item.isVideo ? "video.fill" : "photo.fill")
-                    .foregroundColor(.secondary)
-            }
-            .frame(width: 48, height: 48)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+        Button {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            if !isUploading { draftToEdit = item }
+        } label: {
+            HStack(spacing: 16) {
+                ZStack {
+                    Color(uiColor: .tertiarySystemFill)
+                    Image(systemName: item.isVideo ? "video.fill" : "photo.fill")
+                        .font(.system(size: 18))
+                        .foregroundColor(.primary)
+                }
+                .frame(width: 48, height: 48)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
-            VStack(alignment: .leading, spacing: 6) {
-                Text(item.title)
-                    .font(.headline)
-                    .foregroundColor(.primary)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(item.title)
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .foregroundColor(.primary)
 
-                if isUploading {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Uploading...")
-                            .font(.caption)
-                            .foregroundColor(Color.blue)
-                        ProgressView(value: uploadManager.currentUploadProgress)
-                            .progressViewStyle(.linear)
-                            .tint(Color.blue)
+                    if isUploading {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Uploading...")
+                                .font(.system(size: 12, weight: .bold, design: .rounded))
+                                .foregroundColor(primaryColor)
+                            ProgressView(value: uploadManager.currentUploadProgress)
+                                .progressViewStyle(.linear)
+                                .tint(primaryColor)
+                        }
+                    } else {
+                        HStack(spacing: 4) {
+                            Image(systemName: "clock.fill").font(.system(size: 10))
+                            Text("Queued").font(.system(size: 12, weight: .bold, design: .rounded))
+                        }
+                        .foregroundColor(.orange)
                     }
-                } else {
-                    HStack(spacing: 4) {
-                        Image(systemName: "clock.fill")
-                            .font(.system(size: 10))
-                        Text("Queued")
-                            .font(.caption)
+                }
+                
+                Spacer()
+                
+                if !isUploading {
+                    Button {
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        offlineManager.deleteArchive(media: item)
+                    } label: {
+                        Image(systemName: "trash.fill")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundStyle(.red)
+                            .frame(width: 36, height: 36)
+                            .background(Color.red.opacity(0.1))
+                            .clipShape(Circle())
                     }
-                    .foregroundColor(.orange)
                 }
             }
-            
-            Spacer()
-            
-            if !isUploading {
-                Image(systemName: "chevron.right")
-                    .font(.caption)
-                    .foregroundColor(.gray.opacity(0.5))
-            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
         }
-        .padding(.vertical, 4)
     }
 
-    private var emptyView: some View {
+    private var emptyQueueCard: some View {
         VStack(spacing: 16) {
             ZStack {
-                Circle().fill(Color.gray.opacity(0.1)).frame(width: 80, height: 80)
-                Image(systemName: "checkmark.icloud.fill").font(.system(size: 40)).foregroundColor(.green)
+                Circle().fill(Color.green.opacity(0.1)).frame(width: 70, height: 70)
+                Image(systemName: "checkmark.icloud.fill").font(.system(size: 32)).foregroundColor(.green)
             }
-            Text("All Caught Up!")
-                .font(.title2.bold())
-            Text("There is no media waiting in the queue.\nEverything is securely synced to LookSee.")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
+            VStack(spacing: 4) {
+                Text("All Caught Up!")
+                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                Text("There is no media waiting in the queue.\nEverything is securely synced to LookSee.")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+            }
         }
-        .frame(maxWidth: .infinity, minHeight: 220, alignment: .center)
-        .padding(.vertical, 40)
-        .listRowBackground(Color.clear)
-        .listRowSeparator(.hidden)
-        .transition(.opacity)
+        .padding(30)
+        .frame(maxWidth: .infinity)
+        .background(Color(uiColor: .secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .padding(.horizontal)
     }
 
     private var loadingView: some View {
         VStack(spacing: 14) {
-            ProgressView()
-                .frame(maxWidth: .infinity, alignment: .center)
-            
+            ProgressView().tint(primaryColor)
             Text("Loading your landmarks...")
-                .font(.subheadline)
+                .font(.system(size: 14, weight: .medium))
                 .foregroundColor(.secondary)
-                .frame(maxWidth: .infinity, alignment: .center)
         }
-        .padding(.vertical, 20)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 40)
     }
 
     private struct BusinessLandmarkRow: View {
         let landmark: BusinessLandmark
 
         var body: some View {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top) {
                     Text(landmark.label.isEmpty ? "Untitled Landmark" : landmark.label)
-                        .font(.headline)
+                        .font(.system(size: 18, weight: .bold, design: .rounded))
                         .foregroundColor(.primary)
 
                     Spacer()
 
+                    // Sleek Status Pill
                     Text(landmark.displayStatus)
-                        .font(.caption.weight(.semibold))
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .textCase(.uppercase)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(landmark.isActive == false ? Color.gray.opacity(0.15) : Color.green.opacity(0.15))
                         .foregroundColor(landmark.isActive == false ? .secondary : .green)
+                        .clipShape(Capsule())
                 }
 
                 Text(landmark.displayDescription)
-                    .font(.subheadline)
+                    .font(.system(size: 14, weight: .regular))
                     .foregroundColor(.secondary)
                     .lineLimit(2)
 
-                HStack(spacing: 8) {
-                    Label(
-                        landmark.displayPromotionStatus,
-                        systemImage: landmark.promotionEnabled == true ? "tag.fill" : "tag"
-                    )
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                HStack(spacing: 12) {
+                    if landmark.promotionEnabled == true {
+                        HStack(spacing: 4) {
+                            Image(systemName: "tag.fill")
+                            Text("Promotions On")
+                        }
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.orange.opacity(0.15))
+                        .foregroundStyle(.orange)
+                        .clipShape(Capsule())
+                    }
 
                     if let latitude = landmark.latitude, let longitude = landmark.longitude {
-                        Text("·")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-
-                        Text(String(format: "%.5f, %.5f", latitude, longitude))
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                        HStack(spacing: 4) {
+                            Image(systemName: "location.fill")
+                            Text(String(format: "%.4f, %.4f", latitude, longitude))
+                        }
+                        .font(.system(size: 12, weight: .bold, design: .monospaced))
+                        .foregroundStyle(.tertiary)
                     }
                 }
             }
-            .padding(.vertical, 4)
+            .padding(20)
+            .background(Color(uiColor: .secondarySystemGroupedBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2)
         }
     }
 }

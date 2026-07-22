@@ -46,7 +46,7 @@ struct Tier2LandmarkRecord: View {
     @State private var showVideoDurationAlert = false
     @State private var videoDurationAlertMessage = ""
 
-    private let primaryColor = Color(red: 0.11, green: 0.22, blue: 0.55)
+    private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00)
 
     private var hasMedia: Bool { pickedVideoURL != nil }
     private var hasUsableLocation: Bool {
@@ -60,28 +60,40 @@ struct Tier2LandmarkRecord: View {
 
     var body: some View {
         ZStack {
+            Color(uiColor: .systemGroupedBackground).ignoresSafeArea()
+            
             ScrollView {
-                VStack(spacing: 18) {
+                VStack(spacing: 24) {
                     if archivedMedia == nil {
                         instructionCard
                         captureButton
                     }
                     if let url = pickedVideoURL {
-                        Tier2SafeVideoPlayer(url: url)
+                        UploadFormVideoPlayer(url: url)
                             .equatable()
                             .id(url.absoluteString)
-                            .frame(height: 220)
-                            .clipShape(RoundedRectangle(cornerRadius: 15))
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 240)
+                            .clipped()
+                            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                            .shadow(color: .black.opacity(0.1), radius: 10, x: 0, y: 4)
                             .padding(.horizontal)
                             .ignoresSafeArea(.keyboard)
                     }
-                    Text(statusText).font(.footnote).foregroundStyle(.secondary).padding(.horizontal)
+                    
+                    if !statusText.isEmpty {
+                        Text(statusText)
+                            .font(.system(size: 13, weight: .semibold, design: .rounded))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal)
+                    }
+                    
                     locationSection
                     nearbyLandmarksSection
                     if selectedLandmark != nil { uploadDetailsSection }
-                    Spacer(minLength: 30)
+                    Spacer(minLength: 40)
                 }
-                .padding(.top, 10)
+                .padding(.top, 16)
             }
             .defaultScrollAnchor(.top)
             .scrollDismissesKeyboard(.immediately)
@@ -116,133 +128,282 @@ struct Tier2LandmarkRecord: View {
         } message: { Text("This will remove the media and clear the form.") }
         .alert("Connection Offline", isPresented: $showAutoQueueAlert) {
             Button("OK", role: .cancel) { }
-        } message: { Text("You currently have no internet connection. This media has been securely added to your Upload Queue in your business management tab and will automatically sync when service returns!") }
+        } message: { Text("You currently have no internet connection. This media has been securely added to your Upload Queue and will automatically sync when service returns!") }
     }
 
     var archivePromptOverlay: some View {
         ZStack {
             Color.black.opacity(0.6).ignoresSafeArea()
-            VStack(spacing: 20) {
+            VStack(spacing: 24) {
                 ZStack {
-                    Circle().fill(primaryColor.opacity(0.12)).frame(width: 70, height: 70)
+                    Circle().fill(primaryColor.opacity(0.15)).frame(width: 70, height: 70)
                     Image(systemName: "folder.badge.plus").font(.system(size: 32)).foregroundStyle(primaryColor)
                 }
                 
                 VStack(spacing: 8) {
                     Text("Media Captured")
-                        .font(.system(size: 20, weight: .bold, design: .rounded))
+                        .font(.system(size: 22, weight: .bold, design: .rounded))
                         .foregroundStyle(.white)
-                    Text("What would you like to do with this media? You can upload it now or save it to your archive.")
-                        .font(.subheadline)
-                        .foregroundStyle(Color.white.opacity(0.5))
+                    Text("What would you like to do with this media? You can upload it now or save it to your offline archive.")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(Color.white.opacity(0.6))
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 8)
                 }
                 
-                VStack(spacing: 10) {
+                VStack(spacing: 12) {
                     Button {
-                        withAnimation(.easeInOut(duration: 0.2)) { showArchivePrompt = false }
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        withAnimation(.spring()) { showArchivePrompt = false }
                         applyPendingMedia()
                     } label: {
                         Text("Upload Now")
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(.system(size: 17, weight: .bold, design: .rounded))
                             .foregroundStyle(.white)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
-                            .background(Color(red: 0.22, green: 0.49, blue: 1.00))
-                            .cornerRadius(14)
+                            .padding(.vertical, 16)
+                            .background(primaryColor)
+                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                     }
                     
                     Button {
-                        withAnimation(.easeInOut(duration: 0.2)) { showArchivePrompt = false }
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        withAnimation(.spring()) { showArchivePrompt = false }
                         saveToArchiveFromPrompt()
                     } label: {
                         Text("Save to Offline Archive")
-                            .font(.system(size: 15))
+                            .font(.system(size: 17, weight: .semibold, design: .rounded))
                             .foregroundStyle(.white)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
+                            .padding(.vertical, 16)
                             .background(Color.white.opacity(0.15))
-                            .cornerRadius(14)
+                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                     }
                     
                     Button {
-                        withAnimation(.easeInOut(duration: 0.2)) { showArchivePrompt = false }
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        withAnimation(.spring()) { showArchivePrompt = false }
                         discardPendingMedia()
                     } label: {
                         Text("Discard")
-                            .font(.system(size: 15))
+                            .font(.system(size: 17, weight: .semibold, design: .rounded))
                             .foregroundStyle(.red)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
+                            .padding(.vertical, 16)
                             .background(Color.red.opacity(0.15))
-                            .cornerRadius(14)
+                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                     }
                 }
             }
-            .padding(24)
+            .padding(30)
             .background(Color(red: 0.11, green: 0.11, blue: 0.16))
-            .cornerRadius(24)
-            .overlay(RoundedRectangle(cornerRadius: 24).stroke(Color.white.opacity(0.07), lineWidth: 0.5))
-            .padding(.horizontal, 28)
+            .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 32, style: .continuous).stroke(Color.white.opacity(0.1), lineWidth: 0.5))
+            .padding(.horizontal, 24)
         }
     }
 
     private var instructionCard: some View {
-        RoundedRectangle(cornerRadius: 25).stroke(Color(red: 0.75, green: 0.85, blue: 1.00)).fill(Color(red: 0.94, green: 0.96, blue: 1.00)).frame(height: 140)
-            .overlay { Text("Record one short video of a nearby landmark. Choose one of the valid landmarks returned for your location, then upload media to help improve recognition.").padding().multilineTextAlignment(.center).foregroundStyle(primaryColor) }.padding(.horizontal)
+        HStack(alignment: .top, spacing: 16) {
+            Image(systemName: "video.badge.plus")
+                .font(.system(size: 24, weight: .light))
+                .foregroundStyle(primaryColor)
+                .padding(.top, 4)
+            
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Tier 2 Upload")
+                    .font(.system(size: 17, weight: .bold, design: .rounded))
+                    .foregroundStyle(.primary)
+                Text("Record a short video of a nearby landmark. Choose a valid landmark from the list below to help improve model recognition.")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .lineSpacing(2)
+            }
+            Spacer()
+        }
+        .padding(20)
+        .background(Color(uiColor: .secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .shadow(color: .black.opacity(0.05), radius: 10, x: 0, y: 4)
+        .padding(.horizontal)
     }
 
     private var captureButton: some View {
-        Button { showVideoPicker = true } label: { Label("Record", systemImage: "video").frame(maxWidth: .infinity).padding(.vertical, 14) }.foregroundStyle(.white).background(primaryColor).clipShape(RoundedRectangle(cornerRadius: 15)).disabled(uploadService.isUploading || archivedMedia != nil).opacity(uploadService.isUploading || archivedMedia != nil ? 0.6 : 1).padding(.horizontal)
+        Button {
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            showVideoPicker = true
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "video.fill")
+                Text("Record Media")
+            }
+            .font(.system(size: 17, weight: .bold, design: .rounded))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 16)
+        }
+        .foregroundStyle(.white)
+        .background(primaryColor)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .disabled(uploadService.isUploading || archivedMedia != nil)
+        .opacity(uploadService.isUploading || archivedMedia != nil ? 0.6 : 1)
+        .padding(.horizontal)
     }
 
     private var locationSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if locationManager.isAuthorized, let lat = locationManager.latitude, let lon = locationManager.longitude {
-                Text("Location: \(lat), \(lon) (±\(Int(locationManager.horizontalAccuracy ?? 0))m)").font(.footnote).foregroundStyle(.secondary)
-            } else if locationManager.authorizationStatus == .denied || locationManager.authorizationStatus == .restricted { Text("Location: Off — permission denied").font(.footnote).foregroundStyle(.secondary) } else { Text("Location: Requesting permission…").font(.footnote).foregroundStyle(.secondary) }
-            HStack(spacing: 12) {
-                Button("Enable Location") { locationManager.requestPermissionIfNeeded() }.font(.footnote).disabled(uploadService.isUploading)
-                Button("Refresh Nearby") { Task { await refreshNearbyIfPossible(force: true) } }.font(.footnote).disabled(!locationManager.isAuthorized || uploadService.isUploading)
+        HStack {
+            Image(systemName: "location.fill")
+                .font(.system(size: 16))
+                .foregroundStyle(primaryColor)
+            
+            VStack(alignment: .leading, spacing: 2) {
+                if locationManager.isAuthorized, let lat = locationManager.latitude, let lon = locationManager.longitude {
+                    Text("\(lat), \(lon)")
+                        .font(.system(size: 14, weight: .bold, design: .monospaced))
+                        .foregroundStyle(.primary)
+                    Text("Accuracy: ±\(Int(locationManager.horizontalAccuracy ?? 0))m")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                } else if locationManager.authorizationStatus == .denied || locationManager.authorizationStatus == .restricted {
+                    Text("Location Denied")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(.red)
+                } else {
+                    Text("Requesting location…")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
             }
-        }.padding(.horizontal)
+            Spacer()
+            
+            VStack(alignment: .trailing, spacing: 8) {
+                if !locationManager.isAuthorized {
+                    Button("Enable") {
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        locationManager.requestPermissionIfNeeded()
+                    }
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(primaryColor)
+                    .clipShape(Capsule())
+                }
+                Button {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    Task { await refreshNearbyIfPossible(force: true) }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(primaryColor)
+                        .padding(8)
+                        .background(primaryColor.opacity(0.1))
+                        .clipShape(Circle())
+                }
+                .disabled(!locationManager.isAuthorized || uploadService.isUploading)
+            }
+        }
+        .padding(16)
+        .background(Color(uiColor: .secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2)
+        .padding(.horizontal)
     }
 
     private var nearbyLandmarksSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Nearby landmarks").font(.headline).padding(.horizontal)
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Nearby Landmarks")
+                .font(.system(size: 18, weight: .bold, design: .rounded))
+                .padding(.horizontal, 20)
+            
             nearbyLandmarkResults
+            
             if let selectedLandmark { selectedLandmarkCard(selectedLandmark) }
         }
-        .padding(.top, 24)
+        .padding(.top, 16)
     }
 
     @ViewBuilder private var nearbyLandmarkResults: some View {
-        if nearbyService.items.isEmpty && nearbyService.isLoading { ProgressView("Looking for nearby landmarks…").padding(.horizontal)
-        } else if let errorMessage = nearbyService.errorMessage { Text("Could not load: \(errorMessage)").font(.footnote).foregroundStyle(.red).padding(.horizontal)
-        } else if !hasUsableLocation { Text("Nearby landmarks will appear once location is available.").font(.footnote).foregroundStyle(.secondary).padding(.horizontal)
-        } else if nearbyService.items.isEmpty { Text("No landmarks found within \(Int(radiusMeters)) meters.").font(.footnote).foregroundStyle(.secondary).padding(.horizontal)
-        } else { VStack(spacing: 10) { ForEach(nearbyService.items) { landmark in nearbyLandmarkButton(landmark) } }.padding(.horizontal) }
+        if nearbyService.items.isEmpty && nearbyService.isLoading {
+            ProgressView("Scanning area…").padding(.horizontal, 20)
+        } else if let errorMessage = nearbyService.errorMessage {
+            Text("Error: \(errorMessage)").font(.system(size: 14, weight: .medium)).foregroundStyle(.red).padding(.horizontal, 20)
+        } else if !hasUsableLocation {
+            Text("Nearby landmarks will appear once location is available.").font(.system(size: 14, weight: .medium)).foregroundStyle(.secondary).padding(.horizontal, 20)
+        } else if nearbyService.items.isEmpty {
+            Text("No landmarks found within \(Int(radiusMeters)) meters.").font(.system(size: 14, weight: .medium)).foregroundStyle(.secondary).padding(.horizontal, 20)
+        } else {
+            VStack(spacing: 12) {
+                ForEach(nearbyService.items) { landmark in nearbyLandmarkButton(landmark) }
+            }.padding(.horizontal)
+        }
     }
 
     private func nearbyLandmarkButton(_ landmark: NearbyLandmark) -> some View {
         let isSelected = selectedLandmark?.landmarkId == landmark.landmarkId
-        return Button { selectedLandmark = landmark; if initialLandmarkId != nil && !hasAppliedInitialLandmark { hasAppliedInitialLandmark = true; onInitialLandmarkConsumed() }; uploadService.reset() } label: {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: isSelected ? "largecircle.fill.circle" : "circle").foregroundStyle(primaryColor).padding(.top, 2)
-                VStack(alignment: .leading, spacing: 4) { HStack { Text(landmark.label).font(.headline); Spacer(); Text("\(Int(landmark.distanceMeters))m").font(.footnote).foregroundStyle(.secondary) }; Text(landmark.shortDescription).font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.leading) }
-            }.padding().frame(maxWidth: .infinity, alignment: .leading).background { RoundedRectangle(cornerRadius: 16).fill(isSelected ? Color(red: 0.90, green: 0.94, blue: 1.00) : Color(uiColor: .systemGray6)) }.overlay { RoundedRectangle(cornerRadius: 16).stroke(isSelected ? primaryColor : Color.clear, lineWidth: 1.5) }
-        }.buttonStyle(.plain).disabled(uploadService.isUploading)
+        return Button {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            selectedLandmark = landmark
+            if initialLandmarkId != nil && !hasAppliedInitialLandmark {
+                hasAppliedInitialLandmark = true
+                onInitialLandmarkConsumed()
+            }
+            uploadService.reset()
+        } label: {
+            HStack(alignment: .top, spacing: 16) {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 22))
+                    .foregroundStyle(isSelected ? primaryColor : Color(uiColor: .tertiaryLabel))
+                    .padding(.top, 2)
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text(landmark.label)
+                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .foregroundStyle(.primary)
+                        Spacer()
+                        Text("\(Int(landmark.distanceMeters))m")
+                            .font(.system(size: 13, weight: .bold, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
+                    Text(landmark.shortDescription)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.leading)
+                }
+            }
+            .padding(16)
+            .background(isSelected ? primaryColor.opacity(0.1) : Color(uiColor: .secondarySystemGroupedBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(isSelected ? primaryColor : Color.clear, lineWidth: 2))
+            .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2)
+        }
+        .buttonStyle(.plain)
+        .disabled(uploadService.isUploading)
     }
 
     private func selectedLandmarkCard(_ landmark: NearbyLandmark) -> some View {
-        VStack(alignment: .leading, spacing: 6) { Text("Selected landmark").font(.headline); Text(landmark.label).font(.subheadline).bold(); Text("Distance: \(Int(landmark.distanceMeters)) meters").font(.footnote).foregroundStyle(.secondary) }
-        .padding().frame(maxWidth: .infinity, alignment: .leading).background(Color(uiColor: .systemGray6)).clipShape(RoundedRectangle(cornerRadius: 16)).padding(.horizontal)
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Selected Target")
+                .font(.system(size: 12, weight: .bold, design: .rounded))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+            Text(landmark.label)
+                .font(.system(size: 18, weight: .bold, design: .rounded))
+            Text("\(Int(landmark.distanceMeters)) meters away")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(primaryColor)
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(uiColor: .secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .shadow(color: .black.opacity(0.05), radius: 10, x: 0, y: 4)
+        .padding(.horizontal)
+        .padding(.top, 8)
     }
 
     private var uploadDetailsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 16) {
             negativePhotoSection
             uploadButtonRow
             uploadStatusCard
@@ -251,82 +412,140 @@ struct Tier2LandmarkRecord: View {
     }
 
     private var negativePhotoSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 16) {
             HStack {
-                Label("Negative Background Video", systemImage: "video.fill").font(.headline); Spacer()
-                Image(systemName: capturedNegativeVideo != nil ? "checkmark.circle.fill" : "exclamationmark.circle.fill").foregroundStyle(capturedNegativeVideo != nil ? Color.green : Color.orange)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Negative Background")
+                        .font(.system(size: 17, weight: .bold, design: .rounded))
+                    Text("Optional: Add a >= 10s pan of the surrounding area to improve model recognition.")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+                Image(systemName: capturedNegativeVideo != nil ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                    .font(.system(size: 22))
+                    .foregroundStyle(capturedNegativeVideo != nil ? Color.green : Color.orange)
             }
-            Text("Optional: Add a >= 10s pan of the surrounding area to improve recognition.").font(.footnote).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            Button { showNegativeCamera = true } label: { Label(capturedNegativeVideo == nil ? "Record Negative" : "Re-record Negative", systemImage: "camera.fill").frame(maxWidth: .infinity).padding(.vertical, 13) }.foregroundStyle(.white).background(primaryColor).clipShape(RoundedRectangle(cornerRadius: 14)).disabled(areNegativePhotosLocked).opacity(areNegativePhotosLocked ? 0.6 : 1)
+            
+            Button {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                showNegativeCamera = true
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "camera.fill")
+                    Text(capturedNegativeVideo == nil ? "Record Negative" : "Re-record Negative")
+                }
+                .font(.system(size: 16, weight: .bold, design: .rounded))
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
+                .background(Color(red: 0.11, green: 0.11, blue: 0.16))
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            }
+            .disabled(areNegativePhotosLocked)
+            .opacity(areNegativePhotosLocked ? 0.6 : 1)
+            
             if let video = capturedNegativeVideo {
                 ZStack(alignment: .topTrailing) {
-                    Tier2SafeVideoPlayer(url: video.fileURL)
+                    UploadFormVideoPlayer(url: video.fileURL)
                         .equatable()
                         .id(video.fileURL.absoluteString)
+                        .frame(maxWidth: .infinity)
                         .frame(height: 220)
-                        .clipShape(RoundedRectangle(cornerRadius: 15))
+                        .clipped()
+                        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                         .ignoresSafeArea(.keyboard)
-                    Button { video.deleteLocalFile(); capturedNegativeVideo = nil } label: { Image(systemName: "xmark.circle.fill").font(.title2).foregroundStyle(.white, .red) }.padding(12).disabled(areNegativePhotosLocked)
-                }.padding(.top, 8)
+                    
+                    Button {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        video.deleteLocalFile()
+                        capturedNegativeVideo = nil
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(width: 32, height: 32)
+                            .background(.black.opacity(0.6))
+                            .clipShape(Circle())
+                            .overlay(Circle().stroke(Color.white.opacity(0.2), lineWidth: 0.5))
+                    }
+                    .padding(12)
+                    .disabled(areNegativePhotosLocked)
+                }
             }
-        }.padding().background(Color(uiColor: .systemGray6)).cornerRadius(18).padding(.horizontal)
+        }
+        .padding(20)
+        .background(Color(uiColor: .secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .shadow(color: .black.opacity(0.05), radius: 10, x: 0, y: 4)
+        .padding(.horizontal)
     }
 
     private var uploadButtonRow: some View {
         HStack(spacing: 12) {
             if archivedMedia != nil {
                 Button(role: .cancel) {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
                     saveDraftAndDismiss()
                 } label: {
                     Image(systemName: "arrow.uturn.backward")
-                        .font(.title2)
-                        .foregroundStyle(.white)
-                        .frame(width: 54, height: 52)
-                        .background(Color.white.opacity(0.2))
-                        .clipShape(RoundedRectangle(cornerRadius: 15))
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(.primary)
+                        .frame(width: 60, height: 60)
+                        .background(Color(uiColor: .secondarySystemGroupedBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
                 }
             } else if hasMedia && !uploadService.isUploading {
                 Button {
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                     saveToArchiveFromForm()
                 } label: {
                     Image(systemName: "folder.badge.plus")
-                        .font(.title2)
+                        .font(.system(size: 20, weight: .bold))
                         .foregroundStyle(.white)
-                        .frame(width: 54, height: 52)
+                        .frame(width: 60, height: 60)
                         .background(primaryColor)
-                        .clipShape(RoundedRectangle(cornerRadius: 15))
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .shadow(color: primaryColor.opacity(0.3), radius: 8, x: 0, y: 4)
                 }
             }
             
             Button {
+                UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
                 startUpload()
             } label: {
                 HStack(spacing: 10) {
                     if uploadService.isUploading || hardNegativeUploadService.isUploading {
                         ProgressView().tint(.white)
-                        Text("Uploading…").fontWeight(.semibold)
+                        Text("Uploading...").fontWeight(.semibold)
                     } else {
-                        Label("Upload Media", systemImage: "arrow.up.circle").fontWeight(.semibold)
+                        Image(systemName: "arrow.up.circle.fill")
+                        Text("Upload Media").fontWeight(.semibold)
                     }
                 }
+                .font(.system(size: 17, weight: .bold, design: .rounded))
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
+                .padding(.vertical, 18)
             }
             .foregroundStyle(.white)
-            .background(canSubmitUpload ? primaryColor : Color.gray)
-            .clipShape(RoundedRectangle(cornerRadius: 15))
+            .background(canSubmitUpload ? primaryColor : Color.gray.opacity(0.3))
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .shadow(color: canSubmitUpload ? primaryColor.opacity(0.3) : .clear, radius: 10, x: 0, y: 5)
             .disabled(!canSubmitUpload)
             
             if archivedMedia == nil && hasMedia && !uploadService.isUploading {
                 Button(role: .destructive) {
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                     showDiscardAlert = true
                 } label: {
                     Image(systemName: "trash.fill")
-                        .font(.title2)
+                        .font(.system(size: 20, weight: .bold))
                         .foregroundStyle(.red)
-                        .frame(width: 54, height: 52)
-                        .background(Color.red.opacity(0.15))
-                        .clipShape(RoundedRectangle(cornerRadius: 15))
+                        .frame(width: 60, height: 60)
+                        .background(Color.red.opacity(0.1))
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }
             }
         }
@@ -336,32 +555,52 @@ struct Tier2LandmarkRecord: View {
     @ViewBuilder private var uploadStatusCard: some View {
         if uploadService.stage != .idle {
             VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .top, spacing: 12) {
-                    if uploadService.isUploading { ProgressView().padding(.top, 2) } else { Image(systemName: uploadService.stage.systemImage).font(.title3).foregroundStyle(uploadService.stage == .complete ? .green : (uploadService.stage == .failed ? .red : primaryColor)) }
-                    VStack(alignment: .leading, spacing: 4) { Text(uploadService.status).font(.headline); Text(uploadService.detail).font(.footnote).foregroundStyle(.secondary) }
+                HStack(alignment: .top, spacing: 16) {
+                    if uploadService.isUploading { ProgressView().padding(.top, 2) }
+                    else { Image(systemName: uploadService.stage.systemImage).font(.system(size: 24)).foregroundStyle(uploadService.stage == .complete ? .green : (uploadService.stage == .failed ? .red : primaryColor)) }
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(uploadService.status).font(.system(size: 16, weight: .bold, design: .rounded))
+                        Text(uploadService.detail).font(.system(size: 14, weight: .medium)).foregroundStyle(.secondary)
+                    }
                     Spacer()
                 }
-            }.padding().background(Color(uiColor: .secondarySystemBackground)).clipShape(RoundedRectangle(cornerRadius: 16)).padding(.horizontal)
+            }
+            .padding(20)
+            .background(Color(uiColor: .secondarySystemGroupedBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .shadow(color: .black.opacity(0.05), radius: 10, x: 0, y: 4)
+            .padding(.horizontal)
         }
     }
 
     @ViewBuilder private var negativeUploadStatusCard: some View {
         if hardNegativeUploadService.status != "Idle" {
             VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .top, spacing: 12) {
-                    if hardNegativeUploadService.isUploading { ProgressView().padding(.top, 2) } else { Image(systemName: "video.fill").font(.title3).foregroundStyle(primaryColor) }
-                    VStack(alignment: .leading, spacing: 4) { Text(hardNegativeUploadService.status).font(.footnote).foregroundStyle(.secondary) }
+                HStack(alignment: .top, spacing: 16) {
+                    if hardNegativeUploadService.isUploading { ProgressView().padding(.top, 2) }
+                    else { Image(systemName: "video.fill").font(.system(size: 24)).foregroundStyle(primaryColor) }
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Reference Video").font(.system(size: 16, weight: .bold, design: .rounded))
+                        Text(hardNegativeUploadService.status).font(.system(size: 14, weight: .medium)).foregroundStyle(.secondary)
+                    }
                     Spacer()
                 }
-                if hardNegativeUploadService.isUploading { ProgressView(value: hardNegativeUploadService.progress, total: 1) }
-            }.padding().background(Color(uiColor: .secondarySystemBackground)).clipShape(RoundedRectangle(cornerRadius: 16)).padding(.horizontal)
+                if hardNegativeUploadService.isUploading { ProgressView(value: hardNegativeUploadService.progress, total: 1).tint(primaryColor) }
+            }
+            .padding(20)
+            .background(Color(uiColor: .secondarySystemGroupedBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .shadow(color: .black.opacity(0.05), radius: 10, x: 0, y: 4)
+            .padding(.horizontal)
         }
     }
 
     private var videoPicker: some View {
         VideoPicker(useCamera: true, onPicked: { url, location in
             pendingArchiveURL = url; pendingArchiveLocation = location
-            withAnimation { showArchivePrompt = true }
+            withAnimation(.spring()) { showArchivePrompt = true }
         }, onInvalidDuration: { message in showVideoDurationAlert = true; videoDurationAlertMessage = message })
     }
     
@@ -381,13 +620,8 @@ struct Tier2LandmarkRecord: View {
         let negURL = capturedNegativeVideo?.fileURL
         Task.detached {
             let urlToSave = await MainActor.run { pendingArchiveURL }
-            if let url = urlToSave {
-                _ = await OfflineMediaManager.shared.archiveVideo(tempURL: url, lat: lat, lon: lon, landmarkId: id, label: label, shortDesc: desc, userDesc: nil, negativeVideoURL: negURL, isTier2: true)
-            }
-            await MainActor.run {
-                discardPendingMedia()
-                statusText = "Media securely saved to Offline Archive."
-            }
+            if let url = urlToSave { _ = await OfflineMediaManager.shared.archiveVideo(tempURL: url, lat: lat, lon: lon, landmarkId: id, label: label, shortDesc: desc, userDesc: nil, negativeVideoURL: negURL, isTier2: true) }
+            await MainActor.run { discardPendingMedia(); statusText = "Media securely saved to Offline Archive." }
         }
     }
     
@@ -401,10 +635,7 @@ struct Tier2LandmarkRecord: View {
         let negURL = capturedNegativeVideo?.fileURL
         Task.detached {
             _ = await OfflineMediaManager.shared.archiveVideo(tempURL: url, lat: lat, lon: lon, landmarkId: lId, label: lLabel, shortDesc: sDesc, userDesc: nil, negativeVideoURL: negURL, isTier2: true)
-            await MainActor.run {
-                clearScreen()
-                statusText = "Media securely saved to Upload Queue."
-            }
+            await MainActor.run { clearScreen(); statusText = "Media securely saved to Upload Queue." }
         }
     }
     
@@ -429,9 +660,7 @@ struct Tier2LandmarkRecord: View {
             await vm.fetchUserEmail(); let idToken = await vm.fetchIdToken()
             do {
                 _ = try await uploadService.upload(userEmail: vm.userEmail, idToken: idToken, label: selectedLandmark.label, landmarkId: selectedLandmark.landmarkId, landmarkLabel: selectedLandmark.label, shortDescription: selectedLandmark.shortDescription, userDescription: nil, latitude: extractedLatitude ?? locationManager.latitude, longitude: extractedLongitude ?? locationManager.longitude, horizontalAccuracy: locationManager.horizontalAccuracy, videoURLs: [url], image: nil)
-                if let negativeVideo = capturedNegativeVideo {
-                    _ = try await hardNegativeUploadService.upload(landmarkId: selectedLandmark.landmarkId, idToken: idToken, video: negativeVideo)
-                }
+                if let negativeVideo = capturedNegativeVideo { _ = try await hardNegativeUploadService.upload(landmarkId: selectedLandmark.landmarkId, idToken: idToken, video: negativeVideo) }
                 clearScreen(); statusText = "Media uploaded successfully."
             } catch { print("Tier-2 upload failed:", error.localizedDescription) }
         }
@@ -448,33 +677,5 @@ struct Tier2LandmarkRecord: View {
     private func deleteTemporaryVideoIfNeeded(_ videoURL: URL?) {
         guard let url = videoURL else { return }
         if url.standardizedFileURL.path.hasPrefix(FileManager.default.temporaryDirectory.standardizedFileURL.path) { try? FileManager.default.removeItem(at: url) }
-    }
-}
-
-private struct Tier2SafeVideoPlayer: UIViewControllerRepresentable, Equatable {
-    let url: URL
-
-    static func == (lhs: Tier2SafeVideoPlayer, rhs: Tier2SafeVideoPlayer) -> Bool {
-        return lhs.url == rhs.url
-    }
-
-    func makeUIViewController(context: Context) -> AVPlayerViewController {
-        let controller = AVPlayerViewController()
-        controller.player = AVPlayer(url: url)
-        controller.videoGravity = .resizeAspectFill
-        if #available(iOS 16.0, *) {
-            controller.allowsVideoFrameAnalysis = false
-        }
-        return controller
-    }
-
-    func updateUIViewController(_ uiViewController: AVPlayerViewController, context: Context) { }
-
-    static func dismantleUIViewController(_ uiViewController: AVPlayerViewController, coordinator: ()) {
-        let player = uiViewController.player
-        uiViewController.player = nil
-        DispatchQueue.global(qos: .background).async {
-            player?.pause()
-        }
     }
 }

@@ -1,6 +1,8 @@
 import SwiftUI
 import Foundation
 
+//This can be deleted, since Popup.swift will handle everything in this file for now
+//will be kept for now, just in case
 struct LandmarkInfo: View {
     @ObservedObject var infoView = VariableContainer.shared
     

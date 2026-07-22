@@ -27,7 +27,7 @@ struct LandmarkMapView: View {
     @State private var promotedOnly = false
     @State private var selectedClusters: Set<String> = []
     
-    private let primaryColor = Color(red: 0.11, green: 0.22, blue: 0.55)
+    private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00)
     private let promoColor = Color.orange
 
     private var availableClusters: [String] {
@@ -53,7 +53,8 @@ struct LandmarkMapView: View {
                 ForEach(activeLandmarks) { landmark in
                     Annotation(landmark.label, coordinate: CLLocationCoordinate2D(latitude: landmark.latitude, longitude: landmark.longitude)) {
                         Button {
-                            withAnimation(.spring()) { selectedLandmark = landmark }
+                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                            withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) { selectedLandmark = landmark }
                         } label: {
                             VStack(spacing: 0) {
                                 if landmark.promotionEnabled {
@@ -74,13 +75,15 @@ struct LandmarkMapView: View {
             }
             .ignoresSafeArea(edges: .top)
 
-            // Search Bar & Filter Container
-            VStack(alignment: .trailing, spacing: 12) {
-                HStack {
-                    Image(systemName: "magnifyingglass").foregroundStyle(.gray)
+            VStack(alignment: .trailing, spacing: 16) {
+                HStack(spacing: 12) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(primaryColor)
                     
-                    TextField("", text: $searchText, prompt: Text("Search landmarks...").foregroundStyle(.gray.opacity(0.8)))
-                        .foregroundStyle(.black)
+                    TextField("", text: $searchText, prompt: Text("Search landmarks...").foregroundStyle(.secondary))
+                        .font(.system(size: 16, weight: .medium, design: .rounded))
+                        .foregroundStyle(.primary)
                         .autocorrectionDisabled()
                         .submitLabel(.search)
                         .onSubmit {
@@ -91,25 +94,41 @@ struct LandmarkMapView: View {
                             }
                         }
                     
-                    if !searchText.isEmpty { Button { searchText = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.gray) } }
+                    if !searchText.isEmpty {
+                        Button {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            searchText = ""
+                        } label: {
+                            Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                        }
+                    }
                 }
-                .padding(15)
-                .background(Color.white)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-                .shadow(color: .black.opacity(0.2), radius: 6, x: 0, y: 3)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .shadow(color: .black.opacity(0.15), radius: 15, x: 0, y: 5)
                 .padding(.horizontal, 20)
                 
-                Button { showFilterSheet = true } label: {
+                Button {
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    showFilterSheet = true
+                } label: {
                     ZStack(alignment: .topTrailing) {
-                        Image(systemName: "slider.horizontal.3").font(.system(size: 18, weight: .semibold)).foregroundStyle(primaryColor).padding(12).background(Color.white).clipShape(Circle()).shadow(color: .black.opacity(0.2), radius: 5, x: 0, y: 2)
+                        Image(systemName: "slider.horizontal.3")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(.primary)
+                            .frame(width: 50, height: 50)
+                            .background(.regularMaterial, in: Circle())
+                            .shadow(color: .black.opacity(0.15), radius: 10, x: 0, y: 5)
+                            
                         if myUploadsOnly || promotedOnly || !selectedClusters.isEmpty {
-                            Circle().fill(promoColor).frame(width: 12, height: 12).overlay(Circle().stroke(.white, lineWidth: 2)).offset(x: -2, y: 2)
+                            Circle().fill(promoColor).frame(width: 14, height: 14).overlay(Circle().stroke(Color(uiColor: .systemBackground), lineWidth: 2)).offset(x: -2, y: 2)
                         }
                     }
                 }
                 .padding(.trailing, 20)
             }
-            .padding(.top, 45)
+            .padding(.top, 55)
         }
         .task {
             if !locationManager.isAuthorized { locationManager.requestPermissionIfNeeded() }
@@ -117,10 +136,14 @@ struct LandmarkMapView: View {
             await fetchMapData()
         }
         .sheet(item: $selectedLandmark) { landmark in
-            landmarkDetailSheet(landmark).presentationDetents([.height(landmark.promotionEnabled ? 320 : 250)]).presentationDragIndicator(.visible)
+            landmarkDetailSheet(landmark)
+                .presentationDetents([.height(landmark.promotionEnabled ? 340 : 260)])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(.regularMaterial)
         }
         .sheet(isPresented: $showFilterSheet, onDismiss: { Task { await fetchMapData() } }) {
-            filterMenuSheet.presentationDetents([.fraction(0.85)])
+            filterMenuSheet
+                .presentationDetents([.fraction(0.85)])
         }
         .fullScreenCover(item: $landmarkToUpload) { landmark in
             QuickUploadView(landmark: landmark)
@@ -129,73 +152,117 @@ struct LandmarkMapView: View {
 
     private var filterMenuSheet: some View {
         NavigationStack {
-            ZStack {
-                Color(red: 0.06, green: 0.06, blue: 0.10).ignoresSafeArea()
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 24) {
-                        VStack(alignment: .leading, spacing: 16) {
-                            Text("Search Radius").font(.headline).foregroundStyle(.white)
-                            Toggle("Global Search (Everywhere)", isOn: $isGlobalSearch).tint(primaryColor).foregroundStyle(.white)
-                            if !isGlobalSearch {
-                                Divider().background(Color.white.opacity(0.1))
-                                HStack { Text("Distance:").foregroundStyle(.white); Spacer(); TextField("Miles", value: $searchRadiusMiles, format: .number).keyboardType(.decimalPad).textFieldStyle(.roundedBorder).frame(width: 80).multilineTextAlignment(.trailing); Text("mi").foregroundStyle(.gray) }
-                                Slider(value: $searchRadiusMiles, in: 1...100, step: 1).tint(primaryColor)
-                            }
-                        }.padding().background(Color.white.opacity(0.05)).clipShape(RoundedRectangle(cornerRadius: 16))
-                        VStack(alignment: .leading, spacing: 16) {
-                            Text("Visibility").font(.headline).foregroundStyle(.white)
-                            Toggle("My Uploads Only", isOn: $myUploadsOnly).tint(primaryColor).foregroundStyle(.white)
-                            Divider().background(Color.white.opacity(0.1))
-                            Toggle("Promoted Only", isOn: $promotedOnly).tint(promoColor).foregroundStyle(.white)
-                        }.padding().background(Color.white.opacity(0.05)).clipShape(RoundedRectangle(cornerRadius: 16))
-                        if !availableClusters.isEmpty {
-                            VStack(alignment: .leading, spacing: 16) {
-                                HStack { Text("Filter by Cluster").font(.headline).foregroundStyle(.white); Spacer(); if !selectedClusters.isEmpty { Button("Clear") { selectedClusters.removeAll() }.font(.caption.bold()).foregroundStyle(promoColor) } }
-                                ForEach(availableClusters, id: \.self) { clusterId in
-                                    Button { if selectedClusters.contains(clusterId) { selectedClusters.remove(clusterId) } else { selectedClusters.insert(clusterId) } } label: {
-                                        HStack { Text("Cluster \(clusterId)").foregroundStyle(.white); Spacer(); if selectedClusters.contains(clusterId) { Image(systemName: "checkmark.circle.fill").foregroundStyle(primaryColor) } else { Image(systemName: "circle").foregroundStyle(.gray) } }
-                                    }
-                                    if clusterId != availableClusters.last { Divider().background(Color.white.opacity(0.1)) }
-                                }
-                            }.padding().background(Color.white.opacity(0.05)).clipShape(RoundedRectangle(cornerRadius: 16))
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("Search Radius").font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.gray).textCase(.uppercase)
+                        Toggle("Global Search (Everywhere)", isOn: $isGlobalSearch).tint(primaryColor).foregroundStyle(.primary).font(.system(size: 16, weight: .semibold))
+                        if !isGlobalSearch {
+                            Divider()
+                            HStack { Text("Distance:").font(.system(size: 16, weight: .semibold)).foregroundStyle(.primary); Spacer(); TextField("Miles", value: $searchRadiusMiles, format: .number).keyboardType(.decimalPad).textFieldStyle(.roundedBorder).frame(width: 80).multilineTextAlignment(.trailing); Text("mi").font(.system(size: 16, weight: .bold)).foregroundStyle(.gray) }
+                            Slider(value: $searchRadiusMiles, in: 1...100, step: 1).tint(primaryColor)
                         }
-                    }.padding(20)
-                }
+                    }.padding(20).background(Color(uiColor: .secondarySystemGroupedBackground)).clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                    
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("Visibility").font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.gray).textCase(.uppercase)
+                        Toggle("My Uploads Only", isOn: $myUploadsOnly).tint(primaryColor).foregroundStyle(.primary).font(.system(size: 16, weight: .semibold))
+                        Divider()
+                        Toggle("Promoted Only", isOn: $promotedOnly).tint(promoColor).foregroundStyle(.primary).font(.system(size: 16, weight: .semibold))
+                    }.padding(20).background(Color(uiColor: .secondarySystemGroupedBackground)).clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                    
+                    if !availableClusters.isEmpty {
+                        VStack(alignment: .leading, spacing: 16) {
+                            HStack { Text("Filter by Cluster").font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.gray).textCase(.uppercase); Spacer(); if !selectedClusters.isEmpty { Button("Clear") { UIImpactFeedbackGenerator(style: .light).impactOccurred(); selectedClusters.removeAll() }.font(.caption.bold()).foregroundStyle(promoColor) } }
+                            ForEach(availableClusters, id: \.self) { clusterId in
+                                Button {
+                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                    if selectedClusters.contains(clusterId) { selectedClusters.remove(clusterId) } else { selectedClusters.insert(clusterId) }
+                                } label: {
+                                    HStack { Text("Cluster \(clusterId)").font(.system(size: 16, weight: .semibold)).foregroundStyle(.primary); Spacer(); if selectedClusters.contains(clusterId) { Image(systemName: "checkmark.circle.fill").foregroundStyle(primaryColor) } else { Image(systemName: "circle").foregroundStyle(.gray) } }
+                                }
+                                if clusterId != availableClusters.last { Divider() }
+                            }
+                        }.padding(20).background(Color(uiColor: .secondarySystemGroupedBackground)).clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                    }
+                }.padding(20)
             }
-            .navigationTitle("Map Filters").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Apply") { showFilterSheet = false }.foregroundStyle(primaryColor) } }
-            .toolbarBackground(Color(red: 0.06, green: 0.06, blue: 0.10), for: .navigationBar)
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
+            .navigationTitle("Map Filters")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Apply") { showFilterSheet = false }.font(.system(size: 16, weight: .bold)).foregroundStyle(primaryColor) } }
         }
     }
 
     private func landmarkDetailSheet(_ landmark: NearbyLandmark) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             if landmark.promotionEnabled {
-                HStack { Image(systemName: "sparkles"); Text(landmark.promotion ?? "Special Promotion Available!").font(.subheadline.bold()); Spacer() }.padding(12).background(promoColor.opacity(0.2)).foregroundStyle(promoColor).clipShape(RoundedRectangle(cornerRadius: 10))
+                HStack {
+                    Image(systemName: "sparkles")
+                    Text(landmark.promotion ?? "Special Promotion Available!")
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                    Spacer()
+                }
+                .padding(12)
+                .background(promoColor.opacity(0.2))
+                .foregroundStyle(promoColor)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
+            
             HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(landmark.label).font(.title2.bold()).foregroundStyle(.white)
-                    Text("\(String(format: "%.1f", landmark.distanceMeters / 1609.34)) miles away").font(.subheadline).foregroundStyle(primaryColor).bold()
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(landmark.label)
+                        .font(.system(size: 24, weight: .bold, design: .rounded))
+                        .foregroundStyle(.primary)
+                    Text("\(String(format: "%.1f", landmark.distanceMeters / 1609.34)) miles away")
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .foregroundStyle(primaryColor)
                 }
                 Spacer()
             }
-            Text(landmark.shortDescription).font(.body).foregroundStyle(Color.white.opacity(0.8))
+            
+            Text(landmark.shortDescription)
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(.secondary)
+            
             Spacer()
+            
             HStack(spacing: 12) {
-                Button { openAppleMaps(for: landmark) } label: {
-                    HStack { Image(systemName: "location.fill"); Text("Directions").fontWeight(.semibold) }.frame(maxWidth: .infinity).padding(.vertical, 14).background(Color.gray.opacity(0.3)).foregroundStyle(.white).clipShape(RoundedRectangle(cornerRadius: 15))
-                }
                 Button {
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    openAppleMaps(for: landmark)
+                } label: {
+                    HStack {
+                        Image(systemName: "location.fill")
+                        Text("Directions").fontWeight(.bold)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .background(Color(uiColor: .tertiarySystemFill))
+                    .foregroundStyle(.primary)
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                }
+                
+                Button {
+                    UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
                     let passedLandmark = landmark
                     selectedLandmark = nil
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { landmarkToUpload = passedLandmark }
                 } label: {
-                    HStack { Image(systemName: "camera.fill"); Text("Upload Data").fontWeight(.semibold) }.frame(maxWidth: .infinity).padding(.vertical, 14).background(primaryColor).foregroundStyle(.white).clipShape(RoundedRectangle(cornerRadius: 15))
+                    HStack {
+                        Image(systemName: "arrow.up.circle.fill")
+                        Text("Upload Data").fontWeight(.bold)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .background(primaryColor)
+                    .foregroundStyle(.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }
-            }.padding(.bottom, 10)
-        }.padding(24).background(Color(red: 0.06, green: 0.06, blue: 0.10).ignoresSafeArea())
+            }
+            .padding(.bottom, 10)
+        }
+        .padding(24)
     }
 
     private func fetchMapData() async {

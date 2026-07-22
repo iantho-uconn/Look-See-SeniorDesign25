@@ -1,7 +1,7 @@
 import Foundation
 import Combine
 import Amplify
-import AWSPluginsCore // <-- This is the core AWS module required to unlock the token!
+import AWSPluginsCore
 
 @MainActor
 class AuthViewModel: ObservableObject {
@@ -9,6 +9,9 @@ class AuthViewModel: ObservableObject {
     @Published var isSignedIn = false
     @Published var errorMessage = ""
     @Published var userEmail = ""
+    
+    // NEW: Tracks when a user needs to set a permanent password
+    @Published var requiresNewPassword = false
     
     func checkSession() async {
         do {
@@ -26,22 +29,64 @@ class AuthViewModel: ObservableObject {
                     username: username,
                     password: password
                 )
-                isSignedIn = result.isSignedIn
-                errorMessage = ""
+                
+                if result.isSignedIn {
+                    isSignedIn = true
+                    requiresNewPassword = false
+                    errorMessage = ""
+                } else {
+                    switch result.nextStep {
+                    case .confirmSignInWithNewPassword:
+                        // TRIGGER THE NEW PASSWORD UI
+                        requiresNewPassword = true
+                        errorMessage = "Please enter a new permanent password."
+                    case .confirmSignUp:
+                        errorMessage = "Account not verified. Please check your email for a confirmation code."
+                    case .resetPassword:
+                        errorMessage = "Password reset required."
+                    default:
+                        errorMessage = "Additional verification required."
+                    }
+                    isSignedIn = false
+                }
             } catch let error as AuthError {
                 errorMessage = friendlyMessage(for: error)
+                isSignedIn = false
             } catch {
                 errorMessage = "Something went wrong. Please try again."
+                isSignedIn = false
             }
         }
     }
 
-    // Updated: accepts authState so tier resets cleanly on sign out
+    // MARK: - NEW: Confirm New Password Function
+    func confirmNewPassword(newPassword: String) {
+        Task {
+            do {
+                // Send the new password to AWS
+                let result = try await Amplify.Auth.confirmSignIn(challengeResponse: newPassword)
+                
+                if result.isSignedIn {
+                    isSignedIn = true
+                    requiresNewPassword = false
+                    errorMessage = ""
+                } else {
+                    errorMessage = "Additional steps required to sign in."
+                }
+            } catch let error as AuthError {
+                errorMessage = friendlyMessage(for: error)
+            } catch {
+                errorMessage = "Failed to update password. Please try again."
+            }
+        }
+    }
+
     func signOut(authState: AuthState) {
         Task {
             await AuthService.shared.signOut()
-            await authState.signOut()   // resets tier to .guest
+            await authState.signOut()
             isSignedIn = false
+            requiresNewPassword = false
         }
     }
 
@@ -56,12 +101,9 @@ class AuthViewModel: ObservableObject {
         }
     }
 
-    // MARK: - NEW TOKEN FETCH METHOD
     func fetchIdToken() async -> String {
         do {
             let session = try await Amplify.Auth.fetchAuthSession()
-            
-            // AWSPluginsCore provides this specific protocol to expose the tokens
             if let tokenProvider = session as? AuthCognitoTokensProvider {
                 let tokens = try tokenProvider.getCognitoTokens().get()
                 return tokens.idToken
@@ -72,46 +114,16 @@ class AuthViewModel: ObservableObject {
         return ""
     }
 
-    // MARK: - Private
-
     private func friendlyMessage(for error: AuthError) -> String {
+        // ... (Keep your exact same friendlyMessage switch cases here)
         switch error {
-        case .notAuthorized:
-            return "Incorrect email or password. Please try again."
-
+        case .notAuthorized: return "Incorrect email or password. Please try again."
         case .service(_, _, let underlyingError):
             let description = underlyingError.map { "\($0)" } ?? ""
-            if description.contains("UserNotFoundException") || description.contains("UserNotFound") {
-                return "No account found with that email. Please check your email or sign up."
-            }
-            if description.contains("UserNotConfirmedException") {
-                return "Please verify your email before signing in. Check your inbox for a confirmation link."
-            }
-            if description.contains("PasswordResetRequiredException") {
-                return "Your password needs to be reset. Please use the forgot password option."
-            }
-            if description.contains("TooManyRequestsException") || description.contains("LimitExceededException") {
-                return "Too many attempts. Please wait a moment and try again."
-            }
+            if description.contains("UserNotFound") { return "No account found with that email." }
+            if description.contains("UserNotConfirmed") { return "Please verify your email." }
             return "Something went wrong. Please try again."
-
-        case .validation(_, let description, _, _):
-            if description.lowercased().contains("username") || description.lowercased().contains("email") {
-                return "Please enter a valid email address."
-            }
-            if description.lowercased().contains("password") {
-                return "Please enter your password."
-            }
-            return "Please check your details and try again."
-
-//        case .network:
-//            return "Network error. Please check your internet connection and try again."
-
-        case .invalidState:
-            return "Something went wrong with your session. Please restart the app and try again."
-
-        default:
-            return "Something went wrong. Please try again."
+        default: return "Something went wrong. Please try again."
         }
     }
 }

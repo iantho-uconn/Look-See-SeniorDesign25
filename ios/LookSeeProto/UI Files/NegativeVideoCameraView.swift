@@ -17,7 +17,7 @@ enum NegativeCameraPhase: Equatable {
     var title: String {
         switch self {
         case .first: return "Background Pan"
-        case .additional(let index): return "Background Pan"
+        case .additional(let index): return "Extra Pan \(index - 1)"
         }
     }
     
@@ -29,12 +29,20 @@ enum NegativeCameraPhase: Equatable {
     }
 }
 
+// Dedicated state to decouple from PositiveVideoCameraView
+enum NegativeCameraFlowState: Equatable {
+    case instruction
+    case recording
+    case choice
+    case preview(URL)
+}
+
 struct NegativeVideoCameraView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var cameraService = NegativeVideoCameraService()
     
     @State private var currentPhase: NegativeCameraPhase = .first
-    @State private var flowState: CameraFlowState = .instruction
+    @State private var flowState: NegativeCameraFlowState = .instruction
     
     @State private var recordingTimer: Timer?
     @State private var timeElapsed: Int = 0
@@ -54,12 +62,11 @@ struct NegativeVideoCameraView: View {
     }
 
     private var minPhaseTimeLimit: Int {
-        currentPhase == .first ? 10 : 0
+        currentPhase == .first ? 10 : 1
     }
     
     private var maxPhaseTimeLimit: Int {
-        let remaining = maxTotalTimeLimit - totalDurationElapsedInt
-        return min(20, remaining)
+        return maxTotalTimeLimit - totalDurationElapsedInt
     }
 
     private var isReviewingClip: Bool {
@@ -71,9 +78,11 @@ struct NegativeVideoCameraView: View {
         ZStack {
             Color.black.ignoresSafeArea()
 
+            // The IF statement is GONE! Prevents the black flash entirely
             NegativeVideoCameraPreview(session: cameraService.session)
                 .ignoresSafeArea()
-                .opacity(isReviewingClip ? 0 : 1)
+                .opacity((flowState == .choice || isReviewingClip) ? 0 : 1)
+                .zIndex(0)
             
             if case .preview(let url) = flowState {
                 NegativeSafeVideoPlayer(url: url)
@@ -111,7 +120,7 @@ struct NegativeVideoCameraView: View {
                     try? FileManager.default.removeItem(at: url)
                     dismiss()
                 } else {
-                    withAnimation(.spring()) {
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                         flowState = .preview(url)
                     }
                 }
@@ -126,55 +135,67 @@ struct NegativeVideoCameraView: View {
     
     private var instructionCard: some View {
         VStack(spacing: 16) {
-            Image(systemName: "video.slash.fill")
-                .font(.system(size: 32))
-                .foregroundStyle(.blue)
+            ZStack {
+                Circle().fill(Color(red: 0.22, green: 0.49, blue: 1.00).opacity(0.15)).frame(width: 60, height: 60)
+                Image(systemName: "video.slash.fill")
+                    .font(.system(size: 24))
+                    .foregroundStyle(Color(red: 0.22, green: 0.49, blue: 1.00))
+            }
+            .padding(.bottom, 4)
             
             Text(currentPhase.title)
-                .font(.headline.bold())
+                .font(.system(size: 20, weight: .bold, design: .rounded))
                 .foregroundStyle(.primary)
             
             Text("Pan the area. Do not include the landmark in the video.")
-                .font(.subheadline)
+                .font(.system(size: 15, weight: .medium))
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
+                .padding(.horizontal, 10)
             
             Button {
-                withAnimation(.spring()) {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                     flowState = .recording
                     cameraService.startRecording()
                     startTimer()
                 }
             } label: {
                 Text("Start Recording")
-                    .fontWeight(.bold)
+                    .font(.system(size: 17, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .background(Color(red: 0.22, green: 0.49, blue: 1.00))
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .shadow(color: Color(red: 0.22, green: 0.49, blue: 1.00).opacity(0.3), radius: 8, x: 0, y: 4)
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .padding(.top, 8)
+            .padding(.top, 12)
         }
         .padding(30)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 32))
-        .padding(.horizontal, 40)
-        .padding(.bottom, 20)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 32, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 32, style: .continuous).stroke(Color.white.opacity(0.2), lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.15), radius: 20, x: 0, y: 10)
+        .padding(.horizontal, 24)
+        .padding(.bottom, 60)
         .transition(.scale.combined(with: .opacity))
     }
     
     private var choiceCard: some View {
         VStack(spacing: 20) {
-            Text("Add More Coverage?")
-                .font(.title3.bold())
-                .foregroundStyle(.white)
+            Text("Add More Background?")
+                .font(.system(size: 22, weight: .bold, design: .rounded))
+                .foregroundStyle(.primary)
             
-            Text("Would you like to add another video clip to capture extra details of this landmark?")
-                .font(.subheadline)
+            Text("Would you like to add another background pan to further improve recognition?")
+                .font(.system(size: 15, weight: .medium))
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 10)
             
             VStack(spacing: 12) {
                 Button {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
                     if currentPhase == .first {
                         currentPhase = .additional(2)
                         flowState = .instruction
@@ -184,85 +205,113 @@ struct NegativeVideoCameraView: View {
                     }
                 } label: {
                     Text("Yes, Add Clip")
-                        .fontWeight(.bold)
+                        .font(.system(size: 17, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                        .background(Color(red: 0.22, green: 0.49, blue: 1.00))
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
                 
                 Button {
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                     finishAndStitch()
                 } label: {
                     Text("No, Finish Background")
-                        .fontWeight(.semibold)
+                        .font(.system(size: 17, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.primary)
                         .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                        .background(Color(uiColor: .tertiarySystemFill))
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }
-                .buttonStyle(.bordered)
-                .foregroundColor(.white)
-                .controlSize(.large)
             }
         }
         .padding(30)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 32))
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 32, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 32, style: .continuous).stroke(Color.white.opacity(0.2), lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.15), radius: 20, x: 0, y: 10)
         .padding(.horizontal, 24)
         .padding(.bottom, 60)
+        .transition(.move(edge: .bottom).combined(with: .opacity))
     }
     
     private var recordingControls: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 20) {
             if timeElapsed < minPhaseTimeLimit {
                 Text("Keep recording for \(minPhaseTimeLimit - timeElapsed)s...")
-                    .font(.caption.bold())
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
                     .background(.black.opacity(0.6))
                     .foregroundStyle(.white)
                     .clipShape(Capsule())
+                    .transition(.opacity)
             } else {
-                Text(" ")
-                    .font(.caption.bold())
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
+                Text("Ready to stop")
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(Color.green.opacity(0.8))
+                    .foregroundStyle(.white)
+                    .clipShape(Capsule())
+                    .transition(.opacity)
             }
             
             HStack {
                 Spacer()
                 Button {
+                    UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
                     let durationAdded = Double(timeElapsed)
                     totalDurationElapsed += durationAdded
                     stopTimer()
                     cameraService.stopRecording()
                 } label: {
                     ZStack {
-                        Circle().fill(timeElapsed >= minPhaseTimeLimit ? .white : .white.opacity(0.5)).frame(width: 76, height: 76)
-                        Circle().stroke(.black.opacity(0.8), lineWidth: 3).frame(width: 64, height: 64)
-                        RoundedRectangle(cornerRadius: 4).fill(timeElapsed >= minPhaseTimeLimit ? .red : .gray).frame(width: 24, height: 24)
+                        Circle()
+                            .stroke(Color.white.opacity(0.3), lineWidth: 4)
+                            .frame(width: 80, height: 80)
+                        
+                        Circle()
+                            .trim(from: 0, to: CGFloat(timeElapsed) / CGFloat(maxPhaseTimeLimit))
+                            .stroke(Color.red, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                            .frame(width: 80, height: 80)
+                            .rotationEffect(.degrees(-90))
+                            .animation(.linear(duration: 1.0), value: timeElapsed)
+                        
+                        RoundedRectangle(cornerRadius: timeElapsed >= minPhaseTimeLimit ? 8 : 40, style: .continuous)
+                            .fill(timeElapsed >= minPhaseTimeLimit ? Color.red : Color.white.opacity(0.8))
+                            .frame(width: timeElapsed >= minPhaseTimeLimit ? 32 : 64, height: timeElapsed >= minPhaseTimeLimit ? 32 : 64)
+                            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: timeElapsed >= minPhaseTimeLimit)
                     }
                 }
                 .disabled(timeElapsed < minPhaseTimeLimit)
                 Spacer()
             }
         }
-        .padding(.bottom, 40)
-        .background(LinearGradient(colors: [.black.opacity(0.8), .clear], startPoint: .bottom, endPoint: .top))
+        .padding(.bottom, 50)
+        .background(LinearGradient(colors: [.black.opacity(0.7), .clear], startPoint: .bottom, endPoint: .top))
     }
     
     private func previewControls(for url: URL) -> some View {
         HStack(spacing: 16) {
-            Button(role: .destructive) {
+            Button {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 totalDurationElapsed -= Double(timeElapsed)
                 try? FileManager.default.removeItem(at: url)
-                withAnimation(.spring()) { flowState = .instruction }
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { flowState = .instruction }
             } label: {
                 Text("Retake")
-                    .fontWeight(.semibold)
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .background(Color.red.opacity(0.8))
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
-            .buttonStyle(.borderedProminent)
-            .tint(.red.opacity(0.8))
-            .controlSize(.large)
             
             Button {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 if collectedURLs.count > currentPhase.indexPos {
                     collectedURLs[currentPhase.indexPos] = url
                 } else {
@@ -272,21 +321,24 @@ struct NegativeVideoCameraView: View {
                 let timeRemaining = maxTotalTimeLimit - totalDurationElapsedInt
                 
                 if timeRemaining >= 3 {
-                    withAnimation(.spring()) { flowState = .choice }
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { flowState = .choice }
                 } else {
                     finishAndStitch()
                 }
             } label: {
                 Text("Accept Clip")
-                    .fontWeight(.semibold)
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .background(Color(red: 0.22, green: 0.49, blue: 1.00))
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
-            .buttonStyle(.borderedProminent)
-            .tint(.blue)
-            .controlSize(.large)
         }
         .padding(24)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 32))
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 32, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 32, style: .continuous).stroke(Color.white.opacity(0.2), lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.15), radius: 20, x: 0, y: 10)
         .padding(.horizontal, 20)
         .padding(.bottom, 40)
         .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -295,6 +347,7 @@ struct NegativeVideoCameraView: View {
     private var topControls: some View {
         HStack {
             Button {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 isCancelled = true
                 stopTimer()
                 if cameraService.isRecording {
@@ -306,26 +359,37 @@ struct NegativeVideoCameraView: View {
                 }
             } label: {
                 Image(systemName: "xmark")
-                    .font(.title3.bold())
+                    .font(.system(size: 16, weight: .bold))
                     .foregroundStyle(.white)
-                    .padding(12)
-                    .background(.black.opacity(0.55))
+                    .frame(width: 44, height: 44)
+                    .background(.ultraThinMaterial)
                     .clipShape(Circle())
+                    .overlay(Circle().stroke(Color.white.opacity(0.2), lineWidth: 0.5))
             }
             
             Spacer()
             
             if flowState == .recording {
-                Text("00:\(String(format: "%02d", timeElapsed)) / 00:\(String(format: "%02d", maxPhaseTimeLimit))")
-                    .font(.headline.monospacedDigit())
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .background(.red.opacity(0.8))
-                    .foregroundStyle(.white)
-                    .clipShape(Capsule())
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(Color.red)
+                        .frame(width: 8, height: 8)
+                        .opacity(timeElapsed % 2 == 0 ? 1 : 0.3)
+                        .animation(.linear(duration: 0.5), value: timeElapsed)
+                    
+                    Text("\(String(format: "%02d", timeElapsed)) / \(String(format: "%02d", maxPhaseTimeLimit))")
+                        .font(.system(size: 15, weight: .bold, design: .monospaced))
+                        .foregroundStyle(.white)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(.ultraThinMaterial)
+                .clipShape(Capsule())
+                .overlay(Capsule().stroke(Color.white.opacity(0.2), lineWidth: 0.5))
             }
         }
-        .padding()
+        .padding(.horizontal, 20)
+        .padding(.top, 10)
     }
 
     private func startTimer() {
@@ -382,81 +446,62 @@ struct NegativeVideoCameraView: View {
 
     private func cameraErrorOverlay(message: String) -> some View {
         VStack(spacing: 16) {
-            Image(systemName: "camera.fill").font(.system(size: 42))
-            Text("Camera Unavailable").font(.title2.bold())
-            Text(message).multilineTextAlignment(.center)
-            Button("Close") { dismiss() }.buttonStyle(.bordered)
+            Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 42, weight: .light)).foregroundStyle(.orange)
+            Text("Camera Unavailable").font(.system(size: 22, weight: .bold, design: .rounded))
+            Text(message).font(.system(size: 15)).multilineTextAlignment(.center).foregroundStyle(.secondary)
+            Button { dismiss() } label: {
+                Text("Close")
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(Color(uiColor: .tertiarySystemFill))
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
         }
-        .foregroundStyle(.white)
-        .padding(28)
-        .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 22))
-        .padding()
+        .padding(30)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 32, style: .continuous))
+        .padding(.horizontal, 40)
     }
 }
 
 private struct NegativeVideoCameraPreview: UIViewRepresentable {
     let session: AVCaptureSession
-
     func makeUIView(context: Context) -> NegativeCameraPreviewUIView {
         let view = NegativeCameraPreviewUIView()
         view.previewLayer.session = session
         view.previewLayer.videoGravity = .resizeAspectFill
         return view
     }
-
     func updateUIView(_ uiView: NegativeCameraPreviewUIView, context: Context) {
-        if uiView.previewLayer.session !== session {
-            uiView.previewLayer.session = session
-        }
+        if uiView.previewLayer.session !== session { uiView.previewLayer.session = session }
     }
 }
 
 private final class NegativeCameraPreviewUIView: UIView {
     override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }
     var previewLayer: AVCaptureVideoPreviewLayer { layer as! AVCaptureVideoPreviewLayer }
-    
     private var initialZoom: CGFloat = 1.0
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        setupGestures()
-    }
-
-    required init?(coder: NSCoder) {
-        super.init(coder: coder)
-        setupGestures()
-    }
+    override init(frame: CGRect) { super.init(frame: frame); setupGestures() }
+    required init?(coder: NSCoder) { super.init(coder: coder); setupGestures() }
     
     private func setupGestures() {
-        let pinch = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch(_:)))
-        addGestureRecognizer(pinch)
-        
-        let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
-        addGestureRecognizer(tap)
+        addGestureRecognizer(UIPinchGestureRecognizer(target: self, action: #selector(handlePinch(_:))))
+        addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(handleTap(_:))))
     }
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        if let connection = previewLayer.connection, connection.isVideoRotationAngleSupported(90) {
-            connection.videoRotationAngle = 90
-        }
+        if let connection = previewLayer.connection, connection.isVideoRotationAngleSupported(90) { connection.videoRotationAngle = 90 }
     }
     
     @objc private func handlePinch(_ pinch: UIPinchGestureRecognizer) {
         guard let device = previewLayer.session?.inputs.compactMap({ $0 as? AVCaptureDeviceInput }).first?.device else { return }
-
-        if pinch.state == .began {
-            initialZoom = device.videoZoomFactor
-        }
-
+        if pinch.state == .began { initialZoom = device.videoZoomFactor }
         if pinch.state == .changed || pinch.state == .began {
             let zoomFactor = min(max(initialZoom * pinch.scale, 1.0), min(5.0, device.activeFormat.videoMaxZoomFactor))
-            do {
-                try device.lockForConfiguration()
-                device.videoZoomFactor = zoomFactor
-                device.unlockForConfiguration()
-            } catch {}
+            try? device.lockForConfiguration()
+            device.videoZoomFactor = zoomFactor
+            device.unlockForConfiguration()
         }
     }
     
@@ -464,46 +509,33 @@ private final class NegativeCameraPreviewUIView: UIView {
         guard let device = previewLayer.session?.inputs.compactMap({ $0 as? AVCaptureDeviceInput }).first?.device else { return }
         let point = tap.location(in: self)
         let captureDevicePoint = previewLayer.captureDevicePointConverted(fromLayerPoint: point)
-
-        do {
-            try device.lockForConfiguration()
-            if device.isFocusPointOfInterestSupported && device.isFocusModeSupported(.continuousAutoFocus) {
-                device.focusPointOfInterest = captureDevicePoint
-                device.focusMode = .continuousAutoFocus
-            }
-            if device.isExposurePointOfInterestSupported && device.isExposureModeSupported(.continuousAutoExposure) {
-                device.exposurePointOfInterest = captureDevicePoint
-                device.exposureMode = .continuousAutoExposure
-            }
-            device.unlockForConfiguration()
-        } catch {}
+        try? device.lockForConfiguration()
+        if device.isFocusPointOfInterestSupported && device.isFocusModeSupported(.continuousAutoFocus) {
+            device.focusPointOfInterest = captureDevicePoint
+            device.focusMode = .continuousAutoFocus
+        }
+        if device.isExposurePointOfInterestSupported && device.isExposureModeSupported(.continuousAutoExposure) {
+            device.exposurePointOfInterest = captureDevicePoint
+            device.exposureMode = .continuousAutoExposure
+        }
+        device.unlockForConfiguration()
     }
 }
 
 private struct NegativeSafeVideoPlayer: UIViewControllerRepresentable, Equatable {
     let url: URL
-
-    static func == (lhs: NegativeSafeVideoPlayer, rhs: NegativeSafeVideoPlayer) -> Bool {
-        return lhs.url == rhs.url
-    }
-
+    static func == (lhs: NegativeSafeVideoPlayer, rhs: NegativeSafeVideoPlayer) -> Bool { return lhs.url == rhs.url }
     func makeUIViewController(context: Context) -> AVPlayerViewController {
         let controller = AVPlayerViewController()
         controller.player = AVPlayer(url: url)
         controller.videoGravity = .resizeAspectFill
-        if #available(iOS 16.0, *) {
-            controller.allowsVideoFrameAnalysis = false
-        }
+        if #available(iOS 16.0, *) { controller.allowsVideoFrameAnalysis = false }
         return controller
     }
-
     func updateUIViewController(_ uiViewController: AVPlayerViewController, context: Context) {}
-
     static func dismantleUIViewController(_ uiViewController: AVPlayerViewController, coordinator: ()) {
         let player = uiViewController.player
         uiViewController.player = nil
-        DispatchQueue.global(qos: .background).async {
-            player?.pause()
-        }
+        DispatchQueue.global(qos: .background).async { player?.pause() }
     }
 }
