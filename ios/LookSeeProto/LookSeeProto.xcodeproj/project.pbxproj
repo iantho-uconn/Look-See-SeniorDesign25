@@ -20,6 +20,8 @@
 		3C63C8A82F91875E0006C5DD /* VariableContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C63C8A72F91875E0006C5DD /* VariableContainer.swift */; };
 		3C72AA372F5141A000A90328 /* best.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3C72AA362F5141A000A90328 /* best.mlpackage */; };
 		3C72AA3B2F51570300A90328 /* again.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3C72AA3A2F51570300A90328 /* again.mlpackage */; };
+		3C7452B9301187AF0016E21D /* BusinessMediaHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C7452B8301187AF0016E21D /* BusinessMediaHistoryView.swift */; };
+		3C7452BD301187DB0016E21D /* BusinessMediaHistoryNavigationRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C7452BC301187DB0016E21D /* BusinessMediaHistoryNavigationRow.swift */; };
 		3C90209E2F3ABCD300EE30BF /* CameraPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C90209D2F3ABCD300EE30BF /* CameraPreview.swift */; };
 		3C90209F2F3ABCD300EE30BF /* CameraPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C90209D2F3ABCD300EE30BF /* CameraPreview.swift */; };
 		3C9020A02F3ABCD300EE30BF /* CameraPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C90209D2F3ABCD300EE30BF /* CameraPreview.swift */; };
@@ -108,6 +110,8 @@
 		3C63C8A72F91875E0006C5DD /* VariableContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VariableContainer.swift; sourceTree = "<group>"; };
 		3C72AA362F5141A000A90328 /* best.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = best.mlpackage; sourceTree = "<group>"; };
 		3C72AA3A2F51570300A90328 /* again.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = again.mlpackage; sourceTree = "<group>"; };
+		3C7452B8301187AF0016E21D /* BusinessMediaHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BusinessMediaHistoryView.swift; sourceTree = "<group>"; };
+		3C7452BC301187DB0016E21D /* BusinessMediaHistoryNavigationRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BusinessMediaHistoryNavigationRow.swift; sourceTree = "<group>"; };
 		3C90209D2F3ABCD300EE30BF /* CameraPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPreview.swift; sourceTree = "<group>"; };
 		3C9020A12F3ABCE200EE30BF /* Detector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Detector.swift; sourceTree = "<group>"; };
 		3C9020A52F3ABCE900EE30BF /* LocationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationManager.swift; sourceTree = "<group>"; };
@@ -274,9 +278,11 @@
 				3CF3703D3006BE24005780B3 /* AccountSecurityView.swift */,
 				D0E78BE13008FF8D00E5FE00 /* GuestSignUpView.swift */,
 				D0E78BCE3006F92500E5FE00 /* PositiveVideoCameraView.swift */,
+				3C7452BC301187DB0016E21D /* BusinessMediaHistoryNavigationRow.swift */,
 				D0E78BCC3006A63200E5FE00 /* GuidedCaptureOverlay.swift */,
 				3C3D161F2FFCA9B700C8A544 /* BusinessLandmarkDetailView.swift */,
 				3C3D161D2FFCA97200C8A544 /* BusinessLandmarksView.swift */,
+				3C7452B8301187AF0016E21D /* BusinessMediaHistoryView.swift */,
 				374FCAFA2FFE98CB0035A674 /* VideoMerge.swift */,
 				D0E7888C2FF2E3C000E5FE00 /* NegativeVideoCameraView.swift */,
 				D0B0B1312FE59EF800C75E25 /* QuickUploadView.swift */,
@@ -502,6 +508,7 @@
 				D0E78BCD3006A63A00E5FE00 /* GuidedCaptureOverlay.swift in Sources */,
 				D0E78BE23008FF9100E5FE00 /* GuestSignUpView.swift in Sources */,
 				D0E78BCF3006F92800E5FE00 /* PositiveVideoCameraView.swift in Sources */,
+				3C7452BD301187DB0016E21D /* BusinessMediaHistoryNavigationRow.swift in Sources */,
 				562DAAB32F2A89600083A71E /* LandmarkScan.swift in Sources */,
 				3C63C8A82F91875E0006C5DD /* VariableContainer.swift in Sources */,
 				D0E78B7D300545F500E5FE00 /* NetworkMonitor.swift in Sources */,
@@ -513,6 +520,7 @@
 				3CF370423006BE7F005780B3 /* ForgotPasswordView.swift in Sources */,
 				D0B0B1322FE59F0300C75E25 /* QuickUploadView.swift in Sources */,
 				568CE2D12F56554E009A8775 /* PromotionEditor.swift in Sources */,
+				3C7452B9301187AF0016E21D /* BusinessMediaHistoryView.swift in Sources */,
 				3C9020A02F3ABCD300EE30BF /* CameraPreview.swift in Sources */,
 				56BDFD612EC63B52006D1B84 /* PayInfo.swift in Sources */,
 				D0E7888D2FF2E3C800E5FE00 /* NegativeVideoCameraView.swift in Sources */,

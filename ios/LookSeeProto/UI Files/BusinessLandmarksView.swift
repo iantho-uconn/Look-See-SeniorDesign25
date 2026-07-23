@@ -102,6 +102,9 @@ struct BusinessLandmarksView: View {
                 await viewModel.loadLandmarks()
             }
         }
+ /*       .task {
+            await printCognitoTokens()
+      }*/  
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {

@@ -203,6 +203,11 @@ struct BusinessLandmarkDetailView: View {
                 header: Text("Media Uploads"),
                 footer: Text("Choose media first, confirm your selection with the blue checkmark in the photo picker, then submit when ready.")
             ) {
+                BusinessMediaHistoryNavigationRow(
+                    landmarkId: landmark.landmarkId,
+                    landmarkLabel: landmark.label
+                )
+
                 positivePickerButton
                 positiveSelectionControls
 
