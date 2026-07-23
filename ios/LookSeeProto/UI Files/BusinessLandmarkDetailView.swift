@@ -77,7 +77,7 @@ struct BusinessLandmarkDetailView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
-                
+
                 // MARK: - Header
                 VStack(alignment: .leading, spacing: 12) {
                     Text(landmark.label.isEmpty ? "Untitled Landmark" : landmark.label)
@@ -87,7 +87,7 @@ struct BusinessLandmarkDetailView: View {
                     Text(displayDescription)
                         .font(.system(size: 16, weight: .medium))
                         .foregroundColor(.secondary)
-                    
+
                     Button {
                         UIImpactFeedbackGenerator(style: .light).impactOccurred()
                         draftShortDescription = displayedShortDescription
@@ -96,7 +96,8 @@ struct BusinessLandmarkDetailView: View {
                     } label: {
                         HStack {
                             Image(systemName: "square.and.pencil")
-                            Text("Edit Description").fontWeight(.bold)
+                            Text("Edit Description")
+                                .fontWeight(.bold)
                         }
                         .font(.system(size: 14, design: .rounded))
                         .foregroundStyle(primaryColor)
@@ -116,42 +117,55 @@ struct BusinessLandmarkDetailView: View {
 
                 // MARK: - Management
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Management")
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
-                        .foregroundStyle(.secondary)
-                        .textCase(.uppercase)
-                        .padding(.horizontal, 20)
-                    
+                    sectionTitle("Management")
+
                     VStack(spacing: 0) {
-                        Toggle(isOn: Binding(
-                            get: { displayedIsActive },
-                            set: { newValue in
-                                updateManagementSetting(isActive: newValue, promotionEnabled: nil)
-                            }
-                        )) {
+                        Toggle(
+                            isOn: Binding(
+                                get: { displayedIsActive },
+                                set: { newValue in
+                                    updateManagementSetting(
+                                        isActive: newValue,
+                                        promotionEnabled: nil
+                                    )
+                                }
+                            )
+                        ) {
                             Label(
                                 displayedIsActive ? "Active Landmark" : "Inactive Landmark",
-                                systemImage: displayedIsActive ? "checkmark.circle.fill" : "pause.circle.fill"
+                                systemImage: displayedIsActive
+                                    ? "checkmark.circle.fill"
+                                    : "pause.circle.fill"
                             )
                             .foregroundStyle(displayedIsActive ? .green : .secondary)
                             .font(.system(size: 16, weight: .semibold))
                         }
                         .padding(16)
                         .disabled(isSavingManagement)
-                        
-                        Divider().padding(.leading, 50)
-                        
-                        Toggle(isOn: Binding(
-                            get: { displayedPromotionEnabled },
-                            set: { newValue in
-                                updateManagementSetting(isActive: nil, promotionEnabled: newValue)
-                            }
-                        )) {
+
+                        Divider()
+                            .padding(.leading, 50)
+
+                        Toggle(
+                            isOn: Binding(
+                                get: { displayedPromotionEnabled },
+                                set: { newValue in
+                                    updateManagementSetting(
+                                        isActive: nil,
+                                        promotionEnabled: newValue
+                                    )
+                                }
+                            )
+                        ) {
                             Label(
-                                displayedPromotionEnabled ? "Promotions Enabled" : "Promotions Disabled",
+                                displayedPromotionEnabled
+                                    ? "Promotions Enabled"
+                                    : "Promotions Disabled",
                                 systemImage: displayedPromotionEnabled ? "tag.fill" : "tag"
                             )
-                            .foregroundStyle(displayedPromotionEnabled ? .orange : .secondary)
+                            .foregroundStyle(
+                                displayedPromotionEnabled ? .orange : .secondary
+                            )
                             .font(.system(size: 16, weight: .semibold))
                         }
                         .padding(16)
@@ -161,56 +175,81 @@ struct BusinessLandmarkDetailView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                     .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2)
                     .padding(.horizontal)
-                    
+
                     if isSavingManagement {
                         HStack(spacing: 10) {
-                            ProgressView().tint(primaryColor)
-                            Text("Saving settings...").font(.footnote.bold()).foregroundColor(.secondary)
-                        }.padding(.horizontal, 20)
+                            ProgressView()
+                                .tint(primaryColor)
+
+                            Text("Saving settings...")
+                                .font(.footnote.bold())
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.horizontal, 20)
                     }
+
                     if let managementErrorMessage {
-                        Text(managementErrorMessage).font(.footnote.bold()).foregroundColor(.red).padding(.horizontal, 20)
+                        Text(managementErrorMessage)
+                            .font(.footnote.bold())
+                            .foregroundColor(.red)
+                            .padding(.horizontal, 20)
                     }
                 }
 
                 // MARK: - Promotions
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Promotions")
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
-                        .foregroundStyle(.secondary)
-                        .textCase(.uppercase)
-                        .padding(.horizontal, 20)
-                    
+                    sectionTitle("Promotions")
+
                     VStack(spacing: 0) {
                         Button {
                             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                             promotionEditorContext = .create
                         } label: {
                             HStack {
-                                Image(systemName: "plus.circle.fill").font(.system(size: 20)).foregroundStyle(primaryColor)
-                                Text("Add Promotion").font(.system(size: 16, weight: .bold)).foregroundStyle(primaryColor)
+                                Image(systemName: "plus.circle.fill")
+                                    .font(.system(size: 20))
+                                    .foregroundStyle(primaryColor)
+
+                                Text("Add Promotion")
+                                    .font(.system(size: 16, weight: .bold))
+                                    .foregroundStyle(primaryColor)
+
                                 Spacer()
                             }
                             .padding(16)
                         }
-                        
+                        .buttonStyle(.plain)
+
                         if isLoadingPromotions {
                             Divider()
+
                             HStack(spacing: 10) {
-                                ProgressView().tint(primaryColor)
-                                Text("Loading promotions...").font(.system(size: 14, weight: .medium)).foregroundColor(.secondary)
+                                ProgressView()
+                                    .tint(primaryColor)
+
+                                Text("Loading promotions...")
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundColor(.secondary)
+
                                 Spacer()
-                            }.padding(16)
+                            }
+                            .padding(16)
                         } else if promotions.isEmpty {
                             Divider()
+
                             HStack {
-                                Text("No promotions have been added for this landmark yet.").font(.system(size: 14, weight: .medium)).foregroundColor(.secondary)
+                                Text("No promotions have been added for this landmark yet.")
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundColor(.secondary)
+
                                 Spacer()
-                            }.padding(16)
+                            }
+                            .padding(16)
                         } else {
                             ForEach(promotions) { promotion in
                                 Divider()
-                                promotionRow(promotion).padding(16)
+                                promotionRow(promotion)
+                                    .padding(16)
                             }
                         }
                     }
@@ -218,26 +257,45 @@ struct BusinessLandmarkDetailView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                     .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2)
                     .padding(.horizontal)
-                    
-                    Text(displayedPromotionEnabled ? "Promotions can be shown for this landmark when enabled." : "Promotions are currently disabled for this landmark. You can still create and edit records here.")
-                        .font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary).padding(.horizontal, 20)
+
+                    Text(
+                        displayedPromotionEnabled
+                            ? "Promotions can be shown for this landmark when enabled and within their date range."
+                            : "Promotions are currently disabled for this landmark. You can still create and edit records here."
+                    )
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 20)
+
+                    if let promotionErrorMessage {
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.orange)
+
+                            Text(promotionErrorMessage)
+                                .font(.footnote.bold())
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.horizontal, 20)
+                    }
                 }
 
-                // MARK: - Media Uploads
+                // MARK: - Location
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Media Uploads")
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
-                        .foregroundStyle(.secondary)
-                        .textCase(.uppercase)
-                        .padding(.horizontal, 20)
-                    
-                    VStack(spacing: 16) {
-                        positivePickerButton
-                        positiveSelectionControls
+                    sectionTitle("Location")
+
+                    VStack(spacing: 12) {
+                        detailRow(
+                            title: "Latitude",
+                            value: formattedCoordinate(landmark.latitude)
+                        )
+
                         Divider()
-                        negativePickerButton
-                        negativeSelectionControls
-                        uploadStatusArea
+
+                        detailRow(
+                            title: "Longitude",
+                            value: formattedCoordinate(landmark.longitude)
+                        )
                     }
                     .padding(20)
                     .background(Color(uiColor: .secondarySystemGroupedBackground))
@@ -246,67 +304,72 @@ struct BusinessLandmarkDetailView: View {
                     .padding(.horizontal)
                 }
 
-            Section(
-                header: Text("Promotions"),
-                footer: Text(displayedPromotionEnabled ? "Promotions can be shown for this landmark when enabled and within their date range." : "Promotions are currently disabled for this landmark. You can still create and edit promotion records here.")
-            ) {
-                promotionsContent
-            }
+                // MARK: - Legacy Promotion
+                if let legacyPromotion = landmark.promotion?
+                    .trimmingCharacters(in: .whitespacesAndNewlines),
+                   !legacyPromotion.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        sectionTitle("Promotion")
 
-            Section(header: Text("Location")) {
-                detailRow(
-                    title: "Latitude",
-                    value: formattedCoordinate(landmark.latitude)
-                )
-
-                detailRow(
-                    title: "Longitude",
-                    value: formattedCoordinate(landmark.longitude)
-                )
-            }
-
-            if let promotion = landmark.promotion,
-               !promotion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Section(header: Text("Promotion")) {
-                    Text(promotion)
-                        .foregroundColor(.primary)
+                        Text(legacyPromotion)
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundStyle(.primary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(20)
+                            .background(Color(uiColor: .secondarySystemGroupedBackground))
+                            .clipShape(
+                                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            )
+                            .shadow(
+                                color: .black.opacity(0.03),
+                                radius: 8,
+                                x: 0,
+                                y: 2
+                            )
+                            .padding(.horizontal)
+                    }
                 }
-            }
 
-            Section(
-                header: Text("Media Uploads"),
-                footer: Text("Choose media first, confirm your selection with the blue checkmark in the photo picker, then submit when ready.")
-            ) {
-                BusinessMediaHistoryNavigationRow(
-                    landmarkId: landmark.landmarkId,
-                    landmarkLabel: landmark.label
-                )
+                // MARK: - Media Uploads
+                VStack(alignment: .leading, spacing: 8) {
+                    sectionTitle("Media Uploads")
 
-                positivePickerButton
-                positiveSelectionControls
+                    VStack(spacing: 16) {
+                        BusinessMediaHistoryNavigationRow(
+                            landmarkId: landmark.landmarkId,
+                            landmarkLabel: landmark.label
+                        )
 
-                negativePickerButton
-                negativeSelectionControls
+                        Divider()
 
-                uploadStatusArea
-            }
+                        positivePickerButton
+                        positiveSelectionControls
 
-            dangerZoneSection
+                        Divider()
 
-            Section(header: Text("Identifiers")) {
-                detailRow(title: "Landmark ID", value: landmark.landmarkId)
+                        negativePickerButton
+                        negativeSelectionControls
 
-                if let ownerUserId = landmark.ownerUserId,
-                   !ownerUserId.isEmpty {
-                    detailRow(title: "Owner User ID", value: ownerUserId)
+                        uploadStatusArea
+                    }
+                    .padding(20)
+                    .background(Color(uiColor: .secondarySystemGroupedBackground))
+                    .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2)
+                    .padding(.horizontal)
+
+                    Text(
+                        "Choose media first, confirm your selection in the photo picker, then submit when ready."
+                    )
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 20)
+                }
+
                 // MARK: - Danger Zone
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Danger Zone")
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
-                        .foregroundStyle(.secondary)
-                        .textCase(.uppercase)
-                        .padding(.horizontal, 20)
-                    
+                    sectionTitle("Danger Zone")
+
                     Button {
                         UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
                         deleteConfirmationText = ""
@@ -314,34 +377,70 @@ struct BusinessLandmarkDetailView: View {
                         isShowingDeleteLandmarkSheet = true
                     } label: {
                         HStack {
-                            Image(systemName: "trash.fill").font(.system(size: 18)).foregroundStyle(.red)
-                            Text("Delete Landmark").font(.system(size: 16, weight: .bold)).foregroundStyle(.red)
+                            Image(systemName: "trash.fill")
+                                .font(.system(size: 18))
+                                .foregroundStyle(.red)
+
+                            Text("Delete Landmark")
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundStyle(.red)
+
                             Spacer()
                         }
                         .padding(16)
                         .background(Color.red.opacity(0.1))
-                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .clipShape(
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        )
                     }
+                    .buttonStyle(.plain)
                     .padding(.horizontal)
                     .disabled(isDeletingLandmark)
-                    
-                    Text("Deleting a landmark removes it from your account and starts backend cleanup for cluster mappings, dataset files, and promotions. This cannot be undone.")
-                        .font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary).padding(.horizontal, 20)
+
+                    Text(
+                        "Deleting a landmark removes it from your account and starts backend cleanup for cluster mappings, dataset files, and promotions. This cannot be undone."
+                    )
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 20)
                 }
-                
+
                 // MARK: - Identifiers
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Identifiers")
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
-                        .foregroundStyle(.secondary)
-                        .textCase(.uppercase)
-                        .padding(.horizontal, 20)
-                    
+                    sectionTitle("Identifiers")
+
                     VStack(spacing: 12) {
-                        detailRow(title: "Landmark ID", value: landmark.landmarkId)
-                        if let ownerUserId = landmark.ownerUserId, !ownerUserId.isEmpty { detailRow(title: "User ID", value: ownerUserId) }
-                        if let userEmail = landmark.userEmail, !userEmail.isEmpty { detailRow(title: "Email", value: userEmail) }
-                        if let lat = landmark.latitude, let lon = landmark.longitude { detailRow(title: "Location", value: String(format: "%.5f, %.5f", lat, lon)) }
+                        detailRow(
+                            title: "Landmark ID",
+                            value: landmark.landmarkId
+                        )
+
+                        if let ownerUserId = landmark.ownerUserId,
+                           !ownerUserId.isEmpty {
+                            Divider()
+                            detailRow(
+                                title: "Owner User ID",
+                                value: ownerUserId
+                            )
+                        }
+
+                        if let userEmail = landmark.userEmail,
+                           !userEmail.isEmpty {
+                            Divider()
+                            detailRow(
+                                title: "Owner Email",
+                                value: userEmail
+                            )
+                        }
+
+                        if let updatedAt = landmark.updatedAt,
+                           !updatedAt.isEmpty {
+                            Divider()
+                            detailRow(
+                                title: "Updated At",
+                                value: updatedAt
+                            )
+                        }
                     }
                     .padding(20)
                     .background(Color(uiColor: .secondarySystemGroupedBackground))
@@ -357,16 +456,48 @@ struct BusinessLandmarkDetailView: View {
         .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
         .navigationTitle("Landmark Details")
         .navigationBarTitleDisplayMode(.inline)
-        .sheet(isPresented: $isEditingDescription) { editDescriptionSheet }
-        .sheet(isPresented: $isShowingDeleteLandmarkSheet) { deleteLandmarkSheet }
+        .sheet(isPresented: $isEditingDescription) {
+            editDescriptionSheet
+        }
+        .sheet(isPresented: $isShowingDeleteLandmarkSheet) {
+            deleteLandmarkSheet
+        }
         .sheet(item: $promotionEditorContext) { context in
-            BusinessPromotionEditor(landmark: landmark, context: context) { Task { await loadPromotions() } }
+            BusinessPromotionEditor(
+                landmark: landmark,
+                context: context
+            ) {
+                Task {
+                    await loadPromotions()
+                }
+            }
         }
         .alert("Delete Promotion?", isPresented: deletePromotionAlertBinding) {
-            Button("Cancel", role: .cancel) { promotionPendingDelete = nil }
-            Button("Delete", role: .destructive) { if let promotion = promotionPendingDelete { Task { await deletePromotion(promotion) } } }
-        } message: { Text("This promotion will be permanently removed.") }
-        .task { await loadPromotions() }
+            Button("Cancel", role: .cancel) {
+                promotionPendingDelete = nil
+            }
+
+            Button("Delete", role: .destructive) {
+                if let promotion = promotionPendingDelete {
+                    Task {
+                        await deletePromotion(promotion)
+                    }
+                }
+            }
+        } message: {
+            Text("This promotion will be permanently removed.")
+        }
+        .task {
+            await loadPromotions()
+        }
+    }
+
+    private func sectionTitle(_ title: String) -> some View {
+        Text(title)
+            .font(.system(size: 13, weight: .bold, design: .rounded))
+            .foregroundStyle(.secondary)
+            .textCase(.uppercase)
+            .padding(.horizontal, 20)
     }
 
     // MARK: - Promotions
@@ -855,6 +986,14 @@ struct BusinessLandmarkDetailView: View {
             Image(systemName: "chevron.right").font(.system(size: 14, weight: .bold)).foregroundColor(Color(uiColor: .tertiaryLabel))
         }
         .contentShape(Rectangle())
+    }
+
+    private func formattedCoordinate(_ value: Double?) -> String {
+        guard let value else {
+            return "Not available"
+        }
+
+        return String(format: "%.6f", value)
     }
 
     private func detailRow(title: String, value: String) -> some View {

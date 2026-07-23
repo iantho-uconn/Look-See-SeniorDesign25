@@ -2,27 +2,32 @@
 //  LandmarkScan.swift
 //  LookSeeProto
 //
+
 import SwiftUI
 import CoreLocation
+
 struct LandmarkScan: View {
     var onTap: () -> Void = {}
     var onPinch: () -> Void = {}
-    
+
     @Binding var isDetecting: Bool
-    @Binding var isNavVisible: Bool // Tells the Ad if the bottom nav is currently on screen
-    
+    @Binding var isNavVisible: Bool
+
+    // Defaults to true so existing call sites do not need to pass it.
+    var isActive: Bool = true
+
     @StateObject private var detector = Detector()
-    @ObservedObject var infoView = VariableContainer.shared
+    @ObservedObject private var infoView = VariableContainer.shared
+
     @State private var zoomLevel: CGFloat = 1.0
     @State private var zoomIndicatorVisible = false
     @State private var zoomFadeTask: Task<Void, Never>?
     @State private var promotionFetchTask: Task<Void, Never>?
 
-    
     @State private var notificationStack: [Detection] = []
-    @State private var isCameraPaused: Bool = false
+    @State private var isCameraPaused = false
+
     var body: some View {
-        // GeometryReader fixes the iOS 26 UIScreen warning and perfectly aligns taps
         GeometryReader { geo in
             let lockedSafeZone = CGRect(
                 x: geo.size.width * 0.15,
@@ -30,18 +35,16 @@ struct LandmarkScan: View {
                 width: geo.size.width * 0.70,
                 height: geo.size.height * 0.45
             )
-            
+
             ZStack(alignment: .center) {
                 let blurAmount = infoView.infoView ? 10.0 : 0.0
+
                 CameraPreview(
                     detector: detector,
                     zoomLevel: $zoomLevel,
                     showSafeZone: .constant(false),
                     safeZoneRect: .constant(lockedSafeZone),
-                    onTap: {
-                        // Tapping the background toggles the navigation menus
-                        onTap()
-                    },
+                    onTap: onTap,
                     onPinch: onPinch,
                     isAIPaused: $isCameraPaused
                 )
@@ -53,59 +56,68 @@ struct LandmarkScan: View {
                 }
                 .onChange(of: detector.currentLabel) { _, newLabel in
                     withAnimation(.easeOut(duration: 0.1)) {
-                        isDetecting = (newLabel != nil && !(newLabel!.isEmpty))
+                        isDetecting = isActive &&
+                            newLabel?.trimmingCharacters(
+                                in: .whitespacesAndNewlines
+                            ).isEmpty == false
                     }
                 }
+                .onChange(of: detector.newlyDetectedLandmark) { _, newDetection in
+                    guard isActive, !infoView.infoView else {
+                        return
+                    }
 
-                // --- THE GREEN BOX TAP TARGET ---
-                // If an object is found, this invisible button sits perfectly over the safe zone
-                if let bestDetection = detector.detections.first, !infoView.infoView {
+                    handleNewDetection(newDetection)
+                }
+
+                if !isActive {
+                    Color.black
+                        .ignoresSafeArea()
+                        .zIndex(2)
+                }
+
+                // Invisible tap target over the detection safe zone.
+                if isActive,
+                   let bestDetection = detector.detections.first,
+                   !infoView.infoView {
                     Rectangle()
-                        .fill(Color.white.opacity(0.001)) // Invisible to the eye, but catches taps
-                        .frame(width: lockedSafeZone.width, height: lockedSafeZone.height)
-                        .position(x: lockedSafeZone.midX, y: lockedSafeZone.midY)
+                        .fill(Color.white.opacity(0.001))
+                        .frame(
+                            width: lockedSafeZone.width,
+                            height: lockedSafeZone.height
+                        )
+                        .position(
+                            x: lockedSafeZone.midX,
+                            y: lockedSafeZone.midY
+                        )
+                        .contentShape(Rectangle())
                         .onTapGesture {
-                            promotionFetchTask?.cancel()
+                            openPopup(for: bestDetection)
+                        }
+                        .zIndex(4)
+                }
 
-                            let landmarkId = bestDetection.landmarkEntry?.landmarkId ?? ""
-
-                            // Open the PopUp with the detected landmark info
-                            infoView.landmarkId = landmarkId
-                            infoView.landmarkName = bestDetection.displayLabel
-                            infoView.landmarkConfidence = bestDetection.confidence * 100
-                            infoView.landmarkDescription = bestDetection.landmarkEntry?.shortDescription ?? "Discover more about this location."
-                            infoView.landmarkURL = ""
-
-                            // Reset promo fields for this newly opened landmark
-                            infoView.promoName = "No active promotion"
-                            infoView.promoDescription = ""
-
-                            if landmarkId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                print("⚠️ No landmarkId found on detection. Cannot fetch active promotion.")
-                            } else {
-                                print("🔎 Checking active promotions for landmarkId: \(landmarkId)")
-                                infoView.promoName = "Checking promotions..."
-                                fetchActivePromotion(for: landmarkId)
-                            }
-
-                            infoView.infoView = true
-                            
-                            // Bring the navigation back so it's ready when they close the popup
-                            if !isNavVisible {
-                                onTap()
-                // Notification Stack positioned at bottom
-                if !infoView.infoView {
+                // Detection notifications.
+                if isActive, !infoView.infoView {
                     VStack {
                         Spacer()
+
                         VStack(spacing: 12) {
                             ForEach(notificationStack) { detection in
                                 NotificationPill(detection: detection) {
                                     openPopup(for: detection)
+
                                     withAnimation {
-                                        notificationStack.removeAll { $0.id == detection.id }
+                                        notificationStack.removeAll {
+                                            $0.id == detection.id
+                                        }
                                     }
                                 }
-                                .transition(.move(edge: .bottom).combined(with: .scale(scale: 0.9)).combined(with: .opacity))
+                                .transition(
+                                    .move(edge: .bottom)
+                                        .combined(with: .scale(scale: 0.9))
+                                        .combined(with: .opacity)
+                                )
                             }
                         }
                         .padding(.bottom, geo.size.height * 0.24)
@@ -113,71 +125,142 @@ struct LandmarkScan: View {
                     }
                     .zIndex(10)
                 }
-                if isActive {
-                    Color.clear
-                        .onChange(of: zoomLevel) { _, _ in
-                            showZoomIndicatorThenFade()
-                            onTap()
-                        }
-                        .onChange(of: detector.currentLabel) { _, newLabel in
-                            withAnimation(.easeOut(duration: 0.1)) {
-                                isDetecting = (newLabel != nil && !(newLabel!.isEmpty))
-                            }
-                        }
-                        .onChange(of: detector.newlyDetectedLandmark) { _, newDetection in
-                            handleNewDetection(newDetection)
-                        }
-                }
-                // Popup Centered Modal Overlay
+
+                // Centered popup overlay.
                 if infoView.infoView {
-                    Color.black.opacity(0.4)
+                    Color.black
+                        .opacity(0.4)
                         .ignoresSafeArea()
                         .zIndex(19)
                         .onTapGesture {
-                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                            withAnimation(
+                                .spring(
+                                    response: 0.35,
+                                    dampingFraction: 0.8
+                                )
+                            ) {
                                 infoView.infoView = false
                             }
                         }
-                    
+
                     PopUp()
                         .zIndex(20)
-                        .transition(.scale(scale: 0.85).combined(with: .opacity))
+                        .transition(
+                            .scale(scale: 0.85)
+                                .combined(with: .opacity)
+                        )
                 }
-                if !infoView.infoView && zoomIndicatorVisible {
+
+                if isActive,
+                   !infoView.infoView,
+                   zoomIndicatorVisible {
                     VStack {
                         Spacer()
+
                         Text(String(format: "%.1fx", zoomLevel))
                             .font(.caption.monospacedDigit())
                             .fontWeight(.bold)
                             .foregroundStyle(.white)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 8)
-                            .background(Color.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 12))
+                            .background(
+                                Color.black.opacity(0.6),
+                                in: RoundedRectangle(cornerRadius: 12)
+                            )
                             .padding(.bottom, 110)
                             .transition(.opacity)
                     }
                     .zIndex(5)
                 }
             }
-            .animation(.easeOut(duration: 0.25), value: zoomIndicatorVisible)
-            .animation(.spring(response: 0.35, dampingFraction: 0.8), value: notificationStack)
+            .animation(
+                .easeOut(duration: 0.25),
+                value: zoomIndicatorVisible
+            )
+            .animation(
+                .spring(response: 0.35, dampingFraction: 0.8),
+                value: notificationStack
+            )
             .onAppear {
                 detector.dynamicSafeZone = lockedSafeZone
-                // Explicitly set to false so the green bounding boxes stay visible for your testing
+
+                // Keep the green detection boxes visible while testing.
                 detector.hideBoundingBoxes = false
+
                 updatePauseState()
             }
             .onChange(of: geo.size) { _, _ in
                 detector.dynamicSafeZone = lockedSafeZone
             }
+            .onChange(of: isActive) { _, _ in
+                updatePauseState()
+            }
+            .onChange(of: infoView.infoView) { _, _ in
+                updatePauseState()
+            }
             .onDisappear {
                 promotionFetchTask?.cancel()
                 zoomFadeTask?.cancel()
+                isCameraPaused = true
+                isDetecting = false
             }
         }
     }
 
+    private func openPopup(for detection: Detection) {
+        promotionFetchTask?.cancel()
+
+        guard let entry = detection.landmarkEntry else {
+            infoView.landmarkId = ""
+            infoView.landmarkName = detection.displayLabel
+            infoView.landmarkConfidence = detection.confidence * 100
+            infoView.landmarkDescription =
+                "Discover more about this location."
+            infoView.landmarkURL = ""
+            infoView.promoName = "No active promotion"
+            infoView.promoDescription = ""
+            infoView.infoView = true
+
+            if !isNavVisible {
+                onTap()
+            }
+
+            return
+        }
+
+        infoView.presentLandmark(
+            entry,
+            clusterId: Int(detection.clusterID) ?? 0,
+            trainingRunId: detection.modelVersion,
+            detectionConfidence: detection.confidence
+        )
+
+        let landmarkId = entry.landmarkId
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if landmarkId.isEmpty {
+            print(
+                "⚠️ No landmarkId found on detection. Cannot fetch active promotion."
+            )
+            infoView.promoName = "No active promotion"
+            infoView.promoDescription = ""
+        } else {
+            print(
+                "🔎 Checking active promotions for landmarkId: \(landmarkId)"
+            )
+            infoView.promoName = "Checking promotions..."
+            infoView.promoDescription = ""
+            fetchActivePromotion(for: landmarkId)
+        }
+
+        if !isNavVisible {
+            onTap()
+        }
+    }
+
     private func fetchActivePromotion(for landmarkId: String) {
+        promotionFetchTask?.cancel()
+
         promotionFetchTask = Task {
             do {
                 let promotion = try await ActivePromotionService()
@@ -189,16 +272,22 @@ struct LandmarkScan: View {
 
                 await MainActor.run {
                     guard infoView.landmarkId == landmarkId else {
-                        print("ℹ️ Ignoring stale promotion response for \(landmarkId)")
+                        print(
+                            "ℹ️ Ignoring stale promotion response for \(landmarkId)"
+                        )
                         return
                     }
 
                     if let promotion {
-                        print("✅ Active promotion found for \(landmarkId): \(promotion.name)")
+                        print(
+                            "✅ Active promotion found for \(landmarkId): \(promotion.name)"
+                        )
                         infoView.promoName = promotion.name
                         infoView.promoDescription = promotion.description
                     } else {
-                        print("ℹ️ No active promotion returned for \(landmarkId)")
+                        print(
+                            "ℹ️ No active promotion returned for \(landmarkId)"
+                        )
                         infoView.promoName = "No active promotion"
                         infoView.promoDescription = ""
                     }
@@ -210,63 +299,72 @@ struct LandmarkScan: View {
 
                 await MainActor.run {
                     guard infoView.landmarkId == landmarkId else {
-                        print("ℹ️ Ignoring stale promotion error for \(landmarkId)")
+                        print(
+                            "ℹ️ Ignoring stale promotion error for \(landmarkId)"
+                        )
                         return
                     }
 
-                    print("❌ Failed to fetch active promotion for \(landmarkId): \(error.localizedDescription)")
+                    print(
+                        "❌ Failed to fetch active promotion for \(landmarkId): \(error.localizedDescription)"
+                    )
                     infoView.promoName = "No active promotion"
                     infoView.promoDescription = ""
                 }
             }
         }
-            .onChange(of: isActive) { _, _ in updatePauseState() }
-            .onChange(of: infoView.infoView) { _, _ in updatePauseState() }
-        }
     }
-    
+
     private func updatePauseState() {
         isCameraPaused = !isActive || infoView.infoView
+
+        if !isActive {
+            isDetecting = false
+        }
     }
-    
+
     private func handleNewDetection(_ detection: Detection?) {
-        guard let detection = detection else { return }
-        
+        guard let detection else {
+            return
+        }
+
+        // Avoid stacking duplicate notifications for the same detection.
+        guard !notificationStack.contains(where: { $0.id == detection.id }) else {
+            return
+        }
+
         UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
-        
+
         withAnimation {
-            // Insert at index 0 so new notifications push the old ones DOWN
             notificationStack.insert(detection, at: 0)
-            
-            // Limit increased to 3 popups
+
             if notificationStack.count > 3 {
                 notificationStack.removeLast()
             }
         }
-        
+
         let idToRemove = detection.id
+
         DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) {
             withAnimation {
-                notificationStack.removeAll { $0.id == idToRemove }
+                notificationStack.removeAll {
+                    $0.id == idToRemove
+                }
             }
         }
     }
-    private func openPopup(for bestDetection: Detection) {
-        if let entry = bestDetection.landmarkEntry {
-            infoView.presentLandmark(
-                entry,
-                clusterId: Int(bestDetection.clusterID) ?? 0,
-                trainingRunId: bestDetection.modelVersion,
-                detectionConfidence: bestDetection.confidence
-            )
-        }
-    }
+
     private func showZoomIndicatorThenFade() {
         zoomFadeTask?.cancel()
         zoomIndicatorVisible = true
+
         zoomFadeTask = Task {
             try? await Task.sleep(nanoseconds: 1_200_000_000)
-            guard !Task.isCancelled else { return }
+
+            guard !Task.isCancelled else {
+                return
+            }
+
             await MainActor.run {
                 withAnimation(.easeOut(duration: 0.25)) {
                     zoomIndicatorVisible = false
@@ -275,6 +373,7 @@ struct LandmarkScan: View {
         }
     }
 }
+
 // MARK: - Notification Pill
 struct NotificationPill: View {
     let detection: Detection

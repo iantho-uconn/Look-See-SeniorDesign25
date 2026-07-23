@@ -112,7 +112,7 @@ struct BusinessLandmarksView: View {
         }
  /*       .task {
             await printCognitoTokens()
-      }*/  
+      }*/
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
