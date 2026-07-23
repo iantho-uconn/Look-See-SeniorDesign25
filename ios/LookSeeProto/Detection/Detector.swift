@@ -20,7 +20,7 @@ import CoreLocation
 
 // MARK: - Data Models
 
-struct Detection: Identifiable {
+struct Detection: Identifiable, Equatable {
     let id = UUID()
     let clusterID: String
     let modelVersion: String
@@ -48,6 +48,10 @@ struct Detection: Identifiable {
 
     var label: String {
         String(classIndex)
+    }
+    
+    static func == (lhs: Detection, rhs: Detection) -> Bool {
+        lhs.id == rhs.id
     }
 }
 
@@ -79,20 +83,21 @@ final class Detector: NSObject, ObservableObject {
 
     // MARK: Published state
     @Published var detections: [Detection] = []
+    @Published var newlyDetectedLandmark: Detection? = nil
     @Published var currentLabel: String? = nil
     @Published var lastInferenceMS: Double = 0
     @Published var bufferSize: CGSize = .zero
     @Published var isPaused: Bool = false
     @Published var classLabels: [String] = []
+    
+    // NEW: Controls whether bounding boxes are visually passed to the UI
+    @Published var hideBoundingBoxes: Bool = false
 
     // MARK: Configuration
     var dynamicSafeZone: CGRect = .zero
     var manifest: ClusterLandmarkManifest?
     var proximityThresholdMeters: Double = 150
 
-    // Written from the location delegate (main thread), read from `queue`
-    // inside process(pixelBuffer:) / proximityFilter. Always mutate this
-    // via `queue.async` to avoid a cross-thread race.
     var userLocation: CLLocation?
 
     // MARK: Private internals
@@ -112,6 +117,10 @@ final class Detector: NSObject, ObservableObject {
     private var lastDetectionLogKey: String?
     private var lastDetectionLogDate = Date.distantPast
     private let detectionLogInterval: TimeInterval = 2.0
+    
+    // Cooldown state for notification debouncing
+    private var notificationCooldowns: [String: Date] = [:]
+    private let cooldownInterval: TimeInterval = 6.0
 
     private let inputSize = CGSize(width: 640, height: 640)
     private let confidenceThreshold: Float = 0.80
@@ -127,14 +136,8 @@ final class Detector: NSObject, ObservableObject {
         super.init()
         observeActiveCluster()
         startLocationUpdatesIfNeeded()
-        //loadLocalModel(named: "FinalDetector")
     }
 
-    // MARK: - Observe Active Release (OTA Updater)
-    //
-    // Driven by ModelSelector.activeRelease, which only publishes once a
-    // release's compiled model AND manifest files are confirmed to exist
-    // on disk (see ModelSelector.isCompleteRelease / makeActiveRelease).
     private func observeActiveCluster() {
         Task { @MainActor in
             for await release in ModelSelector.shared.$activeRelease.values {
@@ -155,7 +158,6 @@ final class Detector: NSObject, ObservableObject {
     private func loadModel(from url: URL, clusterID: String) {
         queue.async {
             do {
-                // Bypass the Apple Metal GPU bug by forcing CPU and Neural Engine
                 let config = MLModelConfiguration()
                 config.computeUnits = .cpuAndNeuralEngine
 
@@ -170,36 +172,22 @@ final class Detector: NSObject, ObservableObject {
         }
     }
 
-    // MARK: - Manifest Loading
     private func loadManifest(from url: URL) {
         do {
             let data = try Data(contentsOf: url)
-
-            let decodedManifest = try JSONDecoder().decode(
-                ClusterLandmarkManifest.self,
-                from: data
-            )
-
+            let decodedManifest = try JSONDecoder().decode(ClusterLandmarkManifest.self, from: data)
             try decodedManifest.validate()
 
             DispatchQueue.main.async {
                 self.manifest = decodedManifest
-                print("✅ Loaded manifest:")
-                print("   \(url.lastPathComponent)")
-                print("   \(decodedManifest.landmarks.count) landmarks")
+                print("✅ Loaded manifest: \(url.lastPathComponent) (\(decodedManifest.landmarks.count) landmarks)")
             }
-
         } catch {
-            print("❌ Failed to load manifest:")
-            print(error)
-
-            DispatchQueue.main.async {
-                self.manifest = nil
-            }
+            print("❌ Failed to load manifest: \(error)")
+            DispatchQueue.main.async { self.manifest = nil }
         }
     }
 
-    // MARK: - Location Setup
     private func startLocationUpdatesIfNeeded() {
         locationManager.delegate = self
         locationManager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters
@@ -210,18 +198,16 @@ final class Detector: NSObject, ObservableObject {
             locationManager.requestWhenInUseAuthorization()
         case .authorizedAlways, .authorizedWhenInUse:
             locationManager.startUpdatingLocation()
-        case .denied, .restricted:
-            break
-        @unknown default:
+        default:
             break
         }
     }
 
-    // MARK: - Public API
     func resetEngine() {
         DispatchQueue.main.async {
             self.detections.removeAll()
             self.currentLabel = nil
+            self.newlyDetectedLandmark = nil
             for smoother in self.smoothers.values { smoother.reset() }
         }
     }
@@ -236,7 +222,6 @@ final class Detector: NSObject, ObservableObject {
         output.setSampleBufferDelegate(self, queue: queue)
     }
 
-    // MARK: - Process Frame
     fileprivate func process(pixelBuffer: CVPixelBuffer) {
         guard
             let model = model,
@@ -262,7 +247,6 @@ final class Detector: NSObject, ObservableObject {
             "confidenceThreshold": NSNumber(value: confidenceThreshold),
             "iouThreshold": NSNumber(value: iouThreshold)
         ]) else {
-            print("❌ Failed to create input feature provider")
             throttling = false
             return
         }
@@ -274,7 +258,6 @@ final class Detector: NSObject, ObservableObject {
                 let confidenceArray = result.featureValue(for: "confidence")?.multiArrayValue,
                 let coordinatesArray = result.featureValue(for: "coordinates")?.multiArrayValue
             else {
-                print("❌ Missing model outputs")
                 throttling = false
                 return
             }
@@ -295,19 +278,32 @@ final class Detector: NSObject, ObservableObject {
                 expectedClassCount: expectedClassCount
             )
 
-            logPhaseTwoDiagnostics(
-                newDetections,
-                expectedClassCount: expectedClassCount,
-                confidenceShape: confidenceShape,
-                coordinatesShape: coordinatesShape
-            )
+            logPhaseTwoDiagnostics(newDetections, expectedClassCount: expectedClassCount, confidenceShape: confidenceShape, coordinatesShape: coordinatesShape)
 
             let end = CFAbsoluteTimeGetCurrent()
+            
+            // Check cooldowns for the notification stack
+            var triggerNotification: Detection? = nil
+            if let best = newDetections.max(by: { $0.confidence < $1.confidence }) {
+                let now = Date()
+                let lastNotified = notificationCooldowns[best.displayLabel] ?? Date.distantPast
+                
+                // 6 second cooldown before triggering another notification for the same landmark
+                if now.timeIntervalSince(lastNotified) > cooldownInterval {
+                    notificationCooldowns[best.displayLabel] = now
+                    triggerNotification = best
+                }
+            }
 
             DispatchQueue.main.async {
-                self.detections = newDetections
+                // If hideBoundingBoxes is true, we pass an empty array to visually clear the screen
+                self.detections = self.hideBoundingBoxes ? [] : newDetections
                 self.lastInferenceMS = (end - start) * 1000
                 self.currentLabel = newDetections.max(by: { $0.confidence < $1.confidence })?.displayLabel
+                
+                if let trigger = triggerNotification {
+                    self.newlyDetectedLandmark = trigger
+                }
             }
         } catch {
             print("❌ Prediction error: \(error)")
@@ -318,7 +314,6 @@ final class Detector: NSObject, ObservableObject {
         }
     }
 
-    // MARK: - Letterbox
     private func letterbox(pixelBuffer: CVPixelBuffer) -> (CVPixelBuffer, CGFloat, CGFloat, CGFloat) {
         let width = CGFloat(CVPixelBufferGetWidth(pixelBuffer))
         let height = CGFloat(CVPixelBufferGetHeight(pixelBuffer))
@@ -338,8 +333,7 @@ final class Detector: NSObject, ObservableObject {
             .composited(over: black)
 
         var output: CVPixelBuffer?
-        CVPixelBufferCreate(nil, Int(inputSize.width), Int(inputSize.height),
-                            kCVPixelFormatType_32BGRA, nil, &output)
+        CVPixelBufferCreate(nil, Int(inputSize.width), Int(inputSize.height), kCVPixelFormatType_32BGRA, nil, &output)
 
         if let validOutput = output {
             ciContext.render(composed, to: validOutput)
@@ -348,7 +342,6 @@ final class Detector: NSObject, ObservableObject {
         return (output!, scale, padX, padY)
     }
 
-    // MARK: - Detection Parsing
     private func parseDetections(
         confArray: MLMultiArray,
         coordArray: MLMultiArray,
@@ -450,7 +443,6 @@ final class Detector: NSObject, ObservableObject {
         return finalResults
     }
 
-    // MARK: - NMS
     private func nonMaxSuppression(detections: [Detection], iouThreshold: Float) -> [Detection] {
         var results: [Detection] = []
         var sorted = detections.sorted { $0.confidence > $1.confidence }
@@ -471,48 +463,18 @@ final class Detector: NSObject, ObservableObject {
         return results
     }
 
-    // MARK: - Proximity Filter
-    //
-    // Filters detections down to only landmarks within proximityThresholdMeters
-    // of the user's current live location. Distance is always recomputed here
-    // against `userLocation` — never against any distance value baked into the
-    // manifest JSON, since that value is stale (computed at manifest-generation
-    // time, not relative to where the user actually is right now).
-    //
-    // Note: ModelSelector separately gates which *model release* gets loaded
-    // using its own activationRadiusMeters (75m) based on proximity to any
-    // object in that cluster. This filter is a second, independent gate on
-    // top of that — it governs which *individual detected landmarks* are
-    // shown once a model is already active, using proximityThresholdMeters
-    // (150m).
     private func proximityFilter(_ detections: [Detection]) -> [Detection] {
-        guard let manifest = manifest, let userLocation = userLocation else {
-            // Manifest or live location not yet available — pass everything
-            // through unfiltered rather than suppressing all detections.
-            return detections
-        }
+        guard let manifest = manifest, let userLocation = userLocation else { return detections }
 
         return detections.filter { detection in
-            guard let object = manifest.landmark(for: detection.classIndex) else {
-                // No manifest entry for this class — don't suppress, just
-                // let it through unfiltered (classIndex may be a class the
-                // manifest doesn't describe).
-                return true
-            }
-
+            guard let object = manifest.landmark(for: detection.classIndex) else { return true }
             let objectLocation = CLLocation(latitude: object.latitude, longitude: object.longitude)
             let distanceMeters = userLocation.distance(from: objectLocation)
             let isNearby = distanceMeters <= proximityThresholdMeters
-
-            if !isNearby {
-                print("📍 Suppressed '\(detection.displayLabel)' — \(Int(distanceMeters))m away")
-            }
-
             return isNearby
         }
     }
 
-    // MARK: - Phase Two Diagnostics
     private func logPhaseTwoDiagnostics(
         _ detections: [Detection],
         expectedClassCount: Int,
@@ -548,7 +510,6 @@ extension Detector: AVCaptureVideoDataOutputSampleBufferDelegate {
     }
 }
 
-// MARK: - CLLocationManagerDelegate
 extension Detector: CLLocationManagerDelegate {
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         switch manager.authorizationStatus {
@@ -560,16 +521,8 @@ extension Detector: CLLocationManagerDelegate {
     }
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        guard let last = locations.last,
-              last.horizontalAccuracy > 0,
-              last.horizontalAccuracy <= 100
-        else { return }
-
-        // Written here (main thread via CoreLocation), read from `queue`
-        // in proximityFilter — hop onto `queue` to avoid a data race.
-        queue.async {
-            self.userLocation = last
-        }
+        guard let last = locations.last, last.horizontalAccuracy > 0, last.horizontalAccuracy <= 100 else { return }
+        queue.async { self.userLocation = last }
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {

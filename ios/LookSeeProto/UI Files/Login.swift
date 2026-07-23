@@ -13,6 +13,9 @@ struct Login: View {
     @State private var username = ""
     @State private var password = ""
     @State private var showForgotPassword = false
+    
+    // NEW: State for the temporary password prompt
+    @State private var newPasswordInput = ""
 
     var onSignedIn: () -> Void
     var onGoToSignup: () -> Void
@@ -196,6 +199,23 @@ struct Login: View {
             }
             .sheet(isPresented: $showForgotPassword) {
                 ForgotPasswordView(initialUsername: username)
+            }
+            
+            // MARK: - NEW ALERT BLOCK
+            // Pops up cleanly when AWS requires a new password
+            .alert("Update Password", isPresented: $vm.requiresNewPassword) {
+                SecureField("New Password", text: $newPasswordInput)
+                
+                Button("Update & Sign In") {
+                    vm.confirmNewPassword(newPassword: newPasswordInput)
+                }
+                
+                Button("Cancel", role: .cancel) {
+                    newPasswordInput = ""
+                    vm.errorMessage = ""
+                }
+            } message: {
+                Text("Your account has a temporary password. Please create a new permanent password.")
             }
         }
     }
