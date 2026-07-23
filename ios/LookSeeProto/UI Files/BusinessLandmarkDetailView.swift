@@ -246,6 +246,59 @@ struct BusinessLandmarkDetailView: View {
                     .padding(.horizontal)
                 }
 
+            Section(
+                header: Text("Promotions"),
+                footer: Text(displayedPromotionEnabled ? "Promotions can be shown for this landmark when enabled and within their date range." : "Promotions are currently disabled for this landmark. You can still create and edit promotion records here.")
+            ) {
+                promotionsContent
+            }
+
+            Section(header: Text("Location")) {
+                detailRow(
+                    title: "Latitude",
+                    value: formattedCoordinate(landmark.latitude)
+                )
+
+                detailRow(
+                    title: "Longitude",
+                    value: formattedCoordinate(landmark.longitude)
+                )
+            }
+
+            if let promotion = landmark.promotion,
+               !promotion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Section(header: Text("Promotion")) {
+                    Text(promotion)
+                        .foregroundColor(.primary)
+                }
+            }
+
+            Section(
+                header: Text("Media Uploads"),
+                footer: Text("Choose media first, confirm your selection with the blue checkmark in the photo picker, then submit when ready.")
+            ) {
+                BusinessMediaHistoryNavigationRow(
+                    landmarkId: landmark.landmarkId,
+                    landmarkLabel: landmark.label
+                )
+
+                positivePickerButton
+                positiveSelectionControls
+
+                negativePickerButton
+                negativeSelectionControls
+
+                uploadStatusArea
+            }
+
+            dangerZoneSection
+
+            Section(header: Text("Identifiers")) {
+                detailRow(title: "Landmark ID", value: landmark.landmarkId)
+
+                if let ownerUserId = landmark.ownerUserId,
+                   !ownerUserId.isEmpty {
+                    detailRow(title: "Owner User ID", value: ownerUserId)
                 // MARK: - Danger Zone
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Danger Zone")

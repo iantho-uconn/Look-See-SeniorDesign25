@@ -105,7 +105,14 @@ struct BusinessLandmarksView: View {
         .refreshable { await viewModel.refresh() }
         .navigationTitle("My Landmarks")
         .navigationBarTitleDisplayMode(.inline)
-        .task { if viewModel.landmarks.isEmpty { await viewModel.loadLandmarks() } }
+        .task {
+            if viewModel.landmarks.isEmpty {
+                await viewModel.loadLandmarks()
+            }
+        }
+ /*       .task {
+            await printCognitoTokens()
+      }*/  
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {

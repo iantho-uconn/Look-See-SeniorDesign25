@@ -46,6 +46,8 @@ struct Buttons: View {
         return "Record"
     }
     
+    var isActive: Bool = true
+    
     var body: some View {
         NavigationStack {
             ZStack {
@@ -57,7 +59,7 @@ struct Buttons: View {
                         onTap: revealChromeThenFade,
                         isDetecting: $isDetecting,
                         isNavVisible: $chromeVisible,
-                        isActive: currentTab == 0
+                       // isActive: currentTab == 0
                     )
                     .tag(0)
                     

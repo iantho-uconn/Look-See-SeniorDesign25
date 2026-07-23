@@ -9,18 +9,20 @@ struct LandmarkScan: View {
     var onPinch: () -> Void = {}
     
     @Binding var isDetecting: Bool
-    @Binding var isNavVisible: Bool
-    var isActive: Bool = true
+    @Binding var isNavVisible: Bool // Tells the Ad if the bottom nav is currently on screen
     
     @StateObject private var detector = Detector()
     @ObservedObject var infoView = VariableContainer.shared
     @State private var zoomLevel: CGFloat = 1.0
     @State private var zoomIndicatorVisible = false
     @State private var zoomFadeTask: Task<Void, Never>?
+    @State private var promotionFetchTask: Task<Void, Never>?
+
     
     @State private var notificationStack: [Detection] = []
     @State private var isCameraPaused: Bool = false
     var body: some View {
+        // GeometryReader fixes the iOS 26 UIScreen warning and perfectly aligns taps
         GeometryReader { geo in
             let lockedSafeZone = CGRect(
                 x: geo.size.width * 0.15,
@@ -36,16 +38,61 @@ struct LandmarkScan: View {
                     zoomLevel: $zoomLevel,
                     showSafeZone: .constant(false),
                     safeZoneRect: .constant(lockedSafeZone),
-                    onTap: { onTap() },
+                    onTap: {
+                        // Tapping the background toggles the navigation menus
+                        onTap()
+                    },
                     onPinch: onPinch,
                     isAIPaused: $isCameraPaused
                 )
                 .ignoresSafeArea()
                 .blur(radius: blurAmount)
-                
-                if !isActive {
-                    Color.black.ignoresSafeArea()
+                .onChange(of: zoomLevel) { _, _ in
+                    showZoomIndicatorThenFade()
+                    onTap()
                 }
+                .onChange(of: detector.currentLabel) { _, newLabel in
+                    withAnimation(.easeOut(duration: 0.1)) {
+                        isDetecting = (newLabel != nil && !(newLabel!.isEmpty))
+                    }
+                }
+
+                // --- THE GREEN BOX TAP TARGET ---
+                // If an object is found, this invisible button sits perfectly over the safe zone
+                if let bestDetection = detector.detections.first, !infoView.infoView {
+                    Rectangle()
+                        .fill(Color.white.opacity(0.001)) // Invisible to the eye, but catches taps
+                        .frame(width: lockedSafeZone.width, height: lockedSafeZone.height)
+                        .position(x: lockedSafeZone.midX, y: lockedSafeZone.midY)
+                        .onTapGesture {
+                            promotionFetchTask?.cancel()
+
+                            let landmarkId = bestDetection.landmarkEntry?.landmarkId ?? ""
+
+                            // Open the PopUp with the detected landmark info
+                            infoView.landmarkId = landmarkId
+                            infoView.landmarkName = bestDetection.displayLabel
+                            infoView.landmarkConfidence = bestDetection.confidence * 100
+                            infoView.landmarkDescription = bestDetection.landmarkEntry?.shortDescription ?? "Discover more about this location."
+                            infoView.landmarkURL = ""
+
+                            // Reset promo fields for this newly opened landmark
+                            infoView.promoName = "No active promotion"
+                            infoView.promoDescription = ""
+
+                            if landmarkId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                print("⚠️ No landmarkId found on detection. Cannot fetch active promotion.")
+                            } else {
+                                print("🔎 Checking active promotions for landmarkId: \(landmarkId)")
+                                infoView.promoName = "Checking promotions..."
+                                fetchActivePromotion(for: landmarkId)
+                            }
+
+                            infoView.infoView = true
+                            
+                            // Bring the navigation back so it's ready when they close the popup
+                            if !isNavVisible {
+                                onTap()
                 // Notification Stack positioned at bottom
                 if !infoView.infoView {
                     VStack {
@@ -123,6 +170,56 @@ struct LandmarkScan: View {
             .onChange(of: geo.size) { _, _ in
                 detector.dynamicSafeZone = lockedSafeZone
             }
+            .onDisappear {
+                promotionFetchTask?.cancel()
+                zoomFadeTask?.cancel()
+            }
+        }
+    }
+
+    private func fetchActivePromotion(for landmarkId: String) {
+        promotionFetchTask = Task {
+            do {
+                let promotion = try await ActivePromotionService()
+                    .fetchTopActivePromotion(landmarkId: landmarkId)
+
+                guard !Task.isCancelled else {
+                    return
+                }
+
+                await MainActor.run {
+                    guard infoView.landmarkId == landmarkId else {
+                        print("ℹ️ Ignoring stale promotion response for \(landmarkId)")
+                        return
+                    }
+
+                    if let promotion {
+                        print("✅ Active promotion found for \(landmarkId): \(promotion.name)")
+                        infoView.promoName = promotion.name
+                        infoView.promoDescription = promotion.description
+                    } else {
+                        print("ℹ️ No active promotion returned for \(landmarkId)")
+                        infoView.promoName = "No active promotion"
+                        infoView.promoDescription = ""
+                    }
+                }
+            } catch {
+                guard !Task.isCancelled else {
+                    return
+                }
+
+                await MainActor.run {
+                    guard infoView.landmarkId == landmarkId else {
+                        print("ℹ️ Ignoring stale promotion error for \(landmarkId)")
+                        return
+                    }
+
+                    print("❌ Failed to fetch active promotion for \(landmarkId): \(error.localizedDescription)")
+                    infoView.promoName = "No active promotion"
+                    infoView.promoDescription = ""
+                }
+            }
+        }
             .onChange(of: isActive) { _, _ in updatePauseState() }
             .onChange(of: infoView.infoView) { _, _ in updatePauseState() }
         }
