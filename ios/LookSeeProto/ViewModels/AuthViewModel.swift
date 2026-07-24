@@ -113,15 +113,12 @@ class AuthViewModel: ObservableObject {
         }
     }
 
-    // 🚀 FIXED: Directly fetches userId from the user session, and email from attributes
     func fetchUserDetails() async {
         do {
-            // 1. Get the immutable Cognito User ID directly
             if let user = try? await Amplify.Auth.getCurrentUser() {
                 self.userId = user.userId
             }
             
-            // 2. Fetch the email from the attributes array
             let attributes = try await Amplify.Auth.fetchUserAttributes()
             if let emailAttr = attributes.first(where: { $0.key == .email }) {
                 self.userEmail = emailAttr.value
@@ -189,8 +186,6 @@ class AuthViewModel: ObservableObject {
         }
     }
 }
-<<<<<<< HEAD
-=======
 
 func printCognitoTokens() async {
     do {
@@ -227,6 +222,3 @@ func printCognitoTokens() async {
         print("❌ Could not retrieve Cognito tokens: \(error)")
     }
 }
-
- 
->>>>>>> origin/feature-URLWorkshop

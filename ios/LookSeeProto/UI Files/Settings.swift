@@ -3,7 +3,6 @@
 //  LookSeeProto
 //
 
-
 import SwiftUI
 import Foundation
 import Combine
@@ -25,7 +24,6 @@ struct Settings: View {
 
     private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00)
 
-    // 🚀 STRICT CHECK: If capacity is 0, they have not paid yet.
     private var hasActivePlan: Bool {
         return vm.maxLandmarksCapacity > 0
     }
@@ -143,8 +141,8 @@ struct Settings: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Business Management").font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(.secondary).textCase(.uppercase).padding(.horizontal, 20)
                         
-                        // 🚀 TOTAL LOCKDOWN: Only shows tools if they actually paid
-                        if hasActivePlan {
+                        // 🚀 UNLOCKED: Shows tools if they have an active plan OR are a legacy business account
+                        if hasActivePlan || authState.tier == .business {
                             VStack(spacing: 0) {
                                 NavigationLink { BusinessLandmarksView() } label: {
                                     settingsRow(icon: "building.2.crop.circle.fill", iconBg: primaryColor, title: "Manage My Landmarks", subtitle: "View the landmarks assigned to your account.")
@@ -197,7 +195,10 @@ struct Settings: View {
                 Login(vm: vm, onSignedIn: {
                     presenter.showLoginSheet = false; dismiss()
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.85) {
-                        authState.tier = hasActivePlan ? .business : .authenticated
+                        // 🚀 FIX: Let legacy users keep their business tier! Only manually upgrade them if they have a plan.
+                        if vm.maxLandmarksCapacity > 0 {
+                            authState.tier = .business
+                        }
                     }
                 }, onGoToSignup: {
                     presenter.showLoginSheet = false

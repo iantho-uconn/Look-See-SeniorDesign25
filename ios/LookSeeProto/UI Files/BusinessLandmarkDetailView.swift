@@ -355,22 +355,6 @@ struct BusinessLandmarkDetailView: View {
 
                 // MARK: - Location
                 VStack(alignment: .leading, spacing: 8) {
-<<<<<<< HEAD
-                    Text("Media Uploads")
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
-                        .foregroundStyle(.secondary)
-                        .textCase(.uppercase)
-                        .padding(.horizontal, 20)
-                    
-                    VStack(spacing: 16) {
-                        BusinessMediaHistoryNavigationRow(
-                            landmarkId: landmark.landmarkId,
-                            landmarkLabel: landmark.label
-                        )
-                        Divider()
-                        positivePickerButton
-                        positiveSelectionControls
-=======
                     sectionTitle("Location")
 
                     VStack(spacing: 12) {
@@ -379,7 +363,6 @@ struct BusinessLandmarkDetailView: View {
                             value: formattedCoordinate(landmark.latitude)
                         )
 
->>>>>>> origin/feature-URLWorkshop
                         Divider()
 
                         detailRow(
@@ -394,14 +377,10 @@ struct BusinessLandmarkDetailView: View {
                     .padding(.horizontal)
                 }
 
-<<<<<<< HEAD
-=======
                 // MARK: - Legacy Promotion
-                if let legacyPromotion = landmark.promotion?
-                    .trimmingCharacters(in: .whitespacesAndNewlines),
-                   !legacyPromotion.isEmpty {
+                if let legacyPromotion = landmark.promotion?.trimmingCharacters(in: .whitespacesAndNewlines), !legacyPromotion.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
-                        sectionTitle("Promotion")
+                        sectionTitle("Legacy Promotion")
 
                         Text(legacyPromotion)
                             .font(.system(size: 15, weight: .medium))
@@ -409,15 +388,8 @@ struct BusinessLandmarkDetailView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(20)
                             .background(Color(uiColor: .secondarySystemGroupedBackground))
-                            .clipShape(
-                                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                            )
-                            .shadow(
-                                color: .black.opacity(0.03),
-                                radius: 8,
-                                x: 0,
-                                y: 2
-                            )
+                            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                            .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2)
                             .padding(.horizontal)
                     }
                 }
@@ -450,15 +422,12 @@ struct BusinessLandmarkDetailView: View {
                     .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2)
                     .padding(.horizontal)
 
-                    Text(
-                        "Choose media first, confirm your selection in the photo picker, then submit when ready."
-                    )
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 20)
+                    Text("Choose media first, confirm your selection in the photo picker, then submit when ready.")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 20)
                 }
 
->>>>>>> origin/feature-URLWorkshop
                 // MARK: - Danger Zone
                 VStack(alignment: .leading, spacing: 8) {
                     sectionTitle("Danger Zone")
