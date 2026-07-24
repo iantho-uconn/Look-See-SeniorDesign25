@@ -69,8 +69,12 @@ class AutoUploadManager: ObservableObject {
     // Auto-start via Network Monitor
     private func autoStartIfPossible() async {
         guard !isPaused else { return }
+        
+        // Create a temporary AuthVM and fetch the latest token/capacity data from the cloud
         let authVM = AuthViewModel()
         await authVM.fetchUserEmail()
+        await authVM.fetchUserUsageStats()
+        
         await processOfflineQueue(authVM: authVM)
     }
     
@@ -95,6 +99,34 @@ class AutoUploadManager: ObservableObject {
         
         for media in pendingMedia {
             if isPaused { break }
+            
+            // MARK: - NEW LIMIT CHECKS
+            
+            // 1. Check if they hit their Tier's maximum active landmark capacity
+            if authVM.activeLandmarksCount >= authVM.maxLandmarksCapacity {
+                print("🛑 CAPACITY REACHED: Stopping auto-upload queue.")
+                isPaused = true
+                isUploading = false
+                sendLimitNotification(
+                    title: "Landmark Capacity Reached",
+                    body: "You've reached your tier limit. Delete an old landmark or upgrade your plan to upload more."
+                )
+                return
+            }
+            
+            // 2. Check if they have at least 1 Token to spend
+            if authVM.tokenBalance <= 0 {
+                print("🛑 OUT OF TOKENS: Stopping auto-upload queue.")
+                isPaused = true
+                isUploading = false
+                sendLimitNotification(
+                    title: "Out of Swap Tokens",
+                    body: "You need 1 token to upload a new landmark. Purchase a token pack in Settings."
+                )
+                return
+            }
+            
+            // MARK: - Begin Upload
             
             currentlyUploadingId = media.id
             currentUploadProgress = 0.0
@@ -141,8 +173,13 @@ class AutoUploadManager: ObservableObject {
                     )
                 }
                 
-                // 3. Success! Delete from Outbox
+                // 3. Success! Update Token Balance and Delete from Outbox
                 print("✅ Auto-upload complete for: \(label)")
+                
+                // DEDUCT THE TOKEN AND ADD TO CAPACITY
+                authVM.tokenBalance -= 1
+                authVM.activeLandmarksCount += 1
+                
                 OfflineMediaManager.shared.deleteArchive(media: media)
                 sendSuccessNotification(landmarkName: label)
                 
@@ -159,10 +196,22 @@ class AutoUploadManager: ObservableObject {
         currentlyUploadingId = nil
     }
     
+    // MARK: - Notifications
+    
     private func sendSuccessNotification(landmarkName: String) {
         let content = UNMutableNotificationContent()
         content.title = "LookSee Upload Complete! 🎉"
-        content.body = "Your offline media for '\(landmarkName)' has been successfully synced."
+        content.body = "Your offline media for '\(landmarkName)' has been successfully synced. (1 Token consumed)."
+        content.sound = .default
+        
+        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(request)
+    }
+    
+    private func sendLimitNotification(title: String, body: String) {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
         content.sound = .default
         
         let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)

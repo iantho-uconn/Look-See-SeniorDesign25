@@ -232,6 +232,11 @@ struct BusinessLandmarkDetailView: View {
                         .padding(.horizontal, 20)
                     
                     VStack(spacing: 16) {
+                        BusinessMediaHistoryNavigationRow(
+                            landmarkId: landmark.landmarkId,
+                            landmarkLabel: landmark.label
+                        )
+                        Divider()
                         positivePickerButton
                         positiveSelectionControls
                         Divider()
@@ -246,59 +251,6 @@ struct BusinessLandmarkDetailView: View {
                     .padding(.horizontal)
                 }
 
-            Section(
-                header: Text("Promotions"),
-                footer: Text(displayedPromotionEnabled ? "Promotions can be shown for this landmark when enabled and within their date range." : "Promotions are currently disabled for this landmark. You can still create and edit promotion records here.")
-            ) {
-                promotionsContent
-            }
-
-            Section(header: Text("Location")) {
-                detailRow(
-                    title: "Latitude",
-                    value: formattedCoordinate(landmark.latitude)
-                )
-
-                detailRow(
-                    title: "Longitude",
-                    value: formattedCoordinate(landmark.longitude)
-                )
-            }
-
-            if let promotion = landmark.promotion,
-               !promotion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Section(header: Text("Promotion")) {
-                    Text(promotion)
-                        .foregroundColor(.primary)
-                }
-            }
-
-            Section(
-                header: Text("Media Uploads"),
-                footer: Text("Choose media first, confirm your selection with the blue checkmark in the photo picker, then submit when ready.")
-            ) {
-                BusinessMediaHistoryNavigationRow(
-                    landmarkId: landmark.landmarkId,
-                    landmarkLabel: landmark.label
-                )
-
-                positivePickerButton
-                positiveSelectionControls
-
-                negativePickerButton
-                negativeSelectionControls
-
-                uploadStatusArea
-            }
-
-            dangerZoneSection
-
-            Section(header: Text("Identifiers")) {
-                detailRow(title: "Landmark ID", value: landmark.landmarkId)
-
-                if let ownerUserId = landmark.ownerUserId,
-                   !ownerUserId.isEmpty {
-                    detailRow(title: "Owner User ID", value: ownerUserId)
                 // MARK: - Danger Zone
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Danger Zone")
@@ -369,8 +321,7 @@ struct BusinessLandmarkDetailView: View {
         .task { await loadPromotions() }
     }
 
-    // MARK: - Promotions
-
+    // MARK: - Promotions Methods
     private func promotionRow(_ promotion: BusinessPromotion) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .top, spacing: 12) {
@@ -476,7 +427,6 @@ struct BusinessLandmarkDetailView: View {
     }
 
     // MARK: - Picker Buttons
-
     private var positivePickerButton: some View {
         Button {
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
@@ -866,6 +816,7 @@ struct BusinessLandmarkDetailView: View {
     }
 }
 
+// Moved outside the View struct but kept private to the file
 private enum MediaSelectionError: LocalizedError {
     case couldNotLoadMedia
 

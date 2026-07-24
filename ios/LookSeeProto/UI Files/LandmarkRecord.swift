@@ -38,6 +38,10 @@ struct LandmarkRecord: View {
     @State private var showArchivePrompt = false
     @State private var showDiscardAlert = false
     
+    @State private var showLimitAlert = false
+    @State private var limitAlertTitle = ""
+    @State private var limitAlertMessage = ""
+    
     @State private var pendingArchiveURLs: [URL] = []
     @State private var isStitchingVideos = false
     
@@ -58,7 +62,6 @@ struct LandmarkRecord: View {
 
     private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00)
     
-    // Updated minimum global duration requirement
     private let minimumCombinedVideoDuration: Double = 15.0
 
     private var hasPositiveMedia: Bool { !pickedVideoURLs.isEmpty || pickedImage != nil }
@@ -167,6 +170,11 @@ struct LandmarkRecord: View {
             else { Button("Create Another Landmark") { resetForAnotherLandmark() }; Button("Add More Photos or Videos") { openAdditionalMediaUpload() } }
         } message: { Text("Your landmark media and negative reference video were uploaded successfully.") }
         .alert("Connection Offline", isPresented: $showAutoQueueAlert) { Button("OK", role: .cancel) { if archivedMedia != nil { dismiss() } } } message: { Text("You currently have no internet connection. This landmark has been securely added to your Upload Queue and will automatically sync when service returns!") }
+        .alert(limitAlertTitle, isPresented: $showLimitAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(limitAlertMessage)
+        }
     }
 
     var processingOverlay: some View {
@@ -624,6 +632,21 @@ struct LandmarkRecord: View {
     }
 
     private func startFullSubmission() {
+        if completedPositiveResult == nil {
+            if vm.activeLandmarksCount >= vm.maxLandmarksCapacity {
+                limitAlertTitle = "Capacity Reached"
+                limitAlertMessage = "You have reached your tier's maximum active landmarks. Delete an old landmark or upgrade your plan."
+                showLimitAlert = true
+                return
+            }
+            if vm.tokenBalance <= 0 {
+                limitAlertTitle = "Out of Swap Tokens"
+                limitAlertMessage = "You need 1 token to upload a new landmark. Purchase a token pack in Settings."
+                showLimitAlert = true
+                return
+            }
+        }
+        
         if !NetworkMonitor.shared.isConnected {
             if let archive = archivedMedia { OfflineMediaManager.shared.updateDraft(media: archive, label: labelText, shortDesc: shortDescription, userDesc: nil) }
             else { saveToArchiveFromForm() }
@@ -633,24 +656,50 @@ struct LandmarkRecord: View {
             }
             return
         }
+        
         Task {
             guard !isSubmissionRunning, !isFullSubmissionComplete else { return }
             if businessLandmarkId == nil { businessLandmarkId = makeBusinessLandmarkId() }
             guard let generatedLandmarkId = businessLandmarkId else { return }
             do {
                 let positiveResult: PositiveSubmissionResult
-                await vm.fetchUserEmail(); let idToken = await vm.fetchIdToken()
-                if let existingResult = completedPositiveResult { positiveResult = existingResult } else {
-                    let trimmedLabel = labelText.trimmingCharacters(in: .whitespacesAndNewlines); let trimmedShortDescription = shortDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+                await vm.fetchUserDetails(); let idToken = await vm.fetchIdToken()
+                
+                if let existingResult = completedPositiveResult {
+                    positiveResult = existingResult
+                } else {
+                    let trimmedLabel = labelText.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let trimmedShortDescription = shortDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+                    
                     guard !trimmedLabel.isEmpty, !trimmedShortDescription.isEmpty else { return }
+                    
                     positiveResult = try await uploadService.upload(userEmail: vm.userEmail, idToken: idToken, label: trimmedLabel, landmarkId: generatedLandmarkId, landmarkLabel: trimmedLabel, shortDescription: trimmedShortDescription, userDescription: nil, latitude: extractedLatitude ?? locationManager.latitude, longitude: extractedLongitude ?? locationManager.longitude, horizontalAccuracy: locationManager.horizontalAccuracy, videoURLs: pickedVideoURLs, image: pickedImage)
-                    completedPositiveResult = positiveResult; statusText = "Landmark media saved. Uploading reference video…"
+                    
+                    completedPositiveResult = positiveResult
+                    statusText = "Landmark media saved. Uploading reference video…"
+                    
+                    await MainActor.run {
+                        vm.tokenBalance -= 1
+                        vm.activeLandmarksCount += 1
+                    }
                 }
+                
                 let finalLandmarkId = positiveResult.landmarkId ?? generatedLandmarkId
-                if let negativeVideo = capturedNegativeVideo { _ = try await hardNegativeUploadService.upload(landmarkId: finalLandmarkId, idToken: idToken, video: negativeVideo) }
-                completedLandmarkId = finalLandmarkId; isFullSubmissionComplete = true; statusText = "Landmark and reference video uploaded successfully."; showCompletionPopup = true
+                
+                if let negativeVideo = capturedNegativeVideo {
+                    _ = try await hardNegativeUploadService.upload(landmarkId: finalLandmarkId, idToken: idToken, video: negativeVideo)
+                }
+                
+                completedLandmarkId = finalLandmarkId
+                isFullSubmissionComplete = true
+                statusText = "Landmark and reference video uploaded successfully."
+                showCompletionPopup = true
+                
                 if let media = archivedMedia { OfflineMediaManager.shared.deleteArchive(media: media) }
-            } catch { print("Full landmark submission failed:", error.localizedDescription) }
+                
+            } catch {
+                print("Full landmark submission failed:", error.localizedDescription)
+            }
         }
     }
 

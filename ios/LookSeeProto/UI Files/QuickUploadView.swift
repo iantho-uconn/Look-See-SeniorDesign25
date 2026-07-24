@@ -16,7 +16,6 @@ struct QuickUploadView: View {
     // Connect the Real AWS Upload Engine
     @StateObject private var uploadService = UploadService()
     
-    // THE FIX: Use an Identifiable enum instead of a boolean to prevent SwiftUI race conditions
     enum ActivePicker: Identifiable {
         case camera, library
         var id: Int { hashValue }
@@ -25,6 +24,11 @@ struct QuickUploadView: View {
     
     @State private var selectedMediaURL: URL?
     @State private var isVideo = false
+    
+    // MARK: NEW - Limit Alerts
+    @State private var showLimitAlert = false
+    @State private var limitAlertTitle = ""
+    @State private var limitAlertMessage = ""
     
     // Tech UI Colors
     private let bgDark = Color(red: 0.04, green: 0.04, blue: 0.06)
@@ -39,7 +43,6 @@ struct QuickUploadView: View {
                 
                 VStack(spacing: 24) {
                     
-                    // Techy Header
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("TARGETING LANDMARK")
@@ -57,7 +60,6 @@ struct QuickUploadView: View {
                     .padding(.horizontal, 20)
                     .padding(.top, 10)
                     
-                    // Media HUD Box
                     ZStack {
                         RoundedRectangle(cornerRadius: 24)
                             .fill(panelBg)
@@ -69,7 +71,6 @@ struct QuickUploadView: View {
                             .shadow(color: selectedMediaURL == nil ? .clear : accentCyan.opacity(0.3), radius: 10, x: 0, y: 0)
                         
                         if let url = selectedMediaURL {
-                            // Media Preview
                             if isVideo {
                                 VideoPlayer(player: AVPlayer(url: url))
                                     .clipShape(RoundedRectangle(cornerRadius: 24))
@@ -83,7 +84,6 @@ struct QuickUploadView: View {
                                 .clipShape(RoundedRectangle(cornerRadius: 24))
                             }
                             
-                            // Discard Overlay
                             VStack {
                                 HStack {
                                     Spacer()
@@ -105,7 +105,6 @@ struct QuickUploadView: View {
                                 Spacer()
                             }
                         } else {
-                            // Empty State
                             VStack(spacing: 20) {
                                 Image(systemName: "arrow.up.doc.on.clipboard")
                                     .font(.system(size: 40, weight: .light))
@@ -117,7 +116,7 @@ struct QuickUploadView: View {
                                 
                                 HStack(spacing: 16) {
                                     Button {
-                                        activePicker = .camera // Fixed
+                                        activePicker = .camera
                                     } label: {
                                         VStack(spacing: 8) {
                                             Image(systemName: "camera.viewfinder")
@@ -133,7 +132,7 @@ struct QuickUploadView: View {
                                     }
                                     
                                     Button {
-                                        activePicker = .library // Fixed
+                                        activePicker = .library
                                     } label: {
                                         VStack(spacing: 8) {
                                             Image(systemName: "folder.fill")
@@ -161,7 +160,6 @@ struct QuickUploadView: View {
                     
                     Spacer()
                     
-                    // Action Footer
                     if uploadService.isUploading || uploadService.stage == .complete {
                         VStack(spacing: 12) {
                             if uploadService.stage == .complete {
@@ -188,7 +186,18 @@ struct QuickUploadView: View {
                         .padding(.bottom, 20)
                     } else {
                         Button {
-                            Task { await triggerRealUpload() }
+                            // Limit Checks
+                            if vm.activeLandmarksCount >= vm.maxLandmarksCapacity {
+                                limitAlertTitle = "Capacity Reached"
+                                limitAlertMessage = "You have reached your tier's maximum active landmarks. Delete an old landmark or upgrade your plan."
+                                showLimitAlert = true
+                            } else if vm.tokenBalance <= 0 {
+                                limitAlertTitle = "Out of Swap Tokens"
+                                limitAlertMessage = "You need 1 token to upload a new landmark. Purchase a token pack in Settings."
+                                showLimitAlert = true
+                            } else {
+                                Task { await triggerRealUpload() }
+                            }
                         } label: {
                             HStack {
                                 Image(systemName: "network")
@@ -218,7 +227,6 @@ struct QuickUploadView: View {
                         .disabled(uploadService.isUploading && uploadService.stage != .complete)
                 }
             }
-            // THE FIX: Open the sheet bound to the specific item enum
             .sheet(item: $activePicker) { picker in
                 MediaPicker(
                     sourceType: picker == .camera ? .camera : .photoLibrary,
@@ -226,16 +234,19 @@ struct QuickUploadView: View {
                     isVideo: $isVideo
                 )
             }
+            .alert(limitAlertTitle, isPresented: $showLimitAlert) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text(limitAlertMessage)
+            }
         }
     }
     
-    // MARK: - The Real AWS Hand-off
     private func triggerRealUpload() async {
         guard let url = selectedMediaURL else { return }
         
-        await vm.fetchUserEmail()
+        await vm.fetchUserDetails()
         
-        // --- TOKEN FIX: Fetch token from AuthViewModel and pass it down ---
         let idToken = await vm.fetchIdToken()
         
         let uploadImage: UIImage? = isVideo ? nil : UIImage(contentsOfFile: url.path)
@@ -244,7 +255,7 @@ struct QuickUploadView: View {
         do {
             let _ = try await uploadService.upload(
                 userEmail: vm.userEmail,
-                idToken: idToken, // <-- Passed right here!
+                idToken: idToken,
                 label: landmark.label,
                 landmarkId: landmark.landmarkId,
                 landmarkLabel: landmark.label,
@@ -257,6 +268,12 @@ struct QuickUploadView: View {
                 image: uploadImage
             )
             print("✅ QuickUpload Completed Successfully")
+            
+            await MainActor.run {
+                vm.tokenBalance -= 1
+                vm.activeLandmarksCount += 1
+            }
+            
         } catch {
             print("❌ QuickUpload Failed: \(error.localizedDescription)")
         }
