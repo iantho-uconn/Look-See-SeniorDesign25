@@ -189,3 +189,44 @@ class AuthViewModel: ObservableObject {
         }
     }
 }
+<<<<<<< HEAD
+=======
+
+func printCognitoTokens() async {
+    do {
+        let session = try await Amplify.Auth.fetchAuthSession()
+
+        guard session.isSignedIn else {
+            print("❌ No Cognito user is currently signed in.")
+            return
+        }
+
+        guard let tokenProvider = session as? AuthCognitoTokensProvider else {
+            print("❌ Cognito token provider was unavailable.")
+            return
+        }
+
+        let tokens = try tokenProvider.getCognitoTokens().get()
+
+        print("""
+        
+        ==============================
+        COGNITO ACCESS TOKEN
+        ==============================
+        \(tokens.accessToken)
+
+        ==============================
+        COGNITO ID TOKEN
+        ==============================
+        \(tokens.idToken)
+        ==============================
+        
+        """)
+
+    } catch {
+        print("❌ Could not retrieve Cognito tokens: \(error)")
+    }
+}
+
+ 
+>>>>>>> origin/feature-URLWorkshop

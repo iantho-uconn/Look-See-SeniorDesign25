@@ -9,8 +9,9 @@ import CoreLocation
 struct LandmarkScan: View {
     var onTap: () -> Void = {}
     var onPinch: () -> Void = {}
-    
+
     @Binding var isDetecting: Bool
+<<<<<<< HEAD
     @Binding var isNavVisible: Bool // Tells the Ad if the bottom nav is currently on screen
     
     // Defaults to true so existing call sites do not need to pass it.
@@ -19,10 +20,20 @@ struct LandmarkScan: View {
     @StateObject private var detector = Detector()
     @ObservedObject private var infoView = VariableContainer.shared
     
+=======
+    @Binding var isNavVisible: Bool
+
+    // Defaults to true so existing call sites do not need to pass it.
+    var isActive: Bool = true
+
+    @StateObject private var detector = Detector()
+    @ObservedObject private var infoView = VariableContainer.shared
+
+>>>>>>> origin/feature-URLWorkshop
     @State private var zoomLevel: CGFloat = 1.0
     @State private var zoomIndicatorVisible = false
     @State private var zoomFadeTask: Task<Void, Never>?
-    @State private var promotionFetchTask: Task<Void, Never>?
+    @State private var liveInfoFetchTask: Task<Void, Never>?
 
     @State private var notificationStack: [Detection] = []
     @State private var isCameraPaused = false
@@ -35,7 +46,7 @@ struct LandmarkScan: View {
                 width: geo.size.width * 0.70,
                 height: geo.size.height * 0.45
             )
-            
+
             ZStack(alignment: .center) {
                 let blurAmount = infoView.infoView ? 10.0 : 0.0
 
@@ -66,9 +77,16 @@ struct LandmarkScan: View {
                     guard isActive, !infoView.infoView else {
                         return
                     }
+<<<<<<< HEAD
                     handleNewDetection(newDetection)
                 }
 
+=======
+
+                    handleNewDetection(newDetection)
+                }
+
+>>>>>>> origin/feature-URLWorkshop
                 if !isActive {
                     Color.black
                         .ignoresSafeArea()
@@ -76,6 +94,10 @@ struct LandmarkScan: View {
                 }
 
                 // Invisible tap target over the detection safe zone.
+<<<<<<< HEAD
+=======
+                // This preserves your original "tap the detected area" behavior.
+>>>>>>> origin/feature-URLWorkshop
                 if isActive,
                    let bestDetection = detector.detections.first,
                    !infoView.infoView {
@@ -97,6 +119,10 @@ struct LandmarkScan: View {
                 }
 
                 // Detection notifications.
+<<<<<<< HEAD
+=======
+                // This restores the visible "Landmark Recognized" pill flow from your original file.
+>>>>>>> origin/feature-URLWorkshop
                 if isActive, !infoView.infoView {
                     VStack {
                         Spacer()
@@ -182,8 +208,13 @@ struct LandmarkScan: View {
             )
             .onAppear {
                 detector.dynamicSafeZone = lockedSafeZone
+<<<<<<< HEAD
+=======
+
+>>>>>>> origin/feature-URLWorkshop
                 // Keep the green detection boxes visible while testing.
                 detector.hideBoundingBoxes = false
+
                 updatePauseState()
             }
             .onChange(of: geo.size) { _, _ in
@@ -196,7 +227,7 @@ struct LandmarkScan: View {
                 updatePauseState()
             }
             .onDisappear {
-                promotionFetchTask?.cancel()
+                liveInfoFetchTask?.cancel()
                 zoomFadeTask?.cancel()
                 isCameraPaused = true
                 isDetecting = false
@@ -204,19 +235,33 @@ struct LandmarkScan: View {
         }
     }
 
+<<<<<<< HEAD
     // MARK: - Internal Methods
     private func openPopup(for detection: Detection) {
         promotionFetchTask?.cancel()
+=======
+    private func openPopup(for detection: Detection) {
+        liveInfoFetchTask?.cancel()
+>>>>>>> origin/feature-URLWorkshop
 
         guard let entry = detection.landmarkEntry else {
             infoView.landmarkId = ""
             infoView.landmarkName = detection.displayLabel
             infoView.landmarkConfidence = detection.confidence * 100
+<<<<<<< HEAD
             infoView.landmarkDescription =
                 "Discover more about this location."
             infoView.landmarkURL = ""
             infoView.promoName = "No active promotion"
             infoView.promoDescription = ""
+=======
+            infoView.landmarkDescription = "Discover more about this location."
+            infoView.landmarkURL = ""
+            infoView.landmarkWebsiteUrl = ""
+            infoView.promoName = "No active promotion"
+            infoView.promoDescription = ""
+            infoView.promoImageUrl = ""
+>>>>>>> origin/feature-URLWorkshop
             infoView.infoView = true
 
             if !isNavVisible {
@@ -226,6 +271,11 @@ struct LandmarkScan: View {
             return
         }
 
+<<<<<<< HEAD
+=======
+        // Open immediately from the local manifest.
+        // This keeps the offline / low-service behavior.
+>>>>>>> origin/feature-URLWorkshop
         infoView.presentLandmark(
             entry,
             clusterId: Int(detection.clusterID) ?? 0,
@@ -237,6 +287,7 @@ struct LandmarkScan: View {
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
         if landmarkId.isEmpty {
+<<<<<<< HEAD
             print(
                 "⚠️ No landmarkId found on detection. Cannot fetch active promotion."
             )
@@ -249,6 +300,16 @@ struct LandmarkScan: View {
             infoView.promoName = "Checking promotions..."
             infoView.promoDescription = ""
             fetchActivePromotion(for: landmarkId)
+=======
+            print("⚠️ No landmarkId found on detection. Using manifest fallback only.")
+            infoView.landmarkWebsiteUrl = ""
+            infoView.promoName = "No active promotion"
+            infoView.promoDescription = ""
+            infoView.promoImageUrl = ""
+        } else {
+            print("🔎 Fetching live landmark info for landmarkId: \(landmarkId)")
+            fetchLiveLandmarkInfo(for: landmarkId)
+>>>>>>> origin/feature-URLWorkshop
         }
 
         if !isNavVisible {
@@ -256,13 +317,23 @@ struct LandmarkScan: View {
         }
     }
 
+<<<<<<< HEAD
     private func fetchActivePromotion(for landmarkId: String) {
         promotionFetchTask?.cancel()
 
         promotionFetchTask = Task {
+=======
+    private func fetchLiveLandmarkInfo(for landmarkId: String) {
+        liveInfoFetchTask?.cancel()
+
+        liveInfoFetchTask = Task {
+>>>>>>> origin/feature-URLWorkshop
             do {
-                let promotion = try await ActivePromotionService()
-                    .fetchTopActivePromotion(landmarkId: landmarkId)
+                let liveInfo = try await LiveLandmarkInfoService()
+                    .fetchLiveInfo(
+                        landmarkId: landmarkId,
+                        timeoutSeconds: 2.5
+                    )
 
                 guard !Task.isCancelled else {
                     return
@@ -270,6 +341,7 @@ struct LandmarkScan: View {
 
                 await MainActor.run {
                     guard infoView.landmarkId == landmarkId else {
+<<<<<<< HEAD
                         print(
                             "ℹ️ Ignoring stale promotion response for \(landmarkId)"
                         )
@@ -289,6 +361,13 @@ struct LandmarkScan: View {
                         infoView.promoName = "No active promotion"
                         infoView.promoDescription = ""
                     }
+=======
+                        print("ℹ️ Ignoring stale live-info response for \(landmarkId)")
+                        return
+                    }
+
+                    applyLiveInfo(liveInfo, landmarkId: landmarkId)
+>>>>>>> origin/feature-URLWorkshop
                 }
             } catch {
                 guard !Task.isCancelled else {
@@ -297,6 +376,7 @@ struct LandmarkScan: View {
 
                 await MainActor.run {
                     guard infoView.landmarkId == landmarkId else {
+<<<<<<< HEAD
                         print(
                             "ℹ️ Ignoring stale promotion error for \(landmarkId)"
                         )
@@ -308,11 +388,87 @@ struct LandmarkScan: View {
                     )
                     infoView.promoName = "No active promotion"
                     infoView.promoDescription = ""
+=======
+                        print("ℹ️ Ignoring stale live-info error for \(landmarkId)")
+                        return
+                    }
+
+                    print("⚠️ Live landmark info unavailable for \(landmarkId). Keeping manifest fallback. Error: \(error.localizedDescription)")
+>>>>>>> origin/feature-URLWorkshop
                 }
             }
         }
     }
 
+<<<<<<< HEAD
+=======
+    @MainActor
+    private func applyLiveInfo(
+        _ liveInfo: LiveLandmarkInfoResponse,
+        landmarkId: String
+    ) {
+        let liveLabel = liveInfo.label
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let liveDescription = liveInfo.shortDescription
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let liveWebsiteUrl = liveInfo.websiteUrl?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+        if !liveLabel.isEmpty {
+            infoView.landmarkName = liveLabel
+        }
+
+        if !liveDescription.isEmpty {
+            infoView.landmarkDescription = liveDescription
+        }
+
+        infoView.landmarkWebsiteUrl = liveWebsiteUrl
+
+        if !liveWebsiteUrl.isEmpty {
+            print("🔗 Live website URL applied for \(landmarkId): \(liveWebsiteUrl)")
+        } else {
+            print("ℹ️ No live website URL returned for \(landmarkId)")
+        }
+
+        if liveInfo.isActive == false {
+            infoView.promoName = "No active promotion"
+            infoView.promoDescription = ""
+            infoView.promoImageUrl = ""
+            print("ℹ️ Live landmark info says \(landmarkId) is inactive.")
+            return
+        }
+
+        if let promotion = liveInfo.activePromotion {
+            let promoName = promotion.name
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let promoDescription = promotion.description
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let promoImageUrl = promotion.imageUrl?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+            if !promoName.isEmpty {
+                infoView.promoName = promoName
+                infoView.promoDescription = promoDescription
+                infoView.promoImageUrl = promoImageUrl
+
+                if !promoImageUrl.isEmpty {
+                    print("🖼️ Live promotion image URL applied for \(landmarkId): \(promoImageUrl)")
+                }
+            } else {
+                infoView.promoName = "No active promotion"
+                infoView.promoDescription = ""
+                infoView.promoImageUrl = ""
+            }
+        } else {
+            infoView.promoName = "No active promotion"
+            infoView.promoDescription = ""
+            infoView.promoImageUrl = ""
+        }
+
+        print("✅ Live landmark info applied for \(landmarkId)")
+    }
+
+>>>>>>> origin/feature-URLWorkshop
     private func updatePauseState() {
         isCameraPaused = !isActive || infoView.infoView
 
@@ -383,10 +539,19 @@ struct NotificationPill: View {
         Button(action: onTap) {
             HStack(spacing: 16) {
                 ZStack {
-                    LinearGradient(colors: [Color.blue, Color.purple], startPoint: .topLeading, endPoint: .bottomTrailing)
-                        .frame(width: 48, height: 48)
-                        .clipShape(Circle())
-                        .shadow(color: Color.blue.opacity(0.35), radius: 6, x: 0, y: 3)
+                    LinearGradient(
+                        colors: [Color.blue, Color.purple],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                    .frame(width: 48, height: 48)
+                    .clipShape(Circle())
+                    .shadow(
+                        color: Color.blue.opacity(0.35),
+                        radius: 6,
+                        x: 0,
+                        y: 3
+                    )
                     
                     Image(systemName: "viewfinder")
                         .font(.system(size: 22, weight: .bold))
@@ -420,9 +585,17 @@ struct NotificationPill: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .stroke(isPulsing ? Color.blue.opacity(0.5) : Color.white.opacity(0.3), lineWidth: isPulsing ? 1.5 : 1)
+                    .stroke(
+                        isPulsing ? Color.blue.opacity(0.5) : Color.white.opacity(0.3),
+                        lineWidth: isPulsing ? 1.5 : 1
+                    )
             )
-            .shadow(color: isPulsing ? Color.blue.opacity(0.15) : .black.opacity(0.15), radius: 18, x: 0, y: 8)
+            .shadow(
+                color: isPulsing ? Color.blue.opacity(0.15) : .black.opacity(0.15),
+                radius: 18,
+                x: 0,
+                y: 8
+            )
         }
         .buttonStyle(.plain)
         .onAppear {

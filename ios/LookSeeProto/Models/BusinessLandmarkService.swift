@@ -34,6 +34,7 @@ struct BusinessLandmark: Codable, Identifiable, Hashable {
     let landmarkId: String
     let label: String
     let shortDescription: String?
+    let websiteUrl: String?
     let latitude: Double?
     let longitude: Double?
     let promotion: String?
@@ -177,6 +178,7 @@ private struct PositiveUploadCompleteBody: Encodable {
 
 private struct BusinessLandmarkPatchBody: Encodable {
     let shortDescription: String?
+    let websiteUrl: String?
     let isActive: Bool?
     let promotionEnabled: Bool?
 }
@@ -277,6 +279,7 @@ final class BusinessLandmarkService {
             landmarkId: landmarkId,
             body: BusinessLandmarkPatchBody(
                 shortDescription: shortDescription,
+                websiteUrl: nil,
                 isActive: nil,
                 promotionEnabled: nil
             )
@@ -292,8 +295,24 @@ final class BusinessLandmarkService {
             landmarkId: landmarkId,
             body: BusinessLandmarkPatchBody(
                 shortDescription: nil,
+                websiteUrl: nil,
                 isActive: isActive,
                 promotionEnabled: promotionEnabled
+            )
+        )
+    }
+    
+    func updateWebsiteUrl(
+        landmarkId: String,
+        websiteUrl: String
+    ) async throws -> BusinessLandmark {
+        return try await patchBusinessLandmark(
+            landmarkId: landmarkId,
+            body: BusinessLandmarkPatchBody(
+                shortDescription: nil,
+                websiteUrl: websiteUrl,
+                isActive: nil,
+                promotionEnabled: nil
             )
         )
     }

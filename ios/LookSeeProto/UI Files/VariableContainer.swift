@@ -25,6 +25,7 @@ final class VariableContainer: ObservableObject {
     @Published var landmarkCategory: String = "Not available"
     @Published var landmarkDescription: String = "No description is available for this landmark."
     @Published var landmarkURL: String = ""
+    @Published var landmarkWebsiteUrl: String = ""
 
     // Manifest/debugging identity. These are useful when confirming that a
     // popup was resolved from the same cluster release as the active model.
@@ -36,6 +37,7 @@ final class VariableContainer: ObservableObject {
 
     @Published var promoName: String = "No active promotion"
     @Published var promoDescription: String = ""
+    @Published var promoImageUrl: String = ""
 
     private init() {
         resetLandmarkDisplay()
@@ -78,10 +80,13 @@ final class VariableContainer: ObservableObject {
         let clampedConfidence = min(max(detectionConfidence, 0), 1)
         landmarkConfidence = clampedConfidence * 100
 
-        // Promotions are not part of the local manifest yet. Reset these so a
-        // previous landmark's promotion cannot leak into the new popup.
+        // Live website/promotion data is fetched from the backend after the
+        // popup opens. Reset these so a previous landmark cannot leak into the
+        // newly displayed popup.
+        landmarkWebsiteUrl = ""
         promoName = "No active promotion"
         promoDescription = ""
+        promoImageUrl = ""
         landmarkURL = ""
 
         infoView = true
@@ -115,6 +120,7 @@ final class VariableContainer: ObservableObject {
         landmarkCategory = "Not available"
         landmarkDescription = "No description is available for this landmark."
         landmarkURL = ""
+        landmarkWebsiteUrl = ""
 
         landmarkId = ""
         landmarkClassIndex = nil
@@ -124,6 +130,7 @@ final class VariableContainer: ObservableObject {
 
         promoName = "No active promotion"
         promoDescription = ""
+        promoImageUrl = ""
     }
 
     func getlandmarkName() -> String {
