@@ -129,7 +129,7 @@ class AuthViewModel: ObservableObject {
         }
     }
 }
-/*
+
 func printCognitoTokens() async {
     do {
         let session = try await Amplify.Auth.fetchAuthSession()
@@ -166,4 +166,4 @@ func printCognitoTokens() async {
     }
 }
 
- */
+ 

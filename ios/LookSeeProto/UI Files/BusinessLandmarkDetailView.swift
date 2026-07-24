@@ -49,6 +49,12 @@ struct BusinessLandmarkDetailView: View {
     @State private var uploadStatusMessage: String?
     @State private var uploadErrorMessage: String?
     @State private var uploadProgressText: String?
+    
+    @State private var displayedWebsiteUrl: String
+    @State private var draftWebsiteUrl: String
+    @State private var isEditingWebsiteUrl = false
+    @State private var isSavingWebsiteUrl = false
+    @State private var websiteUrlErrorMessage: String?
 
     private let service = BusinessLandmarkService()
     private let promotionService = BusinessPromotionService()
@@ -68,10 +74,15 @@ struct BusinessLandmarkDetailView: View {
         let initialDescription = landmark.shortDescription?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
 
+        let initialWebsiteUrl = landmark.websiteUrl?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
         _displayedShortDescription = State(initialValue: initialDescription)
         _draftShortDescription = State(initialValue: initialDescription)
         _displayedIsActive = State(initialValue: landmark.isActive ?? true)
         _displayedPromotionEnabled = State(initialValue: landmark.promotionEnabled ?? false)
+        _displayedWebsiteUrl = State(initialValue: initialWebsiteUrl)
+        _draftWebsiteUrl = State(initialValue: initialWebsiteUrl)
     }
 
     var body: some View {
@@ -107,6 +118,68 @@ struct BusinessLandmarkDetailView: View {
                         .clipShape(Capsule())
                     }
                     .padding(.top, 4)
+
+                    Divider()
+                        .padding(.vertical, 4)
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(alignment: .top, spacing: 10) {
+                            Image(systemName: "link")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(primaryColor)
+                                .frame(width: 22)
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Website")
+                                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                                    .foregroundStyle(.secondary)
+                                    .textCase(.uppercase)
+
+                                if displayedWebsiteUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                    Text("No website added yet.")
+                                        .font(.system(size: 14, weight: .medium))
+                                        .foregroundStyle(.secondary)
+                                } else {
+                                    Text(displayedWebsiteUrl)
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .foregroundStyle(.primary)
+                                        .lineLimit(2)
+                                }
+                            }
+
+                            Spacer()
+                        }
+
+                        Button {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            draftWebsiteUrl = displayedWebsiteUrl
+                            websiteUrlErrorMessage = nil
+                            isEditingWebsiteUrl = true
+                        } label: {
+                            HStack {
+                                Image(systemName: "link.badge.plus")
+                                Text(displayedWebsiteUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Add Website" : "Edit Website")
+                                    .fontWeight(.bold)
+                            }
+                            .font(.system(size: 14, design: .rounded))
+                            .foregroundStyle(primaryColor)
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 16)
+                            .background(primaryColor.opacity(0.1))
+                            .clipShape(Capsule())
+                        }
+                    }
+
+                    if let websiteUrlErrorMessage {
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(.orange)
+
+                            Text(websiteUrlErrorMessage)
+                                .font(.footnote.bold())
+                                .foregroundColor(.secondary)
+                        }
+                    }
                 }
                 .padding(20)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -459,6 +532,9 @@ struct BusinessLandmarkDetailView: View {
         .sheet(isPresented: $isEditingDescription) {
             editDescriptionSheet
         }
+        .sheet(isPresented: $isEditingWebsiteUrl) {
+            editWebsiteUrlSheet
+        }
         .sheet(isPresented: $isShowingDeleteLandmarkSheet) {
             deleteLandmarkSheet
         }
@@ -792,6 +868,100 @@ struct BusinessLandmarkDetailView: View {
                 }
             } catch {
                 await MainActor.run { saveErrorMessage = error.localizedDescription; isSavingDescription = false }
+            }
+        }
+    }
+
+    // MARK: - Website Editing
+
+    private var editWebsiteUrlSheet: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Website URL")
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                        .padding(.horizontal, 20)
+
+                    TextField("example.com", text: $draftWebsiteUrl)
+                        .font(.system(size: 16, weight: .medium))
+                        .keyboardType(.URL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled(true)
+                        .padding(16)
+                        .background(Color(uiColor: .secondarySystemGroupedBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .padding(.horizontal)
+                        .disabled(isSavingWebsiteUrl)
+
+                    Text("Users will be able to open this website from the landmark popup. You can enter example.com or a full https:// URL. Leave it blank to clear the website.")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 20)
+
+                    if let websiteUrlErrorMessage {
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(.orange)
+                            Text(websiteUrlErrorMessage)
+                                .font(.footnote)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.horizontal, 20)
+                    }
+                }
+                .padding(.top, 24)
+            }
+            .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
+            .navigationTitle("Edit Website")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { isEditingWebsiteUrl = false }
+                        .disabled(isSavingWebsiteUrl)
+                }
+
+                ToolbarItem(placement: .confirmationAction) {
+                    Button { saveWebsiteUrl() } label: {
+                        if isSavingWebsiteUrl { ProgressView() }
+                        else { Text("Save").fontWeight(.bold) }
+                    }
+                    .disabled(isSavingWebsiteUrl)
+                }
+            }
+        }
+    }
+
+    private func saveWebsiteUrl() {
+        guard !isSavingWebsiteUrl else { return }
+
+        let cleanedWebsiteUrl = draftWebsiteUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        isSavingWebsiteUrl = true
+        websiteUrlErrorMessage = nil
+
+        Task {
+            do {
+                let updatedLandmark = try await service.updateWebsiteUrl(
+                    landmarkId: landmark.landmarkId,
+                    websiteUrl: cleanedWebsiteUrl
+                )
+
+                await MainActor.run {
+                    displayedWebsiteUrl = updatedLandmark.websiteUrl?
+                        .trimmingCharacters(in: .whitespacesAndNewlines) ?? cleanedWebsiteUrl
+
+                    draftWebsiteUrl = displayedWebsiteUrl
+                    onLandmarkUpdated(updatedLandmark)
+                    isSavingWebsiteUrl = false
+                    isEditingWebsiteUrl = false
+                }
+            } catch {
+                await MainActor.run {
+                    websiteUrlErrorMessage = error.localizedDescription
+                    isSavingWebsiteUrl = false
+                }
             }
         }
     }

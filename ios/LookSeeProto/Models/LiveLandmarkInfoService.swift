@@ -1,11 +1,4 @@
 //
-//  LandmarkInfoService.swift
-//  LookSeeProto
-//
-//  Created by Ian Thompson on 7/23/26.
-//
-
-//
 //  LiveLandmarkInfoService.swift
 //  LookSeeProto
 //
@@ -17,6 +10,7 @@ struct LiveLandmarkInfoResponse: Decodable {
     let landmarkId: String
     let label: String
     let shortDescription: String
+    let websiteUrl: String?
     let isActive: Bool
     let promotionEnabled: Bool
     let activePromotion: LiveLandmarkPromotion?
@@ -45,14 +39,11 @@ struct LiveLandmarkPromotion: Decodable, Identifiable, Hashable {
 
 enum LiveLandmarkInfoServiceError: LocalizedError {
     case badStatus(Int, String)
-    case inactiveLandmark
 
     var errorDescription: String? {
         switch self {
         case .badStatus(let statusCode, let body):
             return "Live landmark info API error \(statusCode): \(body)"
-        case .inactiveLandmark:
-            return "This landmark is inactive."
         }
     }
 }
@@ -62,12 +53,14 @@ final class LiveLandmarkInfoService {
 
     func fetchLiveInfo(
         landmarkId: String,
-        timeoutSeconds: TimeInterval = 2.5
+        timeoutSeconds: TimeInterval = 3.5
     ) async throws -> LiveLandmarkInfoResponse {
         let url = baseURL
             .appendingPathComponent("landmarks")
             .appendingPathComponent(landmarkId)
             .appendingPathComponent("live-info")
+
+        print("📡 Fetching live-info: \(url.absoluteString)")
 
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
@@ -79,11 +72,12 @@ final class LiveLandmarkInfoService {
         configuration.timeoutIntervalForResource = timeoutSeconds
 
         let session = URLSession(configuration: configuration)
-
         let (data, response) = try await session.data(for: request)
 
         let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
         let responseBody = String(data: data, encoding: .utf8) ?? ""
+
+        print("📦 live-info status \(statusCode): \(responseBody)")
 
         guard (200...299).contains(statusCode) else {
             throw LiveLandmarkInfoServiceError.badStatus(statusCode, responseBody)
@@ -91,9 +85,13 @@ final class LiveLandmarkInfoService {
 
         let decoded = try JSONDecoder().decode(LiveLandmarkInfoResponse.self, from: data)
 
-        if decoded.isActive == false {
-            throw LiveLandmarkInfoServiceError.inactiveLandmark
-        }
+        print("""
+        ✅ decoded live-info
+           landmarkId: \(decoded.landmarkId)
+           websiteUrl: \(decoded.websiteUrl ?? "")
+           activePromotion: \(decoded.activePromotion?.name ?? "none")
+           promoImageUrl: \(decoded.activePromotion?.imageUrl ?? "")
+        """)
 
         return decoded
     }
