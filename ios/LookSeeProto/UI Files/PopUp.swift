@@ -36,24 +36,22 @@ struct PopUp: View {
         VStack(spacing: 0) {
             header
 
-            ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 16) {
-                    landmarkTextSection
+            // 🚀 THE FIX: Removed the greedy outer ScrollView so the popup organically shrink-wraps
+            VStack(alignment: .leading, spacing: 16) {
+                landmarkTextSection
 
-                    websiteSection
+                websiteSection
 
-                    if shouldShowPromotion {
-                        promotionSection
-                    }
-
-                    gotItButton
+                if shouldShowPromotion {
+                    promotionSection
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 16)
-                .padding(.bottom, 20)
+
+                gotItButton
             }
+            .padding(.horizontal, 20)
+            .padding(.top, 16)
+            .padding(.bottom, 20)
         }
-        .frame(maxHeight: UIScreen.main.bounds.height * 0.78)
         .background(.ultraThickMaterial)
         .clipShape(
             RoundedRectangle(
@@ -78,6 +76,7 @@ struct PopUp: View {
             y: 15
         )
         .padding(.horizontal, 28)
+        .frame(maxHeight: UIScreen.main.bounds.height * 0.85) // Only caps it if they have a huge promo
         .sheet(item: $selectedPromotionImage) { item in
             promotionImagePreview(url: item.url)
         }
@@ -203,20 +202,37 @@ struct PopUp: View {
                     vertical: true
                 )
 
-            Text(displayDescription)
-                .font(
-                    .system(
-                        size: 15,
-                        weight: .regular,
-                        design: .rounded
+            // 🚀 THE FIX: Dynamic text engine.
+            // If short, it hugs naturally. If long, it caps at 120 and turns into a scroll wheel.
+            ViewThatFits(in: .vertical) {
+                Text(displayDescription)
+                    .font(
+                        .system(
+                            size: 15,
+                            weight: .regular,
+                            design: .rounded
+                        )
                     )
-                )
-                .foregroundStyle(.secondary)
-                .lineSpacing(3)
-                .fixedSize(
-                    horizontal: false,
-                    vertical: true
-                )
+                    .foregroundStyle(.secondary)
+                    .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
+                
+                ScrollView(.vertical, showsIndicators: true) {
+                    Text(displayDescription)
+                        .font(
+                            .system(
+                                size: 15,
+                                weight: .regular,
+                                design: .rounded
+                            )
+                        )
+                        .foregroundStyle(.secondary)
+                        .lineSpacing(3)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.trailing, 8)
+                }
+            }
+            .frame(maxHeight: 120) // The cutoff point for switching to a scroll wheel
         }
     }
 
@@ -498,7 +514,7 @@ struct PopUp: View {
 
             infoView.dismissLandmark()
         } label: {
-            Text("Got it")
+            Text("Close")
                 .font(
                     .system(
                         size: 16,

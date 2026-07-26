@@ -6,70 +6,55 @@
 //
 
 
+
 import SwiftUI
 import StripePaymentSheet
 
 struct SubscriptionPlans: View {
     @Environment(\.dismiss) private var dismiss
-    @EnvironmentObject var authState: AuthState
     @EnvironmentObject var vm: AuthViewModel
+    @ObservedObject var presenter: SettingsPresenter
     
     @State private var selectedTab: Int
-    @State private var selectedPlan: Int = 1
-    @State private var navigateToSetup = false
-    @State private var showAuthModal = false
-    
     @State private var isProcessing = false
     @State private var paymentSheet: PaymentSheet?
     @State private var showPaymentSheet = false
     @State private var paymentStatusMessage: String?
     
+    @State private var pendingTokenReward: Int = 0
+    @State private var pendingSubscriptionId: String? = nil
+    @State private var selectedAddOnIndex: Int = 0
+    
+    let addOns = [
+        (tokens: 0, cents: 0, label: "None"),
+        (tokens: 1, cents: 300, label: "1 Token (+$3.00)"),
+        (tokens: 5, cents: 1000, label: "5 Tokens (+$10.00)"),
+        (tokens: 10, cents: 1500, label: "10 Tokens (+$15.00)"),
+        (tokens: 25, cents: 3500, label: "25 Tokens (+$35.00)"),
+        (tokens: 50, cents: 6000, label: "50 Tokens (+$60.00)"),
+        (tokens: 100, cents: 10000, label: "100 Tokens (+$100.00)")
+    ]
+    
     private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00)
     
-    init(startingTab: Int = 0) {
-        _selectedTab = State(initialValue: startingTab)
+    private var isFullyLoggedIn: Bool {
+        return vm.isSignedIn && !vm.userId.isEmpty && !vm.userEmail.isEmpty
     }
     
-    private func capacityForPlan(index: Int) -> Int {
-        switch index {
-        case 0: return 5    // Trial
-        case 1: return 5    // Classic
-        case 2: return 20   // Intermediate
-        case 3: return 100  // Advanced
-        default: return 5
-        }
+    private var isTrial: Bool {
+        return UserDefaults.standard.bool(forKey: "isFreeTrial_\(vm.userEmail)")
     }
     
-    private func priceForPlan(index: Int) -> Int {
-        switch index {
-        case 0: return 0
-        case 1: return 10
-        case 2: return 25
-        case 3: return 50
-        default: return 10
-        }
+    private var isEligibleForTrial: Bool {
+        if vm.hasActiveSubscription { return false }
+        if !vm.stripeSubscriptionId.isEmpty { return false }
+        if vm.tokenBalance > 0 { return false }
+        return true
     }
     
-    private func buttonStateForPlan(index: Int) -> (text: String, isCurrent: Bool) {
-        if authState.tier == .guest || vm.maxLandmarksCapacity == 0 {
-            return ("Subscribe", false)
-        }
-        
-        let viewedCapacity = capacityForPlan(index: index)
-        let currentCapacity = vm.maxLandmarksCapacity
-        
-        if index == 0 { return ("Unavailable for Active Accounts", true) }
-        
-        if viewedCapacity == currentCapacity {
-            return ("Current Plan", true)
-        } else if viewedCapacity > currentCapacity {
-            let currentPrice = (currentCapacity <= 5) ? 10 : (currentCapacity <= 20 ? 25 : 50)
-            let newPrice = priceForPlan(index: index)
-            let diff = newPrice - currentPrice
-            return diff > 0 ? ("Upgrade for $\(diff)", false) : ("Upgrade Plan", false)
-        } else {
-            return ("Downgrade Plan", false)
-        }
+    init(presenter: SettingsPresenter) {
+        self.presenter = presenter
+        _selectedTab = State(initialValue: presenter.subscriptionStartingTab)
     }
     
     var body: some View {
@@ -87,63 +72,58 @@ struct SubscriptionPlans: View {
                 VStack(spacing: 16) {
                     HStack {
                         Spacer()
-                        Button { dismiss() } label: { Image(systemName: "xmark.circle.fill").font(.title2).foregroundStyle(.white.opacity(0.4)) }
+                        Button { dismiss() } label: {
+                            Image(systemName: "xmark.circle.fill").font(.title2).foregroundStyle(.white.opacity(0.4))
+                        }
+                        .disabled(isProcessing)
                     }
                     .padding(.horizontal, 24).padding(.top, 16)
                     
                     VStack(spacing: 6) {
                         Text("LookSee").font(.system(size: 16, weight: .bold, design: .rounded)).foregroundStyle(primaryColor)
-                        Text(authState.tier == .business && vm.maxLandmarksCapacity > 0 ? "Manage Membership" : "Upgrade to Business")
+                        Text(vm.hasActiveSubscription ? "Manage Membership" : "Upgrade to Business")
                             .font(.system(size: 24, weight: .bold, design: .rounded)).foregroundStyle(.white)
                     }
                     
                     Picker("Options", selection: $selectedTab) {
-                        Text("Plans").tag(0)
+                        Text("Plan").tag(0)
                         Text("Tokens").tag(1)
                         Text("Free Trial").tag(2)
                     }
                     .pickerStyle(.segmented).padding(.horizontal, 24).padding(.vertical, 8)
                     
                     if selectedTab == 0 {
-                        TabView(selection: $selectedPlan) {
-                            planCard(title: "Classic", price: "$10", unit: "/month", description: "Perfect for local independent shops.", features: ["Up to 5 active landmarks", "Up to 10 tokens for purchase/mo"], badge: "AFFORDABLE", index: 1).tag(1)
-                            planCard(title: "Intermediate", price: "$25", unit: "/month", description: "For expanding storefronts and regional venues.", features: ["Up to 20 active landmarks", "Up to 50 tokens for purchase/mo"], badge: "POPULAR", index: 2).tag(2)
-                            planCard(title: "Advanced", price: "$50", unit: "/month", description: "For extensive properties and museums.", features: ["Up to 100 active landmarks", "Up to 100 tokens for purchase/mo"], badge: "MAX SCALE", index: 3).tag(3)
-                        }
-                        .tabViewStyle(.page(indexDisplayMode: .always)).frame(height: 440)
+                        yearlyPlanView
                     } else if selectedTab == 1 {
                         tokenPurchaserView
                     } else {
-                        TabView(selection: $selectedPlan) {
-                            planCard(title: "14-Day Trial", price: "$0", unit: "/14 days", description: "Test out the platform risk-free before committing to a tier.", features: ["Up to 5 active landmarks", "Up to 5 tokens for purchase/mo"], badge: "NEW USERS", index: 0).tag(0)
-                        }
-                        .tabViewStyle(.page(indexDisplayMode: .always)).frame(height: 440)
+                        freeTrialView
                     }
                     
                     Spacer()
                     
                     HStack(spacing: 6) {
                         Image(systemName: "lock.shield.fill")
-                        Text("Secured by Stripe. Cancel or upgrade at any time.")
+                        Text("Secured by Stripe. Cancel at any time.")
                     }
                     .font(.system(size: 11)).foregroundStyle(.secondary).padding(.bottom, 16)
                 }
             }
-            .navigationDestination(isPresented: $navigateToSetup) {
-                BusinessSetup(selectedPlanIndex: selectedPlan, isAnnualPlan: true)
-            }
-            .sheet(isPresented: $showAuthModal) {
-                GuestSignUpView()
-            }
-            // 🚀 THE LOOP FIX: Automatically pushes you to checkout right after you finish signing in!
-            .onChange(of: authState.tier) { _, newTier in
-                if (newTier == .authenticated || newTier == .business) && !vm.userId.isEmpty {
-                    if showAuthModal {
-                        showAuthModal = false
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                            navigateToSetup = true
-                        }
+            .onAppear {
+                if let action = presenter.resumeCheckoutAction {
+                    isProcessing = true
+                    if action == "yearly" {
+                        selectedAddOnIndex = presenter.savedAddOnIndex
+                        selectedTab = 0
+                        Task { await preparePaymentSheet(purchaseType: "yearly_subscription") }
+                    } else if action == "trial" {
+                        selectedTab = 2
+                        Task { await preparePaymentSheet(purchaseType: "free_trial") }
+                    } else if action == "tokens" {
+                        selectedTab = 1
+                        Task { await preparePaymentSheet(purchaseType: "token_pack", amountCents: presenter.savedTokenCents, tokenCount: presenter.savedTokenCount) }
                     }
+                    presenter.resumeCheckoutAction = nil
                 }
             }
             .background(
@@ -152,60 +132,179 @@ struct SubscriptionPlans: View {
                 }
             )
         }
+        .interactiveDismissDisabled(isProcessing)
+        .overlay {
+            // 🚀 THE FIX: This hides the crazy payment delay by locking the screen instantly
+            if isProcessing {
+                ZStack {
+                    Color.black.opacity(0.4).ignoresSafeArea()
+                    VStack(spacing: 16) {
+                        ProgressView().tint(.white).scaleEffect(1.5)
+                        Text("Connecting to Stripe...").font(.headline).foregroundStyle(.white)
+                    }.padding(32).background(.ultraThinMaterial).clipShape(RoundedRectangle(cornerRadius: 16))
+                }
+            }
+        }
     }
     
-    @ViewBuilder
-    private func planCard(title: String, price: String, unit: String, description: String, features: [String], badge: String, index: Int) -> some View {
-        let buttonState = buttonStateForPlan(index: index)
-        
+    private var yearlyPlanView: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Spacer()
-                Text(badge).font(.system(size: 10, weight: .black)).foregroundStyle(.white).padding(.horizontal, 12).padding(.vertical, 4).background(primaryColor).clipShape(RoundedRectangle(cornerRadius: 8))
+                Text("RECOMMENDED").font(.system(size: 10, weight: .black)).foregroundStyle(.white).padding(.horizontal, 12).padding(.vertical, 4).background(primaryColor).clipShape(RoundedRectangle(cornerRadius: 8))
                 Spacer()
             }.padding(.top, -10).padding(.bottom, 6)
             
-            Text(title).font(.system(size: 20, weight: .bold)).foregroundStyle(.white)
+            Text("Yearly Premium").font(.system(size: 20, weight: .bold)).foregroundStyle(.white)
             
             HStack(alignment: .bottom, spacing: 2) {
-                Text(price).font(.system(size: 34, weight: .black, design: .rounded)).foregroundStyle(.white)
-                Text(unit).font(.system(size: 14)).foregroundStyle(.secondary).padding(.bottom, 6)
+                Text("$10").font(.system(size: 34, weight: .black, design: .rounded)).foregroundStyle(.white)
+                Text("/year").font(.system(size: 14)).foregroundStyle(.secondary).padding(.bottom, 6)
             }.padding(.top, 4)
             
-            Text(description).font(.system(size: 13)).foregroundStyle(.secondary).padding(.top, 2).fixedSize(horizontal: false, vertical: true)
+            Text("Unlimited active landmarks. Just pay-per-upload.").font(.system(size: 13)).foregroundStyle(.secondary).padding(.top, 2)
             
             Divider().background(Color.white.opacity(0.12)).padding(.vertical, 14)
             
             VStack(alignment: .leading, spacing: 10) {
-                ForEach(features, id: \.self) { feature in
-                    HStack(spacing: 10) {
-                        Image(systemName: "checkmark.circle.fill").foregroundStyle(primaryColor).font(.system(size: 15))
-                        Text(feature).font(.system(size: 13)).foregroundStyle(.white.opacity(0.8))
+                featureRow("10 Tokens included instantly")
+                featureRow("Add or swap landmarks anytime")
+                featureRow("Unlock promotion dashboard")
+            }
+            
+            Divider().background(Color.white.opacity(0.12)).padding(.vertical, 14)
+            
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Optional Token Add-on").font(.system(size: 12, weight: .bold)).foregroundStyle(.secondary).textCase(.uppercase)
+                Picker("Add-on", selection: $selectedAddOnIndex) {
+                    ForEach(0..<addOns.count, id: \.self) { index in
+                        Text(addOns[index].label).tag(index)
                     }
                 }
+                .pickerStyle(.menu)
+                .tint(.white)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(10).background(Color.white.opacity(0.05)).clipShape(RoundedRectangle(cornerRadius: 10))
             }
+            
             Spacer()
+            
             Button {
-                if !buttonState.isCurrent {
-                    selectedPlan = index
-                    if authState.tier == .guest || vm.userId.isEmpty {
-                        showAuthModal = true
-                    } else {
-                        navigateToSetup = true
-                    }
+                if vm.hasActiveSubscription && !isTrial { return }
+                
+                if !isFullyLoggedIn {
+                    presenter.savedAddOnIndex = selectedAddOnIndex
+                    presenter.resumeCheckoutAction = "yearly"
+                    dismiss()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { presenter.showSignUpSheet = true }
+                } else {
+                    isProcessing = true
+                    Task { await preparePaymentSheet(purchaseType: "yearly_subscription") }
                 }
             } label: {
-                Text(buttonState.text)
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(buttonState.isCurrent ? .gray : .white).frame(maxWidth: .infinity).padding(.vertical, 14)
-                    .background(buttonState.isCurrent ? Color.white.opacity(0.1) : primaryColor).clipShape(RoundedRectangle(cornerRadius: 14))
+                Group {
+                    if vm.hasActiveSubscription {
+                        if isTrial {
+                            // 🚀 THE FIX: Allows them to upgrade from trial to yearly!
+                            let addOnCents = Double(addOns[selectedAddOnIndex].cents) / 100.0
+                            let totalStr = String(format: "%.2f", 10.00 + addOnCents)
+                            Text("Upgrade to Yearly - $\(totalStr)")
+                                .font(.system(size: 15, weight: .bold)).foregroundStyle(.white).frame(maxWidth: .infinity).padding(.vertical, 14).background(primaryColor).clipShape(RoundedRectangle(cornerRadius: 14))
+                        } else {
+                            Text("Current Plan")
+                                .font(.system(size: 15, weight: .bold)).foregroundStyle(.gray).frame(maxWidth: .infinity).padding(.vertical, 14).background(Color.white.opacity(0.1)).clipShape(RoundedRectangle(cornerRadius: 14))
+                        }
+                    } else {
+                        let addOnCents = Double(addOns[selectedAddOnIndex].cents) / 100.0
+                        let totalStr = String(format: "%.2f", 10.00 + addOnCents)
+                        Text("Subscribe - $\(totalStr)")
+                            .font(.system(size: 15, weight: .bold)).foregroundStyle(.white).frame(maxWidth: .infinity).padding(.vertical, 14).background(primaryColor).clipShape(RoundedRectangle(cornerRadius: 14))
+                    }
+                }
             }
-            .disabled(buttonState.isCurrent)
+            .disabled((vm.hasActiveSubscription && !isTrial) || isProcessing)
         }
-        .padding(.horizontal, 24).padding(.top, 36).padding(.bottom, 40)
+        .padding(.horizontal, 24).padding(.top, 36).padding(.bottom, 24)
         .background(Color.white.opacity(0.04).background(.ultraThinMaterial)).clipShape(RoundedRectangle(cornerRadius: 24))
-        .overlay(RoundedRectangle(cornerRadius: 24).stroke(buttonState.isCurrent ? Color.green.opacity(0.8) : primaryColor.opacity(0.8), lineWidth: buttonState.isCurrent ? 2.5 : 1.5))
+        .overlay(RoundedRectangle(cornerRadius: 24).stroke((vm.hasActiveSubscription && !isTrial) ? Color.green.opacity(0.8) : primaryColor.opacity(0.8), lineWidth: (vm.hasActiveSubscription && !isTrial) ? 2.5 : 1.5))
         .padding(.horizontal, 24)
+    }
+
+    private var freeTrialView: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Spacer()
+                Text("NEW USERS").font(.system(size: 10, weight: .black)).foregroundStyle(.white).padding(.horizontal, 12).padding(.vertical, 4).background(Color.orange).clipShape(RoundedRectangle(cornerRadius: 8))
+                Spacer()
+            }.padding(.top, -10).padding(.bottom, 6)
+            
+            Text("14-Day Trial").font(.system(size: 20, weight: .bold)).foregroundStyle(.white)
+            
+            HStack(alignment: .bottom, spacing: 2) {
+                Text("$0").font(.system(size: 34, weight: .black, design: .rounded)).foregroundStyle(.white)
+                Text("/14 days").font(.system(size: 14)).foregroundStyle(.secondary).padding(.bottom, 6)
+            }.padding(.top, 4)
+            
+            Text("Test out the platform risk-free before committing to a yearly subscription.").font(.system(size: 13)).foregroundStyle(.secondary).padding(.top, 2)
+            
+            Divider().background(Color.white.opacity(0.12)).padding(.vertical, 14)
+            
+            VStack(alignment: .leading, spacing: 10) {
+                featureRow("Includes exactly 5 Tokens")
+                featureRow("Full access to business tools")
+                featureRow("No add-ons available during trial")
+            }
+            
+            Spacer()
+            
+            Button {
+                if !isEligibleForTrial { return }
+                
+                if !isFullyLoggedIn {
+                    presenter.resumeCheckoutAction = "trial"
+                    dismiss()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { presenter.showSignUpSheet = true }
+                } else {
+                    isProcessing = true
+                    Task { await preparePaymentSheet(purchaseType: "free_trial") }
+                }
+            } label: {
+                Group {
+                    if vm.hasActiveSubscription {
+                        if isTrial {
+                            // 🚀 THE FIX: Properly marks the Trial tab as "Active"
+                            Text("Active (Free Trial)")
+                                .font(.system(size: 15, weight: .bold)).foregroundStyle(.gray).frame(maxWidth: .infinity).padding(.vertical, 14).background(Color.white.opacity(0.1)).clipShape(RoundedRectangle(cornerRadius: 14))
+                        } else {
+                            Text("Unavailable for Active Accounts")
+                                .font(.system(size: 15, weight: .bold)).foregroundStyle(.gray).frame(maxWidth: .infinity).padding(.vertical, 14).background(Color.white.opacity(0.1)).clipShape(RoundedRectangle(cornerRadius: 14))
+                        }
+                    } else if !isEligibleForTrial {
+                        Text("Not Eligible for Free Trial")
+                            .font(.system(size: 15, weight: .bold)).foregroundStyle(.gray).frame(maxWidth: .infinity).padding(.vertical, 14).background(Color.white.opacity(0.1)).clipShape(RoundedRectangle(cornerRadius: 14))
+                    } else {
+                        Text("Start Free Trial")
+                            .font(.system(size: 15, weight: .bold)).foregroundStyle(.white).frame(maxWidth: .infinity).padding(.vertical, 14).background(Color.orange).clipShape(RoundedRectangle(cornerRadius: 14))
+                    }
+                }
+            }
+            .disabled(!isEligibleForTrial || isProcessing)
+            
+            if let msg = paymentStatusMessage {
+                Text(msg).font(.caption).foregroundStyle(msg.contains("successful") ? .green : .red).padding(.top, 8)
+            }
+        }
+        .padding(.horizontal, 24).padding(.top, 36).padding(.bottom, 24)
+        .background(Color.white.opacity(0.04).background(.ultraThinMaterial)).clipShape(RoundedRectangle(cornerRadius: 24))
+        .overlay(RoundedRectangle(cornerRadius: 24).stroke((vm.hasActiveSubscription && isTrial) ? Color.green.opacity(0.8) : Color.orange.opacity(0.5), lineWidth: (vm.hasActiveSubscription && isTrial) ? 2.5 : 1.5))
+        .padding(.horizontal, 24)
+    }
+
+    private func featureRow(_ text: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "checkmark.circle.fill").foregroundStyle(primaryColor).font(.system(size: 15))
+            Text(text).font(.system(size: 13)).foregroundStyle(.white.opacity(0.8))
+        }
     }
     
     private var tokenPurchaserView: some View {
@@ -219,7 +318,7 @@ struct SubscriptionPlans: View {
                 
                 VStack(spacing: 6) {
                     Text("What are tokens?").font(.system(size: 15, weight: .bold)).foregroundStyle(.white)
-                    Text("Tokens are used to update your landmarks' digital inventory or details without waiting. 1 Token = 1 Update.")
+                    Text("A token can be used to add another landmark to your account or swap an existing one out. Removing a landmark is free.")
                         .font(.system(size: 13)).foregroundStyle(.secondary).multilineTextAlignment(.center).padding(.horizontal, 32)
                 }
                 
@@ -227,28 +326,20 @@ struct SubscriptionPlans: View {
                     Text("Buy Token Packs").font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(.secondary).textCase(.uppercase).padding(.horizontal, 20)
                     
                     VStack(spacing: 0) {
-                        if authState.tier == .guest || vm.maxLandmarksCapacity == 0 {
-                            Text("Please subscribe to a membership plan to purchase tokens.").font(.system(size: 14, weight: .medium)).foregroundStyle(.secondary).padding(20)
+                        if !isFullyLoggedIn || !vm.hasActiveSubscription {
+                            Text("Please subscribe to the Premium plan or start a Free Trial to purchase tokens.").font(.system(size: 14, weight: .medium)).foregroundStyle(.secondary).padding(20)
                         } else {
-                            if vm.maxLandmarksCapacity <= 5 {
-                                bundleRow(tokens: 1, price: "$2.00", amountCents: 200)
-                                Divider().padding(.leading, 68)
-                                bundleRow(tokens: 5, price: "$10.00", amountCents: 1000)
-                                Divider().padding(.leading, 68)
-                                bundleRow(tokens: 10, price: "$20.00", amountCents: 2000)
-                            } else if vm.maxLandmarksCapacity <= 20 {
-                                bundleRow(tokens: 10, price: "$20.00", amountCents: 2000)
-                                Divider().padding(.leading, 68)
-                                bundleRow(tokens: 25, price: "$45.00", amountCents: 4500)
-                                Divider().padding(.leading, 68)
-                                bundleRow(tokens: 50, price: "$90.00", amountCents: 9000)
-                            } else {
-                                bundleRow(tokens: 25, price: "$35.00", amountCents: 3500)
-                                Divider().padding(.leading, 68)
-                                bundleRow(tokens: 50, price: "$70.00", amountCents: 7000)
-                                Divider().padding(.leading, 68)
-                                bundleRow(tokens: 100, price: "$140.00", amountCents: 14000)
-                            }
+                            bundleRow(tokens: 1, price: "$3.00", amountCents: 300)
+                            Divider().padding(.leading, 68)
+                            bundleRow(tokens: 5, price: "$10.00", amountCents: 1000)
+                            Divider().padding(.leading, 68)
+                            bundleRow(tokens: 10, price: "$15.00", amountCents: 1500)
+                            Divider().padding(.leading, 68)
+                            bundleRow(tokens: 25, price: "$35.00", amountCents: 3500)
+                            Divider().padding(.leading, 68)
+                            bundleRow(tokens: 50, price: "$60.00", amountCents: 6000)
+                            Divider().padding(.leading, 68)
+                            bundleRow(tokens: 100, price: "$100.00", amountCents: 10000)
                         }
                     }
                     .background(Color.white.opacity(0.04)).clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous)).padding(.horizontal)
@@ -258,24 +349,22 @@ struct SubscriptionPlans: View {
                     }
                 }
             }
-            .overlay {
-                if isProcessing {
-                    ZStack {
-                        Color.black.opacity(0.4).ignoresSafeArea()
-                        VStack(spacing: 16) { ProgressView().tint(.white).scaleEffect(1.5); Text("Connecting to Stripe...").font(.headline).foregroundStyle(.white) }.padding(32).background(.ultraThinMaterial).clipShape(RoundedRectangle(cornerRadius: 16))
-                    }
-                }
-            }
         }
     }
     
     private func bundleRow(tokens: Int, price: String, amountCents: Int) -> some View {
         Button {
             paymentStatusMessage = nil
-            if authState.tier == .guest || vm.userId.isEmpty {
-                showAuthModal = true
+            
+            if !isFullyLoggedIn {
+                presenter.savedTokenCount = tokens
+                presenter.savedTokenCents = amountCents
+                presenter.resumeCheckoutAction = "tokens"
+                dismiss()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { presenter.showSignUpSheet = true }
             } else {
-                Task { await preparePaymentSheet(tokenCount: tokens, amountCents: amountCents) }
+                isProcessing = true
+                Task { await preparePaymentSheet(purchaseType: "token_pack", amountCents: amountCents, tokenCount: tokens) }
             }
         } label: {
             HStack(spacing: 16) {
@@ -285,29 +374,50 @@ struct SubscriptionPlans: View {
                 Text(price).font(.system(size: 16, weight: .bold, design: .rounded)).foregroundStyle(.white)
             }.padding(16)
         }
+        .disabled(isProcessing)
     }
-    
-    private func preparePaymentSheet(tokenCount: Int, amountCents: Int) async {
-        isProcessing = true
+
+    private func preparePaymentSheet(purchaseType: String, amountCents: Int = 0, tokenCount: Int = 0) async {
         await vm.fetchUserDetails()
         
         guard let url = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/checkout") else {
             isProcessing = false; paymentStatusMessage = "Invalid API URL."; return
         }
         
+        if purchaseType == "token_pack" {
+            pendingTokenReward = tokenCount
+        } else if purchaseType == "yearly_subscription" {
+            pendingTokenReward = 10 + addOns[selectedAddOnIndex].tokens
+        } else if purchaseType == "free_trial" {
+            pendingTokenReward = 5
+        }
+        
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
-        let body: [String: Any] = ["purchaseType": "token_pack", "userId": vm.userId, "userEmail": vm.userEmail, "amountCents": amountCents, "tokenCount": tokenCount]
+        var body: [String: Any] = ["purchaseType": purchaseType, "userId": vm.userId, "userEmail": vm.userEmail]
+        
+        if purchaseType == "token_pack" {
+            body["amountCents"] = amountCents
+            body["tokenCount"] = tokenCount
+        } else if purchaseType == "yearly_subscription" {
+            body["addOnCents"] = addOns[selectedAddOnIndex].cents
+            body["addOnTokens"] = addOns[selectedAddOnIndex].tokens
+        }
+        
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         
         do {
             let (data, _) = try await URLSession.shared.data(for: request)
             if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
                 if let errorMsg = json["error"] as? String {
-                    DispatchQueue.main.async { self.isProcessing = false; self.paymentStatusMessage = "Stripe Error: \(errorMsg)" }
+                    DispatchQueue.main.async { self.isProcessing = false; self.presenter.resumeCheckoutAction = nil; self.paymentStatusMessage = "Stripe Error: \(errorMsg)" }
                     return
+                }
+                
+                if let subId = json["subscriptionId"] as? String {
+                    self.pendingSubscriptionId = subId
                 }
                 
                 if let clientSecret = json["setupIntent"] as? String, let customerId = json["customer"] as? String, let ephemeralKeySecret = json["ephemeralKey"] as? String, let publishableKey = json["publishableKey"] as? String {
@@ -318,29 +428,97 @@ struct SubscriptionPlans: View {
                     configuration.applePay = .init(merchantId: "merchant.com.looksee.app", merchantCountryCode: "US")
                     
                     DispatchQueue.main.async {
-                        self.paymentSheet = PaymentSheet(paymentIntentClientSecret: clientSecret, configuration: configuration)
-                        self.isProcessing = false
-                        self.showPaymentSheet = true
+                        if clientSecret.hasPrefix("seti_") {
+                            self.paymentSheet = PaymentSheet(setupIntentClientSecret: clientSecret, configuration: configuration)
+                        } else {
+                            self.paymentSheet = PaymentSheet(paymentIntentClientSecret: clientSecret, configuration: configuration)
+                        }
+                        
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self.showPaymentSheet = true }
                     }
                 } else {
-                    let rawString = String(data: data, encoding: .utf8) ?? "Empty Response"
-                    isProcessing = false; paymentStatusMessage = "Missing setup keys: \(rawString)"
+                    DispatchQueue.main.async { self.isProcessing = false; self.presenter.resumeCheckoutAction = nil }
                 }
             } else {
-                let rawString = String(data: data, encoding: .utf8) ?? "Empty Response"
-                isProcessing = false; paymentStatusMessage = "Failed to parse JSON: \(rawString)"
+                DispatchQueue.main.async { self.isProcessing = false; self.presenter.resumeCheckoutAction = nil }
             }
-        } catch { isProcessing = false; paymentStatusMessage = "Network error: \(error.localizedDescription)" }
+        } catch {
+            DispatchQueue.main.async { self.isProcessing = false; self.presenter.resumeCheckoutAction = nil }
+        }
+    }
+    
+    private func confirmPurchaseOnBackend() async -> Bool {
+        guard let url = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/checkout") else { return false }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        var body: [String: Any] = [
+            "purchaseType": "confirm_success",
+            "userId": vm.userId,
+            "addTokens": pendingTokenReward,
+            "isBusiness": selectedTab != 1
+        ]
+        
+        if let subId = pendingSubscriptionId {
+            body["subscriptionId"] = subId
+        }
+        
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
+                return true
+            }
+        } catch {
+            return false
+        }
+        return false
     }
     
     private func onPaymentCompletion(result: PaymentSheetResult) {
         switch result {
         case .completed:
-            paymentStatusMessage = "Payment successful! Tokens will appear momentarily."
             UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { Task { await vm.fetchUserUsageStats() } }
-        case .canceled: paymentStatusMessage = "Payment was canceled."
-        case .failed(let error): paymentStatusMessage = "Payment failed: \(error.localizedDescription)"
+            
+            Task {
+                let dbSuccess = await confirmPurchaseOnBackend()
+                
+                await MainActor.run {
+                    if dbSuccess {
+                        presenter.justPurchased = true
+                        vm.tokenBalance += pendingTokenReward
+                        
+                        if selectedTab != 1 {
+                            vm.hasActiveSubscription = true
+                            
+                            if selectedTab == 2 {
+                                UserDefaults.standard.set(true, forKey: "isFreeTrial_\(vm.userEmail)")
+                            } else {
+                                UserDefaults.standard.set(false, forKey: "isFreeTrial_\(vm.userEmail)")
+                            }
+                        }
+                        
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                            presenter.resumeCheckoutAction = nil
+                            isProcessing = false
+                            dismiss()
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { presenter.justPurchased = false }
+                        
+                    } else {
+                        isProcessing = false
+                        presenter.resumeCheckoutAction = nil
+                    }
+                }
+            }
+            
+        case .canceled, .failed:
+            DispatchQueue.main.async {
+                self.isProcessing = false
+                self.presenter.resumeCheckoutAction = nil
+            }
         }
     }
 }

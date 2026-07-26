@@ -6,6 +6,7 @@
 //
 
 
+
 import SwiftUI
 
 struct Buttons: View {
@@ -24,14 +25,16 @@ struct Buttons: View {
     @State private var showTutorial = false
     
     @State private var showSideMenu = false
+    @State private var isReticlePulsing = false
     
-    @State private var isReticlePulsing = false // Drives the AR Scanning animation
+    // 🚀 THE FIX: Completely ignores Cognito authState.tier.
+    // If they haven't actually paid (or aren't legacy), they get NOTHING.
+    private var isBusinessMode: Bool {
+        return vm.hasActiveSubscription
+    }
     
     var tabCount: Int {
-        switch authState.tier {
-        case .guest, .authenticated: return 2
-        case .business: return 3
-        }
+        return isBusinessMode ? 3 : 2
     }
     
     private var isScanTab: Bool { currentTab == 0 }
@@ -58,12 +61,11 @@ struct Buttons: View {
                     LandmarkScan(
                         onTap: revealChromeThenFade,
                         isDetecting: $isDetecting,
-                        isNavVisible: $chromeVisible,
-                       // isActive: currentTab == 0
+                        isNavVisible: $chromeVisible
                     )
                     .tag(0)
                     
-                    if authState.tier == .business {
+                    if isBusinessMode {
                         LandmarkRecord { landmarkId in
                             pendingUploadLandmarkId = landmarkId
                             withAnimation(.easeInOut(duration: 0.25)) { currentTab = 0 }
@@ -208,15 +210,15 @@ struct Buttons: View {
                 .contentShape(Rectangle())
                 .highPriorityGesture(
                     TapGesture().onEnded {
-                        if authState.tier == .business { showPromotion = true }
+                        if isBusinessMode { showPromotion = true }
                         else { showBusinessAlert = true }
                     }
                 )
                 .sheet(isPresented: $showPromotion) { PromotionEditor() }
-                .alert("Business Account Required", isPresented: $showBusinessAlert) {
+                .alert("Premium Account Required", isPresented: $showBusinessAlert) {
                     Button("OK", role: .cancel) {}
                 } message: {
-                    Text("You need a business account to access the Promotion Editor.")
+                    Text("You need an active subscription to access the Promotion Editor.")
                 }
             Spacer()
             
@@ -237,7 +239,7 @@ struct Buttons: View {
     private var bottomBar: some View {
         HStack(spacing: 0) {
             tabButton(title: "Scan", icon: "camera.aperture", tab: 0, locked: false)
-            if authState.tier == .business {
+            if isBusinessMode {
                 tabButton(title: "Record", icon: "video", tab: 1, locked: false)
             }
             tabButton(title: "Map", icon: "map", tab: mapTabIndex, locked: false)

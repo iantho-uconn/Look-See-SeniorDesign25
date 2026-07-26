@@ -12,6 +12,13 @@ class SettingsPresenter: ObservableObject {
     @Published var subscriptionStartingTab = 0
     @Published var showLoginSheet = false
     @Published var showSignUpSheet = false
+    
+    @Published var resumeCheckoutAction: String? = nil
+    @Published var savedAddOnIndex: Int = 0
+    @Published var savedTokenCount: Int = 0
+    @Published var savedTokenCents: Int = 0
+    
+    @Published var justPurchased: Bool = false
 }
 
 struct Settings: View {
@@ -21,42 +28,47 @@ struct Settings: View {
 
     @StateObject private var presenter = SettingsPresenter()
     @State private var showCancelAlert = false
+    @State private var isCancelling = false
 
     private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00)
 
-    private var hasActivePlan: Bool {
-        return vm.maxLandmarksCapacity > 0
+    private var isFullyLoggedIn: Bool {
+        return vm.isSignedIn && !vm.userEmail.isEmpty
     }
 
     private var dynamicPlanTitle: String {
-        if authState.tier == .guest {
-            return "Guest Account"
+        if !vm.hasActiveSubscription { return "Free Account" }
+        if UserDefaults.standard.bool(forKey: "isFreeTrial_\(vm.userEmail)") {
+            return "14-Day Free Trial"
         }
-        if !hasActivePlan {
-            return "No Active Plan"
-        }
-        switch vm.maxLandmarksCapacity {
-        case 1...5: return "Classic Tier"
-        case 6...20: return "Intermediate Tier"
-        case 21...: return "Advanced Tier"
-        default: return "Business Account"
-        }
+        return "Yearly Premium"
     }
 
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
                 
-                // Profile Header
                 VStack(spacing: 0) {
-                    if authState.tier == .guest {
+                    if !isFullyLoggedIn {
                         profileHeader(icon: "person.crop.circle.badge.questionmark", iconColor: .gray, title: "Guest User", subtitle: "Browsing anonymously")
-                    } else {
-                        profileHeader(icon: "person.crop.circle.badge.checkmark", iconColor: primaryColor, title: vm.userEmail.isEmpty ? "Loading..." : vm.userEmail, subtitle: dynamicPlanTitle)
                             .task {
+                                if !presenter.justPurchased {
+                                    await vm.checkSession()
+                                }
+                            }
+                    } else {
+                        profileHeader(
+                            icon: "person.crop.circle.badge.checkmark",
+                            iconColor: primaryColor,
+                            title: vm.userEmail,
+                            subtitle: dynamicPlanTitle
+                        )
+                        .task {
+                            if !presenter.justPurchased {
                                 await vm.fetchUserDetails()
                                 await vm.fetchUserUsageStats()
                             }
+                        }
                     }
                 }
                 .padding(20)
@@ -66,17 +78,21 @@ struct Settings: View {
                 .shadow(color: .black.opacity(0.05), radius: 10, x: 0, y: 4)
                 .padding(.horizontal)
 
-                if !hasActivePlan {
+                if !vm.hasActiveSubscription || !isFullyLoggedIn {
                     guestPromoCard
                 }
 
-                if authState.tier != .guest {
+                if isFullyLoggedIn {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Account").font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(.secondary).textCase(.uppercase).padding(.horizontal, 20)
                         
                         VStack(spacing: 0) {
+                            NavigationLink { BusinessProfileView().environmentObject(vm) } label: {
+                                settingsRow(icon: "storefront.fill", iconBg: .blue, title: "Business Profile", subtitle: vm.storeName.isEmpty ? "Update store name and phone number." : vm.storeName)
+                            }
+                            Divider().padding(.leading, 68)
                             NavigationLink { AccountSecurityView().environmentObject(vm) } label: {
-                                settingsRow(icon: "person.badge.key.fill", iconBg: .blue, title: "Account & Security", subtitle: "Change your email or password.")
+                                settingsRow(icon: "person.badge.key.fill", iconBg: .gray, title: "Account & Security", subtitle: "Change your email or password.", showDivider: false)
                             }
                         }
                         .background(Color(uiColor: .secondarySystemGroupedBackground))
@@ -84,65 +100,72 @@ struct Settings: View {
                         .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2)
                         .padding(.horizontal)
                     }
-                }
 
-                // Membership Section
-                if authState.tier == .business || hasActivePlan {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Membership").font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(.secondary).textCase(.uppercase).padding(.horizontal, 20)
-                        
-                        VStack(spacing: 16) {
-                            HStack {
-                                Text("Current Plan").font(.system(size: 16, weight: .semibold))
-                                Spacer()
-                                Text(dynamicPlanTitle).foregroundStyle(primaryColor).font(.system(size: 16, weight: .bold, design: .rounded))
-                            }
+                    if vm.hasActiveSubscription {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Membership").font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(.secondary).textCase(.uppercase).padding(.horizontal, 20)
                             
-                            HStack {
-                                Text("Landmark Capacity").font(.system(size: 16, weight: .semibold))
-                                Spacer()
-                                Text("\(vm.activeLandmarksCount) / \(vm.maxLandmarksCapacity) active").foregroundStyle(.secondary).font(.system(size: 15, weight: .medium, design: .monospaced))
-                            }
-                            
-                            HStack {
-                                Text("Status").font(.system(size: 16, weight: .semibold))
-                                Spacer()
-                                Text(!hasActivePlan ? "Inactive" : "Active").foregroundStyle(!hasActivePlan ? .red : .green).font(.system(size: 15, weight: .bold))
-                            }
-                            
-                            Divider()
-                            
-                            HStack(spacing: 12) {
-                                Button {
-                                    presenter.subscriptionStartingTab = 0
-                                    presenter.showSubscriptionFlow = true
-                                } label: {
-                                    Text(!hasActivePlan ? "Subscribe" : "Change Plan")
-                                        .font(.system(size: 15, weight: .bold, design: .rounded))
-                                        .frame(maxWidth: .infinity).padding(.vertical, 12)
-                                        .background(primaryColor.opacity(0.1)).foregroundStyle(primaryColor).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            VStack(spacing: 16) {
+                                HStack {
+                                    Text("Current Plan").font(.system(size: 16, weight: .semibold))
+                                    Spacer()
+                                    Text(dynamicPlanTitle).foregroundStyle(primaryColor).font(.system(size: 16, weight: .bold, design: .rounded))
                                 }
                                 
-                                Button { showCancelAlert = true } label: {
-                                    Text("Cancel").font(.system(size: 15, weight: .bold, design: .rounded))
-                                        .frame(maxWidth: .infinity).padding(.vertical, 12)
-                                        .background(Color.red.opacity(0.1)).foregroundStyle(.red).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                HStack {
+                                    Text("Status").font(.system(size: 16, weight: .semibold))
+                                    Spacer()
+                                    Text(!vm.hasActiveSubscription ? "Inactive" : "Active").foregroundStyle(!vm.hasActiveSubscription ? .red : .green).font(.system(size: 15, weight: .bold))
+                                }
+                                
+                                Divider()
+                                
+                                HStack(spacing: 12) {
+                                    Button {
+                                        presenter.subscriptionStartingTab = 0
+                                        presenter.showSubscriptionFlow = true
+                                    } label: {
+                                        Text(!vm.hasActiveSubscription ? "Subscribe" : "Manage Plan")
+                                            .font(.system(size: 15, weight: .bold, design: .rounded))
+                                            .frame(maxWidth: .infinity).padding(.vertical, 12)
+                                            .background(primaryColor.opacity(0.1)).foregroundStyle(primaryColor).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                    }
+                                    
+                                    Button { showCancelAlert = true } label: {
+                                        Text("Cancel").font(.system(size: 15, weight: .bold, design: .rounded))
+                                            .frame(maxWidth: .infinity).padding(.vertical, 12)
+                                            .background(Color.red.opacity(0.1)).foregroundStyle(.red).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                    }
                                 }
                             }
+                            .padding(20).background(Color(uiColor: .secondarySystemGroupedBackground)).clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                            .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2).padding(.horizontal)
+                            .alert("Cancel Subscription?", isPresented: $showCancelAlert) {
+                                Button("Keep Plan", role: .cancel) {}
+                                Button("Cancel Plan", role: .destructive) {
+                                    isCancelling = true
+                                    Task {
+                                        await vm.cancelSubscription()
+                                        await MainActor.run { isCancelling = false }
+                                    }
+                                }
+                            } message: { Text("Your business features will be disabled immediately.") }
                         }
-                        .padding(20).background(Color(uiColor: .secondarySystemGroupedBackground)).clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                        .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2).padding(.horizontal)
-                        .alert("Cancel Subscription?", isPresented: $showCancelAlert) {
-                            Button("Keep Plan", role: .cancel) {}
-                            Button("Cancel Plan", role: .destructive) { withAnimation { authState.tier = .authenticated } }
-                        } message: { Text("Your business features will be disabled immediately.") }
-                    }
-                    
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Business Management").font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(.secondary).textCase(.uppercase).padding(.horizontal, 20)
                         
-                        // 🚀 UNLOCKED: Shows tools if they have an active plan OR are a legacy business account
-                        if hasActivePlan || authState.tier == .business {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Business Management").font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(.secondary).textCase(.uppercase).padding(.horizontal, 20)
+                            
+                            if UserDefaults.standard.bool(forKey: "isFreeTrial_\(vm.userEmail)") {
+                                HStack(alignment: .top, spacing: 12) {
+                                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange).font(.title3)
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text("Free Trial Active").font(.system(size: 14, weight: .bold)).foregroundStyle(.primary)
+                                        Text("Please subscribe before your 14-day trial ends to prevent your landmarks from being deactivated.").font(.system(size: 13)).foregroundStyle(.secondary)
+                                    }
+                                }
+                                .padding(16).background(Color.orange.opacity(0.1)).clipShape(RoundedRectangle(cornerRadius: 16)).padding(.horizontal)
+                            }
+                            
                             VStack(spacing: 0) {
                                 NavigationLink { BusinessLandmarksView() } label: {
                                     settingsRow(icon: "building.2.crop.circle.fill", iconBg: primaryColor, title: "Manage My Landmarks", subtitle: "View the landmarks assigned to your account.")
@@ -152,12 +175,15 @@ struct Settings: View {
                                     presenter.subscriptionStartingTab = 1
                                     presenter.showSubscriptionFlow = true
                                 } label: {
-                                    settingsRow(icon: "circle.hexagongrid.fill", iconBg: .orange, title: "Swap Tokens (\(vm.tokenBalance))", subtitle: "Buy tokens to update your inventory.", showDivider: false)
+                                    settingsRow(icon: "circle.hexagongrid.fill", iconBg: .orange, title: "Tokens (\(vm.tokenBalance))", subtitle: "Buy tokens to update your inventory.", showDivider: false)
                                 }
                             }
                             .background(Color(uiColor: .secondarySystemGroupedBackground)).clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                             .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2).padding(.horizontal)
-                        } else {
+                        }
+                    } else {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Business Management").font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(.secondary).textCase(.uppercase).padding(.horizontal, 20)
                             VStack(spacing: 0) {
                                 Button {
                                     presenter.subscriptionStartingTab = 0
@@ -170,14 +196,27 @@ struct Settings: View {
                             .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2).padding(.horizontal)
                         }
                     }
+                } else {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Business Management").font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(.secondary).textCase(.uppercase).padding(.horizontal, 20)
+                        VStack(spacing: 0) {
+                            Button {
+                                presenter.subscriptionStartingTab = 0
+                                presenter.showSubscriptionFlow = true
+                            } label: {
+                                settingsRow(icon: "lock.fill", iconBg: .gray, title: "Business Tools Locked", subtitle: "Subscribe to a plan to unlock landmarks and tokens.", showDivider: false)
+                            }
+                        }
+                        .background(Color(uiColor: .secondarySystemGroupedBackground)).clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2).padding(.horizontal)
+                    }
                 }
 
-                // App Links
                 VStack(spacing: 0) {
                     NavigationLink { Text("Help & Support Center") } label: { settingsRow(icon: "questionmark.circle.fill", iconBg: .orange, title: "Help & Support", showDivider: true) }
                     NavigationLink { Text("Privacy Policy") } label: { settingsRow(icon: "hand.raised.fill", iconBg: .purple, title: "Privacy Policy", showDivider: true) }
                     NavigationLink { Text("Terms of Service") } label: { settingsRow(icon: "doc.text.fill", iconBg: .green, title: "Terms of Service", showDivider: true) }
-                    NavigationLink { DeepSettingsView() } label: { settingsRow(icon: "gearshape.fill", iconBg: .gray, title: "Settings & Preferences", showDivider: false) }
+                    NavigationLink { DeepSettingsView(isFullyLoggedIn: isFullyLoggedIn).environmentObject(vm) } label: { settingsRow(icon: "gearshape.fill", iconBg: .gray, title: "Settings & Preferences", showDivider: false) }
                 }
                 .background(Color(uiColor: .secondarySystemGroupedBackground)).clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                 .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2).padding(.horizontal)
@@ -189,17 +228,11 @@ struct Settings: View {
         .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
         .navigationTitle("Menu")
         .onChange(of: authState.didSignOut) { _, didSignOut in if didSignOut { dismiss() } }
-        .sheet(isPresented: $presenter.showSubscriptionFlow) { SubscriptionPlans(startingTab: presenter.subscriptionStartingTab) }
+        .sheet(isPresented: $presenter.showSubscriptionFlow) { SubscriptionPlans(presenter: presenter) }
         .sheet(isPresented: $presenter.showLoginSheet) {
             NavigationStack {
                 Login(vm: vm, onSignedIn: {
                     presenter.showLoginSheet = false; dismiss()
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.85) {
-                        // 🚀 FIX: Let legacy users keep their business tier! Only manually upgrade them if they have a plan.
-                        if vm.maxLandmarksCapacity > 0 {
-                            authState.tier = .business
-                        }
-                    }
                 }, onGoToSignup: {
                     presenter.showLoginSheet = false
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { presenter.showSignUpSheet = true }
@@ -207,6 +240,26 @@ struct Settings: View {
             }
         }
         .sheet(isPresented: $presenter.showSignUpSheet) { GuestSignUpView() }
+        .onChange(of: isFullyLoggedIn) { _, loggedIn in
+            if loggedIn && presenter.resumeCheckoutAction != nil {
+                presenter.showLoginSheet = false
+                presenter.showSignUpSheet = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                    presenter.showSubscriptionFlow = true
+                }
+            }
+        }
+        .overlay {
+            if isCancelling {
+                ZStack {
+                    Color.black.opacity(0.4).ignoresSafeArea()
+                    VStack(spacing: 16) {
+                        ProgressView().tint(.white).scaleEffect(1.5)
+                        Text("Canceling Plan...").font(.headline).foregroundStyle(.white)
+                    }.padding(32).background(.ultraThinMaterial).clipShape(RoundedRectangle(cornerRadius: 16))
+                }
+            }
+        }
     }
     
     private func profileHeader(icon: String, iconColor: Color, title: String, subtitle: String) -> some View {
@@ -256,7 +309,7 @@ struct Settings: View {
                         Text("Subscribe").font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(.white).frame(maxWidth: .infinity).padding(.vertical, 14).background(primaryColor).clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                     }.buttonStyle(.plain)
                     
-                    if authState.tier == .guest {
+                    if !isFullyLoggedIn {
                         Button { presenter.showLoginSheet = true } label: {
                             Text("Log In").font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(.white).frame(maxWidth: .infinity).padding(.vertical, 14).background(Color.white.opacity(0.15)).clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                         }.buttonStyle(.plain)
@@ -275,26 +328,199 @@ struct Settings: View {
 struct DeepSettingsView: View {
     @EnvironmentObject var vm: AuthViewModel
     @EnvironmentObject var authState: AuthState
-    @ObservedObject var modelLoader = ModelService.shared
-    @StateObject private var locationManager = LocationManager()
+    
+    var isFullyLoggedIn: Bool
+    
     @State private var showAlertSignOut = false
     @State private var isReloading = false
-    @State private var reloadMessage: String? = nil
+    @State private var showReloadSuccess = false
+    
+    // 🚀 NEW: State variable to track the loaded AI model cluster
+    @State private var activeClusterID: String = "None"
+    
     private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00)
 
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
-                if authState.tier != .guest {
+                VStack(spacing: 6) {
+                    Button {
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        isReloading = true
+                        Task {
+                            try? await Task.sleep(nanoseconds: 1_500_000_000)
+                            await MainActor.run {
+                                isReloading = false
+                                withAnimation { showReloadSuccess = true }
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                                    withAnimation { showReloadSuccess = false }
+                                }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 12) {
+                            if isReloading {
+                                ProgressView().tint(.white)
+                                Text("Fetching Clusters...")
+                            } else if showReloadSuccess {
+                                Image(systemName: "checkmark.circle.fill")
+                                Text("Models Reloaded!")
+                            } else {
+                                Image(systemName: "arrow.triangle.2.circlepath")
+                                Text("Reload Model")
+                            }
+                        }
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                        .background(showReloadSuccess ? Color.green : primaryColor)
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    }
+                    .disabled(isReloading)
+                    
+                    // 🚀 NEW: Clean UI display for the Active Cluster
+                    HStack(spacing: 6) {
+                        Image(systemName: "cpu")
+                        Text(activeClusterID == "None" ? "No Cluster Loaded" : "Active Cluster: \(activeClusterID)")
+                    }
+                    .font(.system(size: 12, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 4)
+                }
+                .padding(.horizontal)
+                
+                if isFullyLoggedIn {
                     Button { showAlertSignOut = true } label: {
                         HStack(spacing: 12) { Image(systemName: "rectangle.portrait.and.arrow.right"); Text("Sign Out") }.font(.system(size: 16, weight: .bold, design: .rounded)).foregroundStyle(.red).frame(maxWidth: .infinity).padding(.vertical, 16).background(Color.red.opacity(0.1)).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous)).padding(.horizontal)
                     }
                     .alert("Are you sure you want to sign out?", isPresented: $showAlertSignOut) {
                         Button("Cancel", role: .cancel) {}
-                        Button("Sign Out", role: .destructive) { Task { await authState.signOut(); vm.isSignedIn = false } }
+                        Button("Sign Out", role: .destructive) { Task { await vm.signOut(authState: authState) } }
                     }
                 }
             }.padding(.top, 16)
-        }.background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea()).navigationTitle("Advanced Settings")
+        }
+        .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
+        .navigationTitle("Settings")
+        .task {
+            // 🚀 NEW: Silently binds the UI directly to the ML Model Selector
+            for await release in ModelSelector.shared.$activeRelease.values {
+                await MainActor.run {
+                    self.activeClusterID = release?.clusterID ?? "None"
+                }
+            }
+        }
+    }
+}
+
+// MARK: - BusinessProfileView
+struct BusinessProfileView: View {
+    @EnvironmentObject var vm: AuthViewModel
+    @State private var showEditSheet = false
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 24) {
+                VStack(spacing: 16) {
+                    Image(systemName: "storefront.fill")
+                        .font(.system(size: 60))
+                        .foregroundStyle(Color(red: 0.22, green: 0.49, blue: 1.00))
+                        .padding(.top, 24)
+                    
+                    Text(vm.storeName.isEmpty ? "No Store Name Set" : vm.storeName)
+                        .font(.system(size: 24, weight: .bold, design: .rounded))
+                        .foregroundStyle(vm.storeName.isEmpty ? .secondary : .primary)
+                    
+                    HStack(spacing: 8) {
+                        Image(systemName: "phone.fill")
+                            .foregroundStyle(.secondary)
+                        Text(vm.phoneNumber.isEmpty ? "No Phone Number" : vm.phoneNumber)
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.bottom, 24)
+                .background(Color(uiColor: .secondarySystemGroupedBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .shadow(color: .black.opacity(0.05), radius: 10, x: 0, y: 4)
+                .padding(.horizontal)
+                
+                Button {
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    showEditSheet = true
+                } label: {
+                    Text("Edit Profile Details")
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                        .background(Color(red: 0.22, green: 0.49, blue: 1.00))
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .padding(.horizontal)
+                }
+                Spacer()
+            }
+            .padding(.top, 16)
+        }
+        .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
+        .navigationTitle("Business Profile")
+        .sheet(isPresented: $showEditSheet) {
+            BusinessProfileEditSheet()
+                .environmentObject(vm)
+        }
+    }
+}
+
+// MARK: - BusinessProfileEditSheet
+struct BusinessProfileEditSheet: View {
+    @Environment(\.dismiss) var dismiss
+    @EnvironmentObject var vm: AuthViewModel
+    
+    @State private var draftName: String = ""
+    @State private var draftPhone: String = ""
+    @State private var isSaving = false
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section(header: Text("Public Business Info"), footer: Text("This information will be displayed when users scan your LookSee landmarks.")) {
+                    TextField("Store Name", text: $draftName)
+                    TextField("Phone Number", text: $draftPhone)
+                        .keyboardType(.phonePad)
+                        .onChange(of: draftPhone) { _, newValue in
+                            let filtered = newValue.filter { "0123456789".contains($0) }
+                            if filtered.count > 10 { draftPhone = String(filtered.prefix(10)) }
+                            else if draftPhone != filtered { draftPhone = filtered }
+                        }
+                }
+            }
+            .navigationTitle("Edit Profile")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button {
+                        isSaving = true
+                        Task {
+                            let success = await vm.updateBusinessProfile(storeName: draftName, phoneNumber: draftPhone)
+                            isSaving = false
+                            if success { dismiss() }
+                        }
+                    } label: {
+                        if isSaving { ProgressView() }
+                        else { Text("Save").bold() }
+                    }
+                    .disabled(isSaving)
+                }
+            }
+            .onAppear {
+                draftName = vm.storeName
+                draftPhone = vm.phoneNumber
+            }
+        }
     }
 }

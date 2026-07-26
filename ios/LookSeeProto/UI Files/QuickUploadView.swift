@@ -5,6 +5,7 @@
 //  Created by Angel Pineda on 6/19/26.
 //
 
+
 import SwiftUI
 import AVKit
 
@@ -13,7 +14,6 @@ struct QuickUploadView: View {
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var vm: AuthViewModel
     
-    // Connect the Real AWS Upload Engine
     @StateObject private var uploadService = UploadService()
     
     enum ActivePicker: Identifiable {
@@ -25,7 +25,6 @@ struct QuickUploadView: View {
     @State private var selectedMediaURL: URL?
     @State private var isVideo = false
     
-    // MARK: NEW - Limit Alerts
     @State private var showLimitAlert = false
     @State private var limitAlertTitle = ""
     @State private var limitAlertMessage = ""
@@ -186,13 +185,13 @@ struct QuickUploadView: View {
                         .padding(.bottom, 20)
                     } else {
                         Button {
-                            // Limit Checks
-                            if vm.activeLandmarksCount >= vm.maxLandmarksCapacity {
-                                limitAlertTitle = "Capacity Reached"
-                                limitAlertMessage = "You have reached your tier's maximum active landmarks. Delete an old landmark or upgrade your plan."
+                            // 🚀 NEW TOKEN LOGIC
+                            if !vm.hasActiveSubscription {
+                                limitAlertTitle = "Subscription Required"
+                                limitAlertMessage = "You need an active Premium subscription or Free Trial to upload landmarks."
                                 showLimitAlert = true
                             } else if vm.tokenBalance <= 0 {
-                                limitAlertTitle = "Out of Swap Tokens"
+                                limitAlertTitle = "Out of Tokens"
                                 limitAlertMessage = "You need 1 token to upload a new landmark. Purchase a token pack in Settings."
                                 showLimitAlert = true
                             } else {
@@ -246,7 +245,6 @@ struct QuickUploadView: View {
         guard let url = selectedMediaURL else { return }
         
         await vm.fetchUserDetails()
-        
         let idToken = await vm.fetchIdToken()
         
         let uploadImage: UIImage? = isVideo ? nil : UIImage(contentsOfFile: url.path)
@@ -269,6 +267,7 @@ struct QuickUploadView: View {
             )
             print("✅ QuickUpload Completed Successfully")
             
+            // 🚀 DEDUCT 1 TOKEN ON THE FRONTEND UI
             await MainActor.run {
                 vm.tokenBalance -= 1
                 vm.activeLandmarksCount += 1

@@ -102,14 +102,14 @@ class AutoUploadManager: ObservableObject {
             
             // MARK: - NEW LIMIT CHECKS
             
-            // 1. Check if they hit their Tier's maximum active landmark capacity
-            if authVM.activeLandmarksCount >= authVM.maxLandmarksCapacity {
-                print("🛑 CAPACITY REACHED: Stopping auto-upload queue.")
+            // 1. Check if they have an active subscription
+            if !authVM.hasActiveSubscription {
+                print("🛑 NO ACTIVE SUBSCRIPTION: Stopping auto-upload queue.")
                 isPaused = true
                 isUploading = false
                 sendLimitNotification(
-                    title: "Landmark Capacity Reached",
-                    body: "You've reached your tier limit. Delete an old landmark or upgrade your plan to upload more."
+                    title: "Subscription Required",
+                    body: "You need an active Premium subscription or Free Trial to upload landmarks."
                 )
                 return
             }
@@ -120,7 +120,7 @@ class AutoUploadManager: ObservableObject {
                 isPaused = true
                 isUploading = false
                 sendLimitNotification(
-                    title: "Out of Swap Tokens",
+                    title: "Out of Tokens",
                     body: "You need 1 token to upload a new landmark. Purchase a token pack in Settings."
                 )
                 return

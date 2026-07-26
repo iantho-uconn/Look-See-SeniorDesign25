@@ -174,7 +174,7 @@ struct QueueInfoSheet: View {
                     }.padding(.horizontal, 20)
                     Spacer()
                     Button { dismiss() } label: {
-                        Text("Got It").font(.headline).foregroundStyle(.white).frame(maxWidth: .infinity).padding(.vertical, 16).background(Color.blue).clipShape(RoundedRectangle(cornerRadius: 16)).padding(.horizontal, 24).padding(.bottom, 20)
+                        Text("Close").font(.headline).foregroundStyle(.white).frame(maxWidth: .infinity).padding(.vertical, 16).background(Color.blue).clipShape(RoundedRectangle(cornerRadius: 16)).padding(.horizontal, 24).padding(.bottom, 20)
                     }
                 }
             }

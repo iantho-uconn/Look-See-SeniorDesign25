@@ -3,7 +3,6 @@
 //  LookSeeProto
 //
 
-
 import SwiftUI
 import CoreLocation
 import UIKit
@@ -165,9 +164,23 @@ struct LandmarkRecord: View {
         .sheet(isPresented: $showTextScanner) { ScannerSheet(scannedText: $shortDescription) }
         .fullScreenCover(isPresented: $showNegativeCamera) { NegativeVideoCameraView(onDone: { video in capturedNegativeVideo = video; if !hardNegativeUploadService.isUploading { hardNegativeUploadService.reset() } }) }
         .alert("Discard this upload?", isPresented: $showDiscardAlert) { Button("Discard", role: .destructive) { clearScreen() }; Button("Cancel", role: .cancel) { } } message: { Text("This will remove the media and clear the form.") }
+        
+        // 🚀 THE FIX: Upgraded buttons open straight to the camera so you can rapidly chain uploads
         .alert("Landmark Uploaded!", isPresented: $showCompletionPopup) {
-            if archivedMedia != nil { Button("Done", role: .cancel) { dismiss() } }
-            else { Button("Create Another Landmark") { resetForAnotherLandmark() }; Button("Add More Photos or Videos") { openAdditionalMediaUpload() } }
+            if archivedMedia != nil {
+                Button("Done", role: .cancel) { dismiss() }
+            } else {
+                Button("Record Another Landmark") {
+                    resetForAnotherLandmark()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        showVideoCamera = true
+                    }
+                }
+                Button("Done", role: .cancel) {
+                    resetForAnotherLandmark()
+                    dismiss()
+                }
+            }
         } message: { Text("Your landmark media and negative reference video were uploaded successfully.") }
         .alert("Connection Offline", isPresented: $showAutoQueueAlert) { Button("OK", role: .cancel) { if archivedMedia != nil { dismiss() } } } message: { Text("You currently have no internet connection. This landmark has been securely added to your Upload Queue and will automatically sync when service returns!") }
         .alert(limitAlertTitle, isPresented: $showLimitAlert) {
@@ -633,14 +646,14 @@ struct LandmarkRecord: View {
 
     private func startFullSubmission() {
         if completedPositiveResult == nil {
-            if vm.activeLandmarksCount >= vm.maxLandmarksCapacity {
-                limitAlertTitle = "Capacity Reached"
-                limitAlertMessage = "You have reached your tier's maximum active landmarks. Delete an old landmark or upgrade your plan."
+            if !vm.hasActiveSubscription {
+                limitAlertTitle = "Subscription Required"
+                limitAlertMessage = "You need an active Premium subscription or Free Trial to upload landmarks."
                 showLimitAlert = true
                 return
             }
             if vm.tokenBalance <= 0 {
-                limitAlertTitle = "Out of Swap Tokens"
+                limitAlertTitle = "Out of Tokens"
                 limitAlertMessage = "You need 1 token to upload a new landmark. Purchase a token pack in Settings."
                 showLimitAlert = true
                 return
@@ -857,7 +870,6 @@ struct LandmarkRecord: View {
     }
     
     private func resetForAnotherLandmark() { clearScreen() }
-    private func openAdditionalMediaUpload() { guard let id = completedLandmarkId else { return }; resetForAnotherLandmark(); onAddMoreMedia(id) }
 
     private func makeBusinessLandmarkId() -> String { "landmark_\(UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(8))" }
     

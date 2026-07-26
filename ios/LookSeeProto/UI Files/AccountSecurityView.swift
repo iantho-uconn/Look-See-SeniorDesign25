@@ -10,10 +10,16 @@ import Amplify
 
 struct AccountSecurityView: View {
     @EnvironmentObject private var vm: AuthViewModel
+    @EnvironmentObject private var authState: AuthState // 🚀 Added for logout sync
+    @Environment(\.dismiss) private var dismiss
 
     @State private var currentEmail = ""
     @State private var isLoading = true
     @State private var errorMessage: String?
+    
+    // 🚀 NEW: Deletion state variables
+    @State private var showDeleteAlert = false
+    @State private var isDeleting = false
 
     var body: some View {
         Form {
@@ -68,11 +74,47 @@ struct AccountSecurityView: View {
                     .foregroundStyle(.orange)
                 }
             }
+            
+            // 🚀 NEW: The Delete Account Button securely injected into your existing form
+            Section {
+                Button(role: .destructive) {
+                    showDeleteAlert = true
+                } label: {
+                    HStack {
+                        Spacer()
+                        Text("Delete Account").bold()
+                        Spacer()
+                    }
+                }
+            } footer: {
+                Text("This action is permanent. All your data and active subscriptions will be lost.")
+            }
         }
         .navigationTitle("Account & Security")
         .navigationBarTitleDisplayMode(.inline)
         .task {
             await refreshAccount()
+        }
+        .alert("Delete Account?", isPresented: $showDeleteAlert) {
+            Button("Cancel", role: .cancel) { }
+            Button("Delete", role: .destructive) { deleteAccount() }
+        } message: {
+            Text("Are you sure you want to permanently delete your account? This cannot be undone.")
+        }
+        .overlay {
+            // 🚀 NEW: Loading screen to prevent accidental swipes while AWS deletes the profile
+            if isDeleting {
+                ZStack {
+                    Color.black.opacity(0.4).ignoresSafeArea()
+                    VStack(spacing: 16) {
+                        ProgressView().tint(.white).scaleEffect(1.5)
+                        Text("Deleting Account...").font(.headline).foregroundStyle(.white)
+                    }
+                    .padding(32)
+                    .background(.ultraThinMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                }
+            }
         }
     }
 
@@ -99,6 +141,30 @@ struct AccountSecurityView: View {
             await vm.fetchUserEmail()
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+    
+    // 🚀 NEW: The Zombie-Killer deletion logic
+    private func deleteAccount() {
+        isDeleting = true
+        Task {
+            do {
+                try await Amplify.Auth.deleteUser()
+                
+                await MainActor.run {
+                    vm.signOut(authState: authState)
+                    isDeleting = false
+                    dismiss()
+                }
+            } catch {
+                print("Failed to delete user: \(error)")
+                // Even if AWS fails, force them out locally so they don't get stuck in zombie mode
+                await MainActor.run {
+                    vm.signOut(authState: authState)
+                    isDeleting = false
+                    dismiss()
+                }
+            }
         }
     }
 }

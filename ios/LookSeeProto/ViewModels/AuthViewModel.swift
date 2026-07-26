@@ -18,10 +18,13 @@ class AuthViewModel: ObservableObject {
     
     @Published var requiresNewPassword = false
     
+    // TOKEN / SUB / PROFILE TRACKERS
     @Published var tokenBalance: Int = 0
     @Published var activeLandmarksCount: Int = 0
-    @Published var maxLandmarksCapacity: Int = 0
+    @Published var hasActiveSubscription: Bool = false
     @Published var stripeSubscriptionId: String = ""
+    @Published var storeName: String = ""
+    @Published var phoneNumber: String = ""
     
     func checkSession() async {
         do {
@@ -30,7 +33,9 @@ class AuthViewModel: ObservableObject {
             
             if isSignedIn {
                 await fetchUserDetails()
-                await fetchUserUsageStats()
+                if isSignedIn {
+                    await fetchUserUsageStats()
+                }
             }
         } catch {
             isSignedIn = false
@@ -40,11 +45,7 @@ class AuthViewModel: ObservableObject {
     func signIn(username: String, password: String) {
         Task {
             do {
-                let result = try await AuthService.shared.signIn(
-                    username: username,
-                    password: password
-                )
-                
+                let result = try await AuthService.shared.signIn(username: username, password: password)
                 if result.isSignedIn {
                     isSignedIn = true
                     requiresNewPassword = false
@@ -79,7 +80,6 @@ class AuthViewModel: ObservableObject {
         Task {
             do {
                 let result = try await Amplify.Auth.confirmSignIn(challengeResponse: newPassword)
-                
                 if result.isSignedIn {
                     isSignedIn = true
                     requiresNewPassword = false
@@ -97,19 +97,26 @@ class AuthViewModel: ObservableObject {
         }
     }
     
+    // 🚀 THE FIX: Ensures memory is 100% wiped on Sign Out or Account Deletion
     func signOut(authState: AuthState) {
         Task {
             await AuthService.shared.signOut()
             await authState.signOut()
-            isSignedIn = false
-            requiresNewPassword = false
             
-            tokenBalance = 0
-            activeLandmarksCount = 0
-            maxLandmarksCapacity = 0
-            stripeSubscriptionId = ""
-            userId = ""
-            userEmail = ""
+            await MainActor.run {
+                UserDefaults.standard.set(false, forKey: "isFreeTrial_\(self.userEmail)")
+                
+                self.isSignedIn = false
+                self.requiresNewPassword = false
+                self.tokenBalance = 0
+                self.activeLandmarksCount = 0
+                self.hasActiveSubscription = false
+                self.stripeSubscriptionId = ""
+                self.storeName = ""
+                self.phoneNumber = ""
+                self.userId = ""
+                self.userEmail = ""
+            }
         }
     }
 
@@ -118,13 +125,22 @@ class AuthViewModel: ObservableObject {
             if let user = try? await Amplify.Auth.getCurrentUser() {
                 self.userId = user.userId
             }
-            
             let attributes = try await Amplify.Auth.fetchUserAttributes()
             if let emailAttr = attributes.first(where: { $0.key == .email }) {
                 self.userEmail = emailAttr.value
             }
         } catch {
             print("❌ Failed to fetch user details: \(error)")
+            let errString = "\(error)"
+            if errString.contains("userNotFound") || errString.contains("NotAuthorizedException") || errString.contains("deleted") {
+                _ = await Amplify.Auth.signOut()
+                self.isSignedIn = false
+                self.userId = ""
+                self.userEmail = ""
+                self.hasActiveSubscription = false
+                self.tokenBalance = 0
+                self.stripeSubscriptionId = ""
+            }
         }
     }
     
@@ -144,16 +160,14 @@ class AuthViewModel: ObservableObject {
         }
         return ""
     }
-    
+
     func fetchUserUsageStats() async {
         guard !userId.isEmpty else { return }
-        
         guard let url = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/LookSeeGetUserStats") else { return }
         
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        
         let body: [String: String] = ["userId": userId]
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         
@@ -162,16 +176,95 @@ class AuthViewModel: ObservableObject {
             if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
                 if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
                     await MainActor.run {
-                        self.tokenBalance = json["tokenBalance"] as? Int ?? 0
-                        self.activeLandmarksCount = json["activeLandmarksCount"] as? Int ?? 0
-                        self.maxLandmarksCapacity = json["maxLandmarksCapacity"] as? Int ?? 5
-                        self.stripeSubscriptionId = json["stripeSubscriptionId"] as? String ?? ""
+                        let fetchedBalance = json["tokenBalance"] as? Int ?? 0
+                        let fetchedLandmarks = json["activeLandmarksCount"] as? Int ?? 0
+                        let fetchedSub = json["hasActiveSubscription"] as? Bool ?? false
+                        let fetchedTier = json["tier"] as? String ?? ""
+                        let fetchedStripeId = json["stripeSubscriptionId"] as? String ?? ""
+                        
+                        self.tokenBalance = max(self.tokenBalance, fetchedBalance)
+                        self.activeLandmarksCount = fetchedLandmarks
+                        
+                        let isSubscribedOnBackend = fetchedSub || fetchedTier == "business" || !fetchedStripeId.isEmpty
+                        self.hasActiveSubscription = self.hasActiveSubscription || isSubscribedOnBackend
+                        
+                        if !fetchedStripeId.isEmpty {
+                            self.stripeSubscriptionId = fetchedStripeId
+                        }
+                        
+                        if let fetchedStore = json["storeName"] as? String, !fetchedStore.isEmpty {
+                            self.storeName = fetchedStore
+                        }
+                        if let fetchedPhone = json["phoneNumber"] as? String, !fetchedPhone.isEmpty {
+                            self.phoneNumber = fetchedPhone
+                        }
                     }
                 }
             }
         } catch {
             print("❌ Failed to fetch stats: \(error.localizedDescription)")
         }
+    }
+
+    // 🚀 THE FIX: Tells AWS to actually cancel your Stripe Subscription
+    func cancelSubscription() async -> Bool {
+        guard !userId.isEmpty else { return false }
+        guard let url = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/checkout") else { return false }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let body: [String: Any] = [
+            "purchaseType": "cancel_subscription",
+            "userId": userId,
+            "subscriptionId": stripeSubscriptionId
+        ]
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
+                await MainActor.run {
+                    self.hasActiveSubscription = false
+                    self.stripeSubscriptionId = ""
+                    UserDefaults.standard.set(false, forKey: "isFreeTrial_\(self.userEmail)")
+                }
+                return true
+            }
+        } catch {
+            print("❌ Failed to cancel subscription: \(error)")
+        }
+        return false
+    }
+
+    func updateBusinessProfile(storeName: String, phoneNumber: String) async -> Bool {
+        guard !userId.isEmpty else { return false }
+        guard let url = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/checkout") else { return false }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let body: [String: Any] = [
+            "purchaseType": "update_profile",
+            "userId": userId,
+            "storeName": storeName,
+            "phoneNumber": phoneNumber
+        ]
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
+                self.storeName = storeName
+                self.phoneNumber = phoneNumber
+                return true
+            }
+        } catch {
+            print("❌ Failed to update business profile: \(error)")
+        }
+        return false
     }
 
     private func friendlyMessage(for error: AuthError) -> String {
@@ -187,6 +280,7 @@ class AuthViewModel: ObservableObject {
     }
 }
 
+// 🚀 RESTORED: Helper function used by other views for debugging
 func printCognitoTokens() async {
     do {
         let session = try await Amplify.Auth.fetchAuthSession()

@@ -5,7 +5,6 @@
 //  Business user's landmark management entry point.
 //
 
-
 import SwiftUI
 
 struct BusinessLandmarksView: View {
@@ -21,35 +20,6 @@ struct BusinessLandmarksView: View {
         ScrollView {
             VStack(spacing: 24) {
                 
-                // MARK: - Pending Uploads
-                if !offlineManager.archivedItems.isEmpty {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Pending Uploads")
-                            .font(.system(size: 14, weight: .bold, design: .rounded))
-                            .foregroundStyle(.secondary)
-                            .textCase(.uppercase)
-                            .padding(.horizontal, 20)
-                        
-                        VStack(spacing: 0) {
-                            syncBannerRow
-                            Divider()
-                            
-                            ForEach(offlineManager.archivedItems) { item in
-                                pendingRow(for: item)
-                                if item.id != offlineManager.archivedItems.last?.id {
-                                    Divider().padding(.leading, 64)
-                                }
-                            }
-                        }
-                        .background(Color(uiColor: .secondarySystemGroupedBackground))
-                        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                        .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2)
-                        .padding(.horizontal)
-                    }
-                } else if !viewModel.landmarks.isEmpty {
-                    emptyQueueCard
-                }
-
                 // MARK: - Active Landmarks
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
@@ -67,8 +37,6 @@ struct BusinessLandmarksView: View {
                     
                     if viewModel.isLoading && viewModel.landmarks.isEmpty {
                         loadingView
-                    } else if viewModel.landmarks.isEmpty && offlineManager.archivedItems.isEmpty {
-                        emptyQueueCard
                     } else if viewModel.landmarks.isEmpty {
                         Text("No active business landmarks.")
                             .font(.system(size: 15, weight: .medium))
@@ -96,6 +64,36 @@ struct BusinessLandmarksView: View {
                         .padding(.horizontal)
                     }
                 }
+
+                // 🚀 THE FIX: Pending Uploads dynamically placed at the bottom
+                if !offlineManager.archivedItems.isEmpty {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Pending Uploads")
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .foregroundStyle(.secondary)
+                            .textCase(.uppercase)
+                            .padding(.horizontal, 20)
+                        
+                        VStack(spacing: 0) {
+                            syncBannerRow
+                            Divider()
+                            
+                            ForEach(offlineManager.archivedItems) { item in
+                                pendingRow(for: item)
+                                if item.id != offlineManager.archivedItems.last?.id {
+                                    Divider().padding(.leading, 64)
+                                }
+                            }
+                        }
+                        .background(Color(uiColor: .secondarySystemGroupedBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2)
+                        .padding(.horizontal)
+                    }
+                } else {
+                    emptyQueueCard
+                }
+
                 Spacer(minLength: 40)
             }
             .padding(.top, 16)
@@ -112,7 +110,7 @@ struct BusinessLandmarksView: View {
         }
         .task {
             await printCognitoTokens()
-      }
+        }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
@@ -264,7 +262,6 @@ struct BusinessLandmarksView: View {
 
                     Spacer()
 
-                    // Sleek Status Pill
                     Text(landmark.displayStatus)
                         .font(.system(size: 11, weight: .bold, design: .rounded))
                         .textCase(.uppercase)
