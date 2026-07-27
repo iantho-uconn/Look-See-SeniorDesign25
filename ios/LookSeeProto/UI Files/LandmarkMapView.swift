@@ -4,6 +4,13 @@
 //
 //  Created by Angel Pineda on 6/19/26.
 //
+//  Fix: Map's Legal/attribution button was rendering behind the custom
+//  bottom tab bar. Rather than depending on an ancestor view's
+//  safeAreaInset propagating correctly (fragile across nested containers),
+//  the Map now reserves its own bottom space directly via .safeAreaPadding,
+//  so this is self-contained regardless of how Buttons.swift lays out its
+//  pager/tab bar.
+//
 
 import SwiftUI
 import MapKit
@@ -30,9 +37,25 @@ struct LandmarkMapView: View {
     private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00)
     private let promoColor = Color.orange
 
+    // Height reserved at the bottom of the map so MapKit's own Legal /
+    // attribution control clears the custom bottom tab bar. Kept in sync
+    // with the ~90pt safeAreaInset height Buttons.swift reserves for its
+    // bottom bar, but applied here directly so this view doesn't depend on
+    // that propagating correctly through any ancestor container.
+    private let mapBottomReservedHeight: CGFloat = 50
+
     private var availableClusters: [String] {
         let clusters = nearbyService.items.compactMap { $0.clusterId }
-        return Array(Set(clusters)).sorted()
+        let unique = Array(Set(clusters))
+
+        return unique.sorted { lhs, rhs in
+            if let lhsNum = Int(lhs), let rhsNum = Int(rhs) {
+                return lhsNum < rhsNum
+            }
+            // Fallback for any non-numeric cluster IDs, so this doesn't crash
+            // or silently misorder if a cluster ID is ever a non-integer string.
+            return lhs < rhs
+        }
     }
 
     private var activeLandmarks: [NearbyLandmark] {
@@ -73,6 +96,10 @@ struct LandmarkMapView: View {
                 MapUserLocationButton()
                 MapCompass()
             }
+            // Reserves space at the bottom of the map's own layout so its
+            // internal Legal button repositions above the custom bottom bar,
+            // independent of any ancestor's safeAreaInset setup.
+            .safeAreaPadding(.bottom, mapBottomReservedHeight)
             .ignoresSafeArea(edges: .top)
 
             VStack(alignment: .trailing, spacing: 16) {
@@ -128,7 +155,7 @@ struct LandmarkMapView: View {
                 }
                 .padding(.trailing, 20)
             }
-            .padding(.top, 55)
+            .padding(.top, 65)
         }
         .task {
             if !locationManager.isAuthorized { locationManager.requestPermissionIfNeeded() }
