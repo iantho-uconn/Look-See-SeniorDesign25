@@ -97,14 +97,15 @@ class AuthViewModel: ObservableObject {
         }
     }
     
-    // 🚀 THE FIX: Ensures memory is 100% wiped on Sign Out or Account Deletion
+    // 🚀 THE FIX: We no longer wipe the Free Trial memory flag on Sign Out!
     func signOut(authState: AuthState) {
         Task {
             await AuthService.shared.signOut()
             await authState.signOut()
             
             await MainActor.run {
-                UserDefaults.standard.set(false, forKey: "isFreeTrial_\(self.userEmail)")
+                // The UserDefaults Free Trial wipe has been removed from here.
+                // Now your device safely remembers your specific tier when you log back in.
                 
                 self.isSignedIn = false
                 self.requiresNewPassword = false
@@ -206,7 +207,6 @@ class AuthViewModel: ObservableObject {
         }
     }
 
-    // 🚀 THE FIX: Tells AWS to actually cancel your Stripe Subscription
     func cancelSubscription() async -> Bool {
         guard !userId.isEmpty else { return false }
         guard let url = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/checkout") else { return false }
@@ -228,6 +228,7 @@ class AuthViewModel: ObservableObject {
                 await MainActor.run {
                     self.hasActiveSubscription = false
                     self.stripeSubscriptionId = ""
+                    // It IS correct to wipe the Free Trial flag upon cancellation
                     UserDefaults.standard.set(false, forKey: "isFreeTrial_\(self.userEmail)")
                 }
                 return true

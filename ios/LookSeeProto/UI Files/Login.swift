@@ -18,6 +18,10 @@ struct Login: View {
     
     // NEW: State for the temporary password prompt
     @State private var newPasswordInput = ""
+    
+    // 🚀 NEW: State variables to catch the unverified email loop
+    @State private var showVerificationAlert = false
+    @State private var verificationCode = ""
 
     var onSignedIn: () -> Void
     var onGoToSignup: () -> Void
@@ -37,7 +41,7 @@ struct Login: View {
         ZStack {
             Color(red: 0.06, green: 0.06, blue: 0.10)
                 .ignoresSafeArea()
-                .onTapGesture { hideKeyboard() } // Closes keyboard on tap
+                .onTapGesture { hideKeyboard() }
 
             Circle()
                 .fill(Color(red: 0.22, green: 0.49, blue: 1.00).opacity(0.12))
@@ -46,7 +50,6 @@ struct Login: View {
                 .offset(y: -100)
                 .allowsHitTesting(false)
 
-            // 🚀 THE FIX: ScrollView & GeometryReader allows the screen to slide up above the keyboard
             GeometryReader { geo in
                 ScrollView {
                     VStack(spacing: 0) {
@@ -126,10 +129,24 @@ struct Login: View {
                             }
 
                             if !vm.errorMessage.isEmpty {
-                                Text(vm.errorMessage)
-                                    .font(.caption)
-                                    .foregroundStyle(.red)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text(vm.errorMessage)
+                                        .font(.caption)
+                                        .foregroundStyle(.red)
+                                    
+                                    // 🚀 THE FIX: Dynamically detects unverified emails and provides an escape hatch
+                                    if vm.errorMessage.lowercased().contains("verif") {
+                                        Button {
+                                            hideKeyboard()
+                                            showVerificationAlert = true
+                                        } label: {
+                                            Text("Account unverified? Tap here to enter code.")
+                                                .font(.caption.bold())
+                                                .foregroundStyle(Color(red: 0.22, green: 0.49, blue: 1.00))
+                                        }
+                                    }
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
                             }
 
                             if vm.isSignedIn {
@@ -142,7 +159,6 @@ struct Login: View {
                             Button {
                                 hideKeyboard()
                                 Task {
-                                    // 🚀 THE GHOST BUSTER: Forces Keychain to wipe any stuck deleted-user tokens before attempting to log in
                                     _ = await Amplify.Auth.signOut()
                                     
                                     await MainActor.run {
@@ -183,7 +199,6 @@ struct Login: View {
                             Button {
                                 hideKeyboard()
                                 Task {
-                                    // 🚀 GHOST BUSTER for Guests too! Guarantees a truly clean slate.
                                     _ = await Amplify.Auth.signOut()
                                     
                                     await MainActor.run {
@@ -226,9 +241,9 @@ struct Login: View {
                         .padding(.horizontal, 28)
                         .padding(.bottom, max(geo.safeAreaInsets.bottom + 20, 52))
                     }
-                    .frame(minHeight: geo.size.height) // Centers content cleanly
+                    .frame(minHeight: geo.size.height)
                 }
-                .scrollDismissesKeyboard(.interactively) // Lets you pull keyboard down naturally
+                .scrollDismissesKeyboard(.interactively)
             }
         }
         .onChange(of: vm.isSignedIn) { _, newValue in
@@ -240,8 +255,6 @@ struct Login: View {
             ForgotPasswordView(initialUsername: username)
         }
         
-        // MARK: - NEW ALERT BLOCK
-        // Pops up cleanly when AWS requires a new password
         .alert("Update Password", isPresented: $vm.requiresNewPassword) {
             SecureField("New Password", text: $newPasswordInput)
             
@@ -255,6 +268,66 @@ struct Login: View {
             }
         } message: {
             Text("Your account has a temporary password. Please create a new permanent password.")
+        }
+        
+        // 🚀 THE FIX: The missing link verification popup
+        .alert("Verify Email", isPresented: $showVerificationAlert) {
+            TextField("Verification Code", text: $verificationCode)
+                .keyboardType(.numberPad)
+            
+            Button("Verify") {
+                confirmVerification()
+            }
+            
+            Button("Resend Code") {
+                resendVerificationCode()
+            }
+            
+            Button("Cancel", role: .cancel) {
+                verificationCode = ""
+            }
+        } message: {
+            Text("Enter the 6-digit code sent to \(sanitizedUsername).")
+        }
+    }
+    
+    // MARK: - Escape Hatch Functions
+    
+    private func confirmVerification() {
+        Task {
+            do {
+                let result = try await Amplify.Auth.confirmSignUp(for: sanitizedUsername, confirmationCode: verificationCode)
+                await MainActor.run {
+                    if result.isSignUpComplete {
+                        showVerificationAlert = false
+                        vm.errorMessage = ""
+                        verificationCode = ""
+                        // 🚀 Log them straight in since they already typed their password!
+                        vm.signIn(username: sanitizedUsername, password: password)
+                    } else {
+                        vm.errorMessage = "Verification incomplete. Please try again."
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    vm.errorMessage = "Verification failed: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+    
+    private func resendVerificationCode() {
+        Task {
+            do {
+                _ = try await Amplify.Auth.resendSignUpCode(for: sanitizedUsername)
+                await MainActor.run {
+                    vm.errorMessage = "A new code was sent! Tap 'Account unverified' to enter it."
+                }
+            } catch {
+                await MainActor.run {
+                    vm.errorMessage = "Failed to resend code: \(error.localizedDescription)"
+                }
+            }
         }
     }
 }

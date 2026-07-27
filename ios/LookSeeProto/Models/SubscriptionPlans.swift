@@ -6,7 +6,6 @@
 //
 
 
-
 import SwiftUI
 import StripePaymentSheet
 
@@ -139,7 +138,6 @@ struct SubscriptionPlans: View {
         .environment(\.colorScheme, .dark)
         .interactiveDismissDisabled(isProcessing)
         .overlay {
-            // 🚀 THE FIX: This hides the crazy payment delay by locking the screen instantly
             if isProcessing {
                 ZStack {
                     Color.black.opacity(0.4).ignoresSafeArea()
@@ -210,7 +208,6 @@ struct SubscriptionPlans: View {
                 Group {
                     if vm.hasActiveSubscription {
                         if isTrial {
-                            // 🚀 THE FIX: Allows them to upgrade from trial to yearly!
                             let addOnCents = Double(addOns[selectedAddOnIndex].cents) / 100.0
                             let totalStr = String(format: "%.2f", 10.00 + addOnCents)
                             Text("Upgrade to Yearly - $\(totalStr)")
@@ -277,7 +274,6 @@ struct SubscriptionPlans: View {
                 Group {
                     if vm.hasActiveSubscription {
                         if isTrial {
-                            // 🚀 THE FIX: Properly marks the Trial tab as "Active"
                             Text("Active (Free Trial)")
                                 .font(.system(size: 15, weight: .bold)).foregroundStyle(disabledTextColor).frame(maxWidth: .infinity).padding(.vertical, 14).background(Color.white.opacity(0.1)).clipShape(RoundedRectangle(cornerRadius: 14))
                         } else {
@@ -330,9 +326,20 @@ struct SubscriptionPlans: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Buy Token Packs").font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(secondaryTextColor).textCase(.uppercase).padding(.horizontal, 20)
                     
+                    // 🚀 THE FIX: Hide tokens and explain why if they are on a free trial
                     VStack(spacing: 0) {
                         if !isFullyLoggedIn || !vm.hasActiveSubscription {
-                            Text("Please subscribe to the Premium plan or start a Free Trial to purchase tokens.").font(.system(size: 14, weight: .medium)).foregroundStyle(secondaryTextColor).padding(20)
+                            Text("Please subscribe to the Premium plan to purchase tokens.")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                                .padding(20)
+                        } else if isTrial {
+                            Text("Token add-ons are not available during the Free Trial.\n\nPlease upgrade to the Yearly Premium plan to purchase tokens.")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                                .padding(24)
                         } else {
                             bundleRow(tokens: 1, price: "$3.00", amountCents: 300)
                             Divider().padding(.leading, 68)

@@ -48,6 +48,7 @@ struct Settings: View {
         ScrollView {
             VStack(spacing: 24) {
                 
+                // 1. PROFILE HEADER
                 VStack(spacing: 0) {
                     if !isFullyLoggedIn {
                         profileHeader(icon: "person.crop.circle.badge.questionmark", iconColor: .gray, title: "Guest User", subtitle: "Browsing anonymously")
@@ -78,123 +79,36 @@ struct Settings: View {
                 .shadow(color: .black.opacity(0.05), radius: 10, x: 0, y: 4)
                 .padding(.horizontal)
 
-                if !vm.hasActiveSubscription || !isFullyLoggedIn {
-                    guestPromoCard
-                }
-
-                if isFullyLoggedIn {
+                // 2. BUSINESS MANAGEMENT
+                if isFullyLoggedIn && vm.hasActiveSubscription {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Account").font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(.secondary).textCase(.uppercase).padding(.horizontal, 20)
+                        Text("Business Management").font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(.secondary).textCase(.uppercase).padding(.horizontal, 20)
+                        
+                        if UserDefaults.standard.bool(forKey: "isFreeTrial_\(vm.userEmail)") {
+                            HStack(alignment: .top, spacing: 12) {
+                                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange).font(.title3)
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Free Trial Active").font(.system(size: 14, weight: .bold)).foregroundStyle(.primary)
+                                    Text("Please subscribe before your 14-day trial ends to prevent your landmarks from being deactivated.").font(.system(size: 13)).foregroundStyle(.secondary)
+                                }
+                            }
+                            .padding(16).background(Color.orange.opacity(0.1)).clipShape(RoundedRectangle(cornerRadius: 16)).padding(.horizontal)
+                        }
                         
                         VStack(spacing: 0) {
-                            NavigationLink { BusinessProfileView().environmentObject(vm) } label: {
-                                settingsRow(icon: "storefront.fill", iconBg: .blue, title: "Business Profile", subtitle: vm.storeName.isEmpty ? "Update store name and phone number." : vm.storeName)
+                            NavigationLink { BusinessLandmarksView() } label: {
+                                settingsRow(icon: "building.2.crop.circle.fill", iconBg: primaryColor, title: "Manage My Landmarks", subtitle: "View the landmarks assigned to your account.")
                             }
                             Divider().padding(.leading, 68)
-                            NavigationLink { AccountSecurityView().environmentObject(vm) } label: {
-                                settingsRow(icon: "person.badge.key.fill", iconBg: .gray, title: "Account & Security", subtitle: "Change your email or password.", showDivider: false)
+                            Button {
+                                presenter.subscriptionStartingTab = 1
+                                presenter.showSubscriptionFlow = true
+                            } label: {
+                                settingsRow(icon: "circle.hexagongrid.fill", iconBg: .orange, title: "Swap Tokens (\(vm.tokenBalance))", subtitle: "Buy tokens to update your inventory.", showDivider: false)
                             }
                         }
-                        .background(Color(uiColor: .secondarySystemGroupedBackground))
-                        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                        .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2)
-                        .padding(.horizontal)
-                    }
-
-                    if vm.hasActiveSubscription {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Membership").font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(.secondary).textCase(.uppercase).padding(.horizontal, 20)
-                            
-                            VStack(spacing: 16) {
-                                HStack {
-                                    Text("Current Plan").font(.system(size: 16, weight: .semibold))
-                                    Spacer()
-                                    Text(dynamicPlanTitle).foregroundStyle(primaryColor).font(.system(size: 16, weight: .bold, design: .rounded))
-                                }
-                                
-                                HStack {
-                                    Text("Status").font(.system(size: 16, weight: .semibold))
-                                    Spacer()
-                                    Text(!vm.hasActiveSubscription ? "Inactive" : "Active").foregroundStyle(!vm.hasActiveSubscription ? .red : .green).font(.system(size: 15, weight: .bold))
-                                }
-                                
-                                Divider()
-                                
-                                HStack(spacing: 12) {
-                                    Button {
-                                        presenter.subscriptionStartingTab = 0
-                                        presenter.showSubscriptionFlow = true
-                                    } label: {
-                                        Text(!vm.hasActiveSubscription ? "Subscribe" : "Manage Plan")
-                                            .font(.system(size: 15, weight: .bold, design: .rounded))
-                                            .frame(maxWidth: .infinity).padding(.vertical, 12)
-                                            .background(primaryColor.opacity(0.1)).foregroundStyle(primaryColor).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                                    }
-                                    
-                                    Button { showCancelAlert = true } label: {
-                                        Text("Cancel").font(.system(size: 15, weight: .bold, design: .rounded))
-                                            .frame(maxWidth: .infinity).padding(.vertical, 12)
-                                            .background(Color.red.opacity(0.1)).foregroundStyle(.red).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                                    }
-                                }
-                            }
-                            .padding(20).background(Color(uiColor: .secondarySystemGroupedBackground)).clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                            .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2).padding(.horizontal)
-                            .alert("Cancel Subscription?", isPresented: $showCancelAlert) {
-                                Button("Keep Plan", role: .cancel) {}
-                                Button("Cancel Plan", role: .destructive) {
-                                    isCancelling = true
-                                    Task {
-                                        await vm.cancelSubscription()
-                                        await MainActor.run { isCancelling = false }
-                                    }
-                                }
-                            } message: { Text("Your business features will be disabled immediately.") }
-                        }
-                        
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Business Management").font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(.secondary).textCase(.uppercase).padding(.horizontal, 20)
-                            
-                            if UserDefaults.standard.bool(forKey: "isFreeTrial_\(vm.userEmail)") {
-                                HStack(alignment: .top, spacing: 12) {
-                                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange).font(.title3)
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text("Free Trial Active").font(.system(size: 14, weight: .bold)).foregroundStyle(.primary)
-                                        Text("Please subscribe before your 14-day trial ends to prevent your landmarks from being deactivated.").font(.system(size: 13)).foregroundStyle(.secondary)
-                                    }
-                                }
-                                .padding(16).background(Color.orange.opacity(0.1)).clipShape(RoundedRectangle(cornerRadius: 16)).padding(.horizontal)
-                            }
-                            
-                            VStack(spacing: 0) {
-                                NavigationLink { BusinessLandmarksView() } label: {
-                                    settingsRow(icon: "building.2.crop.circle.fill", iconBg: primaryColor, title: "Manage My Landmarks", subtitle: "View the landmarks assigned to your account.")
-                                }
-                                Divider().padding(.leading, 68)
-                                Button {
-                                    presenter.subscriptionStartingTab = 1
-                                    presenter.showSubscriptionFlow = true
-                                } label: {
-                                    settingsRow(icon: "circle.hexagongrid.fill", iconBg: .orange, title: "Tokens (\(vm.tokenBalance))", subtitle: "Buy tokens to update your inventory.", showDivider: false)
-                                }
-                            }
-                            .background(Color(uiColor: .secondarySystemGroupedBackground)).clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                            .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2).padding(.horizontal)
-                        }
-                    } else {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Business Management").font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(.secondary).textCase(.uppercase).padding(.horizontal, 20)
-                            VStack(spacing: 0) {
-                                Button {
-                                    presenter.subscriptionStartingTab = 0
-                                    presenter.showSubscriptionFlow = true
-                                } label: {
-                                    settingsRow(icon: "lock.fill", iconBg: .gray, title: "Business Tools Locked", subtitle: "Subscribe to a plan to unlock landmarks and tokens.", showDivider: false)
-                                }
-                            }
-                            .background(Color(uiColor: .secondarySystemGroupedBackground)).clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                            .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2).padding(.horizontal)
-                        }
+                        .background(Color(uiColor: .secondarySystemGroupedBackground)).clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2).padding(.horizontal)
                     }
                 } else {
                     VStack(alignment: .leading, spacing: 8) {
@@ -212,6 +126,94 @@ struct Settings: View {
                     }
                 }
 
+                // 3. ACCOUNT (BUSINESS PROFILE & SECURITY)
+                if isFullyLoggedIn {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Account").font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(.secondary).textCase(.uppercase).padding(.horizontal, 20)
+                        
+                        VStack(spacing: 0) {
+                            // 🚀 THE FIX: Business Profile is now heavily locked behind the subscription flow
+                            if vm.hasActiveSubscription {
+                                NavigationLink { BusinessProfileView().environmentObject(vm) } label: {
+                                    settingsRow(icon: "storefront.fill", iconBg: .blue, title: "Business Profile", subtitle: vm.storeName.isEmpty ? "Update store name and phone number." : vm.storeName)
+                                }
+                            } else {
+                                Button {
+                                    presenter.subscriptionStartingTab = 0
+                                    presenter.showSubscriptionFlow = true
+                                } label: {
+                                    settingsRow(icon: "lock.fill", iconBg: .gray, title: "Business Profile Locked", subtitle: "Subscribe to edit your public store info.", showDivider: false)
+                                }
+                            }
+                            
+                            Divider().padding(.leading, 68)
+                            NavigationLink { AccountSecurityView().environmentObject(vm) } label: {
+                                settingsRow(icon: "person.badge.key.fill", iconBg: .gray, title: "Account & Security", subtitle: "Change your email or password.", showDivider: false)
+                            }
+                        }
+                        .background(Color(uiColor: .secondarySystemGroupedBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2)
+                        .padding(.horizontal)
+                    }
+                }
+
+                // 4. SUBSCRIPTION POPUP / MEMBERSHIP
+                if !vm.hasActiveSubscription || !isFullyLoggedIn {
+                    guestPromoCard
+                } else if isFullyLoggedIn && vm.hasActiveSubscription {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Membership").font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(.secondary).textCase(.uppercase).padding(.horizontal, 20)
+                        
+                        VStack(spacing: 16) {
+                            HStack {
+                                Text("Current Plan").font(.system(size: 16, weight: .semibold))
+                                Spacer()
+                                Text(dynamicPlanTitle).foregroundStyle(primaryColor).font(.system(size: 16, weight: .bold, design: .rounded))
+                            }
+                            
+                            HStack {
+                                Text("Status").font(.system(size: 16, weight: .semibold))
+                                Spacer()
+                                Text(!vm.hasActiveSubscription ? "Inactive" : "Active").foregroundStyle(!vm.hasActiveSubscription ? .red : .green).font(.system(size: 15, weight: .bold))
+                            }
+                            
+                            Divider()
+                            
+                            HStack(spacing: 12) {
+                                Button {
+                                    presenter.subscriptionStartingTab = 0
+                                    presenter.showSubscriptionFlow = true
+                                } label: {
+                                    Text(!vm.hasActiveSubscription ? "Subscribe" : "Manage Plan")
+                                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                                        .frame(maxWidth: .infinity).padding(.vertical, 12)
+                                        .background(primaryColor.opacity(0.1)).foregroundStyle(primaryColor).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                }
+                                
+                                Button { showCancelAlert = true } label: {
+                                    Text("Cancel").font(.system(size: 15, weight: .bold, design: .rounded))
+                                        .frame(maxWidth: .infinity).padding(.vertical, 12)
+                                        .background(Color.red.opacity(0.1)).foregroundStyle(.red).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                }
+                            }
+                        }
+                        .padding(20).background(Color(uiColor: .secondarySystemGroupedBackground)).clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2).padding(.horizontal)
+                        .alert("Cancel Subscription?", isPresented: $showCancelAlert) {
+                            Button("Keep Plan", role: .cancel) {}
+                            Button("Cancel Plan", role: .destructive) {
+                                isCancelling = true
+                                Task {
+                                    await vm.cancelSubscription()
+                                    await MainActor.run { isCancelling = false }
+                                }
+                            }
+                        } message: { Text("Your business features will be disabled immediately.") }
+                    }
+                }
+
+                // 5. OTHER SETTINGS
                 VStack(spacing: 0) {
                     NavigationLink { Text("Help & Support Center") } label: { settingsRow(icon: "questionmark.circle.fill", iconBg: .orange, title: "Help & Support", showDivider: true) }
                     NavigationLink { Text("Privacy Policy") } label: { settingsRow(icon: "hand.raised.fill", iconBg: .purple, title: "Privacy Policy", showDivider: true) }
@@ -335,7 +337,6 @@ struct DeepSettingsView: View {
     @State private var isReloading = false
     @State private var showReloadSuccess = false
     
-    // 🚀 NEW: State variable to track the loaded AI model cluster
     @State private var activeClusterID: String = "None"
     
     private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00)
@@ -379,7 +380,6 @@ struct DeepSettingsView: View {
                     }
                     .disabled(isReloading)
                     
-                    // 🚀 NEW: Clean UI display for the Active Cluster
                     HStack(spacing: 6) {
                         Image(systemName: "cpu")
                         Text(activeClusterID == "None" ? "No Cluster Loaded" : "Active Cluster: \(activeClusterID)")
@@ -404,7 +404,6 @@ struct DeepSettingsView: View {
         .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
         .navigationTitle("Settings")
         .task {
-            // 🚀 NEW: Silently binds the UI directly to the ML Model Selector
             for await release in ModelSelector.shared.$activeRelease.values {
                 await MainActor.run {
                     self.activeClusterID = release?.clusterID ?? "None"
