@@ -125,30 +125,8 @@ struct LandmarkScan: View {
                     .zIndex(10)
                 }
 
-                // Centered popup overlay.
-                if infoView.infoView {
-                    Color.black
-                        .opacity(0.4)
-                        .ignoresSafeArea()
-                        .zIndex(19)
-                        .onTapGesture {
-                            withAnimation(
-                                .spring(
-                                    response: 0.35,
-                                    dampingFraction: 0.8
-                                )
-                            ) {
-                                infoView.infoView = false
-                            }
-                        }
-
-                    PopUp()
-                        .zIndex(20)
-                        .transition(
-                            .scale(scale: 0.85)
-                                .combined(with: .opacity)
-                        )
-                }
+                // PopUp is presented by Buttons at the root level so it
+                // always appears above the app chrome.
 
                 if isActive,
                    !infoView.infoView,
@@ -222,10 +200,6 @@ struct LandmarkScan: View {
             infoView.promoImageUrl = ""
             infoView.infoView = true
 
-            if !isNavVisible {
-                onTap()
-            }
-
             return
         }
 
@@ -251,9 +225,6 @@ struct LandmarkScan: View {
             fetchLiveLandmarkInfo(for: landmarkId)
         }
 
-        if !isNavVisible {
-            onTap()
-        }
     }
 
     private func fetchLiveLandmarkInfo(for landmarkId: String) {

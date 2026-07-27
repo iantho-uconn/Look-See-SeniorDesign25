@@ -14,6 +14,11 @@ struct BusinessLandmarksView: View {
     @ObservedObject private var networkMonitor = NetworkMonitor.shared
     
     @State private var draftToEdit: ArchivedMedia?
+    @State private var searchText = ""
+    @State private var promotionTitlesByLandmarkId: [String: [String]] = [:]
+    @State private var isIndexingPromotionTitles = false
+
+    private let promotionService = BusinessPromotionService()
     private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00)
 
     var body: some View {
@@ -27,14 +32,30 @@ struct BusinessLandmarksView: View {
                             .font(.system(size: 14, weight: .bold, design: .rounded))
                             .foregroundStyle(.secondary)
                             .textCase(.uppercase)
+
                         if !viewModel.landmarks.isEmpty {
-                            Text("(\(viewModel.landmarks.count))")
+                            Text(landmarkCountText)
                                 .font(.system(size: 14, weight: .bold, design: .rounded))
                                 .foregroundStyle(.secondary)
                         }
+
+                        Spacer()
+
+                        if isIndexingPromotionTitles && !cleanedSearchText.isEmpty {
+                            ProgressView()
+                                .controlSize(.small)
+                                .tint(primaryColor)
+                        }
                     }
                     .padding(.horizontal, 20)
-                    
+
+                    if isIndexingPromotionTitles && !cleanedSearchText.isEmpty {
+                        Text("Checking promotion titles...")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 20)
+                    }
+
                     if viewModel.isLoading && viewModel.landmarks.isEmpty {
                         loadingView
                     } else if viewModel.landmarks.isEmpty {
@@ -42,9 +63,11 @@ struct BusinessLandmarksView: View {
                             .font(.system(size: 15, weight: .medium))
                             .foregroundColor(.secondary)
                             .padding(.horizontal, 20)
+                    } else if displayedLandmarks.isEmpty {
+                        noSearchResultsView
                     } else {
                         VStack(spacing: 12) {
-                            ForEach(viewModel.landmarks) { landmark in
+                            ForEach(displayedLandmarks) { landmark in
                                 NavigationLink {
                                     BusinessLandmarkDetailView(
                                         landmark: landmark,
@@ -53,10 +76,17 @@ struct BusinessLandmarksView: View {
                                         },
                                         onLandmarkDeleted: { landmarkId in
                                             viewModel.removeLandmark(landmarkId: landmarkId)
+                                            promotionTitlesByLandmarkId.removeValue(forKey: landmarkId)
+                                        },
+                                        onPromotionTitlesChanged: { landmarkId, titles in
+                                            promotionTitlesByLandmarkId[landmarkId] = titles
                                         }
                                     )
                                 } label: {
-                                    BusinessLandmarkRow(landmark: landmark)
+                                    BusinessLandmarkRow(
+                                        landmark: landmark,
+                                        matchedPromotionTitle: matchedPromotionTitle(for: landmark)
+                                    )
                                 }
                                 .buttonStyle(.plain)
                             }
@@ -100,13 +130,22 @@ struct BusinessLandmarksView: View {
         }
         .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
         .animation(.default, value: offlineManager.archivedItems.isEmpty)
-        .refreshable { await viewModel.refresh() }
+        .refreshable {
+            await refreshLandmarksAndSearchIndex()
+        }
         .navigationTitle("My Landmarks")
         .navigationBarTitleDisplayMode(.inline)
+        .searchable(
+            text: $searchText,
+            placement: .navigationBarDrawer(displayMode: .always),
+            prompt: "Search labels or promotion titles"
+        )
         .task {
             if viewModel.landmarks.isEmpty {
                 await viewModel.loadLandmarks()
             }
+
+            await loadPromotionSearchIndex()
         }
         .task {
             await printCognitoTokens()
@@ -115,7 +154,9 @@ struct BusinessLandmarksView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                    Task { await viewModel.refresh() }
+                    Task {
+                        await refreshLandmarksAndSearchIndex()
+                    }
                 } label: {
                     Image(systemName: "arrow.clockwise")
                         .font(.system(size: 16, weight: .bold))
@@ -125,6 +166,182 @@ struct BusinessLandmarksView: View {
         }
         .fullScreenCover(item: $draftToEdit) { draft in
             LandmarkRecord(archivedMedia: draft)
+        }
+    }
+
+    private var cleanedSearchText: String {
+        searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var landmarkCountText: String {
+        guard !cleanedSearchText.isEmpty else {
+            return "(\(viewModel.landmarks.count))"
+        }
+
+        return "(\(displayedLandmarks.count) of \(viewModel.landmarks.count))"
+    }
+
+    private var displayedLandmarks: [BusinessLandmark] {
+        let query = cleanedSearchText
+
+        guard !query.isEmpty else {
+            return viewModel.landmarks
+        }
+
+        let matches: [(landmark: BusinessLandmark, priority: Int)] = viewModel.landmarks.compactMap { landmark in
+            if landmark.label.localizedCaseInsensitiveContains(query) {
+                return (landmark, 0)
+            }
+
+            if searchablePromotionTitles(for: landmark).contains(where: {
+                $0.localizedCaseInsensitiveContains(query)
+            }) {
+                return (landmark, 1)
+            }
+
+            return nil
+        }
+
+        return matches
+            .sorted { lhs, rhs in
+                if lhs.priority != rhs.priority {
+                    return lhs.priority < rhs.priority
+                }
+
+                return lhs.landmark.label.localizedCaseInsensitiveCompare(
+                    rhs.landmark.label
+                ) == .orderedAscending
+            }
+            .map { $0.landmark }
+    }
+
+    private var noSearchResultsView: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 28, weight: .semibold))
+                .foregroundStyle(.secondary)
+
+            Text("No landmarks found")
+                .font(.system(size: 17, weight: .bold, design: .rounded))
+                .foregroundStyle(.primary)
+
+            Text("Try a landmark label or promotion title.")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 28)
+        .padding(.horizontal, 20)
+        .background(Color(uiColor: .secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .padding(.horizontal)
+    }
+
+    private func searchablePromotionTitles(
+        for landmark: BusinessLandmark
+    ) -> [String] {
+        var titles = promotionTitlesByLandmarkId[landmark.landmarkId] ?? []
+
+        if let legacyPromotion = landmark.promotion?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           !legacyPromotion.isEmpty,
+           !titles.contains(where: {
+               $0.caseInsensitiveCompare(legacyPromotion) == .orderedSame
+           }) {
+            titles.append(legacyPromotion)
+        }
+
+        return titles
+    }
+
+    private func matchedPromotionTitle(
+        for landmark: BusinessLandmark
+    ) -> String? {
+        let query = cleanedSearchText
+
+        guard !query.isEmpty else {
+            return nil
+        }
+
+        // Landmark-label matches always rank first and do not need a
+        // promotion-match badge.
+        guard !landmark.label.localizedCaseInsensitiveContains(query) else {
+            return nil
+        }
+
+        return searchablePromotionTitles(for: landmark).first {
+            $0.localizedCaseInsensitiveContains(query)
+        }
+    }
+
+    @MainActor
+    private func refreshLandmarksAndSearchIndex() async {
+        await viewModel.refresh()
+        await loadPromotionSearchIndex(forceReload: true)
+    }
+
+    @MainActor
+    private func loadPromotionSearchIndex(
+        forceReload: Bool = false
+    ) async {
+        let currentLandmarks = viewModel.landmarks
+        let validLandmarkIds = Set(currentLandmarks.map(\.landmarkId))
+
+        promotionTitlesByLandmarkId = promotionTitlesByLandmarkId.filter {
+            validLandmarkIds.contains($0.key)
+        }
+
+        guard !currentLandmarks.isEmpty else {
+            isIndexingPromotionTitles = false
+            return
+        }
+
+        let landmarksToLoad = forceReload
+            ? currentLandmarks
+            : currentLandmarks.filter {
+                promotionTitlesByLandmarkId[$0.landmarkId] == nil
+            }
+
+        guard !landmarksToLoad.isEmpty else {
+            isIndexingPromotionTitles = false
+            return
+        }
+
+        isIndexingPromotionTitles = true
+        defer {
+            isIndexingPromotionTitles = false
+        }
+
+        // The existing API exposes promotions per landmark. Loading them here
+        // builds a local title index while keeping the normal landmark list
+        // available immediately.
+        for landmark in landmarksToLoad {
+            guard !Task.isCancelled else {
+                return
+            }
+
+            do {
+                let response = try await promotionService.fetchPromotions(
+                    landmarkId: landmark.landmarkId
+                )
+
+                let titles = response.items
+                    .map { $0.name.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .filter { !$0.isEmpty }
+
+                promotionTitlesByLandmarkId[landmark.landmarkId] = titles
+            } catch {
+                // Label searching remains available even when one promotion
+                // request fails. The legacy field is also kept as a fallback.
+                if promotionTitlesByLandmarkId[landmark.landmarkId] == nil {
+                    let legacyPromotion = landmark.promotion?
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+
+                    promotionTitlesByLandmarkId[landmark.landmarkId] =
+                        legacyPromotion.map { $0.isEmpty ? [] : [$0] } ?? []
+                }
+            }
         }
     }
 
@@ -252,6 +469,7 @@ struct BusinessLandmarksView: View {
 
     private struct BusinessLandmarkRow: View {
         let landmark: BusinessLandmark
+        let matchedPromotionTitle: String?
 
         var body: some View {
             VStack(alignment: .leading, spacing: 12) {
@@ -276,6 +494,16 @@ struct BusinessLandmarksView: View {
                     .font(.system(size: 14, weight: .regular))
                     .foregroundColor(.secondary)
                     .lineLimit(2)
+
+                if let matchedPromotionTitle {
+                    HStack(spacing: 6) {
+                        Image(systemName: "tag.fill")
+                        Text("Matched promotion: \(matchedPromotionTitle)")
+                            .lineLimit(1)
+                    }
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundStyle(.orange)
+                }
 
                 HStack(spacing: 12) {
                     if landmark.promotionEnabled == true {
