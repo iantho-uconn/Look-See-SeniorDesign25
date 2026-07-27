@@ -36,7 +36,6 @@ struct PopUp: View {
         VStack(spacing: 0) {
             header
 
-            // 🚀 THE FIX: Removed the greedy outer ScrollView so the popup organically shrink-wraps
             VStack(alignment: .leading, spacing: 16) {
                 landmarkTextSection
 
@@ -44,6 +43,26 @@ struct PopUp: View {
 
                 if shouldShowPromotion {
                     promotionSection
+                }
+                
+                // 🚀 NEW: The Merchant Card Sponsored Footer
+                if !infoView.merchantName.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "building.2.fill").font(.system(size: 12))
+                            Text("Landmark Sponsored By").font(.system(size: 12, weight: .bold)).textCase(.uppercase)
+                        }
+                        .foregroundStyle(.gray)
+                        .padding(.leading, 4)
+                        
+                        MerchantCard(
+                            storeName: infoView.merchantName,
+                            logoUrl: infoView.merchantLogoUrl,
+                            bio: infoView.merchantBio,
+                            phone: infoView.merchantPhone
+                        )
+                    }
+                    .padding(.top, 8)
                 }
 
                 gotItButton
@@ -76,7 +95,7 @@ struct PopUp: View {
             y: 15
         )
         .padding(.horizontal, 28)
-        .frame(maxHeight: UIScreen.main.bounds.height * 0.85) // Only caps it if they have a huge promo
+        .frame(maxHeight: UIScreen.main.bounds.height * 0.85)
         .sheet(item: $selectedPromotionImage) { item in
             promotionImagePreview(url: item.url)
         }
@@ -202,8 +221,6 @@ struct PopUp: View {
                     vertical: true
                 )
 
-            // 🚀 THE FIX: Dynamic text engine.
-            // If short, it hugs naturally. If long, it caps at 120 and turns into a scroll wheel.
             ViewThatFits(in: .vertical) {
                 Text(displayDescription)
                     .font(
@@ -232,7 +249,7 @@ struct PopUp: View {
                         .padding(.trailing, 8)
                 }
             }
-            .frame(maxHeight: 120) // The cutoff point for switching to a scroll wheel
+            .frame(maxHeight: 120)
         }
     }
 

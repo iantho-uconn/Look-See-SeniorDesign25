@@ -6,6 +6,7 @@
 import SwiftUI
 import Foundation
 import Combine
+import PhotosUI
 
 class SettingsPresenter: ObservableObject {
     @Published var showSubscriptionFlow = false
@@ -104,7 +105,7 @@ struct Settings: View {
                                 presenter.subscriptionStartingTab = 1
                                 presenter.showSubscriptionFlow = true
                             } label: {
-                                settingsRow(icon: "circle.hexagongrid.fill", iconBg: .orange, title: "Swap Tokens (\(vm.tokenBalance))", subtitle: "Buy tokens to update your inventory.", showDivider: false)
+                                settingsRow(icon: "circle.hexagongrid.fill", iconBg: .orange, title: "Tokens (\(vm.tokenBalance))", subtitle: "Buy tokens to update your inventory.", showDivider: false)
                             }
                         }
                         .background(Color(uiColor: .secondarySystemGroupedBackground)).clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
@@ -132,7 +133,6 @@ struct Settings: View {
                         Text("Account").font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(.secondary).textCase(.uppercase).padding(.horizontal, 20)
                         
                         VStack(spacing: 0) {
-                            // 🚀 THE FIX: Business Profile is now heavily locked behind the subscription flow
                             if vm.hasActiveSubscription {
                                 NavigationLink { BusinessProfileView().environmentObject(vm) } label: {
                                     settingsRow(icon: "storefront.fill", iconBg: .blue, title: "Business Profile", subtitle: vm.storeName.isEmpty ? "Update store name and phone number." : vm.storeName)
@@ -421,29 +421,28 @@ struct BusinessProfileView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
-                VStack(spacing: 16) {
-                    Image(systemName: "storefront.fill")
-                        .font(.system(size: 60))
-                        .foregroundStyle(Color(red: 0.22, green: 0.49, blue: 1.00))
-                        .padding(.top, 24)
+                
+                VStack(spacing: 8) {
+                    Text("Your Public Merchant Card")
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
                     
-                    Text(vm.storeName.isEmpty ? "No Store Name Set" : vm.storeName)
-                        .font(.system(size: 24, weight: .bold, design: .rounded))
-                        .foregroundStyle(vm.storeName.isEmpty ? .secondary : .primary)
-                    
-                    HStack(spacing: 8) {
-                        Image(systemName: "phone.fill")
-                            .foregroundStyle(.secondary)
-                        Text(vm.phoneNumber.isEmpty ? "No Phone Number" : vm.phoneNumber)
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundStyle(.secondary)
-                    }
+                    Text("This is exactly how your business will appear to users at the bottom of your AR Landmarks.")
+                        .font(.system(size: 14))
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 32)
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.bottom, 24)
-                .background(Color(uiColor: .secondarySystemGroupedBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                .shadow(color: .black.opacity(0.05), radius: 10, x: 0, y: 4)
+                .padding(.top, 16)
+                
+                // Renders external MerchantCard struct from MerchantCard.swift
+                MerchantCard(
+                    storeName: vm.storeName.isEmpty ? "Your Store Name" : vm.storeName,
+                    logoUrl: vm.storeLogoUrl,
+                    bio: vm.storeBio.isEmpty ? "Add a short bio about your business here so users know what you do." : vm.storeBio,
+                    phone: vm.phoneNumber.isEmpty ? "No Phone Number" : vm.phoneNumber
+                )
                 .padding(.horizontal)
                 
                 Button {
@@ -459,9 +458,9 @@ struct BusinessProfileView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                         .padding(.horizontal)
                 }
+                
                 Spacer()
             }
-            .padding(.top, 16)
         }
         .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
         .navigationTitle("Business Profile")
@@ -479,13 +478,76 @@ struct BusinessProfileEditSheet: View {
     
     @State private var draftName: String = ""
     @State private var draftPhone: String = ""
+    @State private var draftBio: String = ""
+    @State private var draftLogoUrl: String = ""
     @State private var isSaving = false
+
+    @State private var selectedPhotoItem: PhotosPickerItem? = nil
+    @State private var logoUIImage: UIImage? = nil
 
     var body: some View {
         NavigationStack {
             Form {
-                Section(header: Text("Public Business Info"), footer: Text("This information will be displayed when users scan your LookSee landmarks.")) {
+                Section(header: Text("Basic Info"), footer: Text("Your store name and a short bio describing what you do.")) {
                     TextField("Store Name", text: $draftName)
+                    TextField("Short Bio", text: $draftBio, axis: .vertical)
+                        .lineLimit(3...5)
+                }
+                
+                Section(header: Text("Store Logo"), footer: Text("Upload a square logo or image from your photo library.")) {
+                    HStack(spacing: 16) {
+                        ZStack {
+                            Circle().fill(Color(red: 0.22, green: 0.49, blue: 1.00).opacity(0.15))
+                            
+                            if let logoUIImage {
+                                Image(uiImage: logoUIImage)
+                                    .resizable()
+                                    .scaledToFill()
+                                    .clipShape(Circle())
+                            } else if let url = URL(string: draftLogoUrl), !draftLogoUrl.isEmpty {
+                                AsyncImage(url: url) { phase in
+                                    if let image = phase.image {
+                                        image.resizable().scaledToFill().clipShape(Circle())
+                                    } else {
+                                        Image(systemName: "storefront.fill")
+                                            .font(.title2)
+                                            .foregroundStyle(Color(red: 0.22, green: 0.49, blue: 1.00))
+                                    }
+                                }
+                            } else {
+                                Image(systemName: "storefront.fill")
+                                    .font(.title2)
+                                    .foregroundStyle(Color(red: 0.22, green: 0.49, blue: 1.00))
+                            }
+                        }
+                        .frame(width: 56, height: 56)
+                        
+                        VStack(alignment: .leading, spacing: 6) {
+                            PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "photo.badge.plus")
+                                    Text(draftLogoUrl.isEmpty && logoUIImage == nil ? "Choose Photo" : "Change Logo")
+                                }
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundStyle(Color(red: 0.22, green: 0.49, blue: 1.00))
+                            }
+                            
+                            if !draftLogoUrl.isEmpty || logoUIImage != nil {
+                                Button(role: .destructive) {
+                                    draftLogoUrl = ""
+                                    logoUIImage = nil
+                                    selectedPhotoItem = nil
+                                } label: {
+                                    Text("Remove Logo")
+                                        .font(.system(size: 12))
+                                }
+                            }
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+                
+                Section(header: Text("Contact Info")) {
                     TextField("Phone Number", text: $draftPhone)
                         .keyboardType(.phonePad)
                         .onChange(of: draftPhone) { _, newValue in
@@ -505,7 +567,16 @@ struct BusinessProfileEditSheet: View {
                     Button {
                         isSaving = true
                         Task {
-                            let success = await vm.updateBusinessProfile(storeName: draftName, phoneNumber: draftPhone)
+                            // 🚀 Passes the compressed base64 string straight to the updated Lambda function
+                            let base64String = logoUIImage?.jpegData(compressionQuality: 0.4)?.base64EncodedString()
+                            
+                            let success = await vm.updateBusinessProfile(
+                                storeName: draftName,
+                                phoneNumber: draftPhone,
+                                storeBio: draftBio,
+                                storeLogoUrl: draftLogoUrl,
+                                storeLogoBase64: base64String
+                            )
                             isSaving = false
                             if success { dismiss() }
                         }
@@ -519,6 +590,19 @@ struct BusinessProfileEditSheet: View {
             .onAppear {
                 draftName = vm.storeName
                 draftPhone = vm.phoneNumber
+                draftBio = vm.storeBio
+                draftLogoUrl = vm.storeLogoUrl
+            }
+            .onChange(of: selectedPhotoItem) { _, newItem in
+                Task {
+                    guard let newItem else { return }
+                    if let data = try? await newItem.loadTransferable(type: Data.self),
+                       let uiImage = UIImage(data: data) {
+                        await MainActor.run {
+                            self.logoUIImage = uiImage
+                        }
+                    }
+                }
             }
         }
     }

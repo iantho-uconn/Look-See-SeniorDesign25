@@ -23,8 +23,11 @@ class AuthViewModel: ObservableObject {
     @Published var activeLandmarksCount: Int = 0
     @Published var hasActiveSubscription: Bool = false
     @Published var stripeSubscriptionId: String = ""
+    
     @Published var storeName: String = ""
     @Published var phoneNumber: String = ""
+    @Published var storeBio: String = ""
+    @Published var storeLogoUrl: String = ""
     
     func checkSession() async {
         do {
@@ -97,16 +100,12 @@ class AuthViewModel: ObservableObject {
         }
     }
     
-    // 🚀 THE FIX: We no longer wipe the Free Trial memory flag on Sign Out!
     func signOut(authState: AuthState) {
         Task {
             await AuthService.shared.signOut()
             await authState.signOut()
             
             await MainActor.run {
-                // The UserDefaults Free Trial wipe has been removed from here.
-                // Now your device safely remembers your specific tier when you log back in.
-                
                 self.isSignedIn = false
                 self.requiresNewPassword = false
                 self.tokenBalance = 0
@@ -115,6 +114,8 @@ class AuthViewModel: ObservableObject {
                 self.stripeSubscriptionId = ""
                 self.storeName = ""
                 self.phoneNumber = ""
+                self.storeBio = ""
+                self.storeLogoUrl = ""
                 self.userId = ""
                 self.userEmail = ""
             }
@@ -193,12 +194,10 @@ class AuthViewModel: ObservableObject {
                             self.stripeSubscriptionId = fetchedStripeId
                         }
                         
-                        if let fetchedStore = json["storeName"] as? String, !fetchedStore.isEmpty {
-                            self.storeName = fetchedStore
-                        }
-                        if let fetchedPhone = json["phoneNumber"] as? String, !fetchedPhone.isEmpty {
-                            self.phoneNumber = fetchedPhone
-                        }
+                        if let fetchedStore = json["storeName"] as? String, !fetchedStore.isEmpty { self.storeName = fetchedStore }
+                        if let fetchedPhone = json["phoneNumber"] as? String, !fetchedPhone.isEmpty { self.phoneNumber = fetchedPhone }
+                        if let fetchedBio = json["storeBio"] as? String, !fetchedBio.isEmpty { self.storeBio = fetchedBio }
+                        if let fetchedLogo = json["storeLogoUrl"] as? String, !fetchedLogo.isEmpty { self.storeLogoUrl = fetchedLogo }
                     }
                 }
             }
@@ -228,7 +227,6 @@ class AuthViewModel: ObservableObject {
                 await MainActor.run {
                     self.hasActiveSubscription = false
                     self.stripeSubscriptionId = ""
-                    // It IS correct to wipe the Free Trial flag upon cancellation
                     UserDefaults.standard.set(false, forKey: "isFreeTrial_\(self.userEmail)")
                 }
                 return true
@@ -239,7 +237,7 @@ class AuthViewModel: ObservableObject {
         return false
     }
 
-    func updateBusinessProfile(storeName: String, phoneNumber: String) async -> Bool {
+    func updateBusinessProfile(storeName: String, phoneNumber: String, storeBio: String, storeLogoUrl: String, storeLogoBase64: String? = nil) async -> Bool {
         guard !userId.isEmpty else { return false }
         guard let url = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/checkout") else { return false }
         
@@ -247,19 +245,40 @@ class AuthViewModel: ObservableObject {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
-        let body: [String: Any] = [
+        var body: [String: Any] = [
             "purchaseType": "update_profile",
             "userId": userId,
             "storeName": storeName,
-            "phoneNumber": phoneNumber
+            "phoneNumber": phoneNumber,
+            "storeBio": storeBio,
+            "storeLogoUrl": storeLogoUrl
         ]
+        
+        if let base64 = storeLogoBase64 {
+            body["storeLogoBase64"] = base64
+        }
+        
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         
         do {
-            let (_, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await URLSession.shared.data(for: request)
             if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
-                self.storeName = storeName
-                self.phoneNumber = phoneNumber
+                if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let newLogoUrl = json["logoUrl"] as? String {
+                    await MainActor.run {
+                        self.storeName = storeName
+                        self.phoneNumber = phoneNumber
+                        self.storeBio = storeBio
+                        self.storeLogoUrl = newLogoUrl
+                    }
+                } else {
+                    await MainActor.run {
+                        self.storeName = storeName
+                        self.phoneNumber = phoneNumber
+                        self.storeBio = storeBio
+                        self.storeLogoUrl = storeLogoUrl
+                    }
+                }
                 return true
             }
         } catch {
@@ -281,7 +300,6 @@ class AuthViewModel: ObservableObject {
     }
 }
 
-// 🚀 RESTORED: Helper function used by other views for debugging
 func printCognitoTokens() async {
     do {
         let session = try await Amplify.Auth.fetchAuthSession()

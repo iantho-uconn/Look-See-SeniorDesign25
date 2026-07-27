@@ -66,6 +66,8 @@
 		D0B0B12E2FE48EF800C75E25 /* ArchiveView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0B0B12D2FE48EF500C75E25 /* ArchiveView.swift */; };
 		D0B0B1302FE51DBA00C75E25 /* LandmarkMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0B0B12F2FE51DB500C75E25 /* LandmarkMapView.swift */; };
 		D0B0B1322FE59F0300C75E25 /* QuickUploadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0B0B1312FE59EF800C75E25 /* QuickUploadView.swift */; };
+		D0CA58423017C5A200058BB3 /* MerchantCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0CA58413017C59D00058BB3 /* MerchantCard.swift */; };
+		D0CA58443017C93600058BB3 /* AWSS3StoragePlugin in Frameworks */ = {isa = PBXBuildFile; productRef = D0CA58433017C93600058BB3 /* AWSS3StoragePlugin */; };
 		D0E788892FF2E1CD00E5FE00 /* NegativeVideoCameraService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0E788872FF2E1C700E5FE00 /* NegativeVideoCameraService.swift */; };
 		D0E7888D2FF2E3C800E5FE00 /* NegativeVideoCameraView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0E7888C2FF2E3C000E5FE00 /* NegativeVideoCameraView.swift */; };
 		D0E7888F2FF39A9A00E5FE00 /* NegativeGalleryPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0E7888E2FF39A9500E5FE00 /* NegativeGalleryPicker.swift */; };
@@ -152,6 +154,7 @@
 		D0B0B12D2FE48EF500C75E25 /* ArchiveView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchiveView.swift; sourceTree = "<group>"; };
 		D0B0B12F2FE51DB500C75E25 /* LandmarkMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LandmarkMapView.swift; sourceTree = "<group>"; };
 		D0B0B1312FE59EF800C75E25 /* QuickUploadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickUploadView.swift; sourceTree = "<group>"; };
+		D0CA58413017C59D00058BB3 /* MerchantCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MerchantCard.swift; sourceTree = "<group>"; };
 		D0E788872FF2E1C700E5FE00 /* NegativeVideoCameraService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NegativeVideoCameraService.swift; sourceTree = "<group>"; };
 		D0E7888C2FF2E3C000E5FE00 /* NegativeVideoCameraView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NegativeVideoCameraView.swift; sourceTree = "<group>"; };
 		D0E7888E2FF39A9500E5FE00 /* NegativeGalleryPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NegativeGalleryPicker.swift; sourceTree = "<group>"; };
@@ -195,6 +198,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D0CA58443017C93600058BB3 /* AWSS3StoragePlugin in Frameworks */,
 				D0E78BDB3008C6E800E5FE00 /* StripePaymentSheet in Frameworks */,
 				B02344EB2F46355C00F4230E /* Amplify in Frameworks */,
 				B02344ED2F46356400F4230E /* AWSCognitoAuthPlugin in Frameworks */,
@@ -275,6 +279,7 @@
 		56C3FA072EA6CA3100EA6153 /* UI Files */ = {
 			isa = PBXGroup;
 			children = (
+				D0CA58413017C59D00058BB3 /* MerchantCard.swift */,
 				3C56010E3005BEDB00EB4493 /* BusinessPromotionEditor.swift */,
 				3CF3703D3006BE24005780B3 /* AccountSecurityView.swift */,
 				D0E78BE13008FF8D00E5FE00 /* GuestSignUpView.swift */,
@@ -373,6 +378,7 @@
 				B02344EC2F46356400F4230E /* AWSCognitoAuthPlugin */,
 				3C19EB402F981FA400D1AA43 /* ZIPFoundation */,
 				D0E78BDA3008C6E800E5FE00 /* StripePaymentSheet */,
+				D0CA58433017C93600058BB3 /* AWSS3StoragePlugin */,
 			);
 			productName = LookSeeProto;
 			productReference = 3C918F9D2E9ECE5F00AF5DAF /* LookSeeProto.app */;
@@ -512,6 +518,7 @@
 				3C7452BD301187DB0016E21D /* BusinessMediaHistoryNavigationRow.swift in Sources */,
 				562DAAB32F2A89600083A71E /* LandmarkScan.swift in Sources */,
 				3C63C8A82F91875E0006C5DD /* VariableContainer.swift in Sources */,
+				D0CA58423017C5A200058BB3 /* MerchantCard.swift in Sources */,
 				D0E78B7D300545F500E5FE00 /* NetworkMonitor.swift in Sources */,
 				3C4E57072FE443E70045B2D4 /* LandmarkRecord.swift in Sources */,
 				3CF188BE2FE19AAD00FED231 /* CapturedNegativePhoto.swift in Sources */,
@@ -971,6 +978,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = B03AD91D2F462B2B0009E3AE /* XCRemoteSwiftPackageReference "amplify-swift" */;
 			productName = AWSCognitoAuthPlugin;
+		};
+		D0CA58433017C93600058BB3 /* AWSS3StoragePlugin */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B03AD91D2F462B2B0009E3AE /* XCRemoteSwiftPackageReference "amplify-swift" */;
+			productName = AWSS3StoragePlugin;
 		};
 		D0E78BDA3008C6E800E5FE00 /* StripePaymentSheet */ = {
 			isa = XCSwiftPackageProductDependency;

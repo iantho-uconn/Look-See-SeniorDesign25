@@ -38,6 +38,12 @@ final class VariableContainer: ObservableObject {
     @Published var promoName: String = "No active promotion"
     @Published var promoDescription: String = ""
     @Published var promoImageUrl: String = ""
+    
+    // 🚀 NEW: Enterprise Merchant Profile Fields (Address/Site removed)
+    @Published var merchantName: String = ""
+    @Published var merchantBio: String = ""
+    @Published var merchantPhone: String = ""
+    @Published var merchantLogoUrl: String = ""
 
     private init() {
         resetLandmarkDisplay()
@@ -88,6 +94,12 @@ final class VariableContainer: ObservableObject {
         promoDescription = ""
         promoImageUrl = ""
         landmarkURL = ""
+        
+        // Clear out the merchant card so old merchants don't leak into new scans
+        merchantName = ""
+        merchantBio = ""
+        merchantPhone = ""
+        merchantLogoUrl = ""
 
         infoView = true
 
@@ -131,6 +143,11 @@ final class VariableContainer: ObservableObject {
         promoName = "No active promotion"
         promoDescription = ""
         promoImageUrl = ""
+        
+        merchantName = ""
+        merchantBio = ""
+        merchantPhone = ""
+        merchantLogoUrl = ""
     }
 
     func getlandmarkName() -> String {
