@@ -36,6 +36,8 @@ struct SubscriptionPlans: View {
     ]
     
     private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00)
+    private let secondaryTextColor = Color.white.opacity(0.58)
+    private let disabledTextColor = Color.white.opacity(0.45)
     
     private var isFullyLoggedIn: Bool {
         return vm.isSignedIn && !vm.userId.isEmpty && !vm.userEmail.isEmpty
@@ -106,7 +108,7 @@ struct SubscriptionPlans: View {
                         Image(systemName: "lock.shield.fill")
                         Text("Secured by Stripe. Cancel at any time.")
                     }
-                    .font(.system(size: 11)).foregroundStyle(.secondary).padding(.bottom, 16)
+                    .font(.system(size: 11)).foregroundStyle(secondaryTextColor).padding(.bottom, 16)
                 }
             }
             .onAppear {
@@ -132,6 +134,9 @@ struct SubscriptionPlans: View {
                 }
             )
         }
+        // This screen always uses a dark visual design, so keep system controls
+        // such as the segmented picker and materials in dark appearance too.
+        .environment(\.colorScheme, .dark)
         .interactiveDismissDisabled(isProcessing)
         .overlay {
             // 🚀 THE FIX: This hides the crazy payment delay by locking the screen instantly
@@ -159,10 +164,10 @@ struct SubscriptionPlans: View {
             
             HStack(alignment: .bottom, spacing: 2) {
                 Text("$10").font(.system(size: 34, weight: .black, design: .rounded)).foregroundStyle(.white)
-                Text("/year").font(.system(size: 14)).foregroundStyle(.secondary).padding(.bottom, 6)
+                Text("/year").font(.system(size: 14)).foregroundStyle(secondaryTextColor).padding(.bottom, 6)
             }.padding(.top, 4)
             
-            Text("Unlimited active landmarks. Just pay-per-upload.").font(.system(size: 13)).foregroundStyle(.secondary).padding(.top, 2)
+            Text("Unlimited active landmarks. Just pay-per-upload.").font(.system(size: 13)).foregroundStyle(secondaryTextColor).padding(.top, 2)
             
             Divider().background(Color.white.opacity(0.12)).padding(.vertical, 14)
             
@@ -175,7 +180,7 @@ struct SubscriptionPlans: View {
             Divider().background(Color.white.opacity(0.12)).padding(.vertical, 14)
             
             VStack(alignment: .leading, spacing: 8) {
-                Text("Optional Token Add-on").font(.system(size: 12, weight: .bold)).foregroundStyle(.secondary).textCase(.uppercase)
+                Text("Optional Token Add-on").font(.system(size: 12, weight: .bold)).foregroundStyle(secondaryTextColor).textCase(.uppercase)
                 Picker("Add-on", selection: $selectedAddOnIndex) {
                     ForEach(0..<addOns.count, id: \.self) { index in
                         Text(addOns[index].label).tag(index)
@@ -212,7 +217,7 @@ struct SubscriptionPlans: View {
                                 .font(.system(size: 15, weight: .bold)).foregroundStyle(.white).frame(maxWidth: .infinity).padding(.vertical, 14).background(primaryColor).clipShape(RoundedRectangle(cornerRadius: 14))
                         } else {
                             Text("Current Plan")
-                                .font(.system(size: 15, weight: .bold)).foregroundStyle(.gray).frame(maxWidth: .infinity).padding(.vertical, 14).background(Color.white.opacity(0.1)).clipShape(RoundedRectangle(cornerRadius: 14))
+                                .font(.system(size: 15, weight: .bold)).foregroundStyle(disabledTextColor).frame(maxWidth: .infinity).padding(.vertical, 14).background(Color.white.opacity(0.1)).clipShape(RoundedRectangle(cornerRadius: 14))
                         }
                     } else {
                         let addOnCents = Double(addOns[selectedAddOnIndex].cents) / 100.0
@@ -242,10 +247,10 @@ struct SubscriptionPlans: View {
             
             HStack(alignment: .bottom, spacing: 2) {
                 Text("$0").font(.system(size: 34, weight: .black, design: .rounded)).foregroundStyle(.white)
-                Text("/14 days").font(.system(size: 14)).foregroundStyle(.secondary).padding(.bottom, 6)
+                Text("/14 days").font(.system(size: 14)).foregroundStyle(secondaryTextColor).padding(.bottom, 6)
             }.padding(.top, 4)
             
-            Text("Test out the platform risk-free before committing to a yearly subscription.").font(.system(size: 13)).foregroundStyle(.secondary).padding(.top, 2)
+            Text("Test out the platform risk-free before committing to a yearly subscription.").font(.system(size: 13)).foregroundStyle(secondaryTextColor).padding(.top, 2)
             
             Divider().background(Color.white.opacity(0.12)).padding(.vertical, 14)
             
@@ -274,14 +279,14 @@ struct SubscriptionPlans: View {
                         if isTrial {
                             // 🚀 THE FIX: Properly marks the Trial tab as "Active"
                             Text("Active (Free Trial)")
-                                .font(.system(size: 15, weight: .bold)).foregroundStyle(.gray).frame(maxWidth: .infinity).padding(.vertical, 14).background(Color.white.opacity(0.1)).clipShape(RoundedRectangle(cornerRadius: 14))
+                                .font(.system(size: 15, weight: .bold)).foregroundStyle(disabledTextColor).frame(maxWidth: .infinity).padding(.vertical, 14).background(Color.white.opacity(0.1)).clipShape(RoundedRectangle(cornerRadius: 14))
                         } else {
                             Text("Unavailable for Active Accounts")
-                                .font(.system(size: 15, weight: .bold)).foregroundStyle(.gray).frame(maxWidth: .infinity).padding(.vertical, 14).background(Color.white.opacity(0.1)).clipShape(RoundedRectangle(cornerRadius: 14))
+                                .font(.system(size: 15, weight: .bold)).foregroundStyle(disabledTextColor).frame(maxWidth: .infinity).padding(.vertical, 14).background(Color.white.opacity(0.1)).clipShape(RoundedRectangle(cornerRadius: 14))
                         }
                     } else if !isEligibleForTrial {
                         Text("Not Eligible for Free Trial")
-                            .font(.system(size: 15, weight: .bold)).foregroundStyle(.gray).frame(maxWidth: .infinity).padding(.vertical, 14).background(Color.white.opacity(0.1)).clipShape(RoundedRectangle(cornerRadius: 14))
+                            .font(.system(size: 15, weight: .bold)).foregroundStyle(disabledTextColor).frame(maxWidth: .infinity).padding(.vertical, 14).background(Color.white.opacity(0.1)).clipShape(RoundedRectangle(cornerRadius: 14))
                     } else {
                         Text("Start Free Trial")
                             .font(.system(size: 15, weight: .bold)).foregroundStyle(.white).frame(maxWidth: .infinity).padding(.vertical, 14).background(Color.orange).clipShape(RoundedRectangle(cornerRadius: 14))
@@ -313,21 +318,21 @@ struct SubscriptionPlans: View {
                 VStack(spacing: 8) {
                     Image(systemName: "circle.hexagongrid.fill").font(.system(size: 48)).foregroundStyle(primaryColor)
                     Text("\(vm.tokenBalance)").font(.system(size: 42, weight: .black, design: .rounded)).foregroundStyle(.white)
-                    Text("Tokens Available").font(.system(size: 14, weight: .bold)).foregroundStyle(.secondary).textCase(.uppercase)
+                    Text("Tokens Available").font(.system(size: 14, weight: .bold)).foregroundStyle(secondaryTextColor).textCase(.uppercase)
                 }.padding(.top, 20)
                 
                 VStack(spacing: 6) {
                     Text("What are tokens?").font(.system(size: 15, weight: .bold)).foregroundStyle(.white)
                     Text("A token can be used to add another landmark to your account or swap an existing one out. Removing a landmark is free.")
-                        .font(.system(size: 13)).foregroundStyle(.secondary).multilineTextAlignment(.center).padding(.horizontal, 32)
+                        .font(.system(size: 13)).foregroundStyle(secondaryTextColor).multilineTextAlignment(.center).padding(.horizontal, 32)
                 }
                 
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Buy Token Packs").font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(.secondary).textCase(.uppercase).padding(.horizontal, 20)
+                    Text("Buy Token Packs").font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(secondaryTextColor).textCase(.uppercase).padding(.horizontal, 20)
                     
                     VStack(spacing: 0) {
                         if !isFullyLoggedIn || !vm.hasActiveSubscription {
-                            Text("Please subscribe to the Premium plan or start a Free Trial to purchase tokens.").font(.system(size: 14, weight: .medium)).foregroundStyle(.secondary).padding(20)
+                            Text("Please subscribe to the Premium plan or start a Free Trial to purchase tokens.").font(.system(size: 14, weight: .medium)).foregroundStyle(secondaryTextColor).padding(20)
                         } else {
                             bundleRow(tokens: 1, price: "$3.00", amountCents: 300)
                             Divider().padding(.leading, 68)

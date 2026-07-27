@@ -33,50 +33,81 @@ struct PopUp: View {
     )
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
+        GeometryReader { proxy in
+            let availableHeight = max(proxy.size.height - 32, 240)
+            let popupHeight = min(availableHeight, 780)
 
-            // 🚀 THE FIX: Removed the greedy outer ScrollView so the popup organically shrink-wraps
-            VStack(alignment: .leading, spacing: 16) {
-                landmarkTextSection
+            VStack(spacing: 0) {
+                // Fixed header. The center section below handles scrolling.
+                header
 
-                websiteSection
+                ScrollView(
+                    .vertical,
+                    showsIndicators: true
+                ) {
+                    VStack(
+                        alignment: .leading,
+                        spacing: 18
+                    ) {
+                        landmarkTextSection
 
-                if shouldShowPromotion {
-                    promotionSection
+                        websiteSection
+
+                        if shouldShowPromotion {
+                            promotionSection
+                        }
+                    }
+                    .frame(
+                        maxWidth: .infinity,
+                        alignment: .leading
+                    )
+                    .padding(.horizontal, 20)
+                    .padding(.top, 18)
+                    .padding(.bottom, 22)
                 }
+                .scrollDismissesKeyboard(.immediately)
 
-                gotItButton
+                Divider()
+                    .opacity(0.18)
+
+                // Fixed button so it remains reachable while content scrolls.
+                closeButton
+                    .padding(.horizontal, 20)
+                    .padding(.top, 14)
+                    .padding(.bottom, 18)
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 16)
-            .padding(.bottom, 20)
+            .frame(maxWidth: 620)
+            .frame(height: popupHeight)
+            .background(.ultraThickMaterial)
+            .clipShape(
+                RoundedRectangle(
+                    cornerRadius: 30,
+                    style: .continuous
+                )
+            )
+            .overlay {
+                RoundedRectangle(
+                    cornerRadius: 30,
+                    style: .continuous
+                )
+                .stroke(
+                    Color.white.opacity(0.20),
+                    lineWidth: 1
+                )
+            }
+            .shadow(
+                color: .black.opacity(0.30),
+                radius: 30,
+                x: 0,
+                y: 15
+            )
+            .padding(.horizontal, 28)
+            .frame(
+                maxWidth: .infinity,
+                maxHeight: .infinity,
+                alignment: .center
+            )
         }
-        .background(.ultraThickMaterial)
-        .clipShape(
-            RoundedRectangle(
-                cornerRadius: 30,
-                style: .continuous
-            )
-        )
-        .overlay {
-            RoundedRectangle(
-                cornerRadius: 30,
-                style: .continuous
-            )
-            .stroke(
-                Color.white.opacity(0.20),
-                lineWidth: 1
-            )
-        }
-        .shadow(
-            color: .black.opacity(0.30),
-            radius: 30,
-            x: 0,
-            y: 15
-        )
-        .padding(.horizontal, 28)
-        .frame(maxHeight: UIScreen.main.bounds.height * 0.85) // Only caps it if they have a huge promo
         .sheet(item: $selectedPromotionImage) { item in
             promotionImagePreview(url: item.url)
         }
@@ -187,7 +218,7 @@ struct PopUp: View {
     // MARK: - Landmark Text
 
     private var landmarkTextSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 14) {
             Text(displayName)
                 .font(
                     .system(
@@ -202,37 +233,27 @@ struct PopUp: View {
                     vertical: true
                 )
 
-            // 🚀 THE FIX: Dynamic text engine.
-            // If short, it hugs naturally. If long, it caps at 120 and turns into a scroll wheel.
-            ViewThatFits(in: .vertical) {
-                Text(displayDescription)
-                    .font(
-                        .system(
-                            size: 15,
-                            weight: .regular,
-                            design: .rounded
-                        )
+            // The description now uses its full natural height.
+            // The popup's main ScrollView handles longer content.
+            Text(displayDescription)
+                .font(
+                    .system(
+                        size: 16,
+                        weight: .regular,
+                        design: .rounded
                     )
-                    .foregroundStyle(.secondary)
-                    .lineSpacing(3)
-                    .fixedSize(horizontal: false, vertical: true)
-                
-                ScrollView(.vertical, showsIndicators: true) {
-                    Text(displayDescription)
-                        .font(
-                            .system(
-                                size: 15,
-                                weight: .regular,
-                                design: .rounded
-                            )
-                        )
-                        .foregroundStyle(.secondary)
-                        .lineSpacing(3)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.trailing, 8)
-                }
-            }
-            .frame(maxHeight: 120) // The cutoff point for switching to a scroll wheel
+                )
+                .foregroundStyle(.secondary)
+                .lineSpacing(5)
+                .frame(
+                    maxWidth: .infinity,
+                    alignment: .leading
+                )
+                .fixedSize(
+                    horizontal: false,
+                    vertical: true
+                )
+                .textSelection(.enabled)
         }
     }
 
@@ -505,9 +526,9 @@ struct PopUp: View {
         }
     }
 
-    // MARK: - Got It
+    // MARK: - Close Button
 
-    private var gotItButton: some View {
+    private var closeButton: some View {
         Button {
             UIImpactFeedbackGenerator(style: .medium)
                 .impactOccurred()

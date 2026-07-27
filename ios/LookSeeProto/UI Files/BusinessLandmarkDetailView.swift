@@ -13,6 +13,7 @@ struct BusinessLandmarkDetailView: View {
     let landmark: BusinessLandmark
     let onLandmarkUpdated: (BusinessLandmark) -> Void
     let onLandmarkDeleted: (String) -> Void
+    let onPromotionTitlesChanged: (String, [String]) -> Void
 
     @Environment(\.dismiss) private var dismiss
 
@@ -65,11 +66,13 @@ struct BusinessLandmarkDetailView: View {
     init(
         landmark: BusinessLandmark,
         onLandmarkUpdated: @escaping (BusinessLandmark) -> Void = { _ in },
-        onLandmarkDeleted: @escaping (String) -> Void = { _ in }
+        onLandmarkDeleted: @escaping (String) -> Void = { _ in },
+        onPromotionTitlesChanged: @escaping (String, [String]) -> Void = { _, _ in }
     ) {
         self.landmark = landmark
         self.onLandmarkUpdated = onLandmarkUpdated
         self.onLandmarkDeleted = onLandmarkDeleted
+        self.onPromotionTitlesChanged = onPromotionTitlesChanged
 
         let initialDescription = landmark.shortDescription?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -619,13 +622,35 @@ struct BusinessLandmarkDetailView: View {
     }
 
     private func loadPromotions() async {
-        await MainActor.run { isLoadingPromotions = true; promotionErrorMessage = nil }
-        do {
-            let response = try await promotionService.fetchPromotions(landmarkId: landmark.landmarkId)
-            await MainActor.run { promotions = response.items; isLoadingPromotions = false }
-        } catch {
-            await MainActor.run { promotionErrorMessage = error.localizedDescription; isLoadingPromotions = false }
+        await MainActor.run {
+            isLoadingPromotions = true
+            promotionErrorMessage = nil
         }
+
+        do {
+            let response = try await promotionService.fetchPromotions(
+                landmarkId: landmark.landmarkId
+            )
+
+            await MainActor.run {
+                promotions = response.items
+                isLoadingPromotions = false
+                publishPromotionTitles()
+            }
+        } catch {
+            await MainActor.run {
+                promotionErrorMessage = error.localizedDescription
+                isLoadingPromotions = false
+            }
+        }
+    }
+
+    private func publishPromotionTitles() {
+        let titles = promotions
+            .map { $0.name.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        onPromotionTitlesChanged(landmark.landmarkId, titles)
     }
 
     private func updatePromotionEnabled(_ promotion: BusinessPromotion, enabled: Bool) async {
@@ -650,12 +675,29 @@ struct BusinessLandmarkDetailView: View {
     }
 
     private func deletePromotion(_ promotion: BusinessPromotion) async {
-        await MainActor.run { savingPromotionIds.insert(promotion.id); promotionErrorMessage = nil }
+        await MainActor.run {
+            savingPromotionIds.insert(promotion.id)
+            promotionErrorMessage = nil
+        }
+
         do {
-            try await promotionService.deletePromotion(landmarkId: landmark.landmarkId, promotionId: promotion.id)
-            await MainActor.run { promotions.removeAll { $0.id == promotion.id }; promotionPendingDelete = nil; savingPromotionIds.remove(promotion.id) }
+            try await promotionService.deletePromotion(
+                landmarkId: landmark.landmarkId,
+                promotionId: promotion.id
+            )
+
+            await MainActor.run {
+                promotions.removeAll { $0.id == promotion.id }
+                promotionPendingDelete = nil
+                savingPromotionIds.remove(promotion.id)
+                publishPromotionTitles()
+            }
         } catch {
-            await MainActor.run { promotionErrorMessage = error.localizedDescription; promotionPendingDelete = nil; savingPromotionIds.remove(promotion.id) }
+            await MainActor.run {
+                promotionErrorMessage = error.localizedDescription
+                promotionPendingDelete = nil
+                savingPromotionIds.remove(promotion.id)
+            }
         }
     }
 
