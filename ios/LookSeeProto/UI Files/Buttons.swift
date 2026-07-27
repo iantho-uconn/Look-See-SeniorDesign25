@@ -12,6 +12,9 @@ import SwiftUI
 struct Buttons: View {
     @EnvironmentObject var vm: AuthViewModel
     @EnvironmentObject var authState: AuthState
+    
+    @ObservedObject private var infoView = VariableContainer.shared
+    
     @State private var showPromotion = false
     @State private var showBusinessAlert = false
     @State private var showSignUpPrompt = false
@@ -64,7 +67,7 @@ struct Buttons: View {
                         isNavVisible: $chromeVisible
                     )
                     .tag(0)
-                    
+
                     if isBusinessMode {
                         LandmarkRecord { landmarkId in
                             pendingUploadLandmarkId = landmarkId
@@ -93,18 +96,29 @@ struct Buttons: View {
                     }
                 }
                 
-                if currentTab == mapTabIndex { mapEdgeSwipeZones }
-                
-                VStack(spacing: 0) {
-                    if chromeVisible {
-                        topBar.transition(.opacity)
-                    }
-                    Spacer()
-                    if chromeVisible || !isScanTab {
-                        bottomBar.transition(.move(edge: .bottom).combined(with: .opacity))
-                    }
+                if currentTab == mapTabIndex && !infoView.infoView {
+                    mapEdgeSwipeZones
                 }
-                .animation(.easeOut(duration: 0.3), value: chromeVisible)
+                
+                if !infoView.infoView {
+                    VStack(spacing: 0) {
+                        if chromeVisible {
+                            topBar
+                                .transition(.opacity)
+                        }
+
+                        Spacer()
+
+                        if chromeVisible || !isScanTab {
+                            bottomBar
+                                .transition(
+                                    .move(edge: .bottom)
+                                        .combined(with: .opacity)
+                                )
+                        }
+                    }
+                    .transition(.opacity)
+                }
                 
                 if showSignUpPrompt { signUpPromptOverlay }
                 
@@ -128,10 +142,43 @@ struct Buttons: View {
                     }
                 }
                 .animation(.easeOut(duration: 0.25), value: showSideMenu)
+
+                // Present the popup at the root level so it always sits above
+                // the scan screen, top bar, bottom bar, and side menu.
+                if infoView.infoView {
+                    ZStack {
+                        Color.black
+                            .opacity(0.45)
+                            .ignoresSafeArea()
+                            .onTapGesture {
+                                withAnimation(
+                                    .spring(
+                                        response: 0.35,
+                                        dampingFraction: 0.82
+                                    )
+                                ) {
+                                    infoView.dismissLandmark()
+                                }
+                            }
+
+                        PopUp()
+                    }
+                    .zIndex(100)
+                    .transition(
+                        .opacity.combined(
+                            with: .scale(scale: 0.98)
+                        )
+                    )
+                }
+
                 
             }
             .simultaneousGesture(
                 DragGesture(minimumDistance: 30).onEnded { value in
+                    guard !infoView.infoView else {
+                        return
+                    }
+
                     if showSideMenu {
                         if value.translation.width > 40 {
                             withAnimation(.easeOut(duration: 0.25)) { showSideMenu = false }
@@ -150,6 +197,26 @@ struct Buttons: View {
                         }
                     }
                 }
+            )
+            .onChange(of: infoView.infoView) { _, isShowingPopup in
+                chromeFadeTask?.cancel()
+
+                if isShowingPopup {
+                    showSideMenu = false
+
+                    withAnimation(.easeOut(duration: 0.15)) {
+                        chromeVisible = false
+                    }
+                } else {
+                    revealChromeThenFade()
+                }
+            }
+            .animation(
+                .spring(
+                    response: 0.35,
+                    dampingFraction: 0.82
+                ),
+                value: infoView.infoView
             )
             .fullScreenCover(isPresented: $showSignUp) {
                 NavigationStack {
@@ -436,3 +503,4 @@ struct Buttons: View {
         }
     }
 }
+

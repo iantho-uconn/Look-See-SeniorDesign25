@@ -436,7 +436,6 @@ struct BusinessProfileView: View {
                 }
                 .padding(.top, 16)
                 
-                // Renders external MerchantCard struct from MerchantCard.swift
                 MerchantCard(
                     storeName: vm.storeName.isEmpty ? "Your Store Name" : vm.storeName,
                     logoUrl: vm.storeLogoUrl,
@@ -567,7 +566,6 @@ struct BusinessProfileEditSheet: View {
                     Button {
                         isSaving = true
                         Task {
-                            // 🚀 Passes the compressed base64 string straight to the updated Lambda function
                             let base64String = logoUIImage?.jpegData(compressionQuality: 0.4)?.base64EncodedString()
                             
                             let success = await vm.updateBusinessProfile(

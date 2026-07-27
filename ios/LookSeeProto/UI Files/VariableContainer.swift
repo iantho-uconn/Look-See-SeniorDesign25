@@ -95,22 +95,30 @@ final class VariableContainer: ObservableObject {
         promoImageUrl = ""
         landmarkURL = ""
         
-        // Clear out the merchant card so old merchants don't leak into new scans
-        merchantName = ""
-        merchantBio = ""
-        merchantPhone = ""
-        merchantLogoUrl = ""
+        // 🚀 INSTANT CACHE LOAD: Load cached merchant details immediately to eliminate delay
+        let cacheKey = "cached_merchant_\(entry.landmarkId)"
+        if let cachedData = UserDefaults.standard.dictionary(forKey: cacheKey) {
+            merchantName = cachedData["merchantName"] as? String ?? ""
+            merchantBio = cachedData["merchantBio"] as? String ?? ""
+            merchantPhone = cachedData["merchantPhone"] as? String ?? ""
+            merchantLogoUrl = cachedData["merchantLogoUrl"] as? String ?? ""
+        } else {
+            merchantName = ""
+            merchantBio = ""
+            merchantPhone = ""
+            merchantLogoUrl = ""
+        }
 
         infoView = true
 
         print("""
         ✅ [Local Manifest Popup] Presenting landmark
-           clusterId: \(clusterId)
-           trainingRunId: \(trainingRunId)
-           classIndex: \(entry.classIndex)
-           landmarkId: \(entry.landmarkId)
-           label: \(entry.label)
-           confidence: \(String(format: "%.1f", landmarkConfidence))%
+            clusterId: \(clusterId)
+            trainingRunId: \(trainingRunId)
+            classIndex: \(entry.classIndex)
+            landmarkId: \(entry.landmarkId)
+            label: \(entry.label)
+            confidence: \(String(format: "%.1f", landmarkConfidence))%
         """)
     }
 

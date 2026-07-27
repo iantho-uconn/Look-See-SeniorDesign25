@@ -36,40 +36,26 @@ struct PopUp: View {
         VStack(spacing: 0) {
             header
 
-            VStack(alignment: .leading, spacing: 16) {
-                landmarkTextSection
+            // 🚀 DYNAMIC SCROLL FIX: Adapts height to content, scrolls only if content exceeds max height
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 16) {
+                    landmarkTextSection
 
-                websiteSection
+                    websiteSection
 
-                if shouldShowPromotion {
-                    promotionSection
-                }
-                
-                // 🚀 NEW: The Merchant Card Sponsored Footer
-                if !infoView.merchantName.isEmpty {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "building.2.fill").font(.system(size: 12))
-                            Text("Landmark Sponsored By").font(.system(size: 12, weight: .bold)).textCase(.uppercase)
-                        }
-                        .foregroundStyle(.gray)
-                        .padding(.leading, 4)
-                        
-                        MerchantCard(
-                            storeName: infoView.merchantName,
-                            logoUrl: infoView.merchantLogoUrl,
-                            bio: infoView.merchantBio,
-                            phone: infoView.merchantPhone
-                        )
+                    if shouldShowPromotion {
+                        promotionSection
                     }
-                    .padding(.top, 8)
-                }
+                    
+                    // 🚀 UPGRADED MERCHANT CARD SPONSORED FOOTER
+                    MerchantCardView()
 
-                gotItButton
+                    gotItButton
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 16)
+                .padding(.bottom, 20)
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 16)
-            .padding(.bottom, 20)
         }
         .background(.ultraThickMaterial)
         .clipShape(
@@ -95,7 +81,7 @@ struct PopUp: View {
             y: 15
         )
         .padding(.horizontal, 28)
-        .frame(maxHeight: UIScreen.main.bounds.height * 0.85)
+        .frame(maxHeight: UIScreen.main.bounds.height * 0.85) // Caps maximum height so it doesn't overflow screen
         .sheet(item: $selectedPromotionImage) { item in
             promotionImagePreview(url: item.url)
         }
@@ -221,35 +207,17 @@ struct PopUp: View {
                     vertical: true
                 )
 
-            ViewThatFits(in: .vertical) {
-                Text(displayDescription)
-                    .font(
-                        .system(
-                            size: 15,
-                            weight: .regular,
-                            design: .rounded
-                        )
+            Text(displayDescription)
+                .font(
+                    .system(
+                        size: 15,
+                        weight: .regular,
+                        design: .rounded
                     )
-                    .foregroundStyle(.secondary)
-                    .lineSpacing(3)
-                    .fixedSize(horizontal: false, vertical: true)
-                
-                ScrollView(.vertical, showsIndicators: true) {
-                    Text(displayDescription)
-                        .font(
-                            .system(
-                                size: 15,
-                                weight: .regular,
-                                design: .rounded
-                            )
-                        )
-                        .foregroundStyle(.secondary)
-                        .lineSpacing(3)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.trailing, 8)
-                }
-            }
-            .frame(maxHeight: 120)
+                )
+                .foregroundStyle(.secondary)
+                .lineSpacing(3)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

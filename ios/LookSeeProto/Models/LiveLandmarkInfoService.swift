@@ -17,6 +17,12 @@ struct LiveLandmarkInfoResponse: Decodable {
     let activePromotions: [LiveLandmarkPromotion]?
     let activePromotionCount: Int?
     let reason: String?
+    
+    // 🚀 Added merchant profile fields from Lambda response
+    let merchantName: String?
+    let merchantBio: String?
+    let merchantPhone: String?
+    let merchantLogoUrl: String?
 }
 
 struct LiveLandmarkPromotion: Decodable, Identifiable, Hashable {
@@ -85,12 +91,32 @@ final class LiveLandmarkInfoService {
 
         let decoded = try JSONDecoder().decode(LiveLandmarkInfoResponse.self, from: data)
 
+        // 🚀 Save to local cache so future scans are instant (0ms delay)
+        let cacheKey = "cached_merchant_\(decoded.landmarkId)"
+        let merchantDict: [String: Any] = [
+            "merchantName": decoded.merchantName ?? "",
+            "merchantBio": decoded.merchantBio ?? "",
+            "merchantPhone": decoded.merchantPhone ?? "",
+            "merchantLogoUrl": decoded.merchantLogoUrl ?? ""
+        ]
+        UserDefaults.standard.set(merchantDict, forKey: cacheKey)
+
+        // Automatically inject merchant data into VariableContainer for the UI popup
+        Task { @MainActor in
+            VariableContainer.shared.merchantName = decoded.merchantName ?? ""
+            VariableContainer.shared.merchantBio = decoded.merchantBio ?? ""
+            VariableContainer.shared.merchantPhone = decoded.merchantPhone ?? ""
+            VariableContainer.shared.merchantLogoUrl = decoded.merchantLogoUrl ?? ""
+        }
+
         print("""
         ✅ decoded live-info
-           landmarkId: \(decoded.landmarkId)
-           websiteUrl: \(decoded.websiteUrl ?? "")
-           activePromotion: \(decoded.activePromotion?.name ?? "none")
-           promoImageUrl: \(decoded.activePromotion?.imageUrl ?? "")
+          landmarkId: \(decoded.landmarkId)
+          websiteUrl: \(decoded.websiteUrl ?? "")
+          activePromotion: \(decoded.activePromotion?.name ?? "none")
+          promoImageUrl: \(decoded.activePromotion?.imageUrl ?? "")
+          merchantName: \(decoded.merchantName ?? "none")
+          merchantLogoUrl: \(decoded.merchantLogoUrl ?? "none")
         """)
 
         return decoded
