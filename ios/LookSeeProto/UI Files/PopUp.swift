@@ -36,7 +36,7 @@ struct PopUp: View {
         VStack(spacing: 0) {
             header
 
-            // 🚀 DYNAMIC SCROLL FIX: Adapts height to content, scrolls only if content exceeds max height
+            // Dynamic ScrollView that collapses to fit its contents naturally
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 16) {
                     landmarkTextSection
@@ -47,7 +47,7 @@ struct PopUp: View {
                         promotionSection
                     }
                     
-                    // 🚀 UPGRADED MERCHANT CARD SPONSORED FOOTER
+                    // Merchant Info always stays at the bottom
                     MerchantCardView()
 
                     gotItButton
@@ -81,7 +81,10 @@ struct PopUp: View {
             y: 15
         )
         .padding(.horizontal, 28)
-        .frame(maxHeight: UIScreen.main.bounds.height * 0.85) // Caps maximum height so it doesn't overflow screen
+        .frame(maxWidth: 520)
+        // 🚀 This makes it completely dynamic: it wraps content height up to a max limit, removing dead space
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxHeight: UIScreen.main.bounds.height * 0.80)
         .sheet(item: $selectedPromotionImage) { item in
             promotionImagePreview(url: item.url)
         }
