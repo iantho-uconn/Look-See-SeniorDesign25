@@ -262,24 +262,31 @@ class AuthViewModel: ObservableObject {
         
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
-            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
-                if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   let newLogoUrl = json["logoUrl"] as? String {
-                    await MainActor.run {
-                        self.storeName = storeName
-                        self.phoneNumber = phoneNumber
-                        self.storeBio = storeBio
-                        self.storeLogoUrl = newLogoUrl
+            if let httpResponse = response as? HTTPURLResponse {
+                if httpResponse.statusCode == 200 {
+                    if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                       let newLogoUrl = json["logoUrl"] as? String {
+                        await MainActor.run {
+                            self.storeName = storeName
+                            self.phoneNumber = phoneNumber
+                            self.storeBio = storeBio
+                            self.storeLogoUrl = newLogoUrl
+                        }
+                    } else {
+                        await MainActor.run {
+                            self.storeName = storeName
+                            self.phoneNumber = phoneNumber
+                            self.storeBio = storeBio
+                            self.storeLogoUrl = storeLogoUrl
+                        }
                     }
+                    return true
                 } else {
-                    await MainActor.run {
-                        self.storeName = storeName
-                        self.phoneNumber = phoneNumber
-                        self.storeBio = storeBio
-                        self.storeLogoUrl = storeLogoUrl
+                    // 🚀 THE FIX: Print the exact error message from Lambda!
+                    if let errorString = String(data: data, encoding: .utf8) {
+                        print("❌ Backend Rejected Upload (\(httpResponse.statusCode)): \(errorString)")
                     }
                 }
-                return true
             }
         } catch {
             print("❌ Failed to update business profile: \(error)")
