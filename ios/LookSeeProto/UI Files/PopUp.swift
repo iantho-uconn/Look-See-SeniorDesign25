@@ -33,12 +33,14 @@ struct PopUp: View {
     )
 
     var body: some View {
+        // 🚀 REMOVED GEOMETRY READER! This is what was causing the giant empty black box.
         VStack(spacing: 0) {
+            
+            // Fixed header.
             header
 
-            // Dynamic ScrollView that collapses to fit its contents naturally
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 16) {
+            ScrollView(.vertical, showsIndicators: true) {
+                VStack(alignment: .leading, spacing: 18) {
                     landmarkTextSection
 
                     websiteSection
@@ -47,16 +49,28 @@ struct PopUp: View {
                         promotionSection
                     }
                     
-                    // Merchant Info always stays at the bottom
+                    // Merchant Info always stays at the bottom of the scrolling content
                     MerchantCardView()
-
-                    gotItButton
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 20)
-                .padding(.top, 16)
-                .padding(.bottom, 20)
+                .padding(.top, 18)
+                .padding(.bottom, 22)
             }
+            .scrollDismissesKeyboard(.immediately)
+
+            Divider()
+                .opacity(0.18)
+
+            // Fixed button (Matt's update) so it remains reachable while content scrolls.
+            closeButton
+                .padding(.horizontal, 20)
+                .padding(.top, 14)
+                .padding(.bottom, 18)
         }
+        .frame(maxWidth: 520)
+        // 🚀 Capped maximum height, but allows it to naturally shrink-wrap if content is small
+        .frame(maxHeight: UIScreen.main.bounds.height * 0.80)
         .background(.ultraThickMaterial)
         .clipShape(
             RoundedRectangle(
@@ -81,10 +95,6 @@ struct PopUp: View {
             y: 15
         )
         .padding(.horizontal, 28)
-        .frame(maxWidth: 520)
-        // 🚀 This makes it completely dynamic: it wraps content height up to a max limit, removing dead space
-        .fixedSize(horizontal: false, vertical: true)
-        .frame(maxHeight: UIScreen.main.bounds.height * 0.80)
         .sheet(item: $selectedPromotionImage) { item in
             promotionImagePreview(url: item.url)
         }
@@ -195,7 +205,7 @@ struct PopUp: View {
     // MARK: - Landmark Text
 
     private var landmarkTextSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 14) {
             Text(displayName)
                 .font(
                     .system(
@@ -210,17 +220,27 @@ struct PopUp: View {
                     vertical: true
                 )
 
+            // The description now uses its full natural height.
+            // The popup's main ScrollView handles longer content.
             Text(displayDescription)
                 .font(
                     .system(
-                        size: 15,
+                        size: 16,
                         weight: .regular,
                         design: .rounded
                     )
                 )
                 .foregroundStyle(.secondary)
-                .lineSpacing(3)
-                .fixedSize(horizontal: false, vertical: true)
+                .lineSpacing(5)
+                .frame(
+                    maxWidth: .infinity,
+                    alignment: .leading
+                )
+                .fixedSize(
+                    horizontal: false,
+                    vertical: true
+                )
+                .textSelection(.enabled)
         }
     }
 
@@ -493,9 +513,9 @@ struct PopUp: View {
         }
     }
 
-    // MARK: - Got It
+    // MARK: - Close Button
 
-    private var gotItButton: some View {
+    private var closeButton: some View {
         Button {
             UIImpactFeedbackGenerator(style: .medium)
                 .impactOccurred()
@@ -524,7 +544,6 @@ struct PopUp: View {
                 )
         }
         .buttonStyle(.plain)
-        .padding(.top, 4)
     }
 
     // MARK: - Promotion Preview

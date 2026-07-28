@@ -4,8 +4,10 @@
 //
 //  Created by Christian Barbara on 1/25/26.
 //
-
-
+//  Updated: TabView-based paging replaced with a manual HStack pager so
+//  swiping shows a live, finger-following preview of the adjacent page
+//  (camera/record/map) instead of only snapping after release.
+//
 
 import SwiftUI
 
@@ -21,203 +23,182 @@ struct Buttons: View {
     @State private var showSignUp = false
     @State private var currentTab = 0
     @State private var pendingUploadLandmarkId: String?
-    
+
     @State private var chromeVisible = true
     @State private var chromeFadeTask: Task<Void, Never>?
     @State private var isDetecting = false
     @State private var showTutorial = false
-    
+
     @State private var showSideMenu = false
     @State private var isReticlePulsing = false
-    
+
+    // Live horizontal offset while a swipe is in progress. 0 when idle.
+    @State private var dragOffset: CGFloat = 0
+
     // 🚀 THE FIX: Completely ignores Cognito authState.tier.
     // If they haven't actually paid (or aren't legacy), they get NOTHING.
     private var isBusinessMode: Bool {
         return vm.hasActiveSubscription
     }
-    
+
     var tabCount: Int {
         return isBusinessMode ? 3 : 2
     }
-    
+
     private var isScanTab: Bool { currentTab == 0 }
-    
+
     private var mapTabIndex: Int {
         return tabCount - 1
     }
-    
+
+    private var recordTabIndex: Int { 1 }
+
     private var topBarTitle: String {
         if currentTab == 0 { return "LookSee" }
         if currentTab == mapTabIndex { return "Map" }
         return "Record"
     }
-    
+
     var isActive: Bool = true
-    
+
     var body: some View {
         NavigationStack {
-            ZStack {
-                Color(uiColor: .systemBackground)
-                    .ignoresSafeArea()
-                
-                TabView(selection: $currentTab) {
-                    LandmarkScan(
-                        onTap: revealChromeThenFade,
-                        isDetecting: $isDetecting,
-                        isNavVisible: $chromeVisible
-                    )
-                    .tag(0)
+            GeometryReader { proxy in
+                let pageWidth = proxy.size.width
 
-                    if isBusinessMode {
-                        LandmarkRecord { landmarkId in
-                            pendingUploadLandmarkId = landmarkId
-                            withAnimation(.easeInOut(duration: 0.25)) { currentTab = 0 }
-                        }
-                        .safeAreaInset(edge: .top) { Color.clear.frame(height: 45) }
-                        .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 90) }
-                        .tag(1)
-                    }
-                    
-                    LandmarkMapView()
-                        .safeAreaInset(edge: .top) { Color.clear.frame(height: 45) }
-                        .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 90) }
-                        .tag(mapTabIndex)
-                }
-                .scrollDismissesKeyboard(.immediately)
-                .ignoresSafeArea()
-                .toolbar(.hidden, for: .tabBar)
-                .animation(.spring(response: 0.35, dampingFraction: 0.8), value: currentTab)
-                .onChange(of: currentTab) { _, _ in revealChromeThenFade() }
-                
-                .onChange(of: isDetecting) { _, detecting in
-                    if detecting && isScanTab {
-                        chromeFadeTask?.cancel()
-                        withAnimation(.easeOut(duration: 0.1)) { chromeVisible = false }
-                    }
-                }
-                
-                if currentTab == mapTabIndex && !infoView.infoView {
-                    mapEdgeSwipeZones
-                }
-                
-                if !infoView.infoView {
-                    VStack(spacing: 0) {
-                        if chromeVisible {
-                            topBar
-                                .transition(.opacity)
-                        }
-
-                        Spacer()
-
-                        if chromeVisible || !isScanTab {
-                            bottomBar
-                                .transition(
-                                    .move(edge: .bottom)
-                                        .combined(with: .opacity)
-                                )
-                        }
-                    }
-                    .transition(.opacity)
-                }
-                
-                if showSignUpPrompt { signUpPromptOverlay }
-                
-                if showSideMenu {
-                    Color.black.opacity(0.4)
+                ZStack {
+                    Color(uiColor: .systemBackground)
                         .ignoresSafeArea()
-                        .onTapGesture {
-                            withAnimation(.easeOut(duration: 0.25)) { showSideMenu = false }
+
+                    pager()
+                        .onChange(of: currentTab) { _, _ in revealChromeThenFade() }
+                        .onChange(of: isDetecting) { _, detecting in
+                            if detecting && isScanTab {
+                                chromeFadeTask?.cancel()
+                                withAnimation(.easeOut(duration: 0.1)) { chromeVisible = false }
+                            }
                         }
+                        // Full-width live-tracking swipe — active on any tab
+                        // except Map, where the map's own pan/zoom gestures
+                        // need the whole surface (edge zones handle that case).
+                        .simultaneousGesture(
+                            currentTab != mapTabIndex
+                                ? DragGesture(minimumDistance: 12)
+                                    .onChanged { value in
+                                        guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                                        dragOffset = clampedDragOffset(value.translation.width, width: pageWidth)
+                                    }
+                                    .onEnded { value in
+                                        guard abs(value.translation.width) > abs(value.translation.height) else {
+                                            resetDrag()
+                                            return
+                                        }
+                                        commitDrag(
+                                            translation: value.translation.width,
+                                            predicted: value.predictedEndTranslation.width,
+                                            width: pageWidth
+                                        )
+                                    }
+                                : nil
+                        )
+
+                    if currentTab == mapTabIndex && !infoView.infoView {
+                        mapEdgeSwipeZones(width: pageWidth)
+                    }
+
+                    if !infoView.infoView {
+                        VStack(spacing: 0) {
+                            if chromeVisible {
+                                topBar.transition(.opacity)
+                            }
+                            Spacer()
+                            if chromeVisible || !isScanTab {
+                                bottomBar.transition(.move(edge: .bottom).combined(with: .opacity))
+                            }
+                        }
+                        .animation(.easeOut(duration: 0.3), value: chromeVisible)
                         .transition(.opacity)
-                }
-                
-                GeometryReader { proxy in
+                    }
+
+                    if showSignUpPrompt { signUpPromptOverlay }
+
+                    if showSideMenu {
+                        Color.black.opacity(0.4)
+                            .ignoresSafeArea()
+                            .onTapGesture {
+                                withAnimation(.easeOut(duration: 0.25)) { showSideMenu = false }
+                            }
+                            .transition(.opacity)
+                    }
+
                     HStack(spacing: 0) {
                         Spacer()
                         Settings()
                             .environmentObject(vm)
-                            .frame(width: proxy.size.width * 0.75)
+                            .frame(width: pageWidth * 0.75)
                             .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
-                            .offset(x: showSideMenu ? 0 : proxy.size.width)
+                            .offset(x: showSideMenu ? 0 : pageWidth)
                     }
-                }
-                .animation(.easeOut(duration: 0.25), value: showSideMenu)
+                    .animation(.easeOut(duration: 0.25), value: showSideMenu)
 
-                // Present the popup at the root level so it always sits above
-                // the scan screen, top bar, bottom bar, and side menu.
-                if infoView.infoView {
-                    ZStack {
-                        Color.black
-                            .opacity(0.45)
-                            .ignoresSafeArea()
-                            .onTapGesture {
-                                withAnimation(
-                                    .spring(
-                                        response: 0.35,
-                                        dampingFraction: 0.82
-                                    )
-                                ) {
-                                    infoView.dismissLandmark()
+                    // Present the popup at the root level so it always sits above
+                    // the scan screen, top bar, bottom bar, and side menu.
+                    if infoView.infoView {
+                        ZStack {
+                            Color.black
+                                .opacity(0.45)
+                                .ignoresSafeArea()
+                                .onTapGesture {
+                                    withAnimation(
+                                        .spring(
+                                            response: 0.35,
+                                            dampingFraction: 0.82
+                                        )
+                                    ) {
+                                        infoView.dismissLandmark()
+                                    }
                                 }
-                            }
 
-                        PopUp()
-                    }
-                    .zIndex(100)
-                    .transition(
-                        .opacity.combined(
-                            with: .scale(scale: 0.98)
+                            PopUp()
+                        }
+                        .zIndex(100)
+                        .transition(
+                            .opacity.combined(
+                                with: .scale(scale: 0.98)
+                            )
                         )
-                    )
-                }
-
-                
-            }
-            .simultaneousGesture(
-                DragGesture(minimumDistance: 30).onEnded { value in
-                    guard !infoView.infoView else {
-                        return
                     }
-
-                    if showSideMenu {
+                }
+                .simultaneousGesture(
+                    // Side-menu swipe-to-dismiss stays independent of paging.
+                    DragGesture(minimumDistance: 30).onEnded { value in
+                        guard showSideMenu else { return }
                         if value.translation.width > 40 {
                             withAnimation(.easeOut(duration: 0.25)) { showSideMenu = false }
                         }
-                        return
                     }
-                    
-                    guard currentTab != mapTabIndex else { return }
-                    if abs(value.translation.width) > abs(value.translation.height) {
-                        if value.translation.width > 40 && currentTab > 0 {
-                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                            withAnimation(.interactiveSpring(response: 0.35, dampingFraction: 0.85, blendDuration: 0.2)) { currentTab -= 1 }
-                        } else if value.translation.width < -40 && currentTab < (tabCount - 1) {
-                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                            withAnimation(.interactiveSpring(response: 0.35, dampingFraction: 0.85, blendDuration: 0.2)) { currentTab += 1 }
+                )
+                .onChange(of: infoView.infoView) { _, isShowingPopup in
+                    chromeFadeTask?.cancel()
+
+                    if isShowingPopup {
+                        showSideMenu = false
+
+                        withAnimation(.easeOut(duration: 0.15)) {
+                            chromeVisible = false
                         }
+                    } else {
+                        revealChromeThenFade()
                     }
                 }
-            )
-            .onChange(of: infoView.infoView) { _, isShowingPopup in
-                chromeFadeTask?.cancel()
-
-                if isShowingPopup {
-                    showSideMenu = false
-
-                    withAnimation(.easeOut(duration: 0.15)) {
-                        chromeVisible = false
-                    }
-                } else {
-                    revealChromeThenFade()
-                }
+                .animation(
+                    .spring(
+                        response: 0.35,
+                        dampingFraction: 0.82
+                    ),
+                    value: infoView.infoView
+                )
             }
-            .animation(
-                .spring(
-                    response: 0.35,
-                    dampingFraction: 0.82
-                ),
-                value: infoView.infoView
-            )
             .fullScreenCover(isPresented: $showSignUp) {
                 NavigationStack {
                     Signup(onSignupSuccess: { _ in showSignUp = false }, onGoToLogin: { showSignUp = false })
@@ -237,28 +218,141 @@ struct Buttons: View {
             UITabBar.appearance().isHidden = true
         }
     }
-    
-    private var mapEdgeSwipeZones: some View {
+
+    // MARK: - Pager
+
+    /// Lays every tab's content side-by-side in one HStack and shifts it by
+    /// -currentTab * width, live-adjusted by dragOffset while swiping. This
+    /// keeps the adjacent page mounted and visible as it slides in, instead
+    /// of only appearing after the gesture ends.
+    private func pager() -> some View {
+        GeometryReader { proxy in
+            let width = proxy.size.width
+
+            HStack(spacing: 0) {
+                ForEach(0..<tabCount, id: \.self) { index in
+                    pageView(for: index)
+                        .frame(width: width)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+            .offset(x: -CGFloat(currentTab) * width + dragOffset)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .clipped()
+            .ignoresSafeArea()
+        }
+    }
+
+    @ViewBuilder
+    private func pageView(for index: Int) -> some View {
+        if index == 0 {
+            LandmarkScan(
+                onTap: revealChromeThenFade,
+                isDetecting: $isDetecting,
+                isNavVisible: $chromeVisible
+            )
+        } else if isBusinessMode && index == recordTabIndex {
+            LandmarkRecord { landmarkId in
+                pendingUploadLandmarkId = landmarkId
+                withAnimation(.easeInOut(duration: 0.25)) { currentTab = 0 }
+            }
+            .safeAreaInset(edge: .top) { Color.clear.frame(height: 45) }
+            .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 90) }
+        } else if index == mapTabIndex {
+            LandmarkMapView()
+                .safeAreaInset(edge: .top) { Color.clear.frame(height: 45) }
+                .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 90) }
+        } else {
+            EmptyView()
+        }
+    }
+
+    // MARK: - Drag handling
+
+    /// Prevents dragging past the first or last tab from producing an
+    /// unbounded offset — light rubber-band resistance at the ends.
+    private func clampedDragOffset(_ translation: CGFloat, width: CGFloat) -> CGFloat {
+        if currentTab == 0 && translation > 0 {
+            return translation * 0.35
+        }
+        if currentTab == tabCount - 1 && translation < 0 {
+            return translation * 0.35
+        }
+        return translation
+    }
+
+    private func commitDrag(translation: CGFloat, predicted: CGFloat, width: CGFloat) {
+        let threshold = width * 0.28
+        // A fast flick should commit even if the finger didn't travel the
+        // full threshold distance — use whichever translation is larger.
+        let effective = abs(predicted) > abs(translation) ? predicted : translation
+
+        var newTab = currentTab
+        if effective < -threshold && currentTab < tabCount - 1 {
+            newTab += 1
+        } else if effective > threshold && currentTab > 0 {
+            newTab -= 1
+        }
+
+        if newTab != currentTab {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        }
+
+        withAnimation(.interactiveSpring(response: 0.32, dampingFraction: 0.86, blendDuration: 0.15)) {
+            currentTab = newTab
+            dragOffset = 0
+        }
+    }
+
+    private func resetDrag() {
+        withAnimation(.interactiveSpring(response: 0.32, dampingFraction: 0.86, blendDuration: 0.15)) {
+            dragOffset = 0
+        }
+    }
+
+    /// Narrow live-drag strips on the Map tab, so swiping in/out of the map
+    /// works without hijacking the map's own pan/zoom gestures everywhere else.
+    private func mapEdgeSwipeZones(width: CGFloat) -> some View {
         HStack {
-            Color.white.opacity(0.001).frame(width: 40).frame(maxHeight: .infinity)
-                .highPriorityGesture(DragGesture(minimumDistance: 15).onEnded { value in
-                    if value.translation.width > 30 && currentTab > 0 {
-                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { currentTab -= 1 }
-                    }
-                })
+            Color.white.opacity(0.001)
+                .frame(width: 40)
+                .frame(maxHeight: .infinity)
+                .highPriorityGesture(
+                    DragGesture(minimumDistance: 12)
+                        .onChanged { value in
+                            guard value.translation.width > 0, currentTab > 0 else { return }
+                            dragOffset = clampedDragOffset(value.translation.width, width: width)
+                        }
+                        .onEnded { value in
+                            commitDrag(
+                                translation: value.translation.width,
+                                predicted: value.predictedEndTranslation.width,
+                                width: width
+                            )
+                        }
+                )
             Spacer()
-            Color.white.opacity(0.001).frame(width: 40).frame(maxHeight: .infinity)
-                .highPriorityGesture(DragGesture(minimumDistance: 15).onEnded { value in
-                    if value.translation.width < -30 && currentTab < (tabCount - 1) {
-                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { currentTab += 1 }
-                    }
-                })
+            Color.white.opacity(0.001)
+                .frame(width: 40)
+                .frame(maxHeight: .infinity)
+                .highPriorityGesture(
+                    DragGesture(minimumDistance: 12)
+                        .onChanged { value in
+                            guard value.translation.width < 0, currentTab < tabCount - 1 else { return }
+                            dragOffset = clampedDragOffset(value.translation.width, width: width)
+                        }
+                        .onEnded { value in
+                            commitDrag(
+                                translation: value.translation.width,
+                                predicted: value.predictedEndTranslation.width,
+                                width: width
+                            )
+                        }
+                )
         }
         .ignoresSafeArea()
     }
-    
+
     private var topBar: some View {
         HStack(spacing: 0) {
             Button {
@@ -267,9 +361,9 @@ struct Buttons: View {
             } label: {
                 NavButton(icon: "info.circle", label: "Info")
             }
-            
+
             Spacer()
-            
+
             Text(topBarTitle)
                 .font(.system(size: 24, weight: .bold, design: .rounded))
                 .foregroundStyle(.white)
@@ -281,14 +375,8 @@ struct Buttons: View {
                         else { showBusinessAlert = true }
                     }
                 )
-                .sheet(isPresented: $showPromotion) { PromotionEditor() }
-                .alert("Premium Account Required", isPresented: $showBusinessAlert) {
-                    Button("OK", role: .cancel) {}
-                } message: {
-                    Text("You need an active subscription to access the Promotion Editor.")
-                }
             Spacer()
-            
+
             Button {
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 withAnimation(.easeOut(duration: 0.25)) {
@@ -302,12 +390,12 @@ struct Buttons: View {
         .padding(.top, 16)
         .padding(.bottom, 10)
     }
-    
+
     private var bottomBar: some View {
         HStack(spacing: 0) {
             tabButton(title: "Scan", icon: "camera.aperture", tab: 0, locked: false)
             if isBusinessMode {
-                tabButton(title: "Record", icon: "video", tab: 1, locked: false)
+                tabButton(title: "Record", icon: "video", tab: recordTabIndex, locked: false)
             }
             tabButton(title: "Map", icon: "map", tab: mapTabIndex, locked: false)
         }
@@ -319,11 +407,11 @@ struct Buttons: View {
         .padding(.horizontal, 24)
         .padding(.bottom, 12)
     }
-    
+
     private var tutorialContent: some View {
         ZStack {
             Color(uiColor: .systemBackground).ignoresSafeArea()
-            
+
             VStack(spacing: 24) {
                 Group {
                     if currentTab == 0 {
@@ -332,7 +420,7 @@ struct Buttons: View {
                             .foregroundStyle(Color(red: 0.22, green: 0.49, blue: 1.00))
                             .scaleEffect(isReticlePulsing ? 1.15 : 0.95)
                             .opacity(isReticlePulsing ? 1.0 : 0.4)
-                        
+
                         VStack(spacing: 8) {
                             Text("How to Scan")
                                 .font(.system(size: 24, weight: .bold, design: .rounded))
@@ -346,7 +434,7 @@ struct Buttons: View {
                             .font(.system(size: 60))
                             .foregroundStyle(Color(red: 0.22, green: 0.49, blue: 1.00))
                             .shadow(color: Color(red: 0.22, green: 0.49, blue: 1.00).opacity(0.5), radius: 10, x: 0, y: 5)
-                        
+
                         VStack(spacing: 8) {
                             Text("Explore the Map")
                                 .font(.system(size: 24, weight: .bold, design: .rounded))
@@ -360,7 +448,7 @@ struct Buttons: View {
                             .font(.system(size: 60))
                             .foregroundStyle(Color(red: 0.22, green: 0.49, blue: 1.00))
                             .shadow(color: Color(red: 0.22, green: 0.49, blue: 1.00).opacity(0.5), radius: 10, x: 0, y: 5)
-                        
+
                         VStack(spacing: 8) {
                             Text("Record Landmark")
                                 .font(.system(size: 24, weight: .bold, design: .rounded))
@@ -373,19 +461,19 @@ struct Buttons: View {
                 }
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
-                
+
                 Spacer()
             }
             .padding(.top, 32)
         }
     }
-    
+
     private func revealChromeThenFade() {
         chromeFadeTask?.cancel()
         chromeVisible = true
         scheduleChromeFadeIfNeeded()
     }
-    
+
     private func scheduleChromeFadeIfNeeded() {
         guard isScanTab else { return }
         chromeFadeTask = Task {
@@ -398,13 +486,13 @@ struct Buttons: View {
             }
         }
     }
-    
+
     private func viewfinderTimingReset() {
         withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) {
             isReticlePulsing = true
         }
     }
-    
+
     var signUpPromptOverlay: some View {
         ZStack {
             Color.black.opacity(0.4).ignoresSafeArea()
@@ -464,7 +552,7 @@ struct Buttons: View {
             .padding(.horizontal, 24)
         }
     }
-    
+
     @ViewBuilder
     func tabButton(title: String, icon: String, tab: Int, locked: Bool) -> some View {
         VStack(spacing: 4) {
@@ -484,7 +572,7 @@ struct Buttons: View {
             else { withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { currentTab = tab } }
         })
     }
-    
+
     private struct NavButton: View {
         let icon: String
         let label: String
@@ -503,4 +591,3 @@ struct Buttons: View {
         }
     }
 }
-
