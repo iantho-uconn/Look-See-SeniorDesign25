@@ -7,6 +7,8 @@
 //  Updated: TabView-based paging replaced with a manual HStack pager so
 //  swiping shows a live, finger-following preview of the adjacent page
 //  (camera/record/map) instead of only snapping after release.
+//  Merged back in: VariableContainer/PopUp landmark-info overlay, which the
+//  pager rewrite had dropped.
 //
 
 import SwiftUI
@@ -16,7 +18,7 @@ struct Buttons: View {
     @EnvironmentObject var authState: AuthState
     
     @ObservedObject private var infoView = VariableContainer.shared
-    
+
     @State private var showPromotion = false
     @State private var showBusinessAlert = false
     @State private var showSignUpPrompt = false
@@ -81,8 +83,10 @@ struct Buttons: View {
                         // Full-width live-tracking swipe — active on any tab
                         // except Map, where the map's own pan/zoom gestures
                         // need the whole surface (edge zones handle that case).
+                        // Disabled entirely while the landmark info popup is
+                        // showing, so swiping doesn't fight with the popup.
                         .simultaneousGesture(
-                            currentTab != mapTabIndex
+                            (currentTab != mapTabIndex && !infoView.infoView)
                                 ? DragGesture(minimumDistance: 12)
                                     .onChanged { value in
                                         guard abs(value.translation.width) > abs(value.translation.height) else { return }
@@ -116,8 +120,8 @@ struct Buttons: View {
                                 bottomBar.transition(.move(edge: .bottom).combined(with: .opacity))
                             }
                         }
-                        .animation(.easeOut(duration: 0.3), value: chromeVisible)
                         .transition(.opacity)
+                        .animation(.easeOut(duration: 0.3), value: chromeVisible)
                     }
 
                     if showSignUpPrompt { signUpPromptOverlay }
@@ -141,20 +145,16 @@ struct Buttons: View {
                     }
                     .animation(.easeOut(duration: 0.25), value: showSideMenu)
 
-                    // Present the popup at the root level so it always sits above
-                    // the scan screen, top bar, bottom bar, and side menu.
+                    // Present the landmark info popup at the root level so it
+                    // always sits above the pager, top bar, bottom bar, and
+                    // side menu.
                     if infoView.infoView {
                         ZStack {
                             Color.black
                                 .opacity(0.45)
                                 .ignoresSafeArea()
                                 .onTapGesture {
-                                    withAnimation(
-                                        .spring(
-                                            response: 0.35,
-                                            dampingFraction: 0.82
-                                        )
-                                    ) {
+                                    withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
                                         infoView.dismissLandmark()
                                     }
                                 }
@@ -162,16 +162,13 @@ struct Buttons: View {
                             PopUp()
                         }
                         .zIndex(100)
-                        .transition(
-                            .opacity.combined(
-                                with: .scale(scale: 0.98)
-                            )
-                        )
+                        .transition(.opacity.combined(with: .scale(scale: 0.98)))
                     }
                 }
                 .simultaneousGesture(
                     // Side-menu swipe-to-dismiss stays independent of paging.
                     DragGesture(minimumDistance: 30).onEnded { value in
+                        guard !infoView.infoView else { return }
                         guard showSideMenu else { return }
                         if value.translation.width > 40 {
                             withAnimation(.easeOut(duration: 0.25)) { showSideMenu = false }
@@ -192,10 +189,7 @@ struct Buttons: View {
                     }
                 }
                 .animation(
-                    .spring(
-                        response: 0.35,
-                        dampingFraction: 0.82
-                    ),
+                    .spring(response: 0.35, dampingFraction: 0.82),
                     value: infoView.infoView
                 )
             }
@@ -375,6 +369,12 @@ struct Buttons: View {
                         else { showBusinessAlert = true }
                     }
                 )
+                .sheet(isPresented: $showPromotion) { PromotionEditor() }
+                .alert("Premium Account Required", isPresented: $showBusinessAlert) {
+                    Button("OK", role: .cancel) {}
+                } message: {
+                    Text("You need an active subscription to access the Promotion Editor.")
+                }
             Spacer()
 
             Button {
