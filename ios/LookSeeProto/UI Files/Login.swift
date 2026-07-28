@@ -22,6 +22,9 @@ struct Login: View {
     // 🚀 NEW: State variables to catch the unverified email loop
     @State private var showVerificationAlert = false
     @State private var verificationCode = ""
+    
+    @FocusState private var IsKeyboard: Bool
+
 
     var onSignedIn: () -> Void
     var onGoToSignup: () -> Void
@@ -78,6 +81,7 @@ struct Login: View {
                                     .textContentType(.username)
                                     .autocorrectionDisabled(true)
                                     .textInputAutocapitalization(.never)
+                                    .focused($IsKeyboard)
                                     .keyboardType(.emailAddress)
                                     .padding(14)
                                     .background(Color(red: 0.18, green: 0.18, blue: 0.24))
@@ -100,6 +104,7 @@ struct Login: View {
                                     .foregroundStyle(Color.white.opacity(0.5))
 
                                 SecureField("••••••••", text: $password)
+                                    .focused($IsKeyboard)
                                     .textContentType(.password)
                                     .autocorrectionDisabled(true)
                                     .padding(14)
@@ -243,6 +248,10 @@ struct Login: View {
                     }
                     .frame(minHeight: geo.size.height)
                 }
+                .contentShape(Rectangle())
+                            .onTapGesture {
+                                IsKeyboard = false
+                            }
                 .scrollDismissesKeyboard(.interactively)
             }
         }
@@ -273,6 +282,7 @@ struct Login: View {
         // 🚀 THE FIX: The missing link verification popup
         .alert("Verify Email", isPresented: $showVerificationAlert) {
             TextField("Verification Code", text: $verificationCode)
+                .focused($IsKeyboard)
                 .keyboardType(.numberPad)
             
             Button("Verify") {
@@ -286,7 +296,8 @@ struct Login: View {
             Button("Cancel", role: .cancel) {
                 verificationCode = ""
             }
-        } message: {
+        }
+        message: {
             Text("Enter the 6-digit code sent to \(sanitizedUsername).")
         }
     }

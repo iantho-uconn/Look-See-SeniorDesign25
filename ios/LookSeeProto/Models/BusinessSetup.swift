@@ -26,6 +26,9 @@ struct BusinessSetup: View {
     @State private var showPaymentSheet = false
     @State private var paymentStatusMessage: String?
     
+    @FocusState private var numIsFocused: Bool
+
+    
     // Strict 10-digit US phone validation
     private var cleanPhoneDigits: String {
         contactPhone.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
@@ -61,14 +64,21 @@ struct BusinessSetup: View {
                         }
                         
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("Contact Phone Number").font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary)
+                            Text("Contact Phone Number")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(.secondary)
+
                             TextField("10-digit phone number", text: $contactPhone)
+                                .focused($numIsFocused)
                                 .keyboardType(.numberPad)
                                 .onChange(of: contactPhone) { _, newValue in
                                     formatPhoneNumber(newValue)
                                 }
-                                .padding().background(Color.white.opacity(0.05)).cornerRadius(12).foregroundStyle(.white)
-                            
+                                .padding()
+                                .background(Color.white.opacity(0.05))
+                                .cornerRadius(12)
+                                .foregroundStyle(.white)
+
                             if !contactPhone.isEmpty && cleanPhoneDigits.count != 10 {
                                 Text("Please enter a valid 10-digit phone number.")
                                     .font(.system(size: 11))
@@ -102,6 +112,10 @@ struct BusinessSetup: View {
                     .background(isFormValid && !isProcessing ? Color(red: 0.22, green: 0.49, blue: 1.00) : Color.gray.opacity(0.3)).clipShape(RoundedRectangle(cornerRadius: 14))
                     .disabled(!isFormValid || isProcessing).padding(.horizontal, 24).padding(.bottom, 24)
                 }
+            }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                numIsFocused = false
             }
         }
         .background(

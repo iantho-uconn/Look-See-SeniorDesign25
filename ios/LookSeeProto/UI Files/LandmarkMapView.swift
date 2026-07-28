@@ -34,6 +34,9 @@ struct LandmarkMapView: View {
     @State private var promotedOnly = false
     @State private var selectedClusters: Set<String> = []
     
+    @FocusState private var IsKeyboard: Bool
+
+    
     private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00)
     private let promoColor = Color.orange
 
@@ -186,10 +189,21 @@ struct LandmarkMapView: View {
                         Toggle("Global Search (Everywhere)", isOn: $isGlobalSearch).tint(primaryColor).foregroundStyle(.primary).font(.system(size: 16, weight: .semibold))
                         if !isGlobalSearch {
                             Divider()
-                            HStack { Text("Distance:").font(.system(size: 16, weight: .semibold)).foregroundStyle(.primary); Spacer(); TextField("Miles", value: $searchRadiusMiles, format: .number).keyboardType(.decimalPad).textFieldStyle(.roundedBorder).frame(width: 80).multilineTextAlignment(.trailing); Text("mi").font(.system(size: 16, weight: .bold)).foregroundStyle(.gray) }
+                            HStack { Text("Distance:").font(.system(size: 16, weight: .semibold)).foregroundStyle(.primary); Spacer();
+                                TextField("Miles", value: $searchRadiusMiles, format: .number)
+                                    .focused($IsKeyboard)
+                                    .keyboardType(.decimalPad).textFieldStyle(.roundedBorder).frame(width: 80).multilineTextAlignment(.trailing); Text("mi").font(.system(size: 16, weight: .bold)).foregroundStyle(.gray) }
                             Slider(value: $searchRadiusMiles, in: 1...100, step: 1).tint(primaryColor)
                         }
-                    }.padding(20).background(Color(uiColor: .secondarySystemGroupedBackground)).clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                        
+                    }
+                    .contentShape(Rectangle())
+                    .simultaneousGesture(
+                        TapGesture().onEnded {
+                            print("tap detected please work inside if ")
+                            IsKeyboard = false
+                        }
+                    ).padding(20).background(Color(uiColor: .secondarySystemGroupedBackground)).clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
                     
                     VStack(alignment: .leading, spacing: 16) {
                         Text("Visibility").font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.gray).textCase(.uppercase)
@@ -214,6 +228,13 @@ struct LandmarkMapView: View {
                     }
                 }.padding(20)
             }
+            .contentShape(Rectangle())
+            .simultaneousGesture(
+                TapGesture().onEnded {
+                    print("tap detected please work")
+                    IsKeyboard = false
+                }
+            )
             .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
             .navigationTitle("Map Filters")
             .navigationBarTitleDisplayMode(.inline)

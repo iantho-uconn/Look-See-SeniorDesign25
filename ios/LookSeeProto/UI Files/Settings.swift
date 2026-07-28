@@ -19,6 +19,7 @@ class SettingsPresenter: ObservableObject {
     @Published var savedTokenCents: Int = 0
     
     @Published var justPurchased: Bool = false
+    
 }
 
 struct Settings: View {
@@ -418,6 +419,7 @@ struct BusinessProfileView: View {
     @EnvironmentObject var vm: AuthViewModel
     @State private var showEditSheet = false
 
+
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
@@ -480,13 +482,16 @@ struct BusinessProfileEditSheet: View {
     @State private var draftName: String = ""
     @State private var draftPhone: String = ""
     @State private var isSaving = false
+    @FocusState private var IsKeyboard: Bool
 
     var body: some View {
         NavigationStack {
             Form {
                 Section(header: Text("Public Business Info"), footer: Text("This information will be displayed when users scan your LookSee landmarks.")) {
                     TextField("Store Name", text: $draftName)
+                        .focused($IsKeyboard)
                     TextField("Phone Number", text: $draftPhone)
+                        .focused($IsKeyboard)
                         .keyboardType(.phonePad)
                         .onChange(of: draftPhone) { _, newValue in
                             let filtered = newValue.filter { "0123456789".contains($0) }
@@ -495,6 +500,11 @@ struct BusinessProfileEditSheet: View {
                         }
                 }
             }
+            
+            .contentShape(Rectangle())
+                        .onTapGesture {
+                            IsKeyboard = false
+                        }
             .navigationTitle("Edit Profile")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

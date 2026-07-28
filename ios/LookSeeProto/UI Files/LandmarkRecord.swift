@@ -58,6 +58,9 @@ struct LandmarkRecord: View {
     @StateObject private var uploadService = UploadService()
     @StateObject private var hardNegativeUploadService = HardNegativeUploadService()
     @StateObject private var locationManager = LocationManager()
+    
+    @FocusState private var IsKeyboard: Bool
+
 
     private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00)
     
@@ -111,6 +114,11 @@ struct LandmarkRecord: View {
                     Spacer(minLength: 40)
                 }.padding(.top, 16)
             }
+            .contentShape(Rectangle())
+                        .onTapGesture {
+                            print("tap detected in record page")
+                            IsKeyboard = false
+                        }
             .scrollDismissesKeyboard(.immediately)
             .safeAreaInset(edge: .top) { Color.clear.frame(height: 50) }
             
@@ -437,6 +445,7 @@ struct LandmarkRecord: View {
                     .textCase(.uppercase)
                 
                 TextField("e.g., Gampel Pavilion", text: $labelText)
+                    .focused($IsKeyboard)
                     .font(.system(size: 16, weight: .medium))
                     .padding(16)
                     .background(Color(uiColor: .secondarySystemGroupedBackground))
@@ -460,6 +469,7 @@ struct LandmarkRecord: View {
                 
                 ZStack(alignment: .bottomTrailing) {
                     TextField("e.g., Front entrance", text: $shortDescription, axis: .vertical)
+                        .focused($IsKeyboard)
                         .lineLimit(3...6)
                         .font(.system(size: 16, weight: .medium))
                         .padding(16)

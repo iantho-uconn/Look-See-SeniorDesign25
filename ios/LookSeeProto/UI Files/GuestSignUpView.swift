@@ -22,6 +22,8 @@ struct GuestSignUpView: View {
     @State private var isProcessing = false
     @State private var errorMessage = ""
     
+    @FocusState private var IsKeyboard: Bool
+    
     private var sanitizedEmail: String {
         email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
@@ -74,6 +76,7 @@ struct GuestSignUpView: View {
                                 VStack(alignment: .leading, spacing: 6) {
                                     Text("Email Address").font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary)
                                     TextField("name@example.com", text: $email)
+                                        .focused($IsKeyboard)
                                         .keyboardType(.emailAddress)
                                         .textInputAutocapitalization(.never)
                                         .autocorrectionDisabled(true)
@@ -83,6 +86,7 @@ struct GuestSignUpView: View {
                                 VStack(alignment: .leading, spacing: 6) {
                                     Text("Password").font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary)
                                     SecureField("Create a strong password", text: $password)
+                                        .focused($IsKeyboard)
                                         .padding().background(Color.white.opacity(0.05)).cornerRadius(12).foregroundStyle(.white)
                                     
                                     if !password.isEmpty && !isValidPassword(password) {
@@ -94,6 +98,7 @@ struct GuestSignUpView: View {
                                 VStack(alignment: .leading, spacing: 6) {
                                     Text("Phone Number").font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary)
                                     TextField("123-456-7890", text: $phoneNumber)
+                                        .focused($IsKeyboard)
                                         .keyboardType(.phonePad)
                                         .padding().background(Color.white.opacity(0.05)).cornerRadius(12).foregroundStyle(.white)
                                         .onChange(of: phoneNumber) { _, newValue in
@@ -110,6 +115,7 @@ struct GuestSignUpView: View {
                             VStack(alignment: .leading, spacing: 6) {
                                 Text("Verification Code").font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary)
                                 TextField("123456", text: $verificationCode)
+                                    .focused($IsKeyboard)
                                     .keyboardType(.numberPad)
                                     .font(.system(size: 24, weight: .bold, design: .monospaced))
                                     .multilineTextAlignment(.center)
@@ -145,7 +151,11 @@ struct GuestSignUpView: View {
                     }
                     .padding(.horizontal, 24)
                 }
-                .scrollDismissesKeyboard(.interactively)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    IsKeyboard = false
+                }
+                //.scrollDismissesKeyboard(.immediately)
             }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
