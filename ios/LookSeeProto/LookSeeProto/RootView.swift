@@ -14,7 +14,7 @@ struct RootView: View {
         case checkingSession
         case login
         case signup
-        case confirmSignup
+        //case confirmSignup
         case loadingModel
         case main
     }
@@ -58,17 +58,18 @@ struct RootView: View {
             Signup(
                 onSignupSuccess: { email in
                     pendingEmail = email
-                    appState = .confirmSignup
+                    appState = .loadingModel
+                    //appState = .confirmSignup
                 },
                 onGoToLogin: {
                     appState = .login
                 }
             )
 
-        case .confirmSignup:
-            ConfirmSignup(email: pendingEmail, onConfirmed: {
-                appState = .login
-            })
+//        case .confirmSignup:
+//            ConfirmSignup(email: pendingEmail, onConfirmed: {
+//                appState = .login
+//            })
 
         case .loadingModel:
             ModelLoadingScreen {
@@ -83,7 +84,7 @@ struct RootView: View {
                 .onChange(of: authState.didSignOut) { _, didSignOut in
                     if didSignOut {
                         authState.didSignOut = false
-                        appState = .login
+                        appState = .loadingModel
                     }
                 }
         }
