@@ -35,6 +35,9 @@ struct LandmarkMapView: View {
     @State private var selectedClusters: Set<String> = []
     
     @FocusState private var IsKeyboard: Bool
+    
+    private let topChromeReservedHeight: CGFloat = 80
+
 
     
     private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00)
@@ -73,92 +76,95 @@ struct LandmarkMapView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .top) {
-            Map(position: $cameraPosition) {
-                UserAnnotation()
-                ForEach(activeLandmarks) { landmark in
-                    Annotation(landmark.label, coordinate: CLLocationCoordinate2D(latitude: landmark.latitude, longitude: landmark.longitude)) {
-                        Button {
-                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                            withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) { selectedLandmark = landmark }
-                        } label: {
-                            VStack(spacing: 0) {
-                                if landmark.promotionEnabled {
-                                    Image(systemName: "crown.fill").font(.title3).foregroundStyle(.white).padding(8).background(Circle().fill(promoColor)).shadow(color: promoColor.opacity(0.8), radius: 6, x: 0, y: 2)
-                                } else {
-                                    Image(systemName: "mappin.circle.fill").font(.title).foregroundStyle(.white, primaryColor).background(Circle().fill(.white)).shadow(color: .black.opacity(0.3), radius: 4, x: 0, y: 2)
+        GeometryReader { proxy in
+            ZStack(alignment: .top) {
+                Map(position: $cameraPosition) {
+                    UserAnnotation()
+                    ForEach(activeLandmarks) { landmark in
+                        Annotation(landmark.label, coordinate: CLLocationCoordinate2D(latitude: landmark.latitude, longitude: landmark.longitude)) {
+                            Button {
+                                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                                withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) { selectedLandmark = landmark }
+                            } label: {
+                                VStack(spacing: 0) {
+                                    if landmark.promotionEnabled {
+                                        Image(systemName: "crown.fill").font(.title3).foregroundStyle(.white).padding(8).background(Circle().fill(promoColor)).shadow(color: promoColor.opacity(0.8), radius: 6, x: 0, y: 2)
+                                    } else {
+                                        Image(systemName: "mappin.circle.fill").font(.title).foregroundStyle(.white, primaryColor).background(Circle().fill(.white)).shadow(color: .black.opacity(0.3), radius: 4, x: 0, y: 2)
+                                    }
+                                    Image(systemName: "triangle.fill").font(.caption2).foregroundStyle(landmark.promotionEnabled ? promoColor : primaryColor).rotationEffect(.degrees(180)).offset(y: -2)
                                 }
-                                Image(systemName: "triangle.fill").font(.caption2).foregroundStyle(landmark.promotionEnabled ? promoColor : primaryColor).rotationEffect(.degrees(180)).offset(y: -2)
+                                .scaleEffect(selectedLandmark?.id == landmark.id ? 1.3 : 1.0)
                             }
-                            .scaleEffect(selectedLandmark?.id == landmark.id ? 1.3 : 1.0)
                         }
                     }
                 }
-            }
-            .mapControls {
-                MapUserLocationButton()
-                MapCompass()
-            }
-            // Reserves space at the bottom of the map's own layout so its
-            // internal Legal button repositions above the custom bottom bar,
-            // independent of any ancestor's safeAreaInset setup.
-            .safeAreaPadding(.bottom, mapBottomReservedHeight)
-            .ignoresSafeArea(edges: .top)
+                .mapControls {
+                }
+                .safeAreaPadding(.bottom, mapBottomReservedHeight)
+                .ignoresSafeArea(edges: .top)
 
-            VStack(alignment: .trailing, spacing: 16) {
-                HStack(spacing: 12) {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 18, weight: .bold))
-                        .foregroundStyle(primaryColor)
-                    
-                    TextField("", text: $searchText, prompt: Text("Search landmarks...").foregroundStyle(.secondary))
-                        .font(.system(size: 16, weight: .medium, design: .rounded))
-                        .foregroundStyle(.primary)
-                        .autocorrectionDisabled()
-                        .submitLabel(.search)
-                        .onSubmit {
-                            if let firstMatch = activeLandmarks.first {
-                                withAnimation(.easeInOut(duration: 1.0)) {
-                                    cameraPosition = .region(MKCoordinateRegion(center: CLLocationCoordinate2D(latitude: firstMatch.latitude, longitude: firstMatch.longitude), span: MKCoordinateSpan(latitudeDelta: 0.02, longitudeDelta: 0.02)))
+                VStack(alignment: .trailing, spacing: 16) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundStyle(primaryColor)
+                        
+                        TextField("", text: $searchText, prompt: Text("Search landmarks...").foregroundStyle(.secondary))
+                            .font(.system(size: 16, weight: .medium, design: .rounded))
+                            .foregroundStyle(.primary)
+                            .autocorrectionDisabled()
+                            .submitLabel(.search)
+                            .onSubmit {
+                                if let firstMatch = activeLandmarks.first {
+                                    withAnimation(.easeInOut(duration: 1.0)) {
+                                        cameraPosition = .region(MKCoordinateRegion(center: CLLocationCoordinate2D(latitude: firstMatch.latitude, longitude: firstMatch.longitude), span: MKCoordinateSpan(latitudeDelta: 0.02, longitudeDelta: 0.02)))
+                                    }
                                 }
                             }
+                        
+                        if !searchText.isEmpty {
+                            Button {
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                searchText = ""
+                            } label: {
+                                Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                            }
                         }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 14)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    .shadow(color: .black.opacity(0.15), radius: 15, x: 0, y: 5)
+                    .padding(.horizontal, 20)
                     
-                    if !searchText.isEmpty {
-                        Button {
-                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                            searchText = ""
-                        } label: {
-                            Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                    Button {
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        showFilterSheet = true
+                    } label: {
+                        ZStack(alignment: .topTrailing) {
+                            Image(systemName: "slider.horizontal.3")
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundStyle(.primary)
+                                .frame(width: 50, height: 50)
+                                .background(.regularMaterial, in: Circle())
+                                .shadow(color: .black.opacity(0.15), radius: 10, x: 0, y: 5)
+                                
+                            if myUploadsOnly || promotedOnly || !selectedClusters.isEmpty {
+                                Circle().fill(promoColor).frame(width: 14, height: 14).overlay(Circle().stroke(Color(uiColor: .systemBackground), lineWidth: 2)).offset(x: -2, y: 2)
+                            }
                         }
                     }
+                    .padding(.trailing, 20)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 14)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-                .shadow(color: .black.opacity(0.15), radius: 15, x: 0, y: 5)
-                .padding(.horizontal, 20)
-                
-                Button {
-                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                    showFilterSheet = true
-                } label: {
-                    ZStack(alignment: .topTrailing) {
-                        Image(systemName: "slider.horizontal.3")
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundStyle(.primary)
-                            .frame(width: 50, height: 50)
-                            .background(.regularMaterial, in: Circle())
-                            .shadow(color: .black.opacity(0.15), radius: 10, x: 0, y: 5)
-                            
-                        if myUploadsOnly || promotedOnly || !selectedClusters.isEmpty {
-                            Circle().fill(promoColor).frame(width: 14, height: 14).overlay(Circle().stroke(Color(uiColor: .systemBackground), lineWidth: 2)).offset(x: -2, y: 2)
-                        }
-                    }
-                }
-                .padding(.trailing, 20)
+                // Dynamic top offset: device's own safe area (Dynamic Island vs
+                // notch vs none) + the fixed 45pt Buttons.swift reserves as its
+                // top safeAreaInset + the topBar's own rendered height + a
+                // small buffer, instead of one hardcoded constant that only
+                // matched one specific device.
+                .padding(.top, proxy.safeAreaInsets.top + topChromeReservedHeight)
             }
-            .padding(.top, 65)
+            .ignoresSafeArea(edges: .top)
         }
         .task {
             if !locationManager.isAuthorized { locationManager.requestPermissionIfNeeded() }
@@ -179,7 +185,7 @@ struct LandmarkMapView: View {
             QuickUploadView(landmark: landmark)
         }
     }
-
+    
     private var filterMenuSheet: some View {
         NavigationStack {
             ScrollView {
