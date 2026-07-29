@@ -37,12 +37,12 @@ struct Settings: View {
         return vm.isSignedIn && !vm.userEmail.isEmpty
     }
 
-    private var dynamicPlanTitle: String {
+    private var dynamicPlanTitle: LocalizedStringKey {
         if !vm.hasActiveSubscription { return "Free Account" }
         if UserDefaults.standard.bool(forKey: "isFreeTrial_\(vm.userEmail)") {
             return "14-Day Free Trial"
         }
-        return "Yearly Premium"
+        return "Yearly Subscription"
     }
 
     var body: some View {
@@ -52,19 +52,24 @@ struct Settings: View {
                 // 1. PROFILE HEADER
                 VStack(spacing: 0) {
                     if !isFullyLoggedIn {
-                        profileHeader(icon: "person.crop.circle.badge.questionmark", iconColor: .gray, title: "Guest User", subtitle: "Browsing anonymously")
-                            .task {
-                                if !presenter.justPurchased {
-                                    await vm.checkSession()
-                                }
+                        HStack(spacing: 16) {
+                            Image(systemName: "person.crop.circle.badge.questionmark").font(.system(size: 48, weight: .light)).foregroundStyle(.gray)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Guest User").font(.system(size: 20, weight: .bold, design: .rounded)).foregroundStyle(.primary)
+                                Text("Browsing anonymously").font(.system(size: 14, weight: .medium)).foregroundStyle(.secondary)
                             }
+                            Spacer()
+                        }
+                        .task { if !presenter.justPurchased { await vm.checkSession() } }
                     } else {
-                        profileHeader(
-                            icon: "person.crop.circle.badge.checkmark",
-                            iconColor: primaryColor,
-                            title: vm.userEmail,
-                            subtitle: dynamicPlanTitle
-                        )
+                        HStack(spacing: 16) {
+                            Image(systemName: "person.crop.circle.badge.checkmark").font(.system(size: 48, weight: .light)).foregroundStyle(primaryColor)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(verbatim: vm.userEmail).font(.system(size: 20, weight: .bold, design: .rounded)).foregroundStyle(.primary)
+                                Text(dynamicPlanTitle).font(.system(size: 14, weight: .medium)).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                        }
                         .task {
                             if !presenter.justPurchased {
                                 await vm.fetchUserDetails()
@@ -135,7 +140,11 @@ struct Settings: View {
                         VStack(spacing: 0) {
                             if vm.hasActiveSubscription {
                                 NavigationLink { BusinessProfileView().environmentObject(vm) } label: {
-                                    settingsRow(icon: "storefront.fill", iconBg: .blue, title: "Business Profile", subtitle: vm.storeName.isEmpty ? "Update store name and phone number." : vm.storeName)
+                                    if vm.storeName.isEmpty {
+                                        settingsRow(icon: "storefront.fill", iconBg: .blue, title: "Business Profile", subtitle: "Update store name and phone number.")
+                                    } else {
+                                        settingsRow(icon: "storefront.fill", iconBg: .blue, title: "Business Profile", subtitle: LocalizedStringKey(vm.storeName))
+                                    }
                                 }
                             } else {
                                 Button {
@@ -175,7 +184,11 @@ struct Settings: View {
                             HStack {
                                 Text("Status").font(.system(size: 16, weight: .semibold))
                                 Spacer()
-                                Text(!vm.hasActiveSubscription ? "Inactive" : "Active").foregroundStyle(!vm.hasActiveSubscription ? .red : .green).font(.system(size: 15, weight: .bold))
+                                if !vm.hasActiveSubscription {
+                                    Text("Inactive").foregroundStyle(.red).font(.system(size: 15, weight: .bold))
+                                } else {
+                                    Text("Active").foregroundStyle(.green).font(.system(size: 15, weight: .bold))
+                                }
                             }
                             
                             Divider()
@@ -185,16 +198,15 @@ struct Settings: View {
                                     presenter.subscriptionStartingTab = 0
                                     presenter.showSubscriptionFlow = true
                                 } label: {
-                                    Text(!vm.hasActiveSubscription ? "Subscribe" : "Manage Plan")
-                                        .font(.system(size: 15, weight: .bold, design: .rounded))
-                                        .frame(maxWidth: .infinity).padding(.vertical, 12)
-                                        .background(primaryColor.opacity(0.1)).foregroundStyle(primaryColor).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                    if !vm.hasActiveSubscription {
+                                        Text("Subscribe").font(.system(size: 15, weight: .bold, design: .rounded)).frame(maxWidth: .infinity).padding(.vertical, 12).background(primaryColor.opacity(0.1)).foregroundStyle(primaryColor).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                    } else {
+                                        Text("Manage Plan").font(.system(size: 15, weight: .bold, design: .rounded)).frame(maxWidth: .infinity).padding(.vertical, 12).background(primaryColor.opacity(0.1)).foregroundStyle(primaryColor).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                    }
                                 }
                                 
                                 Button { showCancelAlert = true } label: {
-                                    Text("Cancel").font(.system(size: 15, weight: .bold, design: .rounded))
-                                        .frame(maxWidth: .infinity).padding(.vertical, 12)
-                                        .background(Color.red.opacity(0.1)).foregroundStyle(.red).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                    Text("Cancel").font(.system(size: 15, weight: .bold, design: .rounded)).frame(maxWidth: .infinity).padding(.vertical, 12).background(Color.red.opacity(0.1)).foregroundStyle(.red).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                                 }
                             }
                         }
@@ -264,18 +276,7 @@ struct Settings: View {
         }
     }
     
-    private func profileHeader(icon: String, iconColor: Color, title: String, subtitle: String) -> some View {
-        HStack(spacing: 16) {
-            Image(systemName: icon).font(.system(size: 48, weight: .light)).foregroundStyle(iconColor)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title).font(.system(size: 20, weight: .bold, design: .rounded)).foregroundStyle(.primary)
-                Text(subtitle).font(.system(size: 14, weight: .medium)).foregroundStyle(.secondary)
-            }
-            Spacer()
-        }
-    }
-    
-    private func settingsRow(icon: String, iconBg: Color, title: String, subtitle: String? = nil, showDivider: Bool = false) -> some View {
+    private func settingsRow(icon: String, iconBg: Color, title: LocalizedStringKey, subtitle: LocalizedStringKey? = nil, showDivider: Bool = false) -> some View {
         VStack(spacing: 0) {
             HStack(spacing: 16) {
                 Image(systemName: icon).font(.system(size: 18)).foregroundStyle(.white).frame(width: 36, height: 36).background(iconBg).clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -302,7 +303,7 @@ struct Settings: View {
                         Image(systemName: "crown.fill").foregroundStyle(.white).font(.system(size: 20))
                     }.frame(width: 48, height: 48).shadow(color: primaryColor.opacity(0.5), radius: 8, x: 0, y: 4)
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Join LookSee Premium").font(.system(size: 18, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                        Text("Join LookSee").font(.system(size: 18, weight: .bold, design: .rounded)).foregroundStyle(.white)
                         Text("Upload landmarks and manage data.").font(.system(size: 14, weight: .medium)).foregroundStyle(.white.opacity(0.7))
                     }
                 }
@@ -344,6 +345,31 @@ struct DeepSettingsView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
+                
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("App Language").font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(.secondary).textCase(.uppercase).padding(.horizontal, 20)
+                    
+                    Button {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        if let url = URL(string: UIApplication.openSettingsURLString) {
+                            UIApplication.shared.open(url)
+                        }
+                    } label: {
+                        HStack {
+                            Text("App Language").font(.system(size: 16, weight: .semibold)).foregroundStyle(.primary)
+                            Spacer()
+                            Text("System Settings").font(.system(size: 15)).foregroundStyle(.secondary)
+                            Image(systemName: "arrow.up.forward.app").font(.system(size: 14, weight: .semibold)).foregroundStyle(.tertiary)
+                        }
+                        .padding(16)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color(uiColor: .secondarySystemGroupedBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2)
+                    }
+                    .padding(.horizontal)
+                }
+                
                 VStack(spacing: 6) {
                     Button {
                         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
@@ -382,7 +408,11 @@ struct DeepSettingsView: View {
                     
                     HStack(spacing: 6) {
                         Image(systemName: "cpu")
-                        Text(activeClusterID == "None" ? "No Cluster Loaded" : "Active Cluster: \(activeClusterID)")
+                        if activeClusterID == "None" {
+                            Text("No Cluster Loaded")
+                        } else {
+                            Text("Active Cluster: \(activeClusterID)")
+                        }
                     }
                     .font(.system(size: 12, weight: .bold, design: .monospaced))
                     .foregroundStyle(.secondary)
@@ -436,11 +466,16 @@ struct BusinessProfileView: View {
                 }
                 .padding(.top, 16)
                 
+                // Safe handling of variables for MerchantCard
+                let mStoreName = vm.storeName.isEmpty ? String(localized: "Your Store Name") : vm.storeName
+                let mBio = vm.storeBio.isEmpty ? String(localized: "Add a short bio about your business here so users know what you do.") : vm.storeBio
+                let mPhone = vm.phoneNumber.isEmpty ? String(localized: "No Phone Number") : vm.phoneNumber
+                
                 MerchantCard(
-                    storeName: vm.storeName.isEmpty ? "Your Store Name" : vm.storeName,
+                    storeName: mStoreName,
                     logoUrl: vm.storeLogoUrl,
-                    bio: vm.storeBio.isEmpty ? "Add a short bio about your business here so users know what you do." : vm.storeBio,
-                    phone: vm.phoneNumber.isEmpty ? "No Phone Number" : vm.phoneNumber
+                    bio: mBio,
+                    phone: mPhone
                 )
                 .padding(.horizontal)
                 
@@ -525,7 +560,11 @@ struct BusinessProfileEditSheet: View {
                             PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
                                 HStack(spacing: 6) {
                                     Image(systemName: "photo.badge.plus")
-                                    Text(draftLogoUrl.isEmpty && logoUIImage == nil ? "Choose Photo" : "Change Logo")
+                                    if draftLogoUrl.isEmpty && logoUIImage == nil {
+                                        Text("Choose Photo")
+                                    } else {
+                                        Text("Change Logo")
+                                    }
                                 }
                                 .font(.system(size: 14, weight: .bold))
                                 .foregroundStyle(Color(red: 0.22, green: 0.49, blue: 1.00))

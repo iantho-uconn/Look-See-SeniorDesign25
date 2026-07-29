@@ -29,7 +29,6 @@ enum NegativeCameraPhase: Equatable {
     }
 }
 
-// Dedicated state to decouple from PositiveVideoCameraView
 enum NegativeCameraFlowState: Equatable {
     case instruction
     case recording
@@ -49,6 +48,10 @@ struct NegativeVideoCameraView: View {
     @State private var totalDurationElapsed: Double = 0.0
     @State private var collectedURLs: [URL] = []
     @State private var isCancelled = false
+
+    @State private var zoomLevel: CGFloat = 1.0
+    @State private var showZoomIndicator = false
+    @State private var zoomFadeTask: Task<Void, Never>?
 
     private let onDone: (CapturedNegativeVideo) -> Void
     private let maxTotalTimeLimit: Int = 60
@@ -78,17 +81,34 @@ struct NegativeVideoCameraView: View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            // The IF statement is GONE! Prevents the black flash entirely
-            NegativeVideoCameraPreview(session: cameraService.session)
-                .ignoresSafeArea()
-                .opacity((flowState == .choice || isReviewingClip) ? 0 : 1)
-                .zIndex(0)
+            NegativeVideoCameraPreview(session: cameraService.session, zoomLevel: $zoomLevel) {
+                showZoomIndicatorThenFade()
+            }
+            .ignoresSafeArea()
+            .opacity((flowState == .choice || isReviewingClip) ? 0 : 1)
+            .zIndex(0)
             
             if case .preview(let url) = flowState {
                 NegativeSafeVideoPlayer(url: url)
                     .equatable()
                     .ignoresSafeArea()
                     .zIndex(1)
+            }
+
+            if showZoomIndicator {
+                VStack {
+                    Spacer()
+                    Text(String(format: "%.1fx", zoomLevel))
+                        .font(.system(size: 15, weight: .bold, design: .monospaced))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(Color.black.opacity(0.6))
+                        .clipShape(Capsule())
+                        .padding(.bottom, 160)
+                }
+                .zIndex(4)
+                .transition(.opacity)
             }
 
             VStack {
@@ -130,6 +150,20 @@ struct NegativeVideoCameraView: View {
         .onDisappear {
             cameraService.stop()
             stopTimer()
+            zoomFadeTask?.cancel()
+        }
+    }
+    
+    private func showZoomIndicatorThenFade() {
+        zoomFadeTask?.cancel()
+        withAnimation(.easeOut(duration: 0.2)) { showZoomIndicator = true }
+        
+        zoomFadeTask = Task {
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                withAnimation(.easeOut(duration: 0.3)) { showZoomIndicator = false }
+            }
         }
     }
     
@@ -466,10 +500,19 @@ struct NegativeVideoCameraView: View {
 
 private struct NegativeVideoCameraPreview: UIViewRepresentable {
     let session: AVCaptureSession
+    @Binding var zoomLevel: CGFloat
+    var onZoomChanged: () -> Void
+
     func makeUIView(context: Context) -> NegativeCameraPreviewUIView {
         let view = NegativeCameraPreviewUIView()
         view.previewLayer.session = session
         view.previewLayer.videoGravity = .resizeAspectFill
+        view.onZoom = { newZoom in
+            DispatchQueue.main.async {
+                self.zoomLevel = newZoom
+                self.onZoomChanged()
+            }
+        }
         return view
     }
     func updateUIView(_ uiView: NegativeCameraPreviewUIView, context: Context) {
@@ -480,7 +523,12 @@ private struct NegativeVideoCameraPreview: UIViewRepresentable {
 private final class NegativeCameraPreviewUIView: UIView {
     override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }
     var previewLayer: AVCaptureVideoPreviewLayer { layer as! AVCaptureVideoPreviewLayer }
+    
     private var initialZoom: CGFloat = 1.0
+    private var baseZoomFactor: CGFloat = 1.0
+    private var isCameraConfigured = false
+    var onZoom: ((CGFloat) -> Void)?
+
     override init(frame: CGRect) { super.init(frame: frame); setupGestures() }
     required init?(coder: NSCoder) { super.init(coder: coder); setupGestures() }
     
@@ -488,20 +536,53 @@ private final class NegativeCameraPreviewUIView: UIView {
         addGestureRecognizer(UIPinchGestureRecognizer(target: self, action: #selector(handlePinch(_:))))
         addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(handleTap(_:))))
     }
+    
+    private func configureCameraIfNeeded() {
+        guard !isCameraConfigured,
+              let device = previewLayer.session?.inputs.compactMap({ $0 as? AVCaptureDeviceInput }).first?.device else { return }
+        
+        // 🚀 Detect virtual lenses and map them correctly
+        if device.deviceType == .builtInDualWideCamera || device.deviceType == .builtInTripleCamera {
+            if let firstSwitch = device.virtualDeviceSwitchOverVideoZoomFactors.first {
+                baseZoomFactor = CGFloat(firstSwitch.floatValue)
+            } else {
+                baseZoomFactor = 2.0
+            }
+        } else {
+            baseZoomFactor = 1.0
+        }
+        
+        try? device.lockForConfiguration()
+        device.videoZoomFactor = baseZoomFactor // Start camera at "1.0x" (Wide Lens)
+        device.unlockForConfiguration()
+        
+        isCameraConfigured = true
+    }
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        configureCameraIfNeeded()
         if let connection = previewLayer.connection, connection.isVideoRotationAngleSupported(90) { connection.videoRotationAngle = 90 }
     }
     
     @objc private func handlePinch(_ pinch: UIPinchGestureRecognizer) {
         guard let device = previewLayer.session?.inputs.compactMap({ $0 as? AVCaptureDeviceInput }).first?.device else { return }
-        if pinch.state == .began { initialZoom = device.videoZoomFactor }
+        
+        if pinch.state == .began {
+            initialZoom = device.videoZoomFactor
+        }
+        
         if pinch.state == .changed || pinch.state == .began {
-            let zoomFactor = min(max(initialZoom * pinch.scale, 1.0), min(5.0, device.activeFormat.videoMaxZoomFactor))
+            let maxAllowedZoom = min(5.0 * baseZoomFactor, device.activeFormat.videoMaxZoomFactor)
+            let zoomFactor = min(max(initialZoom * pinch.scale, device.minAvailableVideoZoomFactor), maxAllowedZoom)
+            
             try? device.lockForConfiguration()
             device.videoZoomFactor = zoomFactor
             device.unlockForConfiguration()
+            
+            // 🚀 Display division magic
+            let displayZoom = zoomFactor / baseZoomFactor
+            onZoom?(displayZoom)
         }
     }
     

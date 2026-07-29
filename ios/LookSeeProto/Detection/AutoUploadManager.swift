@@ -109,7 +109,7 @@ class AutoUploadManager: ObservableObject {
                 isUploading = false
                 sendLimitNotification(
                     title: "Subscription Required",
-                    body: "You need an active Premium subscription or Free Trial to upload landmarks."
+                    body: "You need an active subscription or Free Trial to upload landmarks."
                 )
                 return
             }

@@ -5,7 +5,6 @@
 //  Created by Angel Pineda on 6/29/26.
 //
 
-
 import AVFoundation
 import UIKit
 import Combine
@@ -31,10 +30,7 @@ final class NegativeVideoCameraService: NSObject, ObservableObject {
     }
 
     private func checkPermissionsAndStart() {
-        // 1. Grab the current status
         let currentStatus = AVCaptureDevice.authorizationStatus(for: .video)
-        
-        // 2. Immediately update the UI state to match the hardware
         self.authorizationStatus = currentStatus
         
         switch currentStatus {
@@ -43,7 +39,6 @@ final class NegativeVideoCameraService: NSObject, ObservableObject {
         case .notDetermined:
             AVCaptureDevice.requestAccess(for: .video) { granted in
                 Task { @MainActor in
-                    // Update state again based on the user's choice
                     self.authorizationStatus = granted ? .authorized : .denied
                     if granted { self.setupSession() }
                 }
@@ -53,13 +48,35 @@ final class NegativeVideoCameraService: NSObject, ObservableObject {
             errorMessage = "Camera access is denied. Please enable it in Settings."
         }
     }
+    
+    // Smart Camera Selector for virtual multi-lens arrays
+    private func getBestCamera() -> AVCaptureDevice? {
+        if let device = AVCaptureDevice.default(.builtInTripleCamera, for: .video, position: .back) {
+            return device // Pro models (0.5x, 1x, Telephoto)
+        }
+        if let device = AVCaptureDevice.default(.builtInDualWideCamera, for: .video, position: .back) {
+            return device // Standard models (0.5x, 1x)
+        }
+        if let device = AVCaptureDevice.default(.builtInDualCamera, for: .video, position: .back) {
+            return device // Older Plus models (1x, Telephoto)
+        }
+        return AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back)
+    }
 
     private func setupSession() {
         guard !session.isRunning else { return }
         session.beginConfiguration()
-        session.sessionPreset = .high
+        
+        // 🚀 THE FIX: Force maximum explicit resolution instead of ambiguous ".high"
+        if session.canSetSessionPreset(.hd4K3840x2160) {
+            session.sessionPreset = .hd4K3840x2160
+        } else if session.canSetSessionPreset(.hd1920x1080) {
+            session.sessionPreset = .hd1920x1080
+        } else {
+            session.sessionPreset = .high
+        }
 
-        guard let videoDevice = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
+        guard let videoDevice = getBestCamera(),
               let videoInput = try? AVCaptureDeviceInput(device: videoDevice),
               session.canAddInput(videoInput) else {
             errorMessage = "Unable to access the back camera."
@@ -71,6 +88,13 @@ final class NegativeVideoCameraService: NSObject, ObservableObject {
 
         if session.canAddOutput(videoOutput) {
             session.addOutput(videoOutput)
+            
+            // 🚀 THE FIX: Enable cinematic hardware stabilization for sharper ML frames
+            if let connection = videoOutput.connection(with: .video) {
+                if connection.isVideoStabilizationSupported {
+                    connection.preferredVideoStabilizationMode = .cinematicExtended
+                }
+            }
         }
 
         session.commitConfiguration()

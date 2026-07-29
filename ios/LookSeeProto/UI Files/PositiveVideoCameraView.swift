@@ -49,7 +49,6 @@ enum CameraPhase: Equatable {
     }
 }
 
-// Struct to track clips for the gallery
 struct RecordedClip: Identifiable, Equatable {
     var id: String { url.absoluteString }
     let phase: CameraPhase
@@ -79,6 +78,13 @@ struct PositiveVideoCameraView: View {
     @State private var recordedClips: [RecordedClip] = []
     @State private var gallerySelection: String = ""
     @State private var isCancelled = false
+    
+    @State private var zoomLevel: CGFloat = 1.0
+    @State private var showZoomIndicator = false
+    @State private var zoomFadeTask: Task<Void, Never>?
+    
+    @State private var showZoomInstruction = false
+    @State private var zoomInstructionTask: Task<Void, Never>?
 
     private let onDone: ([URL]) -> Void
     private let maxTotalTimeLimit: Int = 60
@@ -92,14 +98,11 @@ struct PositiveVideoCameraView: View {
         recordedClips.reduce(0) { $0 + $1.duration }
     }
 
-    // Dynamic minimum limits based on whether it's an extra clip or not
     private var minPhaseTimeLimit: Int {
         if currentPhase.isMandatory {
             return 6
         } else {
-            // Optional clips only have a minimum if the 15s global total wasn't reached yet
             let deficit = minTotalTimeLimit - totalDurationElapsedInt
-            // We return a minimum of 1s so AVFoundation doesn't crash on a 0-length file
             return max(1, deficit)
         }
     }
@@ -145,18 +148,50 @@ struct PositiveVideoCameraView: View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            // The IF statement is GONE! The camera is now truly always alive,
-            // we just fade it out smoothly. This completely fixes the black flash.
-            PositiveVideoCameraPreview(session: cameraService.session)
-                .ignoresSafeArea()
-                .opacity((flowState == .gallery || isReviewingRecent) ? 0 : 1)
-                .zIndex(0)
+            PositiveVideoCameraPreview(session: cameraService.session, zoomLevel: $zoomLevel) {
+                showZoomIndicatorThenFade()
+            }
+            .ignoresSafeArea()
+            .opacity((flowState == .gallery || isReviewingRecent) ? 0 : 1)
+            .zIndex(0)
             
             if case .reviewingRecent(let url, _) = flowState {
                 PositiveSafeVideoPlayer(url: url)
                     .equatable()
                     .ignoresSafeArea()
                     .zIndex(1)
+            }
+
+            if flowState == .recording && showZoomInstruction {
+                VStack {
+                    Text("Slowly pan around and pinch to zoom in/out")
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(Color(red: 0.22, green: 0.49, blue: 1.00).opacity(0.85))
+                        .clipShape(Capsule())
+                        .padding(.top, 70)
+                    Spacer()
+                }
+                .zIndex(4)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+            
+            if showZoomIndicator {
+                VStack {
+                    Spacer()
+                    Text(String(format: "%.1fx", zoomLevel))
+                        .font(.system(size: 15, weight: .bold, design: .monospaced))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(Color.black.opacity(0.6))
+                        .clipShape(Capsule())
+                        .padding(.bottom, 160)
+                }
+                .zIndex(4)
+                .transition(.opacity)
             }
 
             VStack {
@@ -206,6 +241,34 @@ struct PositiveVideoCameraView: View {
         .onDisappear {
             cameraService.stop()
             stopTimer()
+            zoomFadeTask?.cancel()
+            zoomInstructionTask?.cancel()
+        }
+    }
+    
+    private func showZoomIndicatorThenFade() {
+        zoomFadeTask?.cancel()
+        withAnimation(.easeOut(duration: 0.2)) { showZoomIndicator = true }
+        
+        zoomFadeTask = Task {
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                withAnimation(.easeOut(duration: 0.3)) { showZoomIndicator = false }
+            }
+        }
+    }
+
+    private func triggerRecordingInstruction() {
+        zoomInstructionTask?.cancel()
+        showZoomInstruction = true
+        
+        zoomInstructionTask = Task {
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                withAnimation(.easeOut(duration: 0.5)) { showZoomInstruction = false }
+            }
         }
     }
     
@@ -316,7 +379,6 @@ struct PositiveVideoCameraView: View {
                     startTimer()
                 }
             } label: {
-                // Text is now perfectly clean without the max seconds listed
                 Text("Start Recording")
                     .font(.system(size: 17, weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
@@ -449,8 +511,6 @@ struct PositiveVideoCameraView: View {
         .transition(.move(edge: .bottom).combined(with: .opacity))
     }
 
-    // MARK: - The Swipeable Gallery UI
-    
     private var galleryView: some View {
         ZStack {
             TabView(selection: $gallerySelection) {
@@ -459,7 +519,6 @@ struct PositiveVideoCameraView: View {
                         PositiveSafeVideoPlayer(url: clip.url)
                             .ignoresSafeArea()
                         
-                        // Top Right Delete Button
                         VStack {
                             HStack {
                                 Spacer()
@@ -485,7 +544,6 @@ struct PositiveVideoCameraView: View {
             .tabViewStyle(.page(indexDisplayMode: .always))
             .ignoresSafeArea()
             
-            // Global Cancel Button (Top Left)
             VStack {
                 HStack {
                     Button {
@@ -507,7 +565,6 @@ struct PositiveVideoCameraView: View {
                 Spacer()
             }
             
-            // Bottom Gallery Controls
             VStack {
                 Spacer()
                 galleryBottomControls
@@ -623,10 +680,10 @@ struct PositiveVideoCameraView: View {
         }
     }
 
-    // MARK: - Standard Camera Timers
-
     private func startTimer() {
         timeElapsed = 0
+        triggerRecordingInstruction()
+        
         recordingTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
             timeElapsed += 1
             if timeElapsed >= maxPhaseTimeLimit {
@@ -663,10 +720,19 @@ struct PositiveVideoCameraView: View {
 
 private struct PositiveVideoCameraPreview: UIViewRepresentable {
     let session: AVCaptureSession
+    @Binding var zoomLevel: CGFloat
+    var onZoomChanged: () -> Void
+
     func makeUIView(context: Context) -> PositiveCameraPreviewUIView {
         let view = PositiveCameraPreviewUIView()
         view.previewLayer.session = session
         view.previewLayer.videoGravity = .resizeAspectFill
+        view.onZoom = { newZoom in
+            DispatchQueue.main.async {
+                self.zoomLevel = newZoom
+                self.onZoomChanged()
+            }
+        }
         return view
     }
     func updateUIView(_ uiView: PositiveCameraPreviewUIView, context: Context) {
@@ -674,10 +740,16 @@ private struct PositiveVideoCameraPreview: UIViewRepresentable {
     }
 }
 
+// 🚀 THE FIX: Core Apple Lens Magic is here!
 private final class PositiveCameraPreviewUIView: UIView {
     override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }
     var previewLayer: AVCaptureVideoPreviewLayer { layer as! AVCaptureVideoPreviewLayer }
+    
     private var initialZoom: CGFloat = 1.0
+    private var baseZoomFactor: CGFloat = 1.0
+    private var isCameraConfigured = false
+    var onZoom: ((CGFloat) -> Void)?
+    
     override init(frame: CGRect) { super.init(frame: frame); setupGestures() }
     required init?(coder: NSCoder) { super.init(coder: coder); setupGestures() }
     
@@ -685,20 +757,56 @@ private final class PositiveCameraPreviewUIView: UIView {
         addGestureRecognizer(UIPinchGestureRecognizer(target: self, action: #selector(handlePinch(_:))))
         addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(handleTap(_:))))
     }
+    
+    private func configureCameraIfNeeded() {
+        guard !isCameraConfigured,
+              let device = previewLayer.session?.inputs.compactMap({ $0 as? AVCaptureDeviceInput }).first?.device else { return }
+        
+        // 🚀 Detect virtual lenses and map them correctly. The iPhone 11-15 switch from Ultra-Wide to Wide at exactly 2.0x
+        if device.deviceType == .builtInDualWideCamera || device.deviceType == .builtInTripleCamera {
+            if let firstSwitch = device.virtualDeviceSwitchOverVideoZoomFactors.first {
+                baseZoomFactor = CGFloat(firstSwitch.floatValue)
+            } else {
+                baseZoomFactor = 2.0
+            }
+        } else {
+            baseZoomFactor = 1.0
+        }
+        
+        try? device.lockForConfiguration()
+        device.videoZoomFactor = baseZoomFactor // Start camera at "1.0x" (Wide Lens)
+        device.unlockForConfiguration()
+        
+        isCameraConfigured = true
+    }
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        configureCameraIfNeeded()
         if let connection = previewLayer.connection, connection.isVideoRotationAngleSupported(90) { connection.videoRotationAngle = 90 }
     }
     
     @objc private func handlePinch(_ pinch: UIPinchGestureRecognizer) {
         guard let device = previewLayer.session?.inputs.compactMap({ $0 as? AVCaptureDeviceInput }).first?.device else { return }
-        if pinch.state == .began { initialZoom = device.videoZoomFactor }
+        
+        if pinch.state == .began {
+            initialZoom = device.videoZoomFactor
+        }
+        
         if pinch.state == .changed || pinch.state == .began {
-            let zoomFactor = min(max(initialZoom * pinch.scale, 1.0), min(5.0, device.activeFormat.videoMaxZoomFactor))
+            // Allows capping out at a reasonable 5x display zoom.
+            let maxAllowedZoom = min(5.0 * baseZoomFactor, device.activeFormat.videoMaxZoomFactor)
+            
+            // Allow plunging below baseZoom down to the Ultra-Wide hardware limits
+            let zoomFactor = min(max(initialZoom * pinch.scale, device.minAvailableVideoZoomFactor), maxAllowedZoom)
+            
             try? device.lockForConfiguration()
             device.videoZoomFactor = zoomFactor
             device.unlockForConfiguration()
+            
+            // 🚀 The Magic: Divide by base zoom so 1.0 Ultra Wide displays as "0.5x"
+            let displayZoom = zoomFactor / baseZoomFactor
+            onZoom?(displayZoom)
         }
     }
     

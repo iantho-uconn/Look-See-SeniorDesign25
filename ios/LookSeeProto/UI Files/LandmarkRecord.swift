@@ -33,7 +33,7 @@ struct LandmarkRecord: View {
     
     @State private var extractedLatitude: Double? = nil
     @State private var extractedLongitude: Double? = nil
-    @State private var statusText = "No landmark media selected."
+    @State private var statusText = String(localized: "No landmark media selected.")
     @State private var showArchivePrompt = false
     @State private var showDiscardAlert = false
     
@@ -146,7 +146,7 @@ struct LandmarkRecord: View {
                         self.labelText = archive.savedLabel ?? ""
                         self.shortDescription = archive.savedDescription ?? ""
                         if self.businessLandmarkId == nil { self.businessLandmarkId = self.makeBusinessLandmarkId() }
-                        self.statusText = "Loaded archived media."
+                        self.statusText = String(localized: "Loaded archived media.")
                     }
 
                     for url in finalURLs { await self.loadDuration(for: url) }
@@ -165,7 +165,6 @@ struct LandmarkRecord: View {
         .fullScreenCover(isPresented: $showNegativeCamera) { NegativeVideoCameraView(onDone: { video in capturedNegativeVideo = video; if !hardNegativeUploadService.isUploading { hardNegativeUploadService.reset() } }) }
         .alert("Discard this upload?", isPresented: $showDiscardAlert) { Button("Discard", role: .destructive) { clearScreen() }; Button("Cancel", role: .cancel) { } } message: { Text("This will remove the media and clear the form.") }
         
-        // 🚀 THE FIX: Upgraded buttons open straight to the camera so you can rapidly chain uploads
         .alert("Landmark Uploaded!", isPresented: $showCompletionPopup) {
             if archivedMedia != nil {
                 Button("Done", role: .cancel) { dismiss() }
@@ -373,13 +372,13 @@ struct LandmarkRecord: View {
 
     private var durationSummaryText: String {
         let total = totalClipDuration
-        if hasMinimumClipDuration { return "\(String(format: "%.1f", total))s total — ready to upload" }
-        else { return "\(String(format: "%.1f", total))s total — need \(String(format: "%.1f", max(0, minimumCombinedVideoDuration - total)))s more" }
+        if hasMinimumClipDuration { return String(localized: "\(String(format: "%.1f", total))s total — ready to upload") }
+        else { return String(localized: "\(String(format: "%.1f", total))s total — need \(String(format: "%.1f", max(0, minimumCombinedVideoDuration - total)))s more") }
     }
 
     private func clipLabel(index: Int, url: URL) -> String {
-        if let duration = clipDurations[url] { return "Clip \(index + 1) · \(String(format: "%.1f", duration))s" }
-        return "Clip \(index + 1) · loading…"
+        if let duration = clipDurations[url] { return String(localized: "Clip \(index + 1) · \(String(format: "%.1f", duration))s") }
+        return String(localized: "Clip \(index + 1) · loading…")
     }
 
     private var locationSection: some View {
@@ -609,7 +608,14 @@ struct LandmarkRecord: View {
                     HStack(spacing: 10) {
                         if isSubmissionRunning {
                             ProgressView().tint(.white)
-                            Text(hardNegativeUploadService.isUploading ? "Uploading reference..." : (isStitchingVideos ? "Processing..." : uploadService.status))
+                            // 🚀 FIXED: Removed nested ternary inside the Text view
+                            if hardNegativeUploadService.isUploading {
+                                Text("Uploading reference...")
+                            } else if isStitchingVideos {
+                                Text("Processing...")
+                            } else {
+                                Text(uploadService.status)
+                            }
                         } else {
                             Image(systemName: isFullSubmissionComplete ? "checkmark.circle.fill" : "arrow.up.circle.fill")
                             Text(isFullSubmissionComplete ? "Complete" : (completedPositiveResult != nil ? "Retry Negative" : "Upload Landmark"))
@@ -647,14 +653,14 @@ struct LandmarkRecord: View {
     private func startFullSubmission() {
         if completedPositiveResult == nil {
             if !vm.hasActiveSubscription {
-                limitAlertTitle = "Subscription Required"
-                limitAlertMessage = "You need an active Premium subscription or Free Trial to upload landmarks."
+                limitAlertTitle = String(localized: "Subscription Required")
+                limitAlertMessage = String(localized: "You need an active subscription or Free Trial to upload landmarks.")
                 showLimitAlert = true
                 return
             }
             if vm.tokenBalance <= 0 {
-                limitAlertTitle = "Out of Tokens"
-                limitAlertMessage = "You need 1 token to upload a new landmark. Purchase a token pack in Settings."
+                limitAlertTitle = String(localized: "Out of Tokens")
+                limitAlertMessage = String(localized: "You need 1 token to upload a new landmark. Purchase a token pack in Settings.")
                 showLimitAlert = true
                 return
             }
@@ -689,7 +695,7 @@ struct LandmarkRecord: View {
                     positiveResult = try await uploadService.upload(userEmail: vm.userEmail, idToken: idToken, label: trimmedLabel, landmarkId: generatedLandmarkId, landmarkLabel: trimmedLabel, shortDescription: trimmedShortDescription, userDescription: nil, latitude: extractedLatitude ?? locationManager.latitude, longitude: extractedLongitude ?? locationManager.longitude, horizontalAccuracy: locationManager.horizontalAccuracy, videoURLs: pickedVideoURLs, image: pickedImage)
                     
                     completedPositiveResult = positiveResult
-                    statusText = "Landmark media saved. Uploading reference video…"
+                    statusText = String(localized: "Landmark media saved. Uploading reference video…")
                     
                     await MainActor.run {
                         vm.tokenBalance -= 1
@@ -705,7 +711,7 @@ struct LandmarkRecord: View {
                 
                 completedLandmarkId = finalLandmarkId
                 isFullSubmissionComplete = true
-                statusText = "Landmark and reference video uploaded successfully."
+                statusText = String(localized: "Landmark and reference video uploaded successfully.")
                 showCompletionPopup = true
                 
                 if let media = archivedMedia { OfflineMediaManager.shared.deleteArchive(media: media) }
@@ -744,7 +750,7 @@ struct LandmarkRecord: View {
     }
 
     @ViewBuilder private var negativeUploadStatusCard: some View {
-        if hardNegativeUploadService.status != "Idle" {
+        if hardNegativeUploadService.status != String(localized: "Idle") {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top, spacing: 16) {
                     if hardNegativeUploadService.isUploading { ProgressView().padding(.top, 2) }
@@ -796,12 +802,12 @@ struct LandmarkRecord: View {
         Task.detached {
             if urlsToStitch.count > 1 {
                 if let stitchedURL = await self.stitchVideos(urls: urlsToStitch) {
-                    await MainActor.run { self.deleteAllTemporaryVideos(self.pickedVideoURLs); self.deleteAllTemporaryVideos(self.pendingArchiveURLs); self.pickedVideoURLs = [stitchedURL]; self.statusText = "Selected combined video." }
+                    await MainActor.run { self.deleteAllTemporaryVideos(self.pickedVideoURLs); self.deleteAllTemporaryVideos(self.pendingArchiveURLs); self.pickedVideoURLs = [stitchedURL]; self.statusText = String(localized: "Selected combined video.") }
                 } else {
-                    await MainActor.run { self.pickedVideoURLs = urlsToStitch; self.statusText = "Selected \(self.pickedVideoURLs.count) videos." }
+                    await MainActor.run { self.pickedVideoURLs = urlsToStitch; self.statusText = String(localized: "Selected \(self.pickedVideoURLs.count) videos.") }
                 }
             } else {
-                await MainActor.run { self.pickedVideoURLs = urlsToStitch; self.statusText = "Selected video." }
+                await MainActor.run { self.pickedVideoURLs = urlsToStitch; self.statusText = String(localized: "Selected video.") }
             }
             let finalURLs = await MainActor.run { self.pickedVideoURLs }
             for url in finalURLs { await self.loadDuration(for: url) }
@@ -850,7 +856,7 @@ struct LandmarkRecord: View {
             if let firstURL = firstURL { _ = await OfflineMediaManager.shared.archiveVideo(tempURL: firstURL, lat: lat, lon: lon, landmarkId: id, label: lbl, shortDesc: desc, userDesc: nil, negativeVideoURL: negURL, isTier2: false)
             } else if let img = img { _ = await OfflineMediaManager.shared.archivePhoto(image: img, lat: lat, lon: lon, landmarkId: id, label: lbl, shortDesc: desc, userDesc: nil, negativeVideoURL: negURL, isTier2: false)
             } else { return }
-            await MainActor.run { clearScreen(); statusText = "Landmark safely queued in Outbox for upload." }
+            await MainActor.run { clearScreen(); statusText = String(localized: "Landmark safely queued in Outbox for upload.") }
         }
     }
 
@@ -865,7 +871,7 @@ struct LandmarkRecord: View {
         deleteAllTemporaryVideos(pickedVideoURLs); capturedNegativeVideo?.deleteLocalFile(); pickedVideoURLs = []; clipDurations = [:]
         pickedImage = nil; extractedLatitude = nil; extractedLongitude = nil; labelText = ""; shortDescription = ""
         businessLandmarkId = nil; capturedNegativeVideo = nil; completedPositiveResult = nil; completedLandmarkId = nil
-        isFullSubmissionComplete = false; isFormVisible = false; statusText = "No landmark media selected."
+        isFullSubmissionComplete = false; isFormVisible = false; statusText = String(localized: "No landmark media selected.")
         uploadService.reset(); hardNegativeUploadService.reset()
     }
     
@@ -876,7 +882,7 @@ struct LandmarkRecord: View {
     private func removeClip(url: URL) {
         guard let index = pickedVideoURLs.firstIndex(of: url) else { return }
         deleteTemporaryVideoIfNeeded(url); clipDurations.removeValue(forKey: url); pickedVideoURLs.remove(at: index)
-        statusText = pickedVideoURLs.isEmpty ? "No media selected." : "Removed clip. \(pickedVideoURLs.count) remaining."
+        statusText = pickedVideoURLs.isEmpty ? String(localized: "No media selected.") : String(localized: "Removed clip. \(pickedVideoURLs.count) remaining.")
     }
     
     private func deleteTemporaryVideoIfNeeded(_ videoURL: URL?) { guard let url = videoURL, archivedMedia == nil else { return }; if url.standardizedFileURL.path.hasPrefix(FileManager.default.temporaryDirectory.standardizedFileURL.path) { try? FileManager.default.removeItem(at: url) } }

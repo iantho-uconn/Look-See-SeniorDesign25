@@ -8,12 +8,15 @@
 import SwiftUI
 import Amplify
 import AWSCognitoAuthPlugin
-import AWSS3StoragePlugin 
+import AWSS3StoragePlugin
 
 @main
 struct LookSeeProtoApp: App {
     @StateObject private var authState = AuthState()
     @StateObject private var authViewModel = AuthViewModel()
+    
+    // 🚀 THE FIX: In-app language selector storage
+    @AppStorage("selectedLanguage") private var selectedLanguage: String = "en"
     
     init() {
         configureAmplify()
@@ -35,6 +38,8 @@ struct LookSeeProtoApp: App {
             RootView()
                 .environmentObject(authState)
                 .environmentObject(authViewModel)
+                // 🚀 THE FIX: Forces the entire app to render in the user's chosen language
+                .environment(\.locale, Locale(identifier: selectedLanguage))
         }
     }
 }

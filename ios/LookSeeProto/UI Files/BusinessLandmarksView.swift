@@ -95,7 +95,6 @@ struct BusinessLandmarksView: View {
                     }
                 }
 
-                // 🚀 THE FIX: Pending Uploads dynamically placed at the bottom
                 if !offlineManager.archivedItems.isEmpty {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Pending Uploads")
@@ -138,17 +137,13 @@ struct BusinessLandmarksView: View {
         .searchable(
             text: $searchText,
             placement: .navigationBarDrawer(displayMode: .always),
-            prompt: "Search labels or promotion titles"
+            prompt: String(localized: "Search labels or promotion titles")
         )
         .task {
             if viewModel.landmarks.isEmpty {
                 await viewModel.loadLandmarks()
             }
-
             await loadPromotionSearchIndex()
-        }
-        .task {
-            await printCognitoTokens()
         }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -177,7 +172,6 @@ struct BusinessLandmarksView: View {
         guard !cleanedSearchText.isEmpty else {
             return "(\(viewModel.landmarks.count))"
         }
-
         return "(\(displayedLandmarks.count) of \(viewModel.landmarks.count))"
     }
 
@@ -198,7 +192,6 @@ struct BusinessLandmarksView: View {
             }) {
                 return (landmark, 1)
             }
-
             return nil
         }
 
@@ -207,10 +200,7 @@ struct BusinessLandmarksView: View {
                 if lhs.priority != rhs.priority {
                     return lhs.priority < rhs.priority
                 }
-
-                return lhs.landmark.label.localizedCaseInsensitiveCompare(
-                    rhs.landmark.label
-                ) == .orderedAscending
+                return lhs.landmark.label.localizedCaseInsensitiveCompare(rhs.landmark.label) == .orderedAscending
             }
             .map { $0.landmark }
     }
@@ -238,37 +228,23 @@ struct BusinessLandmarksView: View {
         .padding(.horizontal)
     }
 
-    private func searchablePromotionTitles(
-        for landmark: BusinessLandmark
-    ) -> [String] {
+    private func searchablePromotionTitles(for landmark: BusinessLandmark) -> [String] {
         var titles = promotionTitlesByLandmarkId[landmark.landmarkId] ?? []
 
         if let legacyPromotion = landmark.promotion?
             .trimmingCharacters(in: .whitespacesAndNewlines),
            !legacyPromotion.isEmpty,
-           !titles.contains(where: {
-               $0.caseInsensitiveCompare(legacyPromotion) == .orderedSame
-           }) {
+           !titles.contains(where: { $0.caseInsensitiveCompare(legacyPromotion) == .orderedSame }) {
             titles.append(legacyPromotion)
         }
-
         return titles
     }
 
-    private func matchedPromotionTitle(
-        for landmark: BusinessLandmark
-    ) -> String? {
+    private func matchedPromotionTitle(for landmark: BusinessLandmark) -> String? {
         let query = cleanedSearchText
 
-        guard !query.isEmpty else {
-            return nil
-        }
-
-        // Landmark-label matches always rank first and do not need a
-        // promotion-match badge.
-        guard !landmark.label.localizedCaseInsensitiveContains(query) else {
-            return nil
-        }
+        guard !query.isEmpty else { return nil }
+        guard !landmark.label.localizedCaseInsensitiveContains(query) else { return nil }
 
         return searchablePromotionTitles(for: landmark).first {
             $0.localizedCaseInsensitiveContains(query)
@@ -282,9 +258,7 @@ struct BusinessLandmarksView: View {
     }
 
     @MainActor
-    private func loadPromotionSearchIndex(
-        forceReload: Bool = false
-    ) async {
+    private func loadPromotionSearchIndex(forceReload: Bool = false) async {
         let currentLandmarks = viewModel.landmarks
         let validLandmarkIds = Set(currentLandmarks.map(\.landmarkId))
 
@@ -299,9 +273,7 @@ struct BusinessLandmarksView: View {
 
         let landmarksToLoad = forceReload
             ? currentLandmarks
-            : currentLandmarks.filter {
-                promotionTitlesByLandmarkId[$0.landmarkId] == nil
-            }
+            : currentLandmarks.filter { promotionTitlesByLandmarkId[$0.landmarkId] == nil }
 
         guard !landmarksToLoad.isEmpty else {
             isIndexingPromotionTitles = false
@@ -309,37 +281,22 @@ struct BusinessLandmarksView: View {
         }
 
         isIndexingPromotionTitles = true
-        defer {
-            isIndexingPromotionTitles = false
-        }
+        defer { isIndexingPromotionTitles = false }
 
-        // The existing API exposes promotions per landmark. Loading them here
-        // builds a local title index while keeping the normal landmark list
-        // available immediately.
         for landmark in landmarksToLoad {
-            guard !Task.isCancelled else {
-                return
-            }
+            guard !Task.isCancelled else { return }
 
             do {
-                let response = try await promotionService.fetchPromotions(
-                    landmarkId: landmark.landmarkId
-                )
-
+                let response = try await promotionService.fetchPromotions(landmarkId: landmark.landmarkId)
                 let titles = response.items
                     .map { $0.name.trimmingCharacters(in: .whitespacesAndNewlines) }
                     .filter { !$0.isEmpty }
 
                 promotionTitlesByLandmarkId[landmark.landmarkId] = titles
             } catch {
-                // Label searching remains available even when one promotion
-                // request fails. The legacy field is also kept as a fallback.
                 if promotionTitlesByLandmarkId[landmark.landmarkId] == nil {
-                    let legacyPromotion = landmark.promotion?
-                        .trimmingCharacters(in: .whitespacesAndNewlines)
-
-                    promotionTitlesByLandmarkId[landmark.landmarkId] =
-                        legacyPromotion.map { $0.isEmpty ? [] : [$0] } ?? []
+                    let legacyPromotion = landmark.promotion?.trimmingCharacters(in: .whitespacesAndNewlines)
+                    promotionTitlesByLandmarkId[landmark.landmarkId] = legacyPromotion.map { $0.isEmpty ? [] : [$0] } ?? []
                 }
             }
         }
@@ -356,9 +313,21 @@ struct BusinessLandmarksView: View {
                 .foregroundColor(isUploading ? primaryColor : .gray)
             
             VStack(alignment: .leading, spacing: 2) {
-                Text(isUploading ? "Syncing to Cloud..." : (isOffline ? "Waiting for Connection" : "Queue Processing..."))
-                    .font(.system(size: 16, weight: .bold, design: .rounded))
-                    .foregroundStyle(.primary)
+                // 🚀 FIXED: Switched from inline ternary to clear if/else
+                if isUploading {
+                    Text("Syncing to Cloud...")
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .foregroundStyle(.primary)
+                } else if isOffline {
+                    Text("Waiting for Connection")
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .foregroundStyle(.primary)
+                } else {
+                    Text("Queue Processing...")
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .foregroundStyle(.primary)
+                }
+                
                 Text("\(offlineManager.archivedItems.count) items waiting to upload")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundColor(.secondary)

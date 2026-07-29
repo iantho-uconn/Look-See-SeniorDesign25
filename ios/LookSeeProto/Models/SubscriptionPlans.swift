@@ -5,7 +5,6 @@
 //  Created by Angel Pineda on 7/16/26.
 //
 
-
 import SwiftUI
 import StripePaymentSheet
 
@@ -15,6 +14,7 @@ struct SubscriptionPlans: View {
     @ObservedObject var presenter: SettingsPresenter
     
     @State private var selectedTab: Int
+    @State private var selectedPlanIndex: Int = 0 // 0: 1-Year, 1: 3-Year, 2: 5-Year
     @State private var isProcessing = false
     @State private var paymentSheet: PaymentSheet?
     @State private var showPaymentSheet = false
@@ -24,14 +24,21 @@ struct SubscriptionPlans: View {
     @State private var pendingSubscriptionId: String? = nil
     @State private var selectedAddOnIndex: Int = 0
     
+    // Multi-Year Plan Tiers
+    let plans = [
+        (years: 1, priceCents: 1000, priceString: "$10", baseTokens: 10, label: String(localized: "1 Year")),
+        (years: 3, priceCents: 2500, priceString: "$25", baseTokens: 25, label: String(localized: "3 Years")),
+        (years: 5, priceCents: 3500, priceString: "$35", baseTokens: 35, label: String(localized: "5 Years"))
+    ]
+    
     let addOns = [
-        (tokens: 0, cents: 0, label: "None"),
-        (tokens: 1, cents: 300, label: "1 Token (+$3.00)"),
-        (tokens: 5, cents: 1000, label: "5 Tokens (+$10.00)"),
-        (tokens: 10, cents: 1500, label: "10 Tokens (+$15.00)"),
-        (tokens: 25, cents: 3500, label: "25 Tokens (+$35.00)"),
-        (tokens: 50, cents: 6000, label: "50 Tokens (+$60.00)"),
-        (tokens: 100, cents: 10000, label: "100 Tokens (+$100.00)")
+        (tokens: 0, cents: 0, label: String(localized: "None")),
+        (tokens: 1, cents: 300, label: String(localized: "1 Token (+$3.00)")),
+        (tokens: 5, cents: 1000, label: String(localized: "5 Tokens (+$10.00)")),
+        (tokens: 10, cents: 1500, label: String(localized: "10 Tokens (+$15.00)")),
+        (tokens: 25, cents: 3500, label: String(localized: "25 Tokens (+$35.00)")),
+        (tokens: 50, cents: 6000, label: String(localized: "50 Tokens (+$60.00)")),
+        (tokens: 100, cents: 10000, label: String(localized: "100 Tokens (+$100.00)"))
     ]
     
     private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00)
@@ -51,6 +58,14 @@ struct SubscriptionPlans: View {
         if !vm.stripeSubscriptionId.isEmpty { return false }
         if vm.tokenBalance > 0 { return false }
         return true
+    }
+    
+    private var activePlanCents: Int {
+        return vm.activePlanCents > 0 ? vm.activePlanCents : 1000
+    }
+    
+    private var isTokenOnlyMode: Bool {
+        return presenter.subscriptionStartingTab == 1 && vm.hasActiveSubscription
     }
     
     init(presenter: SettingsPresenter) {
@@ -82,21 +97,23 @@ struct SubscriptionPlans: View {
                     
                     VStack(spacing: 6) {
                         Text("LookSee").font(.system(size: 16, weight: .bold, design: .rounded)).foregroundStyle(primaryColor)
-                        Text(vm.hasActiveSubscription ? "Manage Membership" : "Upgrade to Business")
+                        
+                        Text(isTokenOnlyMode ? "Token Store" : (vm.hasActiveSubscription ? "Manage Membership" : "Upgrade to Business"))
                             .font(.system(size: 24, weight: .bold, design: .rounded)).foregroundStyle(.white)
                     }
                     
-                    Picker("Options", selection: $selectedTab) {
-                        Text("Plan").tag(0)
-                        Text("Tokens").tag(1)
-                        Text("Free Trial").tag(2)
+                    if !isTokenOnlyMode {
+                        Picker("Options", selection: $selectedTab) {
+                            Text("Free Trial").tag(2)
+                            Text("Plan").tag(0)
+                        }
+                        .pickerStyle(.segmented).padding(.horizontal, 24).padding(.vertical, 8)
                     }
-                    .pickerStyle(.segmented).padding(.horizontal, 24).padding(.vertical, 8)
                     
-                    if selectedTab == 0 {
-                        yearlyPlanView
-                    } else if selectedTab == 1 {
+                    if isTokenOnlyMode || selectedTab == 1 {
                         tokenPurchaserView
+                    } else if selectedTab == 0 {
+                        yearlyPlanView
                     } else {
                         freeTrialView
                     }
@@ -111,20 +128,34 @@ struct SubscriptionPlans: View {
                 }
             }
             .onAppear {
+                if selectedTab == 1 && !vm.hasActiveSubscription {
+                    selectedTab = 0
+                }
+                
                 if let action = presenter.resumeCheckoutAction {
-                    isProcessing = true
                     if action == "yearly" {
                         selectedAddOnIndex = presenter.savedAddOnIndex
                         selectedTab = 0
+                        isProcessing = true
                         Task { await preparePaymentSheet(purchaseType: "yearly_subscription") }
                     } else if action == "trial" {
                         selectedTab = 2
-                        Task { await preparePaymentSheet(purchaseType: "free_trial") }
+                        isProcessing = true
+                        Task { await activateFreeTrialDirectly() }
                     } else if action == "tokens" {
                         selectedTab = 1
+                        isProcessing = true
                         Task { await preparePaymentSheet(purchaseType: "token_pack", amountCents: presenter.savedTokenCents, tokenCount: presenter.savedTokenCount) }
                     }
                     presenter.resumeCheckoutAction = nil
+                }
+            }
+            .onDisappear {
+                presenter.subscriptionStartingTab = 0
+            }
+            .onChange(of: vm.hasActiveSubscription) { _, hasSub in
+                if !hasSub && selectedTab == 1 {
+                    selectedTab = 0
                 }
             }
             .background(
@@ -133,8 +164,6 @@ struct SubscriptionPlans: View {
                 }
             )
         }
-        // This screen always uses a dark visual design, so keep system controls
-        // such as the segmented picker and materials in dark appearance too.
         .environment(\.colorScheme, .dark)
         .interactiveDismissDisabled(isProcessing)
         .overlay {
@@ -143,7 +172,7 @@ struct SubscriptionPlans: View {
                     Color.black.opacity(0.4).ignoresSafeArea()
                     VStack(spacing: 16) {
                         ProgressView().tint(.white).scaleEffect(1.5)
-                        Text("Connecting to Stripe...").font(.headline).foregroundStyle(.white)
+                        Text(selectedTab == 2 ? "Activating Trial..." : "Connecting to Stripe...").font(.headline).foregroundStyle(.white)
                     }.padding(32).background(.ultraThinMaterial).clipShape(RoundedRectangle(cornerRadius: 16))
                 }
             }
@@ -154,23 +183,50 @@ struct SubscriptionPlans: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Spacer()
-                Text("RECOMMENDED").font(.system(size: 10, weight: .black)).foregroundStyle(.white).padding(.horizontal, 12).padding(.vertical, 4).background(primaryColor).clipShape(RoundedRectangle(cornerRadius: 8))
+                Text("POPULAR").font(.system(size: 10, weight: .black)).foregroundStyle(.white).padding(.horizontal, 12).padding(.vertical, 4).background(primaryColor).clipShape(RoundedRectangle(cornerRadius: 8))
                 Spacer()
             }.padding(.top, -10).padding(.bottom, 6)
             
-            Text("Yearly Premium").font(.system(size: 20, weight: .bold)).foregroundStyle(.white)
+            Text("Business Membership").font(.system(size: 20, weight: .bold)).foregroundStyle(.white)
+            Text("Select plan duration and included tokens.").font(.system(size: 13)).foregroundStyle(secondaryTextColor).padding(.top, 2)
             
-            HStack(alignment: .bottom, spacing: 2) {
-                Text("$10").font(.system(size: 34, weight: .black, design: .rounded)).foregroundStyle(.white)
-                Text("/year").font(.system(size: 14)).foregroundStyle(secondaryTextColor).padding(.bottom, 6)
-            }.padding(.top, 4)
-            
-            Text("Unlimited active landmarks. Just pay-per-upload.").font(.system(size: 13)).foregroundStyle(secondaryTextColor).padding(.top, 2)
+            HStack(spacing: 8) {
+                ForEach(0..<plans.count, id: \.self) { index in
+                    let plan = plans[index]
+                    let isSelected = selectedPlanIndex == index
+                    
+                    Button {
+                        selectedPlanIndex = index
+                    } label: {
+                        VStack(spacing: 4) {
+                            Text(plan.label)
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(isSelected ? .white : secondaryTextColor)
+                            Text(plan.priceString)
+                                .font(.system(size: 18, weight: .black, design: .rounded))
+                                .foregroundStyle(isSelected ? primaryColor : .white)
+                            Text("\(plan.baseTokens) Tokens")
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(secondaryTextColor)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(isSelected ? primaryColor.opacity(0.2) : Color.white.opacity(0.05))
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(isSelected ? primaryColor : Color.white.opacity(0.1), lineWidth: isSelected ? 2 : 1)
+                        )
+                    }
+                }
+            }
+            .padding(.top, 12)
             
             Divider().background(Color.white.opacity(0.12)).padding(.vertical, 14)
             
             VStack(alignment: .leading, spacing: 10) {
-                featureRow("10 Tokens included instantly")
+                let currentPlan = plans[selectedPlanIndex]
+                featureRow(String(localized: "\(currentPlan.baseTokens) Tokens included instantly"))
                 featureRow("Add or swap landmarks anytime")
                 featureRow("Unlock promotion dashboard")
             }
@@ -193,7 +249,10 @@ struct SubscriptionPlans: View {
             Spacer()
             
             Button {
-                if vm.hasActiveSubscription && !isTrial { return }
+                let selectedPlan = plans[selectedPlanIndex]
+                if vm.hasActiveSubscription && !isTrial && selectedPlan.priceCents <= activePlanCents {
+                    return
+                }
                 
                 if !isFullyLoggedIn {
                     presenter.savedAddOnIndex = selectedAddOnIndex
@@ -206,25 +265,31 @@ struct SubscriptionPlans: View {
                 }
             } label: {
                 Group {
+                    let selectedPlan = plans[selectedPlanIndex]
+                    let totalCents = selectedPlan.priceCents + addOns[selectedAddOnIndex].cents
+                    let totalStr = String(format: "%.2f", Double(totalCents) / 100.0)
+                    
                     if vm.hasActiveSubscription {
                         if isTrial {
-                            let addOnCents = Double(addOns[selectedAddOnIndex].cents) / 100.0
-                            let totalStr = String(format: "%.2f", 10.00 + addOnCents)
-                            Text("Upgrade to Yearly - $\(totalStr)")
+                            Text("Upgrade to \(selectedPlan.label) - $\(totalStr)")
                                 .font(.system(size: 15, weight: .bold)).foregroundStyle(.white).frame(maxWidth: .infinity).padding(.vertical, 14).background(primaryColor).clipShape(RoundedRectangle(cornerRadius: 14))
-                        } else {
+                        } else if selectedPlan.priceCents > activePlanCents {
+                            Text("Upgrade to \(selectedPlan.label) - $\(totalStr)")
+                                .font(.system(size: 15, weight: .bold)).foregroundStyle(.white).frame(maxWidth: .infinity).padding(.vertical, 14).background(primaryColor).clipShape(RoundedRectangle(cornerRadius: 14))
+                        } else if selectedPlan.priceCents == activePlanCents {
                             Text("Current Plan")
+                                .font(.system(size: 15, weight: .bold)).foregroundStyle(disabledTextColor).frame(maxWidth: .infinity).padding(.vertical, 14).background(Color.white.opacity(0.1)).clipShape(RoundedRectangle(cornerRadius: 14))
+                        } else {
+                            Text("Included in Active Plan")
                                 .font(.system(size: 15, weight: .bold)).foregroundStyle(disabledTextColor).frame(maxWidth: .infinity).padding(.vertical, 14).background(Color.white.opacity(0.1)).clipShape(RoundedRectangle(cornerRadius: 14))
                         }
                     } else {
-                        let addOnCents = Double(addOns[selectedAddOnIndex].cents) / 100.0
-                        let totalStr = String(format: "%.2f", 10.00 + addOnCents)
                         Text("Subscribe - $\(totalStr)")
                             .font(.system(size: 15, weight: .bold)).foregroundStyle(.white).frame(maxWidth: .infinity).padding(.vertical, 14).background(primaryColor).clipShape(RoundedRectangle(cornerRadius: 14))
                     }
                 }
             }
-            .disabled((vm.hasActiveSubscription && !isTrial) || isProcessing)
+            .disabled((vm.hasActiveSubscription && !isTrial && plans[selectedPlanIndex].priceCents <= activePlanCents) || isProcessing)
         }
         .padding(.horizontal, 24).padding(.top, 36).padding(.bottom, 24)
         .background(Color.white.opacity(0.04).background(.ultraThinMaterial)).clipShape(RoundedRectangle(cornerRadius: 24))
@@ -236,25 +301,25 @@ struct SubscriptionPlans: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Spacer()
-                Text("NEW USERS").font(.system(size: 10, weight: .black)).foregroundStyle(.white).padding(.horizontal, 12).padding(.vertical, 4).background(Color.orange).clipShape(RoundedRectangle(cornerRadius: 8))
+                Text("NO CREDIT CARD REQUIRED").font(.system(size: 10, weight: .black)).foregroundStyle(.white).padding(.horizontal, 12).padding(.vertical, 4).background(Color.orange).clipShape(RoundedRectangle(cornerRadius: 8))
                 Spacer()
             }.padding(.top, -10).padding(.bottom, 6)
             
-            Text("14-Day Trial").font(.system(size: 20, weight: .bold)).foregroundStyle(.white)
+            Text("14-Day Free Trial").font(.system(size: 20, weight: .bold)).foregroundStyle(.white)
             
             HStack(alignment: .bottom, spacing: 2) {
                 Text("$0").font(.system(size: 34, weight: .black, design: .rounded)).foregroundStyle(.white)
                 Text("/14 days").font(.system(size: 14)).foregroundStyle(secondaryTextColor).padding(.bottom, 6)
             }.padding(.top, 4)
             
-            Text("Test out the platform risk-free before committing to a yearly subscription.").font(.system(size: 13)).foregroundStyle(secondaryTextColor).padding(.top, 2)
+            Text("Test out the platform risk-free with zero commitment.").font(.system(size: 13)).foregroundStyle(secondaryTextColor).padding(.top, 2)
             
             Divider().background(Color.white.opacity(0.12)).padding(.vertical, 14)
             
             VStack(alignment: .leading, spacing: 10) {
                 featureRow("Includes exactly 5 Tokens")
                 featureRow("Full access to business tools")
-                featureRow("No add-ons available during trial")
+                featureRow("No payment info required")
             }
             
             Spacer()
@@ -268,7 +333,7 @@ struct SubscriptionPlans: View {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { presenter.showSignUpSheet = true }
                 } else {
                     isProcessing = true
-                    Task { await preparePaymentSheet(purchaseType: "free_trial") }
+                    Task { await activateFreeTrialDirectly() }
                 }
             } label: {
                 Group {
@@ -292,7 +357,7 @@ struct SubscriptionPlans: View {
             .disabled(!isEligibleForTrial || isProcessing)
             
             if let msg = paymentStatusMessage {
-                Text(msg).font(.caption).foregroundStyle(msg.contains("successful") ? .green : .red).padding(.top, 8)
+                Text(msg).font(.caption).foregroundStyle(msg.contains("Activated") ? .green : .red).padding(.top, 8)
             }
         }
         .padding(.horizontal, 24).padding(.top, 36).padding(.bottom, 24)
@@ -326,16 +391,15 @@ struct SubscriptionPlans: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Buy Token Packs").font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(secondaryTextColor).textCase(.uppercase).padding(.horizontal, 20)
                     
-                    // 🚀 THE FIX: Hide tokens and explain why if they are on a free trial
                     VStack(spacing: 0) {
                         if !isFullyLoggedIn || !vm.hasActiveSubscription {
-                            Text("Please subscribe to the Premium plan to purchase tokens.")
+                            Text("Please subscribe to a Business plan to purchase tokens.")
                                 .font(.system(size: 14, weight: .medium))
                                 .foregroundStyle(.secondary)
                                 .multilineTextAlignment(.center)
                                 .padding(20)
                         } else if isTrial {
-                            Text("Token add-ons are not available during the Free Trial.\n\nPlease upgrade to the Yearly Premium plan to purchase tokens.")
+                            Text("Token add-ons are not available during the Free Trial.\n\nPlease upgrade to a paid Business plan to purchase tokens.")
                                 .font(.system(size: 14, weight: .medium))
                                 .foregroundStyle(.secondary)
                                 .multilineTextAlignment(.center)
@@ -357,7 +421,7 @@ struct SubscriptionPlans: View {
                     .background(Color.white.opacity(0.04)).clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous)).padding(.horizontal)
                     
                     if let message = paymentStatusMessage {
-                        Text(message).font(.system(size: 13, weight: .bold)).foregroundStyle(message.contains("successful") ? .green : .red).padding(.horizontal, 24).padding(.top, 8)
+                        Text(message).font(.system(size: 13, weight: .bold)).foregroundStyle(message.contains(String(localized: "successful")) ? .green : .red).padding(.horizontal, 24).padding(.top, 8)
                     }
                 }
             }
@@ -389,19 +453,73 @@ struct SubscriptionPlans: View {
         .disabled(isProcessing)
     }
 
+    private func activateFreeTrialDirectly() async {
+        await vm.fetchUserDetails()
+        
+        guard let url = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/checkout") else {
+            await MainActor.run {
+                isProcessing = false
+                paymentStatusMessage = String(localized: "Invalid API URL.")
+            }
+            return
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let body: [String: Any] = [
+            "purchaseType": "free_trial_direct",
+            "userId": vm.userId,
+            "userEmail": vm.userEmail,
+            "addTokens": 5,
+            "isBusiness": true
+        ]
+        
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            await MainActor.run {
+                if let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) {
+                    presenter.justPurchased = true
+                    vm.tokenBalance += 5
+                    vm.hasActiveSubscription = true
+                    UserDefaults.standard.set(true, forKey: "isFreeTrial_\(vm.userEmail)")
+                    
+                    paymentStatusMessage = String(localized: "Trial Activated!")
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                        presenter.resumeCheckoutAction = nil
+                        isProcessing = false
+                        dismiss()
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { presenter.justPurchased = false }
+                } else {
+                    isProcessing = false
+                    paymentStatusMessage = String(localized: "Trial activation failed. Please try again.")
+                }
+            }
+        } catch {
+            await MainActor.run {
+                isProcessing = false
+                paymentStatusMessage = String(localized: "Network Error: \(error.localizedDescription)")
+            }
+        }
+    }
+
     private func preparePaymentSheet(purchaseType: String, amountCents: Int = 0, tokenCount: Int = 0) async {
         await vm.fetchUserDetails()
         
         guard let url = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/checkout") else {
-            isProcessing = false; paymentStatusMessage = "Invalid API URL."; return
+            isProcessing = false; paymentStatusMessage = String(localized: "Invalid API URL."); return
         }
+        
+        let selectedPlan = plans[selectedPlanIndex]
         
         if purchaseType == "token_pack" {
             pendingTokenReward = tokenCount
         } else if purchaseType == "yearly_subscription" {
-            pendingTokenReward = 10 + addOns[selectedAddOnIndex].tokens
-        } else if purchaseType == "free_trial" {
-            pendingTokenReward = 5
+            pendingTokenReward = selectedPlan.baseTokens + addOns[selectedAddOnIndex].tokens
         }
         
         var request = URLRequest(url: url)
@@ -414,6 +532,8 @@ struct SubscriptionPlans: View {
             body["amountCents"] = amountCents
             body["tokenCount"] = tokenCount
         } else if purchaseType == "yearly_subscription" {
+            body["planYears"] = selectedPlan.years
+            body["planCents"] = selectedPlan.priceCents
             body["addOnCents"] = addOns[selectedAddOnIndex].cents
             body["addOnTokens"] = addOns[selectedAddOnIndex].tokens
         }
@@ -424,7 +544,7 @@ struct SubscriptionPlans: View {
             let (data, _) = try await URLSession.shared.data(for: request)
             if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
                 if let errorMsg = json["error"] as? String {
-                    DispatchQueue.main.async { self.isProcessing = false; self.presenter.resumeCheckoutAction = nil; self.paymentStatusMessage = "Stripe Error: \(errorMsg)" }
+                    DispatchQueue.main.async { self.isProcessing = false; self.presenter.resumeCheckoutAction = nil; self.paymentStatusMessage = String(localized: "Stripe Error: \(errorMsg)") }
                     return
                 }
                 
@@ -476,6 +596,12 @@ struct SubscriptionPlans: View {
             body["subscriptionId"] = subId
         }
         
+        if selectedTab == 0 {
+            let selectedPlan = plans[selectedPlanIndex]
+            body["planCents"] = selectedPlan.priceCents
+            body["planYears"] = selectedPlan.years
+        }
+        
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         
         do {
@@ -505,11 +631,13 @@ struct SubscriptionPlans: View {
                         if selectedTab != 1 {
                             vm.hasActiveSubscription = true
                             
-                            if selectedTab == 2 {
-                                UserDefaults.standard.set(true, forKey: "isFreeTrial_\(vm.userEmail)")
-                            } else {
-                                UserDefaults.standard.set(false, forKey: "isFreeTrial_\(vm.userEmail)")
+                            if selectedTab == 0 {
+                                let selectedPlan = plans[selectedPlanIndex]
+                                vm.activePlanCents = selectedPlan.priceCents
+                                vm.activePlanYears = selectedPlan.years
                             }
+                            
+                            UserDefaults.standard.set(false, forKey: "isFreeTrial_\(vm.userEmail)")
                         }
                         
                         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {

@@ -370,7 +370,7 @@ struct Buttons: View {
                     }
                 )
                 .sheet(isPresented: $showPromotion) { PromotionEditor() }
-                .alert("Premium Account Required", isPresented: $showBusinessAlert) {
+                .alert("Subscription Required", isPresented: $showBusinessAlert) {
                     Button("OK", role: .cancel) {}
                 } message: {
                     Text("You need an active subscription to access the Promotion Editor.")

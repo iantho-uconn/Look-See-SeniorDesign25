@@ -188,7 +188,7 @@ struct QuickUploadView: View {
                             // 🚀 NEW TOKEN LOGIC
                             if !vm.hasActiveSubscription {
                                 limitAlertTitle = "Subscription Required"
-                                limitAlertMessage = "You need an active Premium subscription or Free Trial to upload landmarks."
+                                limitAlertMessage = "You need an active subscription or Free Trial to upload landmarks."
                                 showLimitAlert = true
                             } else if vm.tokenBalance <= 0 {
                                 limitAlertTitle = "Out of Tokens"

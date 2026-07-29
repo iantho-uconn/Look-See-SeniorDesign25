@@ -24,6 +24,9 @@ class AuthViewModel: ObservableObject {
     @Published var hasActiveSubscription: Bool = false
     @Published var stripeSubscriptionId: String = ""
     
+    @Published var activePlanCents: Int = 0
+    @Published var activePlanYears: Int = 0
+    
     @Published var storeName: String = ""
     @Published var phoneNumber: String = ""
     @Published var storeBio: String = ""
@@ -59,13 +62,13 @@ class AuthViewModel: ObservableObject {
                     switch result.nextStep {
                     case .confirmSignInWithNewPassword:
                         requiresNewPassword = true
-                        errorMessage = "Please enter a new permanent password."
+                        errorMessage = String(localized: "Please enter a new permanent password.")
                     case .confirmSignUp:
-                        errorMessage = "Account not verified. Please check your email for a confirmation code."
+                        errorMessage = String(localized: "Account not verified. Please check your email for a confirmation code.")
                     case .resetPassword:
-                        errorMessage = "Password reset required."
+                        errorMessage = String(localized: "Password reset required.")
                     default:
-                        errorMessage = "Additional verification required."
+                        errorMessage = String(localized: "Additional verification required.")
                     }
                     isSignedIn = false
                 }
@@ -73,7 +76,7 @@ class AuthViewModel: ObservableObject {
                 errorMessage = friendlyMessage(for: error)
                 isSignedIn = false
             } catch {
-                errorMessage = "Something went wrong. Please try again."
+                errorMessage = String(localized: "Something went wrong. Please try again.")
                 isSignedIn = false
             }
         }
@@ -90,12 +93,12 @@ class AuthViewModel: ObservableObject {
                     await fetchUserDetails()
                     await fetchUserUsageStats()
                 } else {
-                    errorMessage = "Additional steps required to sign in."
+                    errorMessage = String(localized: "Additional steps required to sign in.")
                 }
             } catch let error as AuthError {
                 errorMessage = friendlyMessage(for: error)
             } catch {
-                errorMessage = "Failed to update password. Please try again."
+                errorMessage = String(localized: "Failed to update password. Please try again.")
             }
         }
     }
@@ -112,6 +115,8 @@ class AuthViewModel: ObservableObject {
                 self.activeLandmarksCount = 0
                 self.hasActiveSubscription = false
                 self.stripeSubscriptionId = ""
+                self.activePlanCents = 0
+                self.activePlanYears = 0
                 self.storeName = ""
                 self.phoneNumber = ""
                 self.storeBio = ""
@@ -141,6 +146,8 @@ class AuthViewModel: ObservableObject {
                 self.userEmail = ""
                 self.hasActiveSubscription = false
                 self.tokenBalance = 0
+                self.activePlanCents = 0
+                self.activePlanYears = 0
                 self.stripeSubscriptionId = ""
             }
         }
@@ -184,11 +191,17 @@ class AuthViewModel: ObservableObject {
                         let fetchedTier = json["tier"] as? String ?? ""
                         let fetchedStripeId = json["stripeSubscriptionId"] as? String ?? ""
                         
+                        let fetchedPlanCents = json["activePlanCents"] as? Int ?? 0
+                        let fetchedPlanYears = json["activePlanYears"] as? Int ?? 0
+                        
                         self.tokenBalance = max(self.tokenBalance, fetchedBalance)
                         self.activeLandmarksCount = fetchedLandmarks
                         
                         let isSubscribedOnBackend = fetchedSub || fetchedTier == "business" || !fetchedStripeId.isEmpty
                         self.hasActiveSubscription = self.hasActiveSubscription || isSubscribedOnBackend
+                        
+                        self.activePlanCents = fetchedPlanCents
+                        self.activePlanYears = fetchedPlanYears
                         
                         if !fetchedStripeId.isEmpty {
                             self.stripeSubscriptionId = fetchedStripeId
@@ -227,6 +240,8 @@ class AuthViewModel: ObservableObject {
                 await MainActor.run {
                     self.hasActiveSubscription = false
                     self.stripeSubscriptionId = ""
+                    self.activePlanCents = 0
+                    self.activePlanYears = 0
                     UserDefaults.standard.set(false, forKey: "isFreeTrial_\(self.userEmail)")
                 }
                 return true
@@ -282,7 +297,6 @@ class AuthViewModel: ObservableObject {
                     }
                     return true
                 } else {
-                    // 🚀 THE FIX: Print the exact error message from Lambda!
                     if let errorString = String(data: data, encoding: .utf8) {
                         print("❌ Backend Rejected Upload (\(httpResponse.statusCode)): \(errorString)")
                     }
@@ -296,49 +310,13 @@ class AuthViewModel: ObservableObject {
 
     private func friendlyMessage(for error: AuthError) -> String {
         switch error {
-        case .notAuthorized: return "Incorrect email or password. Please try again."
+        case .notAuthorized: return String(localized: "Incorrect email or password. Please try again.")
         case .service(_, _, let underlyingError):
             let description = underlyingError.map { "\($0)" } ?? ""
-            if description.contains("UserNotFound") { return "No account found with that email." }
-            if description.contains("UserNotConfirmed") { return "Please verify your email." }
-            return "Something went wrong. Please try again."
-        default: return "Something went wrong. Please try again."
+            if description.contains("UserNotFound") { return String(localized: "No account found with that email.") }
+            if description.contains("UserNotConfirmed") { return String(localized: "Please verify your email.") }
+            return String(localized: "Something went wrong. Please try again.")
+        default: return String(localized: "Something went wrong. Please try again.")
         }
-    }
-}
-
-func printCognitoTokens() async {
-    do {
-        let session = try await Amplify.Auth.fetchAuthSession()
-
-        guard session.isSignedIn else {
-            print("❌ No Cognito user is currently signed in.")
-            return
-        }
-
-        guard let tokenProvider = session as? AuthCognitoTokensProvider else {
-            print("❌ Cognito token provider was unavailable.")
-            return
-        }
-
-        let tokens = try tokenProvider.getCognitoTokens().get()
-
-        print("""
-        
-        ==============================
-        COGNITO ACCESS TOKEN
-        ==============================
-        \(tokens.accessToken)
-
-        ==============================
-        COGNITO ID TOKEN
-        ==============================
-        \(tokens.idToken)
-        ==============================
-        
-        """)
-
-    } catch {
-        print("❌ Could not retrieve Cognito tokens: \(error)")
     }
 }
