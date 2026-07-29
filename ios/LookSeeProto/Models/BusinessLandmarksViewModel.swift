@@ -86,7 +86,45 @@ final class BusinessLandmarksViewModel: ObservableObject {
         saveToCache(landmarks)
     }
 
+    func replaceLandmarks(_ updatedLandmarks: [BusinessLandmark]) {
+        guard !updatedLandmarks.isEmpty else {
+            return
+        }
+
+        let updatedById = Dictionary(
+            uniqueKeysWithValues: updatedLandmarks.map {
+                ($0.landmarkId, $0)
+            }
+        )
+
+        landmarks = landmarks.map { landmark in
+            updatedById[landmark.landmarkId] ?? landmark
+        }
+
+        landmarks.sort {
+            $0.label.localizedCaseInsensitiveCompare($1.label) == .orderedAscending
+        }
+
+        saveToCache(landmarks)
+    }
+
     func removeLandmark(landmarkId: String) {
-        landmarks.removeAll { $0.landmarkId == landmarkId }
+        landmarks.removeAll {
+            $0.landmarkId == landmarkId
+        }
+
+        saveToCache(landmarks)
+    }
+
+    func removeLandmarks(landmarkIds: Set<String>) {
+        guard !landmarkIds.isEmpty else {
+            return
+        }
+
+        landmarks.removeAll {
+            landmarkIds.contains($0.landmarkId)
+        }
+
+        saveToCache(landmarks)
     }
 }
