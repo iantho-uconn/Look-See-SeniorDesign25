@@ -18,6 +18,13 @@ struct BusinessLandmarksView: View {
     @State private var promotionTitlesByLandmarkId: [String: [String]] = [:]
     @State private var isIndexingPromotionTitles = false
 
+    // Selection is stored by landmark ID rather than by the filtered list.
+    // That keeps selections intact while search results change.
+    @State private var isSelectionMode = false
+    @State private var selectedLandmarkIds: Set<String> = []
+    @State private var bulkPromotionSelection: BulkLandmarkSelection?
+    @State private var bulkDeleteSelection: BulkLandmarkSelection?
+
     private let promotionService = BusinessPromotionService()
     private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00)
 
@@ -56,6 +63,10 @@ struct BusinessLandmarksView: View {
                             .padding(.horizontal, 20)
                     }
 
+                    if isSelectionMode {
+                        selectionSummaryCard
+                    }
+
                     if viewModel.isLoading && viewModel.landmarks.isEmpty {
                         loadingView
                     } else if viewModel.landmarks.isEmpty {
@@ -68,27 +79,50 @@ struct BusinessLandmarksView: View {
                     } else {
                         VStack(spacing: 12) {
                             ForEach(displayedLandmarks) { landmark in
-                                NavigationLink {
-                                    BusinessLandmarkDetailView(
-                                        landmark: landmark,
-                                        onLandmarkUpdated: { updatedLandmark in
-                                            viewModel.replaceLandmark(updatedLandmark)
-                                        },
-                                        onLandmarkDeleted: { landmarkId in
-                                            viewModel.removeLandmark(landmarkId: landmarkId)
-                                            promotionTitlesByLandmarkId.removeValue(forKey: landmarkId)
-                                        },
-                                        onPromotionTitlesChanged: { landmarkId, titles in
-                                            promotionTitlesByLandmarkId[landmarkId] = titles
-                                        }
+                                if isSelectionMode {
+                                    Button {
+                                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                        toggleSelection(for: landmark)
+                                    } label: {
+                                        BusinessLandmarkRow(
+                                            landmark: landmark,
+                                            matchedPromotionTitle: matchedPromotionTitle(for: landmark),
+                                            isSelectionMode: true,
+                                            isSelected: selectedLandmarkIds.contains(landmark.landmarkId)
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
+                                    .accessibilityLabel(
+                                        selectedLandmarkIds.contains(landmark.landmarkId)
+                                            ? "Deselect \(landmark.label)"
+                                            : "Select \(landmark.label)"
                                     )
-                                } label: {
-                                    BusinessLandmarkRow(
-                                        landmark: landmark,
-                                        matchedPromotionTitle: matchedPromotionTitle(for: landmark)
-                                    )
+                                } else {
+                                    NavigationLink {
+                                        BusinessLandmarkDetailView(
+                                            landmark: landmark,
+                                            onLandmarkUpdated: { updatedLandmark in
+                                                viewModel.replaceLandmark(updatedLandmark)
+                                            },
+                                            onLandmarkDeleted: { landmarkId in
+                                                viewModel.removeLandmark(landmarkId: landmarkId)
+                                                promotionTitlesByLandmarkId.removeValue(forKey: landmarkId)
+                                                selectedLandmarkIds.remove(landmarkId)
+                                            },
+                                            onPromotionTitlesChanged: { landmarkId, titles in
+                                                promotionTitlesByLandmarkId[landmarkId] = titles
+                                            }
+                                        )
+                                    } label: {
+                                        BusinessLandmarkRow(
+                                            landmark: landmark,
+                                            matchedPromotionTitle: matchedPromotionTitle(for: landmark),
+                                            isSelectionMode: false,
+                                            isSelected: false
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
                                 }
-                                .buttonStyle(.plain)
                             }
                         }
                         .padding(.horizontal)
@@ -150,22 +184,351 @@ struct BusinessLandmarksView: View {
         .task {
             await printCognitoTokens()
         }
+        .onChange(of: viewModel.landmarks.map(\.landmarkId)) { _, validIds in
+            // Keep selection valid after refreshes or single-landmark deletion,
+            // without clearing IDs merely because search results changed.
+            selectedLandmarkIds.formIntersection(Set(validIds))
+        }
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                    Task {
-                        await refreshLandmarksAndSearchIndex()
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                if isSelectionMode {
+                    selectionActionsMenu
+
+                    Button("Done") {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        endSelectionMode()
                     }
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 16, weight: .bold))
+                    .fontWeight(.bold)
+                } else {
+                    Button {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        Task {
+                            await refreshLandmarksAndSearchIndex()
+                        }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 16, weight: .bold))
+                    }
+                    .disabled(viewModel.isLoading)
+
+                    Button("Select") {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        isSelectionMode = true
+                    }
+                    .fontWeight(.bold)
+                    .disabled(viewModel.landmarks.isEmpty)
                 }
-                .disabled(viewModel.isLoading)
+            }
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if isSelectionMode {
+                selectionBottomBar
             }
         }
         .fullScreenCover(item: $draftToEdit) { draft in
             LandmarkRecord(archivedMedia: draft)
+        }
+        .sheet(item: $bulkPromotionSelection) { selection in
+            BusinessBulkPromotionEditor(
+                landmarks: selection.landmarks
+            ) { result in
+                handleBulkPromotionResult(result)
+            }
+        }
+        .sheet(item: $bulkDeleteSelection) { selection in
+            BusinessBulkDeleteView(
+                landmarks: selection.landmarks
+            ) { result in
+                handleBulkDeleteResult(result)
+            }
+        }
+    }
+
+    // MARK: - Selection
+
+    private var selectedLandmarks: [BusinessLandmark] {
+        viewModel.landmarks.filter {
+            selectedLandmarkIds.contains($0.landmarkId)
+        }
+    }
+
+    private var visibleLandmarkIds: Set<String> {
+        Set(displayedLandmarks.map(\.landmarkId))
+    }
+
+    private var visibleSelectedCount: Int {
+        selectedLandmarkIds.intersection(visibleLandmarkIds).count
+    }
+
+    private var hiddenSelectedCount: Int {
+        selectedLandmarkIds.subtracting(visibleLandmarkIds).count
+    }
+
+    private var selectionCountText: String {
+        let count = selectedLandmarks.count
+        return "\(count) landmark\(count == 1 ? "" : "s") selected"
+    }
+
+    private var selectionSummaryCard: some View {
+        HStack(spacing: 12) {
+            Image(systemName: selectedLandmarkIds.isEmpty
+                  ? "checkmark.circle"
+                  : "checkmark.circle.fill")
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundStyle(primaryColor)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(selectionCountText)
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .foregroundStyle(.primary)
+
+                if hiddenSelectedCount > 0 {
+                    Text(
+                        "\(hiddenSelectedCount) selected landmark\(hiddenSelectedCount == 1 ? "" : "s") hidden by the current search"
+                    )
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.secondary)
+                } else if !cleanedSearchText.isEmpty {
+                    Text("\(visibleSelectedCount) selected in these search results")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("Search for more landmarks without losing this selection.")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Spacer()
+        }
+        .padding(14)
+        .background(primaryColor.opacity(0.10))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(primaryColor.opacity(0.20), lineWidth: 1)
+        }
+        .padding(.horizontal)
+    }
+
+    private var selectionActionsMenu: some View {
+        Menu {
+            Button {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                selectVisibleLandmarks()
+            } label: {
+                Label(
+                    "Select Visible (\(displayedLandmarks.count))",
+                    systemImage: "checkmark.circle"
+                )
+            }
+            .disabled(displayedLandmarks.isEmpty)
+
+            Button {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                deselectVisibleLandmarks()
+            } label: {
+                Label(
+                    "Deselect Visible (\(visibleSelectedCount))",
+                    systemImage: "circle"
+                )
+            }
+            .disabled(visibleSelectedCount == 0)
+
+            Divider()
+
+            Button(role: .destructive) {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                selectedLandmarkIds.removeAll()
+            } label: {
+                Label("Clear All Selection", systemImage: "xmark.circle")
+            }
+            .disabled(selectedLandmarkIds.isEmpty)
+        } label: {
+            Image(systemName: "ellipsis.circle")
+                .font(.system(size: 17, weight: .bold))
+        }
+        .accessibilityLabel("Selection actions")
+    }
+
+    private var selectionBottomBar: some View {
+        VStack(spacing: 10) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(selectionCountText)
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
+
+                    if hiddenSelectedCount > 0 {
+                        Text("\(hiddenSelectedCount) hidden by search")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text("Selection stays active while searching")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Spacer()
+
+                Button("Clear") {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    selectedLandmarkIds.removeAll()
+                }
+                .font(.system(size: 14, weight: .bold, design: .rounded))
+                .foregroundStyle(.red)
+                .disabled(selectedLandmarkIds.isEmpty)
+            }
+
+            HStack(spacing: 12) {
+                Button {
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    beginBulkPromotion()
+                } label: {
+                    Label("Add Promotion", systemImage: "tag.fill")
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(primaryColor)
+                        .clipShape(
+                            RoundedRectangle(
+                                cornerRadius: 14,
+                                style: .continuous
+                            )
+                        )
+                }
+                .buttonStyle(.plain)
+                .disabled(selectedLandmarkIds.isEmpty)
+                .opacity(selectedLandmarkIds.isEmpty ? 0.45 : 1)
+
+                Button(role: .destructive) {
+                    UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+                    beginBulkDelete()
+                } label: {
+                    Label("Delete", systemImage: "trash.fill")
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .foregroundStyle(.red)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Color.red.opacity(0.12))
+                        .clipShape(
+                            RoundedRectangle(
+                                cornerRadius: 14,
+                                style: .continuous
+                            )
+                        )
+                }
+                .buttonStyle(.plain)
+                .disabled(selectedLandmarkIds.isEmpty)
+                .opacity(selectedLandmarkIds.isEmpty ? 0.45 : 1)
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 12)
+        .padding(.bottom, 10)
+        .background(.ultraThinMaterial)
+        .overlay(alignment: .top) {
+            Divider()
+        }
+    }
+
+    private func toggleSelection(for landmark: BusinessLandmark) {
+        if selectedLandmarkIds.contains(landmark.landmarkId) {
+            selectedLandmarkIds.remove(landmark.landmarkId)
+        } else {
+            selectedLandmarkIds.insert(landmark.landmarkId)
+        }
+    }
+
+    private func selectVisibleLandmarks() {
+        selectedLandmarkIds.formUnion(visibleLandmarkIds)
+    }
+
+    private func deselectVisibleLandmarks() {
+        selectedLandmarkIds.subtract(visibleLandmarkIds)
+    }
+
+    private func endSelectionMode() {
+        isSelectionMode = false
+        selectedLandmarkIds.removeAll()
+    }
+
+    private func beginBulkPromotion() {
+        let snapshot = selectedLandmarks
+
+        guard !snapshot.isEmpty else {
+            return
+        }
+
+        bulkPromotionSelection = BulkLandmarkSelection(
+            landmarks: snapshot
+        )
+    }
+
+    private func beginBulkDelete() {
+        let snapshot = selectedLandmarks
+
+        guard !snapshot.isEmpty else {
+            return
+        }
+
+        bulkDeleteSelection = BulkLandmarkSelection(
+            landmarks: snapshot
+        )
+    }
+
+    @MainActor
+    private func handleBulkPromotionResult(
+        _ result: BusinessBulkPromotionResult
+    ) {
+        viewModel.replaceLandmarks(result.updatedLandmarks)
+
+        for landmarkId in result.successfulLandmarkIds {
+            var titles = promotionTitlesByLandmarkId[landmarkId] ?? []
+
+            if !titles.contains(where: {
+                $0.caseInsensitiveCompare(result.promotionName) == .orderedSame
+            }) {
+                titles.append(result.promotionName)
+            }
+
+            promotionTitlesByLandmarkId[landmarkId] = titles
+        }
+
+        let failedIds = Set(
+            result.failedLandmarks.map(\.landmarkId)
+        )
+
+        selectedLandmarkIds = failedIds
+
+        if failedIds.isEmpty {
+            isSelectionMode = false
+        }
+    }
+
+    @MainActor
+    private func handleBulkDeleteResult(
+        _ result: BusinessBulkDeleteResult
+    ) {
+        viewModel.removeLandmarks(
+            landmarkIds: result.successfulLandmarkIds
+        )
+
+        for landmarkId in result.successfulLandmarkIds {
+            promotionTitlesByLandmarkId.removeValue(
+                forKey: landmarkId
+            )
+        }
+
+        let failedIds = Set(
+            result.failedLandmarks.map(\.landmarkId)
+        )
+
+        selectedLandmarkIds = failedIds
+
+        if failedIds.isEmpty {
+            isSelectionMode = false
         }
     }
 
@@ -470,69 +833,142 @@ struct BusinessLandmarksView: View {
     private struct BusinessLandmarkRow: View {
         let landmark: BusinessLandmark
         let matchedPromotionTitle: String?
+        let isSelectionMode: Bool
+        let isSelected: Bool
+
+        private let selectionColor = Color(
+            red: 0.22,
+            green: 0.49,
+            blue: 1.00
+        )
 
         var body: some View {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .top) {
-                    Text(landmark.label.isEmpty ? "Untitled Landmark" : landmark.label)
+            HStack(alignment: .top, spacing: 14) {
+                if isSelectionMode {
+                    Image(
+                        systemName: isSelected
+                            ? "checkmark.circle.fill"
+                            : "circle"
+                    )
+                    .font(.system(size: 24, weight: .semibold))
+                    .foregroundStyle(
+                        isSelected
+                            ? selectionColor
+                            : Color(uiColor: .tertiaryLabel)
+                    )
+                    .padding(.top, 1)
+                    .transition(.scale.combined(with: .opacity))
+                }
+
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(alignment: .top) {
+                        Text(
+                            landmark.label.isEmpty
+                                ? "Untitled Landmark"
+                                : landmark.label
+                        )
                         .font(.system(size: 18, weight: .bold, design: .rounded))
                         .foregroundColor(.primary)
 
-                    Spacer()
+                        Spacer()
 
-                    Text(landmark.displayStatus)
-                        .font(.system(size: 11, weight: .bold, design: .rounded))
-                        .textCase(.uppercase)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(landmark.isActive == false ? Color.gray.opacity(0.15) : Color.green.opacity(0.15))
-                        .foregroundColor(landmark.isActive == false ? .secondary : .green)
-                        .clipShape(Capsule())
-                }
-
-                Text(landmark.displayDescription)
-                    .font(.system(size: 14, weight: .regular))
-                    .foregroundColor(.secondary)
-                    .lineLimit(2)
-
-                if let matchedPromotionTitle {
-                    HStack(spacing: 6) {
-                        Image(systemName: "tag.fill")
-                        Text("Matched promotion: \(matchedPromotionTitle)")
-                            .lineLimit(1)
+                        Text(landmark.displayStatus)
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .textCase(.uppercase)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(
+                                landmark.isActive == false
+                                    ? Color.gray.opacity(0.15)
+                                    : Color.green.opacity(0.15)
+                            )
+                            .foregroundColor(
+                                landmark.isActive == false
+                                    ? .secondary
+                                    : .green
+                            )
+                            .clipShape(Capsule())
                     }
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
-                    .foregroundStyle(.orange)
-                }
 
-                HStack(spacing: 12) {
-                    if landmark.promotionEnabled == true {
-                        HStack(spacing: 4) {
+                    Text(landmark.displayDescription)
+                        .font(.system(size: 14, weight: .regular))
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
+
+                    if let matchedPromotionTitle {
+                        HStack(spacing: 6) {
                             Image(systemName: "tag.fill")
-                            Text("Promotions On")
+                            Text("Matched promotion: \(matchedPromotionTitle)")
+                                .lineLimit(1)
                         }
-                        .font(.system(size: 11, weight: .bold, design: .rounded))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.orange.opacity(0.15))
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
                         .foregroundStyle(.orange)
-                        .clipShape(Capsule())
                     }
 
-                    if let latitude = landmark.latitude, let longitude = landmark.longitude {
-                        HStack(spacing: 4) {
-                            Image(systemName: "location.fill")
-                            Text(String(format: "%.4f, %.4f", latitude, longitude))
+                    HStack(spacing: 12) {
+                        if landmark.promotionEnabled == true {
+                            HStack(spacing: 4) {
+                                Image(systemName: "tag.fill")
+                                Text("Promotions On")
+                            }
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.orange.opacity(0.15))
+                            .foregroundStyle(.orange)
+                            .clipShape(Capsule())
                         }
-                        .font(.system(size: 12, weight: .bold, design: .monospaced))
-                        .foregroundStyle(.tertiary)
+
+                        if let latitude = landmark.latitude,
+                           let longitude = landmark.longitude {
+                            HStack(spacing: 4) {
+                                Image(systemName: "location.fill")
+                                Text(
+                                    String(
+                                        format: "%.4f, %.4f",
+                                        latitude,
+                                        longitude
+                                    )
+                                )
+                            }
+                            .font(
+                                .system(
+                                    size: 12,
+                                    weight: .bold,
+                                    design: .monospaced
+                                )
+                            )
+                            .foregroundStyle(.tertiary)
+                        }
                     }
                 }
             }
             .padding(20)
-            .background(Color(uiColor: .secondarySystemGroupedBackground))
+            .background {
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(
+                        isSelected
+                            ? selectionColor.opacity(0.10)
+                            : Color(uiColor: .secondarySystemGroupedBackground)
+                    )
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .stroke(
+                        isSelected
+                            ? selectionColor.opacity(0.60)
+                            : Color.clear,
+                        lineWidth: 1.5
+                    )
+            }
             .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
             .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2)
+            .animation(.easeOut(duration: 0.18), value: isSelected)
         }
     }
+}
+
+private struct BulkLandmarkSelection: Identifiable {
+    let id = UUID()
+    let landmarks: [BusinessLandmark]
 }

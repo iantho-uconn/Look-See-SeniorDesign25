@@ -3,8 +3,8 @@
 //  LookSeeProto
 //
 //  Main popup for detected landmarks.
-//  Displays the live website URL, promotion details,
-//  promotion image, and local landmark image.
+//  Uses an intrinsic height for short content and switches to a
+//  capped, scrollable layout only when the content is too tall.
 //
 
 import SwiftUI
@@ -34,50 +34,71 @@ struct PopUp: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let availableHeight = max(proxy.size.height - 32, 240)
-            let popupHeight = min(availableHeight, 780)
+            let availableHeight = max(proxy.size.height - 32, 280)
+            let maximumPopupHeight = min(availableHeight, 780)
 
+            ViewThatFits(in: .vertical) {
+                intrinsicPopup
+                scrollingPopup(height: maximumPopupHeight)
+            }
+            .padding(.horizontal, 28)
+            .frame(
+                maxWidth: .infinity,
+                maxHeight: .infinity,
+                alignment: .center
+            )
+        }
+        .sheet(item: $selectedPromotionImage) { item in
+            promotionImagePreview(url: item.url)
+        }
+        .onChange(of: infoView.landmarkWebsiteUrl) { _, newValue in
+            print("🔗 PopUp observed website URL: \(newValue)")
+        }
+        .onChange(of: infoView.promoImageUrl) { _, newValue in
+            print("🖼️ PopUp observed promotion image URL: \(newValue)")
+        }
+    }
+
+    // MARK: - Adaptive Popup Layouts
+
+    private var intrinsicPopup: some View {
+        popupShell {
             VStack(spacing: 0) {
-                // Fixed header. The center section below handles scrolling.
-                header
+                popupContent
+                    .fixedSize(horizontal: false, vertical: true)
 
+                popupDivider
+
+                closeButtonArea
+            }
+            .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func scrollingPopup(height: CGFloat) -> some View {
+        popupShell {
+            VStack(spacing: 0) {
                 ScrollView(
                     .vertical,
                     showsIndicators: true
                 ) {
-                    VStack(
-                        alignment: .leading,
-                        spacing: 18
-                    ) {
-                        landmarkTextSection
-
-                        websiteSection
-
-                        if shouldShowPromotion {
-                            promotionSection
-                        }
-                    }
-                    .frame(
-                        maxWidth: .infinity,
-                        alignment: .leading
-                    )
-                    .padding(.horizontal, 20)
-                    .padding(.top, 18)
-                    .padding(.bottom, 22)
+                    popupContent
                 }
                 .scrollDismissesKeyboard(.immediately)
 
-                Divider()
-                    .opacity(0.18)
+                popupDivider
 
-                // Fixed button so it remains reachable while content scrolls.
-                closeButton
-                    .padding(.horizontal, 20)
-                    .padding(.top, 14)
-                    .padding(.bottom, 18)
+                closeButtonArea
             }
+            .frame(height: height)
+        }
+    }
+
+    private func popupShell<Content: View>(
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        content()
             .frame(maxWidth: 620)
-            .frame(height: popupHeight)
             .background(.ultraThickMaterial)
             .clipShape(
                 RoundedRectangle(
@@ -101,118 +122,40 @@ struct PopUp: View {
                 x: 0,
                 y: 15
             )
-            .padding(.horizontal, 28)
-            .frame(
-                maxWidth: .infinity,
-                maxHeight: .infinity,
-                alignment: .center
-            )
-        }
-        .sheet(item: $selectedPromotionImage) { item in
-            promotionImagePreview(url: item.url)
-        }
-        .onChange(of: infoView.landmarkWebsiteUrl) { _, newValue in
-            print("🔗 PopUp observed website URL: \(newValue)")
-        }
-        .onChange(of: infoView.promoImageUrl) { _, newValue in
-            print("🖼️ PopUp observed promotion image URL: \(newValue)")
-        }
     }
 
-    // MARK: - Header
+    private var popupContent: some View {
+        VStack(
+            alignment: .leading,
+            spacing: 18
+        ) {
+            landmarkTextSection
 
-    private var header: some View {
-        ZStack(alignment: .topTrailing) {
-            landmarkHeaderContent
+            websiteSection
 
-            Button {
-                UIImpactFeedbackGenerator(style: .light)
-                    .impactOccurred()
-
-                infoView.dismissLandmark()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 34, height: 34)
-                    .background(.ultraThinMaterial)
-                    .clipShape(Circle())
-                    .padding(14)
+            if shouldShowPromotion {
+                promotionSection
             }
-            .buttonStyle(.plain)
         }
-        .clipShape(
-            RoundedRectangle(
-                cornerRadius: 24,
-                style: .continuous
-            )
+        .frame(
+            maxWidth: .infinity,
+            alignment: .leading
         )
-        .padding(6)
+        .padding(.horizontal, 20)
+        .padding(.top, 26)
+        .padding(.bottom, 22)
     }
 
-    @ViewBuilder
-    private var landmarkHeaderContent: some View {
-        if let imageURL = normalizedURL(infoView.landmarkURL) {
-            AsyncImage(url: imageURL) { phase in
-                switch phase {
-                case .empty:
-                    ZStack {
-                        compactGradientHeader
-
-                        ProgressView()
-                            .tint(.white)
-                    }
-
-                case .success(let image):
-                    image
-                        .resizable()
-                        .scaledToFill()
-
-                case .failure:
-                    compactGradientHeader
-
-                @unknown default:
-                    compactGradientHeader
-                }
-            }
-            .frame(maxWidth: .infinity)
-            .frame(height: 180)
-            .clipped()
-        } else {
-            compactGradientHeader
-        }
+    private var popupDivider: some View {
+        Divider()
+            .opacity(0.18)
     }
 
-    private var compactGradientHeader: some View {
-        ZStack(alignment: .leading) {
-            LinearGradient(
-                colors: [
-                    purpleStart,
-                    purpleEnd
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-
-            HStack(spacing: 10) {
-                Image(systemName: "info.circle.fill")
-                    .font(.system(size: 20, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.90))
-
-                Text("Landmark Details")
-                    .font(
-                        .system(
-                            size: 14,
-                            weight: .bold,
-                            design: .rounded
-                        )
-                    )
-                    .foregroundStyle(.white.opacity(0.90))
-            }
-            .padding(.leading, 18)
-        }
-        .frame(maxWidth: .infinity)
-        .frame(height: 90)
+    private var closeButtonArea: some View {
+        closeButton
+            .padding(.horizontal, 20)
+            .padding(.top, 14)
+            .padding(.bottom, 18)
     }
 
     // MARK: - Landmark Text
@@ -222,19 +165,19 @@ struct PopUp: View {
             Text(displayName)
                 .font(
                     .system(
-                        size: 26,
-                        weight: .bold,
+                        size: 34,
+                        weight: .heavy,
                         design: .rounded
                     )
                 )
                 .foregroundStyle(.primary)
+                .lineLimit(3)
+                .minimumScaleFactor(0.72)
                 .fixedSize(
                     horizontal: false,
                     vertical: true
                 )
 
-            // The description now uses its full natural height.
-            // The popup's main ScrollView handles longer content.
             Text(displayDescription)
                 .font(
                     .system(
@@ -335,27 +278,11 @@ struct PopUp: View {
     // MARK: - Promotion
 
     private var promotionSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 7) {
-                Image(systemName: "sparkles")
-                    .font(.system(size: 14, weight: .bold))
-
-                Text("Active Promotion")
-                    .font(
-                        .system(
-                            size: 12,
-                            weight: .bold,
-                            design: .rounded
-                        )
-                    )
-                    .textCase(.uppercase)
-            }
-            .foregroundStyle(promotionOrange)
-
+        VStack(alignment: .leading, spacing: 10) {
             Text(infoView.promoName)
                 .font(
                     .system(
-                        size: 19,
+                        size: 21,
                         weight: .bold,
                         design: .rounded
                     )
@@ -557,7 +484,6 @@ struct PopUp: View {
                 )
         }
         .buttonStyle(.plain)
-        .padding(.top, 4)
     }
 
     // MARK: - Promotion Preview
