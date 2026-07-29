@@ -202,12 +202,26 @@ struct Buttons: View {
                     .presentationBackground(.ultraThinMaterial)
             }
             .toolbar(.hidden, for: .navigationBar)
-        }
-        .onAppear {
-            scheduleChromeFadeIfNeeded()
-            viewfinderTimingReset()
-            UITabBar.appearance().isHidden = true
-        }
+                }
+                .onAppear {
+                    scheduleChromeFadeIfNeeded()
+                    viewfinderTimingReset()
+                    UITabBar.appearance().isHidden = true
+                    
+                    updateIdleTimer(for: currentTab, active: isActive)
+                }
+                .onDisappear {
+                    // Ensure idle timer is re-enabled if this view disappears completely
+                    print("restored auto lock timer (view disappeared)")
+                    UIApplication.shared.isIdleTimerDisabled = false
+                }
+                .onChange(of: currentTab) { _, newTab in
+                    revealChromeThenFade()
+                    updateIdleTimer(for: newTab, active: isActive)
+                }
+                .onChange(of: isActive) { _, newActive in
+                    updateIdleTimer(for: currentTab, active: newActive)
+                }
     }
 
     // MARK: - Pager
@@ -300,7 +314,19 @@ struct Buttons: View {
             dragOffset = 0
         }
     }
-
+    //idle timer to keep screen active when needed
+    private func updateIdleTimer(for tab: Int, active: Bool) {
+            let shouldDisableAutoLock = (tab == 0 && active)
+            
+            if shouldDisableAutoLock {
+                print("disable auto lock screen timer")
+                UIApplication.shared.isIdleTimerDisabled = true
+            } else {
+                print("restored auto lock timer")
+                UIApplication.shared.isIdleTimerDisabled = false
+            }
+        }
+    
     /// Narrow live-drag strips on the Map tab, so swiping in/out of the map
     /// works without hijacking the map's own pan/zoom gestures everywhere else.
     private func mapEdgeSwipeZones(width: CGFloat) -> some View {
