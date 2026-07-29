@@ -21,6 +21,9 @@ struct ForgotPasswordView: View {
     @State private var isWorking = false
     @State private var statusMessage: String?
     @State private var isError = false
+    
+    @FocusState private var IsKeyboard: Bool
+
 
     init(initialUsername: String = "") {
         _username = State(initialValue: initialUsername)
@@ -46,6 +49,7 @@ struct ForgotPasswordView: View {
                 } else {
                     Section {
                         TextField("Email address", text: $username)
+                            .focused($IsKeyboard)
                             .keyboardType(.emailAddress)
                             .textContentType(.username)
                             .textInputAutocapitalization(.never)
@@ -54,13 +58,16 @@ struct ForgotPasswordView: View {
 
                         if awaitingCode {
                             TextField("Verification code", text: $confirmationCode)
+                                .focused($IsKeyboard)
                                 .keyboardType(.numberPad)
                                 .textContentType(.oneTimeCode)
 
                             SecureField("New password", text: $newPassword)
+                                .focused($IsKeyboard)
                                 .textContentType(.newPassword)
 
                             SecureField("Confirm new password", text: $confirmedPassword)
+                                .focused($IsKeyboard)
                                 .textContentType(.newPassword)
                         }
                     } header: {
@@ -118,6 +125,10 @@ struct ForgotPasswordView: View {
                     }
                 }
             }
+            .contentShape(Rectangle())
+                        .onTapGesture {
+                            IsKeyboard = false
+                        }
             .navigationTitle("Forgot Password")
             .navigationBarTitleDisplayMode(.inline)
             .interactiveDismissDisabled(isWorking)

@@ -3,8 +3,8 @@
 //  LookSeeProto
 //
 //  Main popup for detected landmarks.
-//  Displays the live website URL, promotion details,
-//  promotion image, and local landmark image.
+//  Uses an intrinsic height for short content and switches to a
+//  capped, scrollable layout only when the content is too tall.
 //
 
 import SwiftUI
@@ -33,68 +33,21 @@ struct PopUp: View {
     )
 
     var body: some View {
-        // 🚀 REMOVED GEOMETRY READER! This is what was causing the giant empty black box.
-        VStack(spacing: 0) {
-            
-            // Fixed header.
-            header
+        GeometryReader { proxy in
+            let availableHeight = max(proxy.size.height - 32, 280)
+            let maximumPopupHeight = min(availableHeight, 780)
 
-            ScrollView(.vertical, showsIndicators: true) {
-                VStack(alignment: .leading, spacing: 18) {
-                    landmarkTextSection
-
-                    websiteSection
-
-                    if shouldShowPromotion {
-                        promotionSection
-                    }
-                    
-                    // Merchant Info always stays at the bottom of the scrolling content
-                    MerchantCardView()
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 20)
-                .padding(.top, 18)
-                .padding(.bottom, 22)
+            ViewThatFits(in: .vertical) {
+                intrinsicPopup
+                scrollingPopup(height: maximumPopupHeight)
             }
-            .scrollDismissesKeyboard(.immediately)
-
-            Divider()
-                .opacity(0.18)
-
-            // Fixed button (Matt's update) so it remains reachable while content scrolls.
-            closeButton
-                .padding(.horizontal, 20)
-                .padding(.top, 14)
-                .padding(.bottom, 18)
-        }
-        .frame(maxWidth: 520)
-        // 🚀 Capped maximum height, but allows it to naturally shrink-wrap if content is small
-        .frame(maxHeight: UIScreen.main.bounds.height * 0.80)
-        .background(.ultraThickMaterial)
-        .clipShape(
-            RoundedRectangle(
-                cornerRadius: 30,
-                style: .continuous
-            )
-        )
-        .overlay {
-            RoundedRectangle(
-                cornerRadius: 30,
-                style: .continuous
-            )
-            .stroke(
-                Color.white.opacity(0.20),
-                lineWidth: 1
+            .padding(.horizontal, 28)
+            .frame(
+                maxWidth: .infinity,
+                maxHeight: .infinity,
+                alignment: .center
             )
         }
-        .shadow(
-            color: .black.opacity(0.30),
-            radius: 30,
-            x: 0,
-            y: 15
-        )
-        .padding(.horizontal, 28)
         .sheet(item: $selectedPromotionImage) { item in
             promotionImagePreview(url: item.url)
         }
@@ -106,100 +59,106 @@ struct PopUp: View {
         }
     }
 
-    // MARK: - Header
+    // MARK: - Adaptive Popup Layouts
 
-    private var header: some View {
-        ZStack(alignment: .topTrailing) {
-            landmarkHeaderContent
+    private var intrinsicPopup: some View {
+        popupShell {
+            VStack(spacing: 0) {
+                popupContent
+                    .fixedSize(horizontal: false, vertical: true)
 
-            Button {
-                UIImpactFeedbackGenerator(style: .light)
-                    .impactOccurred()
+                popupDivider
 
-                infoView.dismissLandmark()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 34, height: 34)
-                    .background(.ultraThinMaterial)
-                    .clipShape(Circle())
-                    .padding(14)
+                closeButtonArea
             }
-            .buttonStyle(.plain)
+            .fixedSize(horizontal: false, vertical: true)
         }
-        .clipShape(
-            RoundedRectangle(
-                cornerRadius: 24,
-                style: .continuous
-            )
-        )
-        .padding(6)
     }
 
-    @ViewBuilder
-    private var landmarkHeaderContent: some View {
-        if let imageURL = normalizedURL(infoView.landmarkURL) {
-            AsyncImage(url: imageURL) { phase in
-                switch phase {
-                case .empty:
-                    ZStack {
-                        compactGradientHeader
-
-                        ProgressView()
-                            .tint(.white)
-                    }
-
-                case .success(let image):
-                    image
-                        .resizable()
-                        .scaledToFill()
-
-                case .failure:
-                    compactGradientHeader
-
-                @unknown default:
-                    compactGradientHeader
+    private func scrollingPopup(height: CGFloat) -> some View {
+        popupShell {
+            VStack(spacing: 0) {
+                ScrollView(
+                    .vertical,
+                    showsIndicators: true
+                ) {
+                    popupContent
                 }
+                .scrollDismissesKeyboard(.immediately)
+
+                popupDivider
+
+                closeButtonArea
             }
-            .frame(maxWidth: .infinity)
-            .frame(height: 180)
-            .clipped()
-        } else {
-            compactGradientHeader
+            .frame(height: height)
         }
     }
 
-    private var compactGradientHeader: some View {
-        ZStack(alignment: .leading) {
-            LinearGradient(
-                colors: [
-                    purpleStart,
-                    purpleEnd
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
+    private func popupShell<Content: View>(
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        content()
+            .frame(maxWidth: 620)
+            .background(.ultraThickMaterial)
+            .clipShape(
+                RoundedRectangle(
+                    cornerRadius: 30,
+                    style: .continuous
+                )
             )
-
-            HStack(spacing: 10) {
-                Image(systemName: "info.circle.fill")
-                    .font(.system(size: 20, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.90))
-
-                Text("Landmark Details")
-                    .font(
-                        .system(
-                            size: 14,
-                            weight: .bold,
-                            design: .rounded
-                        )
-                    )
-                    .foregroundStyle(.white.opacity(0.90))
+            .overlay {
+                RoundedRectangle(
+                    cornerRadius: 30,
+                    style: .continuous
+                )
+                .stroke(
+                    Color.white.opacity(0.20),
+                    lineWidth: 1
+                )
             }
-            .padding(.leading, 18)
+            .shadow(
+                color: .black.opacity(0.30),
+                radius: 30,
+                x: 0,
+                y: 15
+            )
+    }
+
+    private var popupContent: some View {
+        VStack(
+            alignment: .leading,
+            spacing: 18
+        ) {
+            landmarkTextSection
+
+            websiteSection
+
+            if shouldShowPromotion {
+                promotionSection
+            }
+
+            // Merchant Info always stays at the bottom of the content
+            MerchantCardView()
         }
-        .frame(maxWidth: .infinity)
-        .frame(height: 90)
+        .frame(
+            maxWidth: .infinity,
+            alignment: .leading
+        )
+        .padding(.horizontal, 20)
+        .padding(.top, 26)
+        .padding(.bottom, 22)
+    }
+
+    private var popupDivider: some View {
+        Divider()
+            .opacity(0.18)
+    }
+
+    private var closeButtonArea: some View {
+        closeButton
+            .padding(.horizontal, 20)
+            .padding(.top, 14)
+            .padding(.bottom, 18)
     }
 
     // MARK: - Landmark Text
@@ -209,19 +168,19 @@ struct PopUp: View {
             Text(displayName)
                 .font(
                     .system(
-                        size: 26,
-                        weight: .bold,
+                        size: 34,
+                        weight: .heavy,
                         design: .rounded
                     )
                 )
                 .foregroundStyle(.primary)
+                .lineLimit(3)
+                .minimumScaleFactor(0.72)
                 .fixedSize(
                     horizontal: false,
                     vertical: true
                 )
 
-            // The description now uses its full natural height.
-            // The popup's main ScrollView handles longer content.
             Text(displayDescription)
                 .font(
                     .system(
@@ -322,27 +281,11 @@ struct PopUp: View {
     // MARK: - Promotion
 
     private var promotionSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 7) {
-                Image(systemName: "sparkles")
-                    .font(.system(size: 14, weight: .bold))
-
-                Text("Active Promotion")
-                    .font(
-                        .system(
-                            size: 12,
-                            weight: .bold,
-                            design: .rounded
-                        )
-                    )
-                    .textCase(.uppercase)
-            }
-            .foregroundStyle(promotionOrange)
-
+        VStack(alignment: .leading, spacing: 10) {
             Text(infoView.promoName)
                 .font(
                     .system(
-                        size: 19,
+                        size: 21,
                         weight: .bold,
                         design: .rounded
                     )

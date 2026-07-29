@@ -56,6 +56,8 @@ struct BusinessLandmarkDetailView: View {
     @State private var isEditingWebsiteUrl = false
     @State private var isSavingWebsiteUrl = false
     @State private var websiteUrlErrorMessage: String?
+    
+    @FocusState private var IsKeyboard: Bool
 
     private let service = BusinessLandmarkService()
     private let promotionService = BusinessPromotionService()
@@ -915,6 +917,7 @@ struct BusinessLandmarkDetailView: View {
 
                     TextField("example.com", text: $draftWebsiteUrl)
                         .font(.system(size: 16, weight: .medium))
+                        .focused($IsKeyboard)
                         .keyboardType(.URL)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled(true)
@@ -941,6 +944,10 @@ struct BusinessLandmarkDetailView: View {
                     }
                 }
                 .padding(.top, 24)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                IsKeyboard = false
             }
             .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
             .navigationTitle("Edit Website")

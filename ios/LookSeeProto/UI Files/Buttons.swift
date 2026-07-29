@@ -80,13 +80,9 @@ struct Buttons: View {
                                 withAnimation(.easeOut(duration: 0.1)) { chromeVisible = false }
                             }
                         }
-                        // Full-width live-tracking swipe — active on any tab
-                        // except Map, where the map's own pan/zoom gestures
-                        // need the whole surface (edge zones handle that case).
-                        // Disabled entirely while the landmark info popup is
-                        // showing, so swiping doesn't fight with the popup.
+                        // Full-width live-tracking swipe — disabled when side menu is open
                         .simultaneousGesture(
-                            (currentTab != mapTabIndex && !infoView.infoView)
+                            (currentTab != mapTabIndex && !infoView.infoView && !showSideMenu)
                                 ? DragGesture(minimumDistance: 12)
                                     .onChanged { value in
                                         guard abs(value.translation.width) > abs(value.translation.height) else { return }
@@ -106,7 +102,7 @@ struct Buttons: View {
                                 : nil
                         )
 
-                    if currentTab == mapTabIndex && !infoView.infoView {
+                    if currentTab == mapTabIndex && !infoView.infoView && !showSideMenu {
                         mapEdgeSwipeZones(width: pageWidth)
                     }
 
@@ -142,6 +138,7 @@ struct Buttons: View {
                             .frame(width: pageWidth * 0.75)
                             .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
                             .offset(x: showSideMenu ? 0 : pageWidth)
+                            // 🚀 REMOVED the broken highPriorityGesture here so Settings scroll view works normally!
                     }
                     .animation(.easeOut(duration: 0.25), value: showSideMenu)
 
@@ -369,12 +366,13 @@ struct Buttons: View {
                         else { showBusinessAlert = true }
                     }
                 )
-                .sheet(isPresented: $showPromotion) { PromotionEditor() }
-                .alert("Subscription Required", isPresented: $showBusinessAlert) {
-                    Button("OK", role: .cancel) {}
-                } message: {
-                    Text("You need an active subscription to access the Promotion Editor.")
-                }
+            // old promotion editor replaced by landmark management
+                //.sheet(isPresented: $showPromotion) { PromotionEditor() }
+//                .alert("Premium Account Required", isPresented: $showBusinessAlert) {
+//                    Button("OK", role: .cancel) {}
+//                } message: {
+//                    Text("You need an active subscription to access the Promotion Editor.")
+//                }
             Spacer()
 
             Button {
