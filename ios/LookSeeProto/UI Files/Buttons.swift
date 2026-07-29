@@ -370,12 +370,13 @@ struct Buttons: View {
                         else { showBusinessAlert = true }
                     }
                 )
-                .sheet(isPresented: $showPromotion) { PromotionEditor() }
-                .alert("Premium Account Required", isPresented: $showBusinessAlert) {
-                    Button("OK", role: .cancel) {}
-                } message: {
-                    Text("You need an active subscription to access the Promotion Editor.")
-                }
+            // old promotion editor replaced by landmark managment 
+                //.sheet(isPresented: $showPromotion) { PromotionEditor() }
+//                .alert("Premium Account Required", isPresented: $showBusinessAlert) {
+//                    Button("OK", role: .cancel) {}
+//                } message: {
+//                    Text("You need an active subscription to access the Promotion Editor.")
+//                }
             Spacer()
 
             Button {
