@@ -414,8 +414,8 @@ def main():
 
     train_args = {
         "data": data_yaml,
-        "epochs": 50,
-        "patience": 20,
+        "epochs": 100,
+        "patience": 15,
         "imgsz": 640,
         "batch": 16,
         "device": 0,

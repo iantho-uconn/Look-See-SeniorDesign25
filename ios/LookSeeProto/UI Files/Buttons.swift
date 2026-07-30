@@ -210,11 +210,12 @@ struct Buttons: View {
                     
                     updateIdleTimer(for: currentTab, active: isActive)
                 }
-                .onDisappear {
-                    // Ensure idle timer is re-enabled if this view disappears completely
-                    print("restored auto lock timer (view disappeared)")
-                    UIApplication.shared.isIdleTimerDisabled = false
-                }
+//                .onDisappear {
+//                    // Ensure idle timer is re-enabled if this view disappears completely
+//                    UIApplication.shared.isIdleTimerDisabled = false
+//                    print("restored auto lock timer (view disappeared)", UIApplication.shared.isIdleTimerDisabled)
+//
+//                }
                 .onChange(of: currentTab) { _, newTab in
                     revealChromeThenFade()
                     updateIdleTimer(for: newTab, active: isActive)
@@ -316,14 +317,17 @@ struct Buttons: View {
     }
     //idle timer to keep screen active when needed
     private func updateIdleTimer(for tab: Int, active: Bool) {
-            let shouldDisableAutoLock = (tab == 0 && active)
+            let shouldDisableAutoLock = (tab == 0 && active )
             
             if shouldDisableAutoLock {
-                print("disable auto lock screen timer")
-                UIApplication.shared.isIdleTimerDisabled = true
+                if !UIApplication.shared.isIdleTimerDisabled {
+                    UIApplication.shared.isIdleTimerDisabled = true
+                    print("disable auto lock screen timer", UIApplication.shared.isIdleTimerDisabled)}
             } else {
-                print("restored auto lock timer")
-                UIApplication.shared.isIdleTimerDisabled = false
+                if UIApplication.shared.isIdleTimerDisabled {
+                    UIApplication.shared.isIdleTimerDisabled = false
+                    print("restored auto lock timer",UIApplication.shared.isIdleTimerDisabled)
+                }
             }
         }
     

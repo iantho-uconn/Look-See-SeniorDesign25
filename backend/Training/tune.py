@@ -26,8 +26,9 @@ def main():
     # Start the Tuning Process across the dataset
     model.tune(
         data=data_yaml, 
-        epochs=15,        # 15 epochs per mutation
-        iterations=15,    # 15 genetic mutations to test
+        epochs=100,        # 100 epochs per mutation
+        patience=15,      # 15 epochs of no improvement before stopping
+        iterations=7,    # 7 genetic mutations to test
         optimizer="AdamW",
         plots=False,      # Turn off plotting to save compute time
         save=False        # Don't save large weight files, we only want the hyperparameters
