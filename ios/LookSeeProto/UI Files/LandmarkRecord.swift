@@ -43,6 +43,7 @@ struct LandmarkRecord: View {
     
     @State private var pendingArchiveURLs: [URL] = []
     @State private var isStitchingVideos = false
+    @State private var startrecording = false
     
     @State private var showAutoQueueAlert = false
     @State private var capturedNegativeVideo: CapturedNegativeVideo? = nil
@@ -195,7 +196,11 @@ struct LandmarkRecord: View {
         } message: {
             Text(limitAlertMessage)
         }
+        .onChange(of: startrecording) {
+            updateIdleTimer(recording: startrecording)
+        }
     }
+    
 
     var processingOverlay: some View {
         ZStack {
@@ -300,6 +305,7 @@ struct LandmarkRecord: View {
             Button {
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 showVideoCamera = true
+                startrecording = true
             } label: {
                 HStack(spacing: 10) {
                     Image(systemName: "video.fill")
@@ -388,6 +394,20 @@ struct LandmarkRecord: View {
         if let duration = clipDurations[url] { return String(localized: "Clip \(index + 1) · \(String(format: "%.1f", duration))s") }
         return String(localized: "Clip \(index + 1) · loading…")
     }
+    
+    private func updateIdleTimer(recording: Bool) {
+            let shouldDisableAutoLock = startrecording
+            if shouldDisableAutoLock {
+                if !UIApplication.shared.isIdleTimerDisabled {
+                    UIApplication.shared.isIdleTimerDisabled = true
+                    print("disable auto lock screen timer", UIApplication.shared.isIdleTimerDisabled)}
+            } else {
+                if UIApplication.shared.isIdleTimerDisabled {
+                    UIApplication.shared.isIdleTimerDisabled = false
+                    print("restored auto lock timer",UIApplication.shared.isIdleTimerDisabled)
+                }
+            }
+        }
 
     private var locationSection: some View {
         HStack {
