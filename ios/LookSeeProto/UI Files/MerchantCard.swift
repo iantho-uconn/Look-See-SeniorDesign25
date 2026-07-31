@@ -23,7 +23,7 @@ struct MerchantCardView: View {
                         Image(systemName: "sparkles")
                             .font(.caption2)
                             .foregroundColor(.yellow)
-                        Text("LANDMARK SPONSORED BY")
+                        Text("LANDMARK OWNER")
                             .font(.system(size: 10, weight: .bold))
                             .tracking(1.0)
                             .foregroundColor(.secondary)
