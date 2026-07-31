@@ -49,7 +49,7 @@ struct Settings: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
-               
+                
                 // 1. PROFILE HEADER
                 VStack(spacing: 0) {
                     if !isFullyLoggedIn {
@@ -90,7 +90,7 @@ struct Settings: View {
                 if isFullyLoggedIn && vm.hasActiveSubscription {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Business Management").font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(.secondary).textCase(.uppercase).padding(.horizontal, 20)
-                       
+                        
                         if UserDefaults.standard.bool(forKey: "isFreeTrial_\(vm.userEmail)") {
                             HStack(alignment: .top, spacing: 12) {
                                 Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange).font(.title3)
@@ -101,7 +101,7 @@ struct Settings: View {
                             }
                             .padding(16).background(Color.orange.opacity(0.1)).clipShape(RoundedRectangle(cornerRadius: 16)).padding(.horizontal)
                         }
-                       
+                        
                         VStack(spacing: 0) {
                             NavigationLink { BusinessLandmarksView() } label: {
                                 settingsRow(icon: "building.2.crop.circle.fill", iconBg: primaryColor, title: "Manage My Landmarks", subtitle: "View the landmarks assigned to your account.")
@@ -137,7 +137,7 @@ struct Settings: View {
                 if isFullyLoggedIn {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Account").font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(.secondary).textCase(.uppercase).padding(.horizontal, 20)
-                       
+                        
                         VStack(spacing: 0) {
                             if vm.hasActiveSubscription {
                                 NavigationLink { BusinessProfileView().environmentObject(vm) } label: {
@@ -155,7 +155,7 @@ struct Settings: View {
                                     settingsRow(icon: "lock.fill", iconBg: .gray, title: "Business Profile Locked", subtitle: "Subscribe to edit your public store info.", showDivider: false)
                                 }
                             }
-                           
+                            
                             Divider().padding(.leading, 68)
                             NavigationLink { AccountSecurityView().environmentObject(vm) } label: {
                                 settingsRow(icon: "person.badge.key.fill", iconBg: .gray, title: "Account & Security", subtitle: "Change your email or password.", showDivider: false)
@@ -174,14 +174,14 @@ struct Settings: View {
                 } else if isFullyLoggedIn && vm.hasActiveSubscription {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Membership").font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(.secondary).textCase(.uppercase).padding(.horizontal, 20)
-                       
+                        
                         VStack(spacing: 16) {
                             HStack {
                                 Text("Current Plan").font(.system(size: 16, weight: .semibold))
                                 Spacer()
                                 Text(dynamicPlanTitle).foregroundStyle(primaryColor).font(.system(size: 16, weight: .bold, design: .rounded))
                             }
-                           
+                            
                             HStack {
                                 Text("Status").font(.system(size: 16, weight: .semibold))
                                 Spacer()
@@ -191,9 +191,9 @@ struct Settings: View {
                                     Text("Active").foregroundStyle(.green).font(.system(size: 15, weight: .bold))
                                 }
                             }
-                           
+                            
                             Divider()
-                           
+                            
                             HStack(spacing: 12) {
                                 Button {
                                     presenter.subscriptionStartingTab = 0
@@ -235,7 +235,7 @@ struct Settings: View {
                 }
                 .background(Color(uiColor: .secondarySystemGroupedBackground)).clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                 .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2).padding(.horizontal)
-               
+                
                 Spacer(minLength: 40)
             }
             .padding(.top, 16)
@@ -346,7 +346,7 @@ struct DeepSettingsView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
-               
+                
                 VStack(alignment: .leading, spacing: 8) {
                     Text("App Language").font(.system(size: 13, weight: .bold, design: .rounded)).foregroundStyle(.secondary).textCase(.uppercase).padding(.horizontal, 20)
                     
@@ -370,7 +370,7 @@ struct DeepSettingsView: View {
                     }
                     .padding(.horizontal)
                 }
-               
+                
                 VStack(spacing: 6) {
                     Button {
                         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
@@ -420,7 +420,7 @@ struct DeepSettingsView: View {
                     .padding(.top, 4)
                 }
                 .padding(.horizontal)
-               
+                
                 if isFullyLoggedIn {
                     Button { showAlertSignOut = true } label: {
                         HStack(spacing: 12) { Image(systemName: "rectangle.portrait.and.arrow.right"); Text("Sign Out") }.font(.system(size: 16, weight: .bold, design: .rounded)).foregroundStyle(.red).frame(maxWidth: .infinity).padding(.vertical, 16).background(Color.red.opacity(0.1)).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous)).padding(.horizontal)
@@ -453,7 +453,7 @@ struct BusinessProfileView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
-               
+                
                 VStack(spacing: 8) {
                     Text("Your Public Merchant Card")
                         .font(.system(size: 13, weight: .bold, design: .rounded))
@@ -467,11 +467,11 @@ struct BusinessProfileView: View {
                         .padding(.horizontal, 32)
                 }
                 .padding(.top, 16)
-               
+                
                 let mStoreName = vm.storeName.isEmpty ? String(localized: "Your Store Name") : vm.storeName
                 let mBio = vm.storeBio.isEmpty ? String(localized: "Add a short bio about your business here so users know what you do.") : vm.storeBio
                 let mPhone = vm.phoneNumber.isEmpty ? String(localized: "No Phone Number") : vm.phoneNumber
-               
+                
                 MerchantCard(
                     storeName: mStoreName,
                     logoUrl: vm.storeLogoUrl,
@@ -479,7 +479,7 @@ struct BusinessProfileView: View {
                     phone: mPhone
                 )
                 .padding(.horizontal)
-               
+                
                 Button {
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                     showEditSheet = true
@@ -493,7 +493,7 @@ struct BusinessProfileView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                         .padding(.horizontal)
                 }
-               
+                
                 Spacer()
             }
         }
@@ -531,12 +531,12 @@ struct BusinessProfileEditSheet: View {
                         .focused($IsKeyboard)
                         .lineLimit(3...5)
                 }
-               
+                
                 Section(header: Text("Store Logo"), footer: Text("Upload a square logo or image from your photo library.")) {
                     HStack(spacing: 16) {
                         ZStack {
                             Circle().fill(Color(red: 0.22, green: 0.49, blue: 1.00).opacity(0.15))
-                           
+                            
                             if let logoUIImage {
                                 Image(uiImage: logoUIImage)
                                     .resizable()
@@ -559,7 +559,7 @@ struct BusinessProfileEditSheet: View {
                             }
                         }
                         .frame(width: 56, height: 56)
-                       
+                        
                         VStack(alignment: .leading, spacing: 6) {
                             PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
                                 HStack(spacing: 6) {
@@ -573,7 +573,8 @@ struct BusinessProfileEditSheet: View {
                                 .font(.system(size: 14, weight: .bold))
                                 .foregroundStyle(Color(red: 0.22, green: 0.49, blue: 1.00))
                             }
-                           
+                            .buttonStyle(.borderless)
+                            
                             if !draftLogoUrl.isEmpty || logoUIImage != nil {
                                 Button(role: .destructive) {
                                     draftLogoUrl = ""
@@ -583,12 +584,13 @@ struct BusinessProfileEditSheet: View {
                                     Text("Remove Logo")
                                         .font(.system(size: 12))
                                 }
+                                .buttonStyle(.borderless)
                             }
                         }
                     }
                     .padding(.vertical, 4)
                 }
-               
+                
                 Section(header: Text("Contact Info")) {
                     TextField("Phone Number", text: $draftPhone)
                         .focused($IsKeyboard)
@@ -615,7 +617,7 @@ struct BusinessProfileEditSheet: View {
                         isSaving = true
                         Task {
                             let base64String = logoUIImage?.jpegData(compressionQuality: 0.4)?.base64EncodedString()
-                           
+                            
                             let success = await vm.updateBusinessProfile(
                                 storeName: draftName,
                                 phoneNumber: draftPhone,
@@ -646,6 +648,7 @@ struct BusinessProfileEditSheet: View {
                        let uiImage = UIImage(data: data) {
                         await MainActor.run {
                             self.logoUIImage = uiImage
+                            self.draftLogoUrl = ""
                         }
                     }
                 }
