@@ -24,7 +24,6 @@ struct LandmarkScan: View {
     @State private var zoomFadeTask: Task<Void, Never>?
     @State private var liveInfoFetchTask: Task<Void, Never>?
 
-    @State private var notificationStack: [Detection] = []
     @State private var isCameraPaused = false
 
     var body: some View {
@@ -46,7 +45,11 @@ struct LandmarkScan: View {
                     safeZoneRect: .constant(lockedSafeZone),
                     onTap: onTap,
                     onPinch: onPinch,
-                    isAIPaused: $isCameraPaused
+                    isAIPaused: $isCameraPaused,
+                    onBoxTap: { detection in
+                        // THIS NOW OPENS THE SLIDE-UP SHEET WHEN THE GREEN BOX IS TAPPED!
+                        openPopup(for: detection)
+                    }
                 )
                 .ignoresSafeArea()
                 .blur(radius: blurAmount)
@@ -62,67 +65,11 @@ struct LandmarkScan: View {
                             ).isEmpty == false
                     }
                 }
-                .onChange(of: detector.newlyDetectedLandmark) { _, newDetection in
-                    guard isActive, !infoView.infoView else {
-                        return
-                    }
-                    handleNewDetection(newDetection)
-                }
 
                 if !isActive {
                     Color.black
                         .ignoresSafeArea()
                         .zIndex(2)
-                }
-
-                // Invisible tap target over the detection safe zone.
-                if isActive,
-                   let bestDetection = detector.detections.first,
-                   !infoView.infoView {
-                    Rectangle()
-                        .fill(Color.white.opacity(0.001))
-                        .frame(
-                            width: lockedSafeZone.width,
-                            height: lockedSafeZone.height
-                        )
-                        .position(
-                            x: lockedSafeZone.midX,
-                            y: lockedSafeZone.midY
-                        )
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            openPopup(for: bestDetection)
-                        }
-                        .zIndex(4)
-                }
-
-                // Detection notifications.
-                if isActive, !infoView.infoView {
-                    VStack {
-                        Spacer()
-
-                        VStack(spacing: 12) {
-                            ForEach(notificationStack) { detection in
-                                NotificationPill(detection: detection) {
-                                    openPopup(for: detection)
-
-                                    withAnimation {
-                                        notificationStack.removeAll {
-                                            $0.id == detection.id
-                                        }
-                                    }
-                                }
-                                .transition(
-                                    .move(edge: .bottom)
-                                        .combined(with: .scale(scale: 0.9))
-                                        .combined(with: .opacity)
-                                )
-                            }
-                        }
-                        .padding(.bottom, geo.size.height * 0.24)
-                        .padding(.horizontal, 16)
-                    }
-                    .zIndex(10)
                 }
 
                 // PopUp is presented by Buttons at the root level so it
@@ -153,10 +100,6 @@ struct LandmarkScan: View {
             .animation(
                 .easeOut(duration: 0.25),
                 value: zoomIndicatorVisible
-            )
-            .animation(
-                .spring(response: 0.35, dampingFraction: 0.8),
-                value: notificationStack
             )
             .onAppear {
                 detector.dynamicSafeZone = lockedSafeZone
@@ -341,37 +284,6 @@ struct LandmarkScan: View {
         }
     }
 
-    private func handleNewDetection(_ detection: Detection?) {
-        guard let detection else {
-            return
-        }
-
-        // Avoid stacking duplicate notifications for the same detection.
-        guard !notificationStack.contains(where: { $0.id == detection.id }) else {
-            return
-        }
-
-        UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
-
-        withAnimation {
-            notificationStack.insert(detection, at: 0)
-
-            if notificationStack.count > 3 {
-                notificationStack.removeLast()
-            }
-        }
-
-        let idToRemove = detection.id
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) {
-            withAnimation {
-                notificationStack.removeAll {
-                    $0.id == idToRemove
-                }
-            }
-        }
-    }
-
     private func showZoomIndicatorThenFade() {
         zoomFadeTask?.cancel()
         zoomIndicatorVisible = true
@@ -387,84 +299,6 @@ struct LandmarkScan: View {
                 withAnimation(.easeOut(duration: 0.25)) {
                     zoomIndicatorVisible = false
                 }
-            }
-        }
-    }
-}
-
-// MARK: - Notification Pill
-struct NotificationPill: View {
-    let detection: Detection
-    let onTap: () -> Void
-    
-    @State private var isPulsing = false
-
-    var body: some View {
-        Button(action: onTap) {
-            HStack(spacing: 16) {
-                ZStack {
-                    LinearGradient(
-                        colors: [Color.blue, Color.purple],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                    .frame(width: 48, height: 48)
-                    .clipShape(Circle())
-                    .shadow(
-                        color: Color.blue.opacity(0.35),
-                        radius: 6,
-                        x: 0,
-                        y: 3
-                    )
-                    
-                    Image(systemName: "viewfinder")
-                        .font(.system(size: 22, weight: .bold))
-                        .foregroundStyle(.white)
-                }
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Landmark Recognized")
-                        .font(.system(size: 11, weight: .heavy, design: .rounded))
-                        .foregroundStyle(Color.blue)
-                        .textCase(.uppercase)
-                        .opacity(0.9)
-
-                    Text(detection.displayLabel)
-                        .font(.system(size: 19, weight: .bold, design: .rounded))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                }
-                
-                Spacer()
-                
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundStyle(Color(uiColor: .tertiaryLabel))
-            }
-            .padding(.horizontal, 18)
-            .padding(.vertical, 14)
-            .background(
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .fill(.regularMaterial)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .stroke(
-                        isPulsing ? Color.blue.opacity(0.5) : Color.white.opacity(0.3),
-                        lineWidth: isPulsing ? 1.5 : 1
-                    )
-            )
-            .shadow(
-                color: isPulsing ? Color.blue.opacity(0.15) : .black.opacity(0.15),
-                radius: 18,
-                x: 0,
-                y: 8
-            )
-        }
-        .buttonStyle(.plain)
-        .onAppear {
-            withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
-                isPulsing = true
             }
         }
     }

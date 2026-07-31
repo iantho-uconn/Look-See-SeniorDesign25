@@ -1,7 +1,13 @@
-import json
 import os
-import shutil
+import sys
+import subprocess
 
+# 🚀 Force-update ultralytics to support YOLO26 before importing
+print("📦 Upgrading ultralytics package for YOLO26 compatibility...")
+subprocess.check_call([sys.executable, "-m", "pip", "install", "-U", "ultralytics"])
+
+import json
+import shutil
 import yaml
 from ultralytics import YOLO
 
@@ -394,7 +400,7 @@ def main():
         expected_class_count=manifest_class_count,
     )
 
-    model = YOLO("yolo11n.pt")
+    model = YOLO("yolo26s.pt")
 
     custom_cfg = (
         "/app/looksee_best_hyperparameters.yaml"

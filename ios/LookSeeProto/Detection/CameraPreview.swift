@@ -84,9 +84,9 @@ final class OverlayView: UIView {
             backdropPath.fill()
         }
 
-        // Primary detection box + label
-        if let bestTarget = detections.first {
-            let targetBox = showSafeZone ? activeSafeZone : bestTarget.bbox
+        // Draw ALL detections
+        for target in detections {
+            let targetBox = showSafeZone ? activeSafeZone : target.bbox
             let maxScreenBounds = rect.insetBy(dx: 16, dy: 80)
             let clampedBox = targetBox.intersection(maxScreenBounds)
 
@@ -97,8 +97,7 @@ final class OverlayView: UIView {
                 perimeter.lineWidth = 4.0
                 perimeter.stroke()
 
-                // Removed confidence score from label
-                let labelText = "\(bestTarget.displayLabel)"
+                let labelText = "\(target.displayLabel)"
                 let font = UIFont.systemFont(ofSize: 16, weight: .bold)
                 let textStyle: [NSAttributedString.Key: Any] = [
                     .font: font,
@@ -121,8 +120,9 @@ final class OverlayView: UIView {
                     withAttributes: textStyle
                 )
             }
+        }
 
-        } else if showSafeZone {
+        if showSafeZone && detections.isEmpty {
             // No detection — show dashed viewfinder outline
             UIColor(red: 0.0, green: 0.8, blue: 1.0, alpha: 0.8).setStroke()
             let perimeter = UIBezierPath(rect: activeSafeZone)
@@ -143,6 +143,9 @@ struct CameraPreview: UIViewRepresentable {
     let onTap: () -> Void
     let onPinch: () -> Void
     @Binding var isAIPaused: Bool
+    
+    // Action triggered when a bounding box is tapped
+    let onBoxTap: (Detection) -> Void
 
     static let sharedSession = CameraSessionCoordinator()
 
@@ -165,8 +168,12 @@ struct CameraPreview: UIViewRepresentable {
             CameraPreview.sharedSession.start()
         }
 
-        let tapGesture = context.coordinator.boundingBoxTapGesture
-        tapGesture.isEnabled = false
+        // We now use ONE unified tap gesture to prevent conflicts
+        let tapGesture = UITapGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handleUnifiedTap(_:))
+        )
+        tapGesture.cancelsTouchesInView = false
         view.addGestureRecognizer(tapGesture)
 
         let pinch = UIPinchGestureRecognizer(
@@ -174,13 +181,6 @@ struct CameraPreview: UIViewRepresentable {
             action: #selector(Coordinator.handlePinch(_:))
         )
         view.addGestureRecognizer(pinch)
-        
-        let chromeTap = UITapGestureRecognizer(
-            target: context.coordinator,
-            action: #selector(Coordinator.handleChromeTap(_:))
-        )
-        chromeTap.cancelsTouchesInView = false
-        view.addGestureRecognizer(chromeTap)
 
         return view
     }
@@ -191,25 +191,17 @@ struct CameraPreview: UIViewRepresentable {
         uiView.overlay.showSafeZone = showSafeZone
         uiView.overlay.safeZoneRect = safeZoneRect
         
-        if isAIPaused {
-            CameraPreview.sharedSession.stop()
+        if isAIPaused || infoView.infoView {
+            if isAIPaused { CameraPreview.sharedSession.stop() }
             uiView.overlay.detections.removeAll()
-            context.coordinator.boundingBoxTapGesture.isEnabled = false
         } else {
             CameraPreview.sharedSession.start()
-            
-            if infoView.infoView {
-                uiView.overlay.detections.removeAll()
-                context.coordinator.boundingBoxTapGesture.isEnabled = false
-            } else {
-                uiView.overlay.detections = detector.detections
-                context.coordinator.boundingBoxTapGesture.isEnabled = !detector.detections.isEmpty
-            }
+            uiView.overlay.detections = detector.detections
         }
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(zoomLevel: $zoomLevel, onTap: onTap, onPinch: onPinch)
+        Coordinator(zoomLevel: $zoomLevel, onTap: onTap, onPinch: onPinch, onBoxTap: onBoxTap)
     }
 
     // MARK: - Coordinator
@@ -221,25 +213,20 @@ struct CameraPreview: UIViewRepresentable {
         
         let onTap: () -> Void
         let onPinch: () -> Void
+        let onBoxTap: (Detection) -> Void
 
         private var zoomFactorAtGestureStart: CGFloat = 1.0
-
-        lazy var boundingBoxTapGesture: UITapGestureRecognizer = {
-            UITapGestureRecognizer(target: self, action: #selector(bbClick(_:)))
-        }()
 
         init(
             zoomLevel: Binding<CGFloat>,
             onTap: @escaping () -> Void,
-            onPinch: @escaping () -> Void
+            onPinch: @escaping () -> Void,
+            onBoxTap: @escaping (Detection) -> Void
         ) {
             self.zoomLevel = zoomLevel
             self.onTap = onTap
             self.onPinch = onPinch
-        }
-        
-        @objc func handleChromeTap(_ recognizer: UITapGestureRecognizer) {
-            onTap()
+            self.onBoxTap = onBoxTap
         }
         
         @objc func handlePinch(_ recognizer: UIPinchGestureRecognizer) {
@@ -258,40 +245,29 @@ struct CameraPreview: UIViewRepresentable {
             }
         }
 
-        @objc func bbClick(_ recognizer: UITapGestureRecognizer) {
-            onTap()
+        // UNIFIED TAP LOGIC: Checks boxes first, then fires background tap
+        @objc func handleUnifiedTap(_ recognizer: UITapGestureRecognizer) {
+            onTap() // Always triggers the original background tap (e.g., hiding UI)
 
-            guard let view, let overlay else { return }
+            guard let view = view, let overlay = overlay else { return }
             let tapLocation = recognizer.location(in: view)
 
-            guard overlay.frame.contains(tapLocation),
-                  let detection = overlay.detections.first else {
-                return
-            }
+            // Loop through all active detections on the screen
+            for detection in overlay.detections {
+                let activeSafeZone = overlay.safeZoneRect == .zero ? overlay.bounds : overlay.safeZoneRect
+                let targetBox = overlay.showSafeZone ? activeSafeZone : detection.bbox
+                let maxScreenBounds = overlay.bounds.insetBy(dx: 16, dy: 80)
+                let clampedBox = targetBox.intersection(maxScreenBounds)
 
-            let infoView = VariableContainer.shared
+                // Expand hit area so it's super easy to tap while walking (+40 pts on all sides)
+                let tapTarget = clampedBox.insetBy(dx: -40, dy: -40)
 
-            guard let landmark = detection.landmarkEntry else {
-                DispatchQueue.main.async {
-                    infoView.landmarkName = "Class \(detection.classIndex)"
-                    infoView.landmarkDescription = "The matching landmark metadata could not be loaded."
-                    // Removed promoName, promoDescription, and landmarkConfidence
-                    infoView.promoName = ""
-                    infoView.promoDescription = ""
-                    infoView.infoView = true
+                // If the tap was inside this box, open the sheet and stop checking
+                if tapTarget.contains(tapLocation) {
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    self.onBoxTap(detection)
+                    break
                 }
-                return
-            }
-
-            // Simple popup logic without promotion fetching
-            DispatchQueue.main.async {
-                infoView.landmarkName = landmark.label
-                let trimmed = landmark.shortDescription.trimmingCharacters(in: .whitespacesAndNewlines)
-                infoView.landmarkDescription = trimmed.isEmpty ? "No description available." : trimmed
-                
-                infoView.promoName = ""
-                infoView.promoDescription = ""
-                infoView.infoView = true
             }
         }
     }
