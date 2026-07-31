@@ -247,43 +247,62 @@ final class Detector: NSObject, ObservableObject {
 
         let (inputBuffer, scale, padX, padY) = letterbox(pixelBuffer: pixelBuffer)
 
-        guard let input = try? MLDictionaryFeatureProvider(dictionary: [
-            "image": MLFeatureValue(pixelBuffer: inputBuffer),
-            "confidenceThreshold": NSNumber(value: confidenceThreshold),
-            "iouThreshold": NSNumber(value: iouThreshold)
-        ]) else {
+        // 🚀 DYNAMIC INPUT MAPPER
+        // Checks the model description to only pass exactly what the model expects
+        var inputDict: [String: Any] = ["image": MLFeatureValue(pixelBuffer: inputBuffer)]
+        let inputDescriptions = model.modelDescription.inputDescriptionsByName
+        
+        if inputDescriptions.keys.contains("iouThreshold") {
+            inputDict["iouThreshold"] = NSNumber(value: iouThreshold)
+        }
+        if inputDescriptions.keys.contains("confidenceThreshold") {
+            inputDict["confidenceThreshold"] = NSNumber(value: confidenceThreshold)
+        }
+
+        guard let input = try? MLDictionaryFeatureProvider(dictionary: inputDict) else {
+            print("❌ MLDictionaryFeatureProvider Failed. Check model inputs: \(inputDescriptions.keys)")
             throttling = false
             return
         }
 
         do {
             let result = try model.prediction(from: input)
+            let outputKeys = result.featureNames
+            
+            var newDetections: [Detection] = []
+            var diagConfShape: [Int] = []
+            var diagCoordShape: [Int] = []
 
-            guard
-                let confidenceArray = result.featureValue(for: "confidence")?.multiArrayValue,
-                let coordinatesArray = result.featureValue(for: "coordinates")?.multiArrayValue
-            else {
-                throttling = false
-                return
+            // 🚀 DYNAMIC OUTPUT PARSER
+            if outputKeys.contains("confidence") && outputKeys.contains("coordinates") {
+                // 🍎 OLD YOLO STYLE (Separate Confidence & Coordinate Arrays)
+                let conf = result.featureValue(for: "confidence")!.multiArrayValue!
+                let coord = result.featureValue(for: "coordinates")!.multiArrayValue!
+                
+                diagConfShape = conf.shape.map { $0.intValue }
+                diagCoordShape = coord.shape.map { $0.intValue }
+                
+                newDetections = parseDetections(
+                    confArray: conf,
+                    coordArray: coord,
+                    scale: scale, padX: padX, padY: padY, originalSize: CGSize(width: originalWidth, height: originalHeight),
+                    clusterID: clusterID, modelVersion: modelVersion, modelIdentifier: modelIdentifier, expectedClassCount: expectedClassCount
+                )
+                
+            } else if let firstKey = outputKeys.first, let combinedArray = result.featureValue(for: firstKey)?.multiArrayValue {
+                // 🚀 NEW YOLO26 E2E STYLE (Single Combined Array)
+                diagConfShape = combinedArray.shape.map { $0.intValue }
+                
+                newDetections = parseEndToEndDetections(
+                    combinedArray: combinedArray,
+                    scale: scale, padX: padX, padY: padY, originalSize: CGSize(width: originalWidth, height: originalHeight),
+                    clusterID: clusterID, modelVersion: modelVersion, modelIdentifier: modelIdentifier, expectedClassCount: expectedClassCount
+                )
+            } else {
+                print("❌ Unknown CoreML Output Configuration: \(outputKeys)")
             }
 
-            let confidenceShape = confidenceArray.shape.map { $0.intValue }
-            let coordinatesShape = coordinatesArray.shape.map { $0.intValue }
-
-            let newDetections = parseDetections(
-                confArray: confidenceArray,
-                coordArray: coordinatesArray,
-                scale: scale,
-                padX: padX,
-                padY: padY,
-                originalSize: CGSize(width: originalWidth, height: originalHeight),
-                clusterID: clusterID,
-                modelVersion: modelVersion,
-                modelIdentifier: modelIdentifier,
-                expectedClassCount: expectedClassCount
-            )
-
-            logPhaseTwoDiagnostics(newDetections, expectedClassCount: expectedClassCount, confidenceShape: confidenceShape, coordinatesShape: coordinatesShape)
+            logPhaseTwoDiagnostics(newDetections, expectedClassCount: expectedClassCount, confidenceShape: diagConfShape, coordinatesShape: diagCoordShape)
 
             let end = CFAbsoluteTimeGetCurrent()
             
@@ -293,7 +312,6 @@ final class Detector: NSObject, ObservableObject {
                 let now = Date()
                 let lastNotified = notificationCooldowns[best.displayLabel] ?? Date.distantPast
                 
-                // 6 second cooldown before triggering another notification for the same landmark
                 if now.timeIntervalSince(lastNotified) > cooldownInterval {
                     notificationCooldowns[best.displayLabel] = now
                     triggerNotification = best
@@ -301,7 +319,6 @@ final class Detector: NSObject, ObservableObject {
             }
 
             DispatchQueue.main.async {
-                // If hideBoundingBoxes is true, we pass an empty array to visually clear the screen
                 self.detections = self.hideBoundingBoxes ? [] : newDetections
                 self.lastInferenceMS = (end - start) * 1000
                 self.currentLabel = newDetections.max(by: { $0.confidence < $1.confidence })?.displayLabel
@@ -346,7 +363,104 @@ final class Detector: NSObject, ObservableObject {
 
         return (output!, scale, padX, padY)
     }
+    
+    // 🚀 NEW: END-TO-END PARSER FOR YOLO26
+    private func parseEndToEndDetections(
+        combinedArray: MLMultiArray,
+        scale: CGFloat,
+        padX: CGFloat,
+        padY: CGFloat,
+        originalSize: CGSize,
+        clusterID: String,
+        modelVersion: String,
+        modelIdentifier: String,
+        expectedClassCount: Int
+    ) -> [Detection] {
+        let ptr = combinedArray.dataPointer.bindMemory(to: Float.self, capacity: combinedArray.count)
+        let shape = combinedArray.shape.map { $0.intValue }
+        
+        let numBoxes = shape.count == 3 ? shape[1] : shape[0]
+        let boxSize = shape.last ?? 6
+        
+        guard boxSize == 6 else {
+            print("❌ Unknown E2E shape configuration: \(shape)")
+            return []
+        }
+        
+        let screenWidth = UIScreen.main.bounds.width
+        let screenHeight = UIScreen.main.bounds.height
+        let screenScale = max(screenWidth / originalSize.width, screenHeight / originalSize.height)
+        let offsetX = (originalSize.width * screenScale - screenWidth) / 2
+        let offsetY = (originalSize.height * screenScale - screenHeight) / 2
+        let activeSafeZone = dynamicSafeZone == .zero ? UIScreen.main.bounds : dynamicSafeZone
 
+        var rawDetections: [Detection] = []
+
+        for i in 0..<numBoxes {
+            let offset = i * 6
+            let rawX1 = CGFloat(ptr[offset + 0])
+            let rawY1 = CGFloat(ptr[offset + 1])
+            let rawX2 = CGFloat(ptr[offset + 2])
+            let rawY2 = CGFloat(ptr[offset + 3])
+            let score = ptr[offset + 4]
+            let classIdx = Int(ptr[offset + 5])
+
+            guard score >= confidenceThreshold else { continue }
+            guard classIdx >= 0, classIdx < expectedClassCount else { continue }
+
+            let x1 = rawX1 <= 1.0 ? rawX1 * inputSize.width : rawX1
+            let y1 = rawY1 <= 1.0 ? rawY1 * inputSize.height : rawY1
+            let x2 = rawX2 <= 1.0 ? rawX2 * inputSize.width : rawX2
+            let y2 = rawY2 <= 1.0 ? rawY2 * inputSize.height : rawY2
+
+            let w640 = (x2 - x1)
+            let h640 = (y2 - y1)
+            let cx640 = x1 + (w640 / 2)
+            let cy640 = y1 + (h640 / 2)
+
+            let finalX = (((cx640 - padX) / scale) * screenScale) - offsetX
+            let finalY = (((cy640 - padY) / scale) * screenScale) - offsetY
+            let finalW = (w640 / scale) * screenScale
+            let finalH = (h640 / scale) * screenScale
+
+            guard finalW > 0, finalH > 0 else { continue }
+
+            let rect = CGRect(x: finalX - finalW / 2, y: finalY - finalH / 2, width: finalW, height: finalH)
+            guard rect.intersects(activeSafeZone) else { continue }
+
+            rawDetections.append(
+                Detection(clusterID: clusterID, modelVersion: modelVersion, modelIdentifier: modelIdentifier, classIndex: classIdx, classCount: expectedClassCount, confidence: score, bbox: rect)
+            )
+        }
+
+        let nearbyDetections = proximityFilter(rawDetections)
+        let currentLabels = Set(nearbyDetections.map { $0.label })
+        
+        let lostLabels = smoothers.keys.filter { !currentLabels.contains($0) }
+        for label in lostLabels {
+            smoothers.removeValue(forKey: label)
+            frameCounters.removeValue(forKey: label)
+        }
+
+        var finalResults: [Detection] = []
+        for det in nearbyDetections {
+            let label = det.label
+            let currentCount = (frameCounters[label] ?? 0) + 1
+            frameCounters[label] = currentCount
+
+            if smoothers[label] == nil { smoothers[label] = BoundingBoxSmoother() }
+            let smoothedBox = smoothers[label]!.smooth(newBox: det.bbox)
+
+            if currentCount >= requiredFramesForDetection {
+                finalResults.append(
+                    Detection(clusterID: det.clusterID, modelVersion: det.modelVersion, modelIdentifier: det.modelIdentifier, classIndex: det.classIndex, classCount: det.classCount, confidence: det.confidence, bbox: smoothedBox)
+                )
+            }
+        }
+        return finalResults
+    }
+
+    // LEGACY: OLD PARSER FOR YOLOv8 / YOLOv10
     private func parseDetections(
         confArray: MLMultiArray,
         coordArray: MLMultiArray,
@@ -409,30 +523,13 @@ final class Detector: NSObject, ObservableObject {
             guard rect.intersects(activeSafeZone) else { continue }
 
             rawDetections.append(
-                Detection(
-                    clusterID: clusterID,
-                    modelVersion: modelVersion,
-                    modelIdentifier: modelIdentifier,
-                    classIndex: bestClass,
-                    classCount: expectedClassCount,
-                    confidence: bestScore,
-                    bbox: rect
-                )
+                Detection(clusterID: clusterID, modelVersion: modelVersion, modelIdentifier: modelIdentifier, classIndex: bestClass, classCount: expectedClassCount, confidence: bestScore, bbox: rect)
             )
         }
 
-        // --- NMS TOGGLE ---
-        // If you switch back to YOLO11 or YOLO10, uncomment the two lines below:
-        // let nmsDetections = nonMaxSuppression(detections: rawDetections, iouThreshold: iouThreshold)
-        // let nearbyDetections = proximityFilter(nmsDetections)
-        
-        // For YOLO26 (End-to-End, NMS-free), we pass rawDetections directly:
         let nearbyDetections = proximityFilter(rawDetections)
-        // ------------------
-
         let currentLabels = Set(nearbyDetections.map { $0.label })
         
-        // Remove objects that have left the screen from both the smoother and our frame counter
         let lostLabels = smoothers.keys.filter { !currentLabels.contains($0) }
         for label in lostLabels {
             smoothers.removeValue(forKey: label)
@@ -442,57 +539,20 @@ final class Detector: NSObject, ObservableObject {
         var finalResults: [Detection] = []
         for det in nearbyDetections {
             let label = det.label
-            
-            // 1. Increment how many consecutive frames we have seen this object
             let currentCount = (frameCounters[label] ?? 0) + 1
             frameCounters[label] = currentCount
 
-            // 2. Smooth the coordinates (using your existing smoother)
             if smoothers[label] == nil { smoothers[label] = BoundingBoxSmoother() }
             let smoothedBox = smoothers[label]!.smooth(newBox: det.bbox)
 
-            // 3. ONLY pass it to the UI if it has survived 3 frames (kills false positives)
             if currentCount >= requiredFramesForDetection {
                 finalResults.append(
-                    Detection(
-                        clusterID: det.clusterID,
-                        modelVersion: det.modelVersion,
-                        modelIdentifier: det.modelIdentifier,
-                        classIndex: det.classIndex,
-                        classCount: det.classCount,
-                        confidence: det.confidence,
-                        bbox: smoothedBox
-                    )
+                    Detection(clusterID: det.clusterID, modelVersion: det.modelVersion, modelIdentifier: det.modelIdentifier, classIndex: det.classIndex, classCount: det.classCount, confidence: det.confidence, bbox: smoothedBox)
                 )
             }
         }
-
         return finalResults
     }
-
-    /*
-    // --- NMS BACKUP FUNCTION ---
-    // Uncomment this entire block if you switch back to a model that requires NMS (like YOLO11s).
-    private func nonMaxSuppression(detections: [Detection], iouThreshold: Float) -> [Detection] {
-        var results: [Detection] = []
-        var sorted = detections.sorted { $0.confidence > $1.confidence }
-
-        while !sorted.isEmpty {
-            let best = sorted.removeFirst()
-            results.append(best)
-
-            sorted.removeAll {
-                let inter = best.bbox.intersection($0.bbox)
-                guard !inter.isNull else { return false }
-                let interArea = inter.width * inter.height
-                let unionArea = (best.bbox.width * best.bbox.height) + ($0.bbox.width * $0.bbox.height) - interArea
-                let iou = Float(interArea / unionArea)
-                return iou > iouThreshold
-            }
-        }
-        return results
-    }
-    */
 
     private func proximityFilter(_ detections: [Detection]) -> [Detection] {
         guard let manifest = manifest, let userLocation = userLocation else { return detections }
@@ -502,7 +562,11 @@ final class Detector: NSObject, ObservableObject {
             let objectLocation = CLLocation(latitude: object.latitude, longitude: object.longitude)
             let distanceMeters = userLocation.distance(from: objectLocation)
             let isNearby = distanceMeters <= proximityThresholdMeters
-            print(object.label, "suppressed cus object is not nearby (distance: \(distanceMeters)m)")
+            
+            if !isNearby {
+                print(object.label, "suppressed because object is not nearby (distance: \(distanceMeters)m)")
+            }
+            
             return isNearby
         }
     }
