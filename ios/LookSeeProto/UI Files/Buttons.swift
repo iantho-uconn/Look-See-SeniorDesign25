@@ -318,7 +318,6 @@ struct Buttons: View {
     //idle timer to keep screen active when needed
     private func updateIdleTimer(for tab: Int, active: Bool) {
             let shouldDisableAutoLock = (tab == 0 && active )
-            
             if shouldDisableAutoLock {
                 if !UIApplication.shared.isIdleTimerDisabled {
                     UIApplication.shared.isIdleTimerDisabled = true
