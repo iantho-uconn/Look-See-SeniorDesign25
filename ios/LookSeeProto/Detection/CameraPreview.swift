@@ -84,43 +84,45 @@ final class OverlayView: UIView {
             backdropPath.fill()
         }
 
-        // Primary detection box + label
-        if let bestTarget = detections.first {
-            let targetBox = showSafeZone ? activeSafeZone : bestTarget.bbox
-            let maxScreenBounds = rect.insetBy(dx: 16, dy: 80)
-            let clampedBox = targetBox.intersection(maxScreenBounds)
+  // Primary detection box + label
+            if let bestTarget = detections.first {
+                let targetBox = showSafeZone ? activeSafeZone : bestTarget.bbox
+                let maxScreenBounds = rect.insetBy(dx: 16, dy: 80)
+                let clampedBox = targetBox.intersection(maxScreenBounds)
 
-            if !clampedBox.isNull && clampedBox.width > 10 && clampedBox.height > 10 {
-                // LookSee Brand Green
-                UIColor.systemGreen.setStroke()
-                let perimeter = UIBezierPath(roundedRect: clampedBox, cornerRadius: 8)
-                perimeter.lineWidth = 4.0
-                perimeter.stroke()
+                if !clampedBox.isNull && clampedBox.width > 10 && clampedBox.height > 10 {
+                    // LookSee Brand Green
+                    UIColor.systemGreen.setStroke()
+                    let perimeter = UIBezierPath(roundedRect: clampedBox, cornerRadius: 8)
+                    perimeter.lineWidth = 4.0
+                    perimeter.stroke()
 
-                // Removed confidence score from label
-                let labelText = "\(bestTarget.displayLabel)"
-                let font = UIFont.systemFont(ofSize: 16, weight: .bold)
-                let textStyle: [NSAttributedString.Key: Any] = [
-                    .font: font,
-                    .foregroundColor: UIColor.white
-                ]
-                let labelSize = labelText.size(withAttributes: textStyle)
-                let adjustedY = max(clampedBox.minY - labelSize.height - 8, 44)
-                let adjustedX = max(clampedBox.minX, 16)
-                let backgroundPlate = CGRect(
-                    x: adjustedX,
-                    y: adjustedY,
-                    width: labelSize.width + 12,
-                    height: labelSize.height + 6
-                )
-                UIColor.systemGreen.setFill()
-                let badge = UIBezierPath(roundedRect: backgroundPlate, cornerRadius: 6)
-                badge.fill()
-                (labelText as NSString).draw(
-                    in: backgroundPlate.insetBy(dx: 6, dy: 3),
-                    withAttributes: textStyle
-                )
-            }
+                    // Include confidence score in the label text
+                    let confidencePercent = Int(bestTarget.confidence * 100)
+                    let labelText = "\(bestTarget.displayLabel) (\(confidencePercent)%)"
+                    
+                    let font = UIFont.systemFont(ofSize: 16, weight: .bold)
+                    let textStyle: [NSAttributedString.Key: Any] = [
+                        .font: font,
+                        .foregroundColor: UIColor.white
+                    ]
+                    let labelSize = labelText.size(withAttributes: textStyle)
+                    let adjustedY = max(clampedBox.minY - labelSize.height - 8, 44)
+                    let adjustedX = max(clampedBox.minX, 16)
+                    let backgroundPlate = CGRect(
+                        x: adjustedX,
+                        y: adjustedY,
+                        width: labelSize.width + 12,
+                        height: labelSize.height + 6
+                    )
+                    UIColor.systemGreen.setFill()
+                    let badge = UIBezierPath(roundedRect: backgroundPlate, cornerRadius: 6)
+                    badge.fill()
+                    (labelText as NSString).draw(
+                        in: backgroundPlate.insetBy(dx: 6, dy: 3),
+                        withAttributes: textStyle
+                    )
+                }
 
         } else if showSafeZone {
             // No detection — show dashed viewfinder outline
@@ -275,8 +277,8 @@ struct CameraPreview: UIViewRepresentable {
                 DispatchQueue.main.async {
                     infoView.landmarkName = "Class \(detection.classIndex)"
                     infoView.landmarkDescription = "The matching landmark metadata could not be loaded."
+                    infoView.landmarkConfidence = Float(detection.confidence)
                     // Removed promoName, promoDescription, and landmarkConfidence
-                    infoView.promoName = ""
                     infoView.promoDescription = ""
                     infoView.infoView = true
                 }
