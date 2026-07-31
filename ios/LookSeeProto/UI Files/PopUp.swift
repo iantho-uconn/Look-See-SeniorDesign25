@@ -1,12 +1,3 @@
-//
-//  PopUp.swift
-//  LookSeeProto
-//
-//  Main popup for detected landmarks.
-//  Uses an intrinsic height for short content and switches to a
-//  capped, scrollable layout only when the content is too tall.
-//
-
 import SwiftUI
 
 struct PopUp: View {
@@ -48,6 +39,7 @@ struct PopUp: View {
                 alignment: .center
             )
         }
+        .environment(\.colorScheme, .dark)
         .sheet(item: $selectedPromotionImage) { item in
             promotionImagePreview(url: item.url)
         }
