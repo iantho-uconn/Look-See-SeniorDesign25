@@ -279,6 +279,7 @@ struct CameraPreview: UIViewRepresentable {
                     infoView.promoName = ""
                     infoView.promoDescription = ""
                     infoView.infoView = true
+                    
                 }
                 return
             }
