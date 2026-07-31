@@ -26,8 +26,8 @@ def main():
     # Start the Tuning Process across the dataset
     model.tune(
         data=data_yaml, 
-        epochs=30,        # Increased to let it actually learn per mutation
-        iterations=50,    # Increased to test 50 different genetic mutations
+        epochs=100,        # Increased to let it actually learn per mutation
+        iterations=10,    # Increased to test 50 different genetic mutations
         optimizer="AdamW",
         plots=False,      
         save=False        

@@ -502,6 +502,7 @@ final class Detector: NSObject, ObservableObject {
             let objectLocation = CLLocation(latitude: object.latitude, longitude: object.longitude)
             let distanceMeters = userLocation.distance(from: objectLocation)
             let isNearby = distanceMeters <= proximityThresholdMeters
+            print(object.label, "suppressed cus object is not nearby (distance: \(distanceMeters)m)")
             return isNearby
         }
     }
