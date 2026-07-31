@@ -104,6 +104,10 @@ final class Detector: NSObject, ObservableObject {
     private var model: MLModel?
     private let queue = DispatchQueue(label: "yolo.queue")
     private let ciContext = CIContext()
+    
+    // N-FRAME CONFIRMATION: Kills false positives
+    private var frameCounters: [String: Int] = [:]
+    private let requiredFramesForDetection = 3
 
     private var isAttached = false
     private var throttling = false
@@ -209,6 +213,7 @@ final class Detector: NSObject, ObservableObject {
             self.currentLabel = nil
             self.newlyDetectedLandmark = nil
             for smoother in self.smoothers.values { smoother.reset() }
+            self.frameCounters.removeAll()
         }
     }
 
@@ -416,33 +421,58 @@ final class Detector: NSObject, ObservableObject {
             )
         }
 
-        let nmsDetections = nonMaxSuppression(detections: rawDetections, iouThreshold: iouThreshold)
-        let nearbyDetections = proximityFilter(nmsDetections)
+        // --- NMS TOGGLE ---
+        // If you switch back to YOLO11 or YOLO10, uncomment the two lines below:
+        // let nmsDetections = nonMaxSuppression(detections: rawDetections, iouThreshold: iouThreshold)
+        // let nearbyDetections = proximityFilter(nmsDetections)
+        
+        // For YOLO26 (End-to-End, NMS-free), we pass rawDetections directly:
+        let nearbyDetections = proximityFilter(rawDetections)
+        // ------------------
 
         let currentLabels = Set(nearbyDetections.map { $0.label })
-        smoothers.keys.filter { !currentLabels.contains($0) }.forEach { smoothers.removeValue(forKey: $0) }
+        
+        // Remove objects that have left the screen from both the smoother and our frame counter
+        let lostLabels = smoothers.keys.filter { !currentLabels.contains($0) }
+        for label in lostLabels {
+            smoothers.removeValue(forKey: label)
+            frameCounters.removeValue(forKey: label)
+        }
 
         var finalResults: [Detection] = []
         for det in nearbyDetections {
-            if smoothers[det.label] == nil { smoothers[det.label] = BoundingBoxSmoother() }
-            let smoothedBox = smoothers[det.label]!.smooth(newBox: det.bbox)
+            let label = det.label
+            
+            // 1. Increment how many consecutive frames we have seen this object
+            let currentCount = (frameCounters[label] ?? 0) + 1
+            frameCounters[label] = currentCount
 
-            finalResults.append(
-                Detection(
-                    clusterID: det.clusterID,
-                    modelVersion: det.modelVersion,
-                    modelIdentifier: det.modelIdentifier,
-                    classIndex: det.classIndex,
-                    classCount: det.classCount,
-                    confidence: det.confidence,
-                    bbox: smoothedBox
+            // 2. Smooth the coordinates (using your existing smoother)
+            if smoothers[label] == nil { smoothers[label] = BoundingBoxSmoother() }
+            let smoothedBox = smoothers[label]!.smooth(newBox: det.bbox)
+
+            // 3. ONLY pass it to the UI if it has survived 3 frames (kills false positives)
+            if currentCount >= requiredFramesForDetection {
+                finalResults.append(
+                    Detection(
+                        clusterID: det.clusterID,
+                        modelVersion: det.modelVersion,
+                        modelIdentifier: det.modelIdentifier,
+                        classIndex: det.classIndex,
+                        classCount: det.classCount,
+                        confidence: det.confidence,
+                        bbox: smoothedBox
+                    )
                 )
-            )
+            }
         }
 
         return finalResults
     }
 
+    /*
+    // --- NMS BACKUP FUNCTION ---
+    // Uncomment this entire block if you switch back to a model that requires NMS (like YOLO11s).
     private func nonMaxSuppression(detections: [Detection], iouThreshold: Float) -> [Detection] {
         var results: [Detection] = []
         var sorted = detections.sorted { $0.confidence > $1.confidence }
@@ -462,6 +492,7 @@ final class Detector: NSObject, ObservableObject {
         }
         return results
     }
+    */
 
     private func proximityFilter(_ detections: [Detection]) -> [Detection] {
         guard let manifest = manifest, let userLocation = userLocation else { return detections }
@@ -529,3 +560,4 @@ extension Detector: CLLocationManagerDelegate {
         print("❌ Detector location error:", error.localizedDescription)
     }
 }
+
