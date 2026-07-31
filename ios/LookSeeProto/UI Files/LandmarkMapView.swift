@@ -4,13 +4,7 @@
 //
 //  Created by Angel Pineda on 6/19/26.
 //
-//  Fix: Map's Legal/attribution button was rendering behind the custom
-//  bottom tab bar. Rather than depending on an ancestor view's
-//  safeAreaInset propagating correctly (fragile across nested containers),
-//  the Map now reserves its own bottom space directly via .safeAreaPadding,
-//  so this is self-contained regardless of how Buttons.swift lays out its
-//  pager/tab bar.
-//
+
 
 import SwiftUI
 import MapKit
@@ -23,7 +17,6 @@ struct LandmarkMapView: View {
     @StateObject private var locationManager = LocationManager()
     
     @State private var selectedLandmark: NearbyLandmark?
-    @State private var landmarkToUpload: NearbyLandmark?
     @State private var cameraPosition: MapCameraPosition = .userLocation(fallback: .automatic)
     @State private var showFilterSheet = false
     
@@ -38,8 +31,6 @@ struct LandmarkMapView: View {
     
     private let topChromeReservedHeight: CGFloat = 80
 
-
-    
     private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00)
     private let promoColor = Color.orange
 
@@ -181,9 +172,6 @@ struct LandmarkMapView: View {
             filterMenuSheet
                 .presentationDetents([.fraction(0.85)])
         }
-        .fullScreenCover(item: $landmarkToUpload) { landmark in
-            QuickUploadView(landmark: landmark)
-        }
     }
     
     private var filterMenuSheet: some View {
@@ -281,38 +269,20 @@ struct LandmarkMapView: View {
             
             Spacer()
             
-            HStack(spacing: 12) {
-                Button {
-                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                    openAppleMaps(for: landmark)
-                } label: {
-                    HStack {
-                        Image(systemName: "location.fill")
-                        Text("Directions").fontWeight(.bold)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
-                    .background(Color(uiColor: .tertiarySystemFill))
-                    .foregroundStyle(.primary)
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            // "Directions" is now the only button, taking up the full width.
+            Button {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                openAppleMaps(for: landmark)
+            } label: {
+                HStack {
+                    Image(systemName: "location.fill")
+                    Text("Directions").fontWeight(.bold)
                 }
-                
-                Button {
-                    UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
-                    let passedLandmark = landmark
-                    selectedLandmark = nil
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { landmarkToUpload = passedLandmark }
-                } label: {
-                    HStack {
-                        Image(systemName: "arrow.up.circle.fill")
-                        Text("Upload Data").fontWeight(.bold)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
-                    .background(primaryColor)
-                    .foregroundStyle(.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
+                .background(Color(uiColor: .tertiarySystemFill))
+                .foregroundStyle(.primary)
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
             .padding(.bottom, 10)
         }

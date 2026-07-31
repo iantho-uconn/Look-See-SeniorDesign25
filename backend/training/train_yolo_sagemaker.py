@@ -173,7 +173,6 @@ def find_best_weights(run_dir, run_name):
     if os.path.isfile(expected_path):
         return expected_path
 
-    # Fallback if Ultralytics changes or increments the run directory.
     matches = []
 
     for root, _, files in os.walk(run_dir):
@@ -340,7 +339,6 @@ def main():
         "val",
     )
 
-    # Both missing means there is no usable image dataset.
     if (
         not os.path.isdir(train_dir)
         and not os.path.isdir(val_dir)
@@ -358,7 +356,6 @@ def main():
             "data.yaml must contain a YAML dictionary."
         )
 
-    # If the train split is absent, use validation images for training.
     if not os.path.isdir(train_dir):
         print(
             "⚠️ WARNING: train directory is missing. "
@@ -373,7 +370,6 @@ def main():
 
         yaml_content["train"] = yaml_content["val"]
 
-    # If the validation split is absent, use training images for validation.
     if not os.path.isdir(val_dir):
         print(
             "⚠️ WARNING: val directory is missing. "
@@ -388,13 +384,11 @@ def main():
 
         yaml_content["val"] = yaml_content["train"]
 
-    # Save the exact final YAML that YOLO will receive.
     write_data_yaml(
         data_yaml,
         yaml_content,
     )
 
-    # Validate after any fallback modifications.
     load_and_validate_data_yaml(
         data_yaml,
         expected_class_count=manifest_class_count,
@@ -414,8 +408,8 @@ def main():
 
     train_args = {
         "data": data_yaml,
-        "epochs": 50,
-        "patience": 20,
+        "epochs": 100,
+        "patience": 15,
         "imgsz": 640,
         "batch": 16,
         "device": 0,
@@ -429,6 +423,7 @@ def main():
             f"Injecting {custom_cfg} into training..."
         )
 
+        # 🚀 ACTIVATED CUSTOM TUNED HYPERPARAMETERS:
         train_args["cfg"] = custom_cfg
 
     else:

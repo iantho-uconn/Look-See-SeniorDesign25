@@ -20,17 +20,17 @@ def main():
     if not os.path.exists(data_yaml):
         raise FileNotFoundError(f"❌ ERROR: Cannot find dataset config at: {data_yaml}")
 
-    # Load the base model using YOLO11 (matching your training script defaults)
+    # Load the base model using YOLO11
     model = YOLO("yolo11n.pt") 
     
     # Start the Tuning Process across the dataset
     model.tune(
         data=data_yaml, 
-        epochs=15,        # 15 epochs per mutation
-        iterations=15,    # 15 genetic mutations to test
+        epochs=30,        # Increased to let it actually learn per mutation
+        iterations=50,    # Increased to test 50 different genetic mutations
         optimizer="AdamW",
-        plots=False,      # Turn off plotting to save compute time
-        save=False        # Don't save large weight files, we only want the hyperparameters
+        plots=False,      
+        save=False        
     )
     
     print("✅ Tuning Complete! Locating best hyperparameters...")

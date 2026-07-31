@@ -1,19 +1,19 @@
-# Use your exact PyTorch image
-FROM pytorch/pytorch:2.1.2-cuda12.1-cudnn8-runtime
+# Explicitly build for AWS SageMaker x86_64/AMD64 GPUs
+FROM --platform=linux/amd64 pytorch/pytorch:2.1.2-cuda12.1-cudnn8-runtime
 
 # Install OpenCV dependencies
 RUN apt-get update && apt-get install -y libgl1-mesa-glx libglib2.0-0
 
 WORKDIR /app
 
-# Copy the tuning script instead of the training script
+# Copy the tuning script
 COPY tune.py /app/tune.py
 COPY requirements.txt /app/requirements.txt
 
-# Use your exact CUDA 12.1 PyTorch fix
+# Use exact CUDA 12.1 PyTorch fix
 RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cu121
 
-# Install your specific ultralytics and numpy versions
+# Install ultralytics and dependencies
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
 ENV PYTHONUNBUFFERED=1

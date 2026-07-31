@@ -17,16 +17,16 @@ print("📡 Sending signal to AWS to provision ml.g6.2xlarge GPU for tuning...")
 estimator = Estimator(
     image_uri=image_uri,
     role=role,
-    sagemaker_session=sagemaker_session, # 2. Pass the region session here
+    sagemaker_session=sagemaker_session,
     instance_count=1,
-    instance_type="ml.g6.2xlarge", # Your requested powerful GPU
+    instance_type="ml.g6.2xlarge", 
     volume_size=50, 
     max_run=43200, # 12-hour timeout
-    output_path="s3://looksee-models/tuning-output/" # Where the winning YAML drops
+    output_path="s3://looksee-models/tuning-output/" 
 )
 
-# At the bottom of trigger_tune.py:
+# 👇 Updated to point to your new 11-landmark unified cluster!
 estimator.fit(
-    {'training': 's3://looksee-models/yolo-packaged-datasets/manual-run-01/b7255d70-755f-48cc-8bf3-15ce946b3a64/'},
-    wait=False  # This lets the script finish and exits, leaving the job running in AWS
+    {'training': 's3://looksee-models/dataset-yolo-negtest/3c56591d-c17f-402c-a2c9-89cf76c26ed3/cluster-0/'},
+    wait=False  # This lets your script finish and exits, leaving the job running in AWS
 )

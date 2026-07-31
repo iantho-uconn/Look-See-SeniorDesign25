@@ -5,7 +5,6 @@ import numpy as np
 import urllib.parse
 import json
 import decimal
-import base64
 import uuid
 
 # to read decimals to prevent errors
@@ -17,10 +16,10 @@ class DecimalEncoder(json.JSONEncoder):
 
 s3_client = boto3.client("s3")
 dynamodb = boto3.resource("dynamodb")
-sqs_client = boto3.client("sqs")  # CHANGED: ECS to SQS
+sqs_client = boto3.client("sqs")
 bedrock_client = boto3.client("bedrock-runtime", region_name="us-east-1")
 
-QUEUE_URL = os.environ.get('QUEUE_URL') # ADD THIS TO LAMBDA ENV VARIABLES
+QUEUE_URL = os.environ.get('QUEUE_URL')
 
 FRAME_SKIP = 1
 SIMILARITY_THRESHOLD = 0.85
@@ -34,7 +33,6 @@ def are_frames_similar(frame1, frame2, frame_index):
     gray1 = cv2.cvtColor(frame1, cv2.COLOR_BGR2GRAY)
     gray2 = cv2.cvtColor(frame2, cv2.COLOR_BGR2GRAY)
     
-    # --- NEW FAILSAFE: Fast Pixel Check ---
     if cv2.mean(cv2.absdiff(gray1, gray2))[0] < 5.0:
         print(f"  -> Frame {frame_index}: 100.0% similar (Fast Pixel Check)")
         return True
@@ -42,7 +40,6 @@ def are_frames_similar(frame1, frame2, frame_index):
     k1, d1 = orb.detectAndCompute(gray1, None)
     k2, d2 = orb.detectAndCompute(gray2, None)
     
-    # --- THE BUG FIX FOR FEATURELESS FRAMES ---
     if d1 is None and d2 is None: 
         print(f"  -> Frame {frame_index}: 100.0% similar (Featureless/Blank)")
         return True 
@@ -105,17 +102,14 @@ def lambda_handler(event, context):
 
     print(f"Received event: {json.dumps(event)}") 
 
-    # 1. EventBridge Format
     if 'detail' in event and 'bucket' in event['detail']:
         input_bucket = event['detail']['bucket']['name']
         video_key = event['detail']['object']['key']
 
-    # 2. Step Functions Format
     elif 's3Key' in event and 'bucket' in event:
         input_bucket = event['bucket']
         video_key = event['s3Key']
 
-    # 3. Direct S3 or SQS Format
     elif 'Records' in event:
         record = event['Records'][0]
         if record.get('eventSource') == 'aws:sqs':
@@ -167,45 +161,45 @@ def lambda_handler(event, context):
 
     if not prompt:
         try:
-            print(f"🤖 Invoking Bedrock Vision AI for reference image: {reference_image_key}")
+            print(f"🤖 Invoking Bedrock Vision AI (Nova Lite) for reference image: {reference_image_key}")
             image_obj = s3_client.get_object(Bucket=output_bucket, Key=reference_image_key)
             image_bytes = image_obj['Body'].read()
-            encoded_image = base64.b64encode(image_bytes).decode('utf-8')
 
-            bedrock_prompt = "Describe the main landmark or historical object in this image in high detail. Focus on physical appearance, text on it, materials, and structure. Keep it under two sentences."
-            
-            body = json.dumps({
-                "anthropic_version": "bedrock-2023-05-31",
-                "max_tokens": 150,
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "image",
-                                "source": {
-                                    "type": "base64",
-                                    "media_type": "image/jpeg",
-                                    "data": encoded_image
-                                }
-                            },
-                            {
-                                "type": "text",
-                                "text": bedrock_prompt
-                            }
-                        ]
-                    }
-                ]
-            })
-
-            response = bedrock_client.invoke_model(
-                modelId="global.anthropic.claude-haiku-4-5-20251001-v1:0",
-                body=body
+            bedrock_prompt = (
+                f"Identify the main target object ({class_name.replace('_', ' ')}) in this image. "
+                "Provide a short 5-to-8 word physical description of ONLY the object itself (color, material, shape). "
+                "STRICT RULE: Do NOT describe the background, floor, ground, grass, walls, or surroundings. "
+                "Do NOT use introductory text. Example output: 'brown wooden park bench with green metal frame'"
             )
             
-            response_body = json.loads(response.get('body').read())
-            ai_prompt_text = response_body['content'][0]['text']
-            print(f"📝 Generated aiPrompt description: {ai_prompt_text}")
+            # Using the modern Bedrock Converse API format
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "image": {
+                                "format": "jpeg",
+                                "source": {"bytes": image_bytes} # Converse API handles bytes natively
+                            }
+                        },
+                        {
+                            "text": bedrock_prompt
+                        }
+                    ]
+                }
+            ]
+
+            # Invoke Amazon Nova Lite
+            response = bedrock_client.converse(
+                modelId="amazon.nova-lite-v1:0", # Cost-effective Nova Lite model
+                messages=messages,
+                inferenceConfig={"maxTokens": 50} # Restricting tokens to force brevity
+            )
+            
+            # Extract response from the Converse API structure
+            ai_prompt_text = response['output']['message']['content'][0]['text'].strip()
+            print(f"📝 Generated concise aiPrompt description: {ai_prompt_text}")
 
             table.update_item(
                 Key={'submissionId': submission_id},
@@ -242,9 +236,6 @@ def lambda_handler(event, context):
         ContentType='application/json'
     )
 
-    # =========================================================================
-    # --- NEW SQS INJECTION LOGIC ---
-    # =========================================================================
     if QUEUE_URL:
         try:
             sqs_response = sqs_client.send_message(

@@ -6,6 +6,7 @@ import json
 import gc
 import time 
 import sys
+import numpy as np
 from botocore.exceptions import ClientError
 
 # --- CRITICAL FIX 1: Instant CloudWatch Logging ---
@@ -87,7 +88,6 @@ while True:
     # -----------------------------------------
     # 3. INITIALIZE MODEL PER TASK
     # -----------------------------------------
-    # To prevent autodistill ontology swap memory leaks, we load the model fresh per task.
     ontology = CaptionOntology({prompt: class_name})
     model = GroundingDINO(
         ontology=ontology,
@@ -158,38 +158,71 @@ while True:
 
         # --- EXTRACT CONFIDENCE SCORE ---
         try:
-            # Get the maximum confidence score from the detections array for logging
             max_conf = max(detections.confidence)
             print(f"  -> Frame {img_name}: Object found with {max_conf * 100:.1f}% confidence")
         except Exception:
-            pass # Failsafe just in case the confidence array format varies
+            pass
 
-        # --- MASTER BOX MATH ---
+        # --- GOLDILOCKS MASTER BOX MATH ---
         h, w, _ = image.shape
         img_area = w * h
-        yolo_lines = []
         
-        valid_boxes = []
-        for box in detections.xyxy:
-            box_w = box[2] - box[0]
-            box_h = box[3] - box[1]
-            box_area = box_w * box_h
+        # 1. Pair boxes with confidence and filter out >90% screen size anomalies
+        valid_detections = []
+        for box, conf in zip(detections.xyxy, detections.confidence):
+            box_area = (box[2] - box[0]) * (box[3] - box[1])
             if box_area < (0.9 * img_area):
-                valid_boxes.append(box)
+                valid_detections.append((box, conf))
                 
-        boxes_to_use = valid_boxes if valid_boxes else detections.xyxy
+        if not valid_detections:
+            # Failsafe: Use highest confidence box if everything was over 90% screen size
+            best_idx = np.argmax(detections.confidence)
+            valid_detections = [(detections.xyxy[best_idx], detections.confidence[best_idx])]
+
+        # 2. Sort by confidence (Highest first) to set our "Anchor"
+        valid_detections.sort(key=lambda x: x[1], reverse=True)
+        anchor_box = valid_detections[0][0]
+        boxes_to_merge = [anchor_box]
+
+        # 3. Helper function to check if a box touches/is close to the anchor box
+        def is_close_to_anchor(b1, b2, threshold):
+            b1_expanded = [b1[0]-threshold, b1[1]-threshold, b1[2]+threshold, b1[3]+threshold]
+            if b1_expanded[0] > b2[2] or b1_expanded[2] < b2[0]: return False
+            if b1_expanded[1] > b2[3] or b1_expanded[3] < b2[1]: return False
+            return True
+
+        # 4. Outlier Rejection: Only merge boxes within 10% distance of the Anchor
+        proximity_threshold = max(w, h) * 0.10
+        for box, conf in valid_detections[1:]:
+            if is_close_to_anchor(anchor_box, box, threshold=proximity_threshold):
+                boxes_to_merge.append(box)
+
+        # 5. Get the tight boundaries of all valid parts
+        x_min = min(b[0] for b in boxes_to_merge)
+        y_min = min(b[1] for b in boxes_to_merge)
+        x_max = max(b[2] for b in boxes_to_merge)
+        y_max = max(b[3] for b in boxes_to_merge)
+
+        # 6. Apply Proportional 4% Padding
+        padding_pct = 0.04
+        box_w = x_max - x_min
+        box_h = y_max - y_min
         
-        x_min = min(box[0] for box in boxes_to_use)
-        y_min = min(box[1] for box in boxes_to_use)
-        x_max = max(box[2] for box in boxes_to_use)
-        y_max = max(box[3] for box in boxes_to_use)
+        pad_x = box_w * padding_pct
+        pad_y = box_h * padding_pct
         
-        x_center = ((x_min + x_max) / 2) / w
-        y_center = ((y_min + y_max) / 2) / h
-        bw = (x_max - x_min) / w
-        bh = (y_max - y_min) / h
+        final_xmin = max(0, x_min - pad_x)
+        final_ymin = max(0, y_min - pad_y)
+        final_xmax = min(w, x_max + pad_x)
+        final_ymax = min(h, y_max + pad_y)
+
+        # 7. Convert to YOLO format (strictly clamped between 0.0 and 1.0)
+        x_center = max(0.0, min(1.0, ((final_xmin + final_xmax) / 2) / w))
+        y_center = max(0.0, min(1.0, ((final_ymin + final_ymax) / 2) / h))
+        bw = max(0.0, min(1.0, (final_xmax - final_xmin) / w))
+        bh = max(0.0, min(1.0, (final_ymax - final_ymin) / h))
         
-        yolo_lines.append(f"0 {x_center:.6f} {y_center:.6f} {bw:.6f} {bh:.6f}")
+        yolo_lines = [f"0 {x_center:.6f} {y_center:.6f} {bw:.6f} {bh:.6f}"]
 
         # Save label file locally
         local_label_path = f"/tmp/{label_name}"
