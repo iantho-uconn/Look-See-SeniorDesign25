@@ -233,30 +233,6 @@
 		D0E78BE13008FF8D00E5FE00 /* GuestSignUpView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuestSignUpView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
-/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		3C5BC5E7301E356400953451 /* Exceptions for "LookSeeProto" folder in "LookSee Preview" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				amplifyconfiguration.json,
-				Assets.xcassets,
-				InfoPlist.xcstrings,
-				Localizable.xcstrings,
-			);
-			target = 3C5BC595301E356400953451 /* LookSee Preview */;
-		};
-		3C5BC5E8301E356400953451 /* Exceptions for "Resources" folder in "LookSee Preview" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				about.txt,
-				"cluster-0-landmark-manifest.json",
-				LookSee_Logo_cropped.icon,
-				LookSee_Logo.jpg,
-				LookSee.icon,
-			);
-			target = 3C5BC595301E356400953451 /* LookSee Preview */;
-		};
-/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
-
 /* Begin PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
 		3C5BC616301E398600953451 /* Exceptions for "LookSeeProto" folder in "Compile Sources" phase from "LookSee Preview" target */ = {
 			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
@@ -285,7 +261,6 @@
 		3C918F9F2E9ECE5F00AF5DAF /* LookSeeProto */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				3C5BC5E7301E356400953451 /* Exceptions for "LookSeeProto" folder in "LookSee Preview" target */,
 				3C5BC616301E398600953451 /* Exceptions for "LookSeeProto" folder in "Compile Sources" phase from "LookSee Preview" target */,
 			);
 			path = LookSeeProto;
@@ -304,7 +279,6 @@
 		565542B22EBD02DF007DBA98 /* Resources */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				3C5BC5E8301E356400953451 /* Exceptions for "Resources" folder in "LookSee Preview" target */,
 				3C5BC617301E398600953451 /* Exceptions for "Resources" folder in "Compile Sources" phase from "LookSee Preview" target */,
 			);
 			path = Resources;
