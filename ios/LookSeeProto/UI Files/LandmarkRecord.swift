@@ -65,7 +65,7 @@ struct LandmarkRecord: View {
 
     private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00)
     
-    private let minimumCombinedVideoDuration: Double = 15.0
+    private let minimumCombinedVideoDuration: Double = 1.0
 
     private var hasPositiveMedia: Bool { !pickedVideoURLs.isEmpty || pickedImage != nil }
     private var hasLabel: Bool { !labelText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
@@ -264,8 +264,11 @@ struct LandmarkRecord: View {
                             .foregroundStyle(.red)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 16)
-                            .background(Color.red.opacity(0.15))
+                            .background(Color(.systemBackground))
                             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.red.opacity(0.8), lineWidth: 2))
+                        
                     }
                 }
             }

@@ -207,7 +207,11 @@ struct Settings: View {
                                 }
                                 
                                 Button { showCancelAlert = true } label: {
-                                    Text("Cancel").font(.system(size: 15, weight: .bold, design: .rounded)).frame(maxWidth: .infinity).padding(.vertical, 12).background(Color.red.opacity(0.1)).foregroundStyle(.red).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                    Text("Cancel").font(.system(size: 15, weight: .bold, design: .rounded)).frame(maxWidth: .infinity).foregroundStyle(.red).padding(.vertical, 12).background(Color(.systemBackground)).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous)).overlay(
+                                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                            // 3. Adaptive stroke color
+                                            .stroke(.red.opacity(0.8), lineWidth: 2)
+                                    )
                                 }
                             }
                         }
@@ -423,7 +427,7 @@ struct DeepSettingsView: View {
                 
                 if isFullyLoggedIn {
                     Button { showAlertSignOut = true } label: {
-                        HStack(spacing: 12) { Image(systemName: "rectangle.portrait.and.arrow.right"); Text("Sign Out") }.font(.system(size: 16, weight: .bold, design: .rounded)).foregroundStyle(.red).frame(maxWidth: .infinity).padding(.vertical, 16).background(Color.red.opacity(0.1)).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous)).padding(.horizontal)
+                        HStack(spacing: 12) { Image(systemName: "rectangle.portrait.and.arrow.right"); Text("Sign Out") }.font(.system(size: 16, weight: .bold, design: .rounded)).foregroundStyle(.red).frame(maxWidth: .infinity).padding(.vertical, 16).background(Color.white.opacity(0.1)).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous)).padding(.horizontal)
                     }
                     .alert("Are you sure you want to sign out?", isPresented: $showAlertSignOut) {
                         Button("Cancel", role: .cancel) {}

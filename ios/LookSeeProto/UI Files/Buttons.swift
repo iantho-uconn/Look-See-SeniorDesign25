@@ -36,6 +36,9 @@ struct Buttons: View {
 
     // Live horizontal offset while a swipe is in progress. 0 when idle.
     @State private var dragOffset: CGFloat = 0
+    
+    @State private var isDragging: Bool = false // 👈 Tracks active dragging
+    @GestureState private var isDraggingState: Bool = false
 
     // 🚀 THE FIX: Completely ignores Cognito authState.tier.
     // If they haven't actually paid (or aren't legacy), they get NOTHING.
@@ -132,16 +135,15 @@ struct Buttons: View {
                     }
 
                     HStack(spacing: 0) {
-                        Spacer()
                         Settings()
                             .environmentObject(vm)
-                            .frame(width: pageWidth * 0.75)
                             .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
-                            .offset(x: showSideMenu ? 0 : pageWidth)
-                            // 🚀 REMOVED the broken highPriorityGesture here so Settings scroll view works normally!
                     }
+                    .frame(width: pageWidth, alignment: .leading) // 👈 Lock the parent row to exact full screen width
+                    .background(Color.clear)
+                    .offset(x: showSideMenu ? 0 : pageWidth) // 👈 Slide precisely from 0 to full pageWidth
                     .animation(.easeOut(duration: 0.25), value: showSideMenu)
-
+                    
                     // Present the landmark info popup at the root level so it
                     // always sits above the pager, top bar, bottom bar, and
                     // side menu.
@@ -162,16 +164,21 @@ struct Buttons: View {
                         .transition(.opacity.combined(with: .scale(scale: 0.98)))
                     }
                 }
+                // Inside your view body:
                 .simultaneousGesture(
-                    // Side-menu swipe-to-dismiss stays independent of paging.
-                    DragGesture(minimumDistance: 30).onEnded { value in
-                        guard !infoView.infoView else { return }
-                        guard showSideMenu else { return }
-                        if value.translation.width > 40 {
-                            withAnimation(.easeOut(duration: 0.25)) { showSideMenu = false }
+                    DragGesture(minimumDistance: 15)
+                        .updating($isDraggingState) { value, state, transaction in
+                            state = true // Automatically sets back to false when gesture ends/cancels
                         }
-                    }
+                        .onEnded { value in
+                            guard !infoView.infoView else { return }
+                            guard showSideMenu else { return }
+                            if value.translation.width > 40 {
+                                withAnimation(.easeOut(duration: 0.25)) { showSideMenu = false }
+                            }
+                        }
                 )
+                .allowsHitTesting(!isDraggingState)
                 .onChange(of: infoView.infoView) { _, isShowingPopup in
                     chromeFadeTask?.cancel()
 
@@ -397,21 +404,24 @@ struct Buttons: View {
                 )
             // old promotion editor replaced by landmark management
                 //.sheet(isPresented: $showPromotion) { PromotionEditor() }
-//                .alert("Premium Account Required", isPresented: $showBusinessAlert) {
-//                    Button("OK", role: .cancel) {}
-//                } message: {
-//                    Text("You need an active subscription to access the Promotion Editor.")
-//                }
+//              .alert("Premium Account Required", isPresented: $showBusinessAlert) {
+//                  Button("OK", role: .cancel) {}
+//              } message: {
+//                  Text("You need an active subscription to access the Promotion Editor.")
+//              }
             Spacer()
 
-            Button {
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                withAnimation(.easeOut(duration: 0.25)) {
-                    showSideMenu = true
-                }
+            NavigationLink {
+                Settings()
+                    .environmentObject(vm)
             } label: {
                 NavButton(icon: "line.3.horizontal", label: "Menu")
             }
+            .simultaneousGesture(
+                TapGesture().onEnded {
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                }
+            )
         }
         .padding(.horizontal, 24)
         .padding(.top, 16)
