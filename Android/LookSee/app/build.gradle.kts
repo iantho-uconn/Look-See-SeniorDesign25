@@ -69,7 +69,11 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     implementation("com.google.code.gson:gson:2.14.0")
 
-    // Checkpoint 6: current LiteRT runtime. Detector uses the Interpreter API
-    // because it must inspect dynamic YOLO input/output tensor names and shapes.
+    val media3Version = "1.10.1"
+    implementation("androidx.media3:media3-transformer:$media3Version")
+    implementation("androidx.media3:media3-effect:$media3Version")
+    implementation("androidx.media3:media3-common:$media3Version")
+
+    // Keep 2.1.5: LiteRT 2.1.6 has the duplicate-namespace packaging bug.
     implementation("com.google.ai.edge.litert:litert:2.1.5")
 }
