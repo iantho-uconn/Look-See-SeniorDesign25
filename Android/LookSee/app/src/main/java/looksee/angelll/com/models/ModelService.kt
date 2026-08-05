@@ -614,7 +614,7 @@ class ModelService(
         inputStream().use { input ->
             val signature = ByteArray(ZIP_SIGNATURE.size)
             return input.read(signature) == signature.size &&
-                signature.contentEquals(ZIP_SIGNATURE)
+                    signature.contentEquals(ZIP_SIGNATURE)
         }
     }
 

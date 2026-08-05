@@ -239,7 +239,7 @@ class ModelAutoRefreshService internal constructor(
     }
 
     companion object {
-        const val DEFAULT_POLL_INTERVAL_MILLIS = 10L * 60L * 1_000L
+        const val DEFAULT_POLL_INTERVAL_MILLIS = 60L * 1_000L
         const val DEFAULT_MINIMUM_MOVEMENT_BEFORE_REFRESH_METERS = 50.0
         const val DEFAULT_MINIMUM_TIME_BETWEEN_REFRESHES_MILLIS = 60L * 1_000L
 

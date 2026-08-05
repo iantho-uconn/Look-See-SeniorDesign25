@@ -78,7 +78,7 @@ import kotlin.math.min
  * analysis stream. The caller owns [Detector]; stopping the camera never closes
  * or resets the detector/model release.
  */
-class CameraSessionCoordinator(
+internal class CameraSessionCoordinator(
     context: Context,
     private val detector: Detector,
 ) : AutoCloseable {

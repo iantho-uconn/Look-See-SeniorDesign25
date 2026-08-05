@@ -52,21 +52,24 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(libs.androidx.compose.ui.tooling)
 
-    // --------------------------------------------------------
-    // Look-See Custom Packages
-    // --------------------------------------------------------
-
-    // AWS Amplify (Your Backend)
+    // AWS Amplify (kept unchanged while the Detection feature is ported).
     implementation("com.amplifyframework:aws-api:2.14.0")
     implementation("com.amplifyframework:aws-datastore:2.14.0")
     implementation("com.amplifyframework:aws-auth-cognito:2.14.0")
     implementation("com.amplifyframework:aws-storage-s3:2.14.0")
     implementation("com.amplifyframework:core-kotlin:2.14.0")
 
-    // CameraX (Your AVFoundation clone for the camera)
-    val camerax_version = "1.3.1"
-    implementation("androidx.camera:camera-core:$camerax_version")
-    implementation("androidx.camera:camera-camera2:$camerax_version")
-    implementation("androidx.camera:camera-lifecycle:$camerax_version")
-    implementation("androidx.camera:camera-view:$camerax_version")
+    val cameraXVersion = "1.6.1"
+    implementation("androidx.camera:camera-core:$cameraXVersion")
+    implementation("androidx.camera:camera-camera2:$cameraXVersion")
+    implementation("androidx.camera:camera-lifecycle:$cameraXVersion")
+    implementation("androidx.camera:camera-view:$cameraXVersion")
+
+    implementation("com.google.android.gms:play-services-location:21.3.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+    implementation("com.google.code.gson:gson:2.14.0")
+
+    // Checkpoint 6: current LiteRT runtime. Detector uses the Interpreter API
+    // because it must inspect dynamic YOLO input/output tensor names and shapes.
+    implementation("com.google.ai.edge.litert:litert:2.1.5")
 }
