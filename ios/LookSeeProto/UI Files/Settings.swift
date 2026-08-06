@@ -200,7 +200,7 @@ struct Settings: View {
                                     presenter.showSubscriptionFlow = true
                                 } label: {
                                     if !vm.hasActiveSubscription {
-                                        Text("Subscribe").font(.system(size: 15, weight: .bold, design: .rounded)).frame(maxWidth: .infinity).padding(.vertical, 12).background(primaryColor.opacity(0.1)).foregroundStyle(primaryColor).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                        Text("sign Up").font(.system(size: 15, weight: .bold, design: .rounded)).frame(maxWidth: .infinity).padding(.vertical, 12).background(primaryColor.opacity(0.1)).foregroundStyle(primaryColor).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                                     } else {
                                         Text("Manage Plan").font(.system(size: 15, weight: .bold, design: .rounded)).frame(maxWidth: .infinity).padding(.vertical, 12).background(primaryColor.opacity(0.1)).foregroundStyle(primaryColor).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                                     }
@@ -309,12 +309,12 @@ struct Settings: View {
                     }.frame(width: 48, height: 48).shadow(color: primaryColor.opacity(0.5), radius: 8, x: 0, y: 4)
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Join LookSee").font(.system(size: 18, weight: .bold, design: .rounded)).foregroundStyle(.white)
-                        Text("Upload landmarks and manage data.").font(.system(size: 14, weight: .medium)).foregroundStyle(.white.opacity(0.7))
+                        Text("Upload landmarks and manage data. Free trail available.").font(.system(size: 14, weight: .medium)).foregroundStyle(.white.opacity(0.7))
                     }
                 }
                 HStack(spacing: 12) {
                     Button { presenter.showSubscriptionFlow = true } label: {
-                        Text("Subscribe").font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(.white).frame(maxWidth: .infinity).padding(.vertical, 14).background(primaryColor).clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        Text("Sign up").font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(.white).frame(maxWidth: .infinity).padding(.vertical, 14).background(primaryColor).clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                     }.buttonStyle(.plain)
                     
                     if !isFullyLoggedIn {

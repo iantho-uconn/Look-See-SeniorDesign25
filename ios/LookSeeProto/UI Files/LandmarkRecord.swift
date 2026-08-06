@@ -65,7 +65,7 @@ struct LandmarkRecord: View {
 
     private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00)
     
-    private let minimumCombinedVideoDuration: Double = 1.0
+    private let minimumCombinedVideoDuration: Double = 15.0
 
     private var hasPositiveMedia: Bool { !pickedVideoURLs.isEmpty || pickedImage != nil }
     private var hasLabel: Bool { !labelText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
@@ -113,13 +113,9 @@ struct LandmarkRecord: View {
                     }
                     
                     Spacer(minLength: 40)
-                }.padding(.top, 16)
+                }
+                .padding(.top, 16)
             }
-            .contentShape(Rectangle())
-                        .onTapGesture {
-                            print("tap detected in record page")
-                            IsKeyboard = false
-                        }
             .scrollDismissesKeyboard(.immediately)
             .safeAreaInset(edge: .top) { Color.clear.frame(height: 50) }
             
@@ -264,11 +260,10 @@ struct LandmarkRecord: View {
                             .foregroundStyle(.red)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 16)
-                            .background(Color(.systemBackground))
+                            .background(Color.white.opacity(0.15))
                             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                             .overlay(
                                 RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.red.opacity(0.8), lineWidth: 2))
-                        
                     }
                 }
             }

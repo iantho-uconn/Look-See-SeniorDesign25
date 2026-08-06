@@ -22,7 +22,7 @@ enum CameraPhase: Equatable {
     var title: String {
         switch self {
         case .mandatory(let idx):
-            if idx == 1 { return "Step 1: Front" }
+            if idx == 1 { return "Capture Video of The Landmark" }
             if idx == 2 { return "Step 2: Second Angle" }
             if idx == 3 { return "Step 3: Third Angle" }
             return "Step \(idx): Fourth Angle"
@@ -34,7 +34,7 @@ enum CameraPhase: Equatable {
     var instruction: String {
         switch self {
         case .mandatory(let idx):
-            if idx == 1 { return "Pan video across the front of the landmark." }
+            if idx == 1 { return "These videos should be taken from ALL typical places where users may see the landmark" }
             return "Move to a different side or angle and pan across the landmark."
         case .optional:
             return "Pan across to capture missing details.\n\nTip: Have you tried standing farther back to get the whole object?"
@@ -57,7 +57,6 @@ struct RecordedClip: Identifiable, Equatable {
 }
 
 enum CameraFlowState: Equatable {
-    case angleSelection
     case instruction
     case recording
     case reviewingRecent(URL, Int)
@@ -69,8 +68,9 @@ struct PositiveVideoCameraView: View {
     @StateObject private var cameraService = NegativeVideoCameraService()
     
     @State private var currentPhase: CameraPhase = .mandatory(1)
-    @State private var flowState: CameraFlowState = .angleSelection
-    @State private var expectedAngles: Int = 1
+    @State private var flowState: CameraFlowState = .instruction
+
+    private let expectedAngles: Int = 1
     
     @State private var recordingTimer: Timer?
     @State private var timeElapsed: Int = 0
@@ -87,8 +87,8 @@ struct PositiveVideoCameraView: View {
     @State private var zoomInstructionTask: Task<Void, Never>?
 
     private let onDone: ([URL]) -> Void
-    private let maxTotalTimeLimit: Int = 60
-    private let minTotalTimeLimit: Int = 15
+    private let maxTotalTimeLimit: Int = 90
+    private let minTotalTimeLimit: Int = 30
 
     init(onDone: @escaping ([URL]) -> Void) {
         self.onDone = onDone
@@ -100,10 +100,10 @@ struct PositiveVideoCameraView: View {
 
     private var minPhaseTimeLimit: Int {
         if currentPhase.isMandatory {
-            return 6
+            return 4
         } else {
             let deficit = minTotalTimeLimit - totalDurationElapsedInt
-            return max(1, deficit)
+            return max(4, deficit)
         }
     }
 
@@ -164,7 +164,7 @@ struct PositiveVideoCameraView: View {
 
             if flowState == .recording && showZoomInstruction {
                 VStack {
-                    Text("Slowly pan around and pinch to zoom in/out")
+                    Text("Slowly pan across the landmark while pinching to zoom in and out")
                         .font(.system(size: 15, weight: .bold, design: .rounded))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 16)
@@ -199,8 +199,6 @@ struct PositiveVideoCameraView: View {
                 Spacer()
                 
                 switch flowState {
-                case .angleSelection:
-                    angleSelectionCard
                 case .instruction:
                     instructionCard
                 case .recording:
@@ -299,7 +297,7 @@ struct PositiveVideoCameraView: View {
             
             Spacer()
             
-            if flowState != .angleSelection && flowState != .gallery {
+            if flowState != .gallery {
                 let progress = currentLiveProgress
                 
                 HStack(spacing: 6) {
@@ -319,57 +317,18 @@ struct PositiveVideoCameraView: View {
         .padding(.top, 10)
     }
     
-    private var angleSelectionCard: some View {
-        VStack(spacing: 24) {
-            Text("How many angles?")
-                .font(.system(size: 22, weight: .bold, design: .rounded))
-                .foregroundStyle(.primary)
-
-            Text("How many distinct sides or perspectives does this landmark have?")
-                .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-
-            HStack(spacing: 16) {
-                ForEach([1, 2, 3, 4], id: \.self) { count in
-                    Button {
-                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                        expectedAngles = count
-                        currentPhase = .mandatory(1)
-                        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { flowState = .instruction }
-                    } label: {
-                        Text(count == 4 ? "4+" : "\(count)")
-                            .font(.system(size: 20, weight: .bold, design: .rounded))
-                            .frame(width: 60, height: 60)
-                            .background(Color(red: 0.22, green: 0.49, blue: 1.00))
-                            .foregroundStyle(.white)
-                            .clipShape(Circle())
-                    }
-                }
-            }
-        }
-        .padding(30)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 32, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 32, style: .continuous).stroke(Color.white.opacity(0.2), lineWidth: 0.5))
-        .shadow(color: .black.opacity(0.15), radius: 20, x: 0, y: 10)
-        .padding(.horizontal, 24)
-        .padding(.bottom, 60)
-        .transition(.move(edge: .bottom).combined(with: .opacity))
-    }
-    
     private var instructionCard: some View {
         VStack(spacing: 16) {
             Text(currentPhase.title)
-                .font(.system(size: 14, weight: .bold, design: .rounded))
-                .foregroundStyle(Color(red: 0.22, green: 0.49, blue: 1.00))
-                .textCase(.uppercase)
-                .tracking(1.2)
+                .font(.system(size: 22, weight: .bold, design: .rounded))
+                .foregroundStyle(Color(.white))
+//                .tracking(1.2)
             
             Text(currentPhase.instruction)
-                .font(.system(size: 18, weight: .bold, design: .rounded))
+                .font(.system(size: 15, weight: .medium, design: .rounded))
                 .multilineTextAlignment(.center)
-                .foregroundStyle(.primary)
-                .padding(.horizontal, 8)
+                .foregroundStyle(.white)
+                .padding(.horizontal, 10)
             
             Button {
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
@@ -397,8 +356,12 @@ struct PositiveVideoCameraView: View {
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { flowState = .gallery }
                 } label: {
                     Text("Cancel & View Captured Clips")
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 17, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.primary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                        .background(Color(.systemBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }
                 .padding(.top, 4)
             }
@@ -586,10 +549,6 @@ struct PositiveVideoCameraView: View {
                 if nextMandatory == nil {
                     Image(systemName: totalDurationElapsedInt >= minTotalTimeLimit ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
                         .foregroundStyle(totalDurationElapsedInt >= minTotalTimeLimit ? .green : .orange)
-                } else {
-                    Text("\(expectedAngles - recordedClips.filter({$0.phase.isMandatory}).count) angles left")
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
-                        .foregroundStyle(.orange)
                 }
             }
             .padding(.horizontal, 4)
@@ -618,20 +577,20 @@ struct PositiveVideoCameraView: View {
                     } label: {
                         Text("Finish Submission")
                             .font(.system(size: 17, weight: .bold, design: .rounded))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(.primary)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 16)
-                            .background(Color.green)
+                            .background(Color(.systemBackground))
                             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                     }
                 } else {
-                    Text("Must reach 15s total minimum")
-                        .font(.system(size: 17, weight: .semibold, design: .rounded))
+                    Text("Total video from all angels must be between \(minTotalTimeLimit) to \(maxTotalTimeLimit) seconds")
+                        .font(.system(size: 17, weight: .bold, design: .rounded))
                         .foregroundStyle(.primary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
-                        .background(Color(uiColor: .tertiarySystemFill))
-                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        //.frame(maxWidth: .infinity)
+                        .padding(.vertical, 5)
+                        //.background(Color(uiColor: .tertiarySystemFill))
+                        //.clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }
                 
                 if timeRemaining > 0 {
@@ -640,15 +599,19 @@ struct PositiveVideoCameraView: View {
                         currentPhase = .optional(recordedClips.count + 1)
                         withAnimation(.spring()) { flowState = .instruction }
                     } label: {
+                        
+                       
+                        
                         Text("Add Extra Clip")
                             .font(.system(size: 17, weight: .semibold, design: .rounded))
-                            .foregroundStyle(Color(red: 0.22, green: 0.49, blue: 1.00))
+                            .foregroundStyle(Color(.white))
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 16)
-                            .background(Color(red: 0.22, green: 0.49, blue: 1.00).opacity(0.15))
+                            .background(Color(red: 0.22, green: 0.49, blue: 1.00))
                             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                     }
                 }
+                
             }
         }
         .padding(24)
@@ -740,7 +703,6 @@ private struct PositiveVideoCameraPreview: UIViewRepresentable {
     }
 }
 
-// 🚀 THE FIX: Core Apple Lens Magic is here!
 private final class PositiveCameraPreviewUIView: UIView {
     override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }
     var previewLayer: AVCaptureVideoPreviewLayer { layer as! AVCaptureVideoPreviewLayer }
@@ -762,7 +724,6 @@ private final class PositiveCameraPreviewUIView: UIView {
         guard !isCameraConfigured,
               let device = previewLayer.session?.inputs.compactMap({ $0 as? AVCaptureDeviceInput }).first?.device else { return }
         
-        // 🚀 Detect virtual lenses and map them correctly. The iPhone 11-15 switch from Ultra-Wide to Wide at exactly 2.0x
         if device.deviceType == .builtInDualWideCamera || device.deviceType == .builtInTripleCamera {
             if let firstSwitch = device.virtualDeviceSwitchOverVideoZoomFactors.first {
                 baseZoomFactor = CGFloat(firstSwitch.floatValue)
@@ -774,7 +735,7 @@ private final class PositiveCameraPreviewUIView: UIView {
         }
         
         try? device.lockForConfiguration()
-        device.videoZoomFactor = baseZoomFactor // Start camera at "1.0x" (Wide Lens)
+        device.videoZoomFactor = baseZoomFactor
         device.unlockForConfiguration()
         
         isCameraConfigured = true
@@ -794,17 +755,14 @@ private final class PositiveCameraPreviewUIView: UIView {
         }
         
         if pinch.state == .changed || pinch.state == .began {
-            // Allows capping out at a reasonable 5x display zoom.
             let maxAllowedZoom = min(5.0 * baseZoomFactor, device.activeFormat.videoMaxZoomFactor)
             
-            // Allow plunging below baseZoom down to the Ultra-Wide hardware limits
             let zoomFactor = min(max(initialZoom * pinch.scale, device.minAvailableVideoZoomFactor), maxAllowedZoom)
             
             try? device.lockForConfiguration()
             device.videoZoomFactor = zoomFactor
             device.unlockForConfiguration()
             
-            // 🚀 The Magic: Divide by base zoom so 1.0 Ultra Wide displays as "0.5x"
             let displayZoom = zoomFactor / baseZoomFactor
             onZoom?(displayZoom)
         }
