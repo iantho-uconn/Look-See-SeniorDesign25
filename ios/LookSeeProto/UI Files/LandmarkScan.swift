@@ -277,7 +277,7 @@ struct LandmarkScan: View {
     }
 
     private func updatePauseState() {
-        isCameraPaused = !isActive || infoView.infoView
+        isCameraPaused = !isActive
 
         if !isActive {
             isDetecting = false

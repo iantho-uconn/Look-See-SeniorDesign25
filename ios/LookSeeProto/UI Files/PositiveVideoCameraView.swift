@@ -10,6 +10,7 @@ import SwiftUI
 import UIKit
 import AVKit
 
+
 enum CameraPhase: Equatable {
     case mandatory(Int)
     case optional(Int)
@@ -66,7 +67,11 @@ enum CameraFlowState: Equatable {
 struct PositiveVideoCameraView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var cameraService = NegativeVideoCameraService()
+    @Environment(\.scenePhase) private var scenePhase
     
+    @State private var wasRecordingBeforeBackground = false
+    @State private var suppressNextError = false
+
     @State private var currentPhase: CameraPhase = .mandatory(1)
     @State private var flowState: CameraFlowState = .instruction
 
@@ -103,7 +108,7 @@ struct PositiveVideoCameraView: View {
             return 4
         } else {
             let deficit = minTotalTimeLimit - totalDurationElapsedInt
-            return max(4, deficit)
+            return min(4, deficit)
         }
     }
 
@@ -216,33 +221,53 @@ struct PositiveVideoCameraView: View {
                     .zIndex(2)
             }
 
-            if let errorMessage = cameraService.errorMessage {
-                cameraErrorOverlay(message: errorMessage)
-                    .zIndex(3)
-            }
-        }
-        .interactiveDismissDisabled()
-        .onAppear {
-            cameraService.onVideoRecorded = { url in
-                if isCancelled {
-                    try? FileManager.default.removeItem(at: url)
-                    dismiss()
-                } else {
-                    let recordedDuration = timeElapsed
-                    withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                        flowState = .reviewingRecent(url, recordedDuration)
+            if let errorMessage = cameraService.errorMessage, !suppressNextError {
+                            cameraErrorOverlay(message: errorMessage)
+                                .zIndex(3)
+                        }
+                    }
+                    .interactiveDismissDisabled()
+                    .onAppear {
+                        cameraService.onVideoRecorded = { url in
+                            if isCancelled {
+                                try? FileManager.default.removeItem(at: url)
+                                dismiss()
+                            } else if suppressNextError {
+                                // This save happened because we stopped recording for backgrounding,
+                                // not because the user finished — discard the partial clip and
+                                // just return to the instruction screen so they can redo the angle.
+                                suppressNextError = false
+                                try? FileManager.default.removeItem(at: url)
+                                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                                    flowState = .instruction
+                                }
+                            } else {
+                                let recordedDuration = timeElapsed
+                                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                                    flowState = .reviewingRecent(url, recordedDuration)
+                                }
+                            }
+                        }
+                        cameraService.start()
+                    }
+                    .onDisappear {
+                        cameraService.stop()
+                        stopTimer()
+                        zoomFadeTask?.cancel()
+                        zoomInstructionTask?.cancel()
+                    }
+                    .onChange(of: scenePhase) { newPhase in
+                        switch newPhase {
+                        case .background, .inactive:
+                            handleAppBackgrounding()
+                        case .active:
+                            handleAppForegrounding()
+                        @unknown default:
+                            break
+                        }
                     }
                 }
-            }
-            cameraService.start()
-        }
-        .onDisappear {
-            cameraService.stop()
-            stopTimer()
-            zoomFadeTask?.cancel()
-            zoomInstructionTask?.cancel()
-        }
-    }
+
     
     private func showZoomIndicatorThenFade() {
         zoomFadeTask?.cancel()
@@ -303,7 +328,7 @@ struct PositiveVideoCameraView: View {
                 HStack(spacing: 6) {
                     Image(systemName: progress.isReady ? "checkmark.circle.fill" : "clock.fill")
                         .foregroundStyle(progress.isReady ? .green : .orange)
-                    Text("\(progress.totalDuration)s / 60s")
+                    Text("\(progress.totalDuration)s / \(maxTotalTimeLimit)")
                         .font(.system(size: 14, weight: .bold, design: .monospaced))
                         .foregroundStyle(.white)
                 }
@@ -679,6 +704,24 @@ struct PositiveVideoCameraView: View {
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 32, style: .continuous))
         .padding(.horizontal, 40)
     }
+    private func handleAppBackgrounding() {
+        guard flowState == .recording else { return }
+        wasRecordingBeforeBackground = true
+        suppressNextError = true   // the stop we're about to trigger isn't a real error
+        stopTimer()
+        cameraService.stopRecording()
+    }
+
+    private func handleAppForegrounding() {
+        guard wasRecordingBeforeBackground else { return }
+        wasRecordingBeforeBackground = false
+        cameraService.errorMessage = nil
+        cameraService.start()
+        // suppressNextError is cleared once onVideoRecorded fires (above),
+        // which reliably follows stopRecording().
+    }
+    
+    
 }
 
 private struct PositiveVideoCameraPreview: UIViewRepresentable {
@@ -720,6 +763,10 @@ private final class PositiveCameraPreviewUIView: UIView {
         addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(handleTap(_:))))
     }
     
+    
+    
+
+
     private func configureCameraIfNeeded() {
         guard !isCameraConfigured,
               let device = previewLayer.session?.inputs.compactMap({ $0 as? AVCaptureDeviceInput }).first?.device else { return }

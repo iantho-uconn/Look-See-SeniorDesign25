@@ -902,8 +902,12 @@ struct Buttons: View {
             LandmarkScan(
                 onTap: revealChromeThenFade,
                 isDetecting: $isDetecting,
-                isNavVisible: $chromeVisible
+                isNavVisible: $chromeVisible,
+                isActive: currentTab == 0   // NEW — tells LandmarkScan whether it's the visible tab
             )
+            .onChange(of: currentTab) { _, newTab in
+                print("[Buttons] Scan tab active: \(newTab == 0)")
+            }
         } else if isBusinessMode && index == recordTabIndex {
             LandmarkRecord { landmarkId in
                 pendingUploadLandmarkId = landmarkId
