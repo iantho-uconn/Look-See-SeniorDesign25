@@ -59,7 +59,7 @@ struct Detection: Identifiable, Equatable {
 
 class BoundingBoxSmoother {
     private var history: [CGRect] = []
-    private let maxFrames = 3
+    private let maxFrames = 4
 
     func smooth(newBox: CGRect) -> CGRect {
         history.append(newBox)
@@ -107,7 +107,7 @@ final class Detector: NSObject, ObservableObject {
     
     // N-FRAME CONFIRMATION: Kills false positives
     private var frameCounters: [String: Int] = [:]
-    private let requiredFramesForDetection = 4
+    private let requiredFramesForDetection = 3
 
     private var isAttached = false
     private var throttling = false
@@ -376,20 +376,24 @@ final class Detector: NSObject, ObservableObject {
         modelIdentifier: String,
         expectedClassCount: Int
     ) -> [Detection] {
-        let startTime = CFAbsoluteTimeGetCurrent()
-
+        
         let ptr = combinedArray.dataPointer.bindMemory(to: Float.self, capacity: combinedArray.count)
         let shape = combinedArray.shape.map { $0.intValue }
-
+        
         let numBoxes = shape.count == 3 ? shape[1] : shape[0]
         let boxSize = shape.last ?? 6
-
+        
         guard boxSize == 6 else {
             print("❌ Unknown E2E shape configuration: \(shape)")
             return []
         }
-
-        let activeSafeZone = dynamicSafeZone == .zero ? CGRect(origin: .zero, size: inputSize) : dynamicSafeZone
+        
+        let screenWidth = UIScreen.main.bounds.width
+        let screenHeight = UIScreen.main.bounds.height
+        let screenScale = max(screenWidth / originalSize.width, screenHeight / originalSize.height)
+        let offsetX = (originalSize.width * screenScale - screenWidth) / 2
+        let offsetY = (originalSize.height * screenScale - screenHeight) / 2
+        let activeSafeZone = dynamicSafeZone == .zero ? UIScreen.main.bounds : dynamicSafeZone
 
         var rawDetections: [Detection] = []
 
@@ -415,10 +419,10 @@ final class Detector: NSObject, ObservableObject {
             let cx640 = x1 + (w640 / 2)
             let cy640 = y1 + (h640 / 2)
 
-            let finalX = ((cx640 - padX) / scale)
-            let finalY = ((cy640 - padY) / scale)
-            let finalW = w640 / scale
-            let finalH = h640 / scale
+            let finalX = (((cx640 - padX) / scale) * screenScale) - offsetX
+            let finalY = (((cy640 - padY) / scale) * screenScale) - offsetY
+            let finalW = (w640 / scale) * screenScale
+            let finalH = (h640 / scale) * screenScale
 
             guard finalW > 0, finalH > 0 else { continue }
 
@@ -426,21 +430,13 @@ final class Detector: NSObject, ObservableObject {
             guard rect.intersects(activeSafeZone) else { continue }
 
             rawDetections.append(
-                Detection(
-                    clusterID: clusterID,
-                    modelVersion: modelVersion,
-                    modelIdentifier: modelIdentifier,
-                    classIndex: classIdx,
-                    classCount: expectedClassCount,
-                    confidence: score,
-                    bbox: rect
-                )
+                Detection(clusterID: clusterID, modelVersion: modelVersion, modelIdentifier: modelIdentifier, classIndex: classIdx, classCount: expectedClassCount, confidence: score, bbox: rect)
             )
         }
 
         let nearbyDetections = proximityFilter(rawDetections)
         let currentLabels = Set(nearbyDetections.map { $0.label })
-
+        
         let lostLabels = smoothers.keys.filter { !currentLabels.contains($0) }
         for label in lostLabels {
             smoothers.removeValue(forKey: label)
@@ -458,22 +454,10 @@ final class Detector: NSObject, ObservableObject {
 
             if currentCount >= requiredFramesForDetection {
                 finalResults.append(
-                    Detection(
-                        clusterID: det.clusterID,
-                        modelVersion: det.modelVersion,
-                        modelIdentifier: det.modelIdentifier,
-                        classIndex: det.classIndex,
-                        classCount: det.classCount,
-                        confidence: det.confidence,
-                        bbox: smoothedBox
-                    )
+                    Detection(clusterID: det.clusterID, modelVersion: det.modelVersion, modelIdentifier: det.modelIdentifier, classIndex: det.classIndex, classCount: det.classCount, confidence: det.confidence, bbox: smoothedBox)
                 )
             }
         }
-
-        let elapsedTime = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
-        let formattedTime = elapsedTime.formatted(.number.precision(.fractionLength(2)))
-        print("⏱ Parsing took \(formattedTime) ms | required frames: \(requiredFramesForDetection)" , "Avg: 6 frames")
         return finalResults
     }
 
@@ -490,6 +474,7 @@ final class Detector: NSObject, ObservableObject {
         modelIdentifier: String,
         expectedClassCount: Int
     ) -> [Detection] {
+        let startTime = CFAbsoluteTimeGetCurrent()
 
         let confPtr = confArray.dataPointer.bindMemory(to: Float.self, capacity: confArray.count)
         let coordPtr = coordArray.dataPointer.bindMemory(to: Float.self, capacity: coordArray.count)
@@ -568,6 +553,9 @@ final class Detector: NSObject, ObservableObject {
                 )
             }
         }
+        let elapsedTime = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
+        let formattedTime = elapsedTime.formatted(.number.precision(.fractionLength(2)))
+        print("⏱ Parsing took \(formattedTime) ms | required frames: \(requiredFramesForDetection)" , "Avg: 6 frames")
         return finalResults
     }
 
