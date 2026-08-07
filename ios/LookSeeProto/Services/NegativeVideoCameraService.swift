@@ -93,9 +93,7 @@ final class NegativeVideoCameraService: NSObject, ObservableObject {
 
         session.beginConfiguration()
         
-        if session.canSetSessionPreset(.hd4K3840x2160) {
-            session.sessionPreset = .hd4K3840x2160
-        } else if session.canSetSessionPreset(.hd1920x1080) {
+        if session.canSetSessionPreset(.hd1920x1080) {
             session.sessionPreset = .hd1920x1080
         } else {
             session.sessionPreset = .high

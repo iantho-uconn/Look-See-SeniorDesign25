@@ -55,7 +55,7 @@ final class UploadService: ObservableObject {
     private let baseURL = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev")!
     private let apiTimeout: TimeInterval = 60
     private let mediaUploadTimeout: TimeInterval = 300
-    private let minimumCombinedVideoDuration: Double = 15
+    private let minimumCombinedVideoDuration: Double = 30
 
     // MARK: Errors
     enum UploadError: LocalizedError {
