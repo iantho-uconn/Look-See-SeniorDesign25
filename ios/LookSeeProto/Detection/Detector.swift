@@ -59,7 +59,7 @@ struct Detection: Identifiable, Equatable {
 
 class BoundingBoxSmoother {
     private var history: [CGRect] = []
-    private let maxFrames = 4
+    private let maxFrames = 1
 
     func smooth(newBox: CGRect) -> CGRect {
         history.append(newBox)
@@ -107,7 +107,7 @@ final class Detector: NSObject, ObservableObject {
     
     // N-FRAME CONFIRMATION: Kills false positives
     private var frameCounters: [String: Int] = [:]
-    private let requiredFramesForDetection = 3
+    private let requiredFramesForDetection = 2
 
     private var isAttached = false
     private var throttling = false
@@ -127,7 +127,7 @@ final class Detector: NSObject, ObservableObject {
     private let cooldownInterval: TimeInterval = 6.0
 
     private let inputSize = CGSize(width: 640, height: 640)
-    private let confidenceThreshold: Float = 0.80
+    private let confidenceThreshold: Float = 0.65
     private let iouThreshold: Float = 0.45
 
     private var smoothers: [String: BoundingBoxSmoother] = [:]

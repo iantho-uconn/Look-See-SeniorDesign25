@@ -10,10 +10,16 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# Upgrade pip and install PyTorch using default PyPI repository
-# This avoids the custom index URL that is triggering the SSL Handshake error
+# Upgrade pip first
 RUN pip install --upgrade pip
-RUN pip install --no-cache-dir torch torchvision torchaudio
+
+# Install the ultra-stable CUDA 11.8 version for AWS. 
+# The --trusted-host flags will completely bypass your SSL Handshake error!
+RUN pip install --no-cache-dir torch torchvision torchaudio \
+    --index-url https://download.pytorch.org/whl/cu118 \
+    --trusted-host download.pytorch.org \
+    --trusted-host pypi.org \
+    --trusted-host files.pythonhosted.org
 
 # Install the rest of the dependencies
 RUN pip install --no-cache-dir \

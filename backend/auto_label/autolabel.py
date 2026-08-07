@@ -10,7 +10,6 @@ import numpy as np
 from botocore.exceptions import ClientError
 
 # --- CRITICAL FIX 1: Instant CloudWatch Logging ---
-# Forces Python to flush print statements to CloudWatch immediately
 sys.stdout.reconfigure(line_buffering=True)
 
 from autodistill_grounding_dino import GroundingDINO
@@ -40,7 +39,7 @@ while True:
     response = sqs.receive_message(
         QueueUrl=QUEUE_URL,
         MaxNumberOfMessages=1,
-        WaitTimeSeconds=10 # Long polling: wait 10s before giving up
+        WaitTimeSeconds=10 
     )
 
     if 'Messages' not in response:
@@ -52,20 +51,18 @@ while True:
     receipt_handle = message['ReceiptHandle']
     SUBMISSION_FOLDER = message['Body']
     
-    # FAILSAFE: Safely unpack JSON if needed
     try:
         parsed = json.loads(SUBMISSION_FOLDER)
         if isinstance(parsed, dict) and "folder_name" in parsed:
             SUBMISSION_FOLDER = parsed["folder_name"]
     except (json.JSONDecodeError, TypeError):
-        pass # It's a standard string, which is correct!
+        pass 
 
     INPUT_PREFIX = f"clean-frames/{SUBMISSION_FOLDER}/"
-
-    print(f"📦 Picked up folder from queue: {SUBMISSION_FOLDER}")
+    print(f"\n📦 Picked up folder from queue: {SUBMISSION_FOLDER}")
 
     # -----------------------------------------
-    # 2. LOAD SUBMISSION METADATA
+    # 2. LOAD SUBMISSION METADATA & MULTI-PROMPTS
     # -----------------------------------------
     metadata_key = f"{INPUT_PREFIX}metadata.json"
     local_metadata_path = f"/tmp/metadata_{SUBMISSION_FOLDER}.json"
@@ -81,14 +78,31 @@ while True:
         continue 
 
     class_name = metadata.get('class_name', 'UnknownObject').replace(" ", "_")
-    prompt = metadata.get('prompt', class_name)
 
-    print(f"🎯 Target Object: {class_name} | AI Prompt: {prompt}")
+    raw_prompts = metadata.get('prompts')
+    if isinstance(raw_prompts, list) and len(raw_prompts) > 0:
+        prompts = [str(p) for p in raw_prompts]
+    else:
+        single_prompt = metadata.get('prompt', class_name)
+        prompts = [str(single_prompt)]
+
+    # --- 🧼 PROMPT SANITIZATION STEP ---
+    # Cleans up any rogue JSON brackets, quotes, or escape characters from Bedrock formatting
+    prompts = [
+        p.replace('[', '').replace(']', '').replace('"', '').replace('\\', '').strip() 
+        for p in prompts
+    ]
+    # Filter out empty strings if any remain
+    prompts = [p for p in prompts if p]
+
+    print(f"🎯 Target Object: {class_name} | AI Prompts ({len(prompts)}): {prompts}")
 
     # -----------------------------------------
-    # 3. INITIALIZE MODEL PER TASK
+    # 3. INITIALIZE MULTI-PROMPT ONTOLOGY
     # -----------------------------------------
-    ontology = CaptionOntology({prompt: class_name})
+    ontology_dict = {prompt_text: class_name for prompt_text in prompts}
+    ontology = CaptionOntology(ontology_dict)
+    
     model = GroundingDINO(
         ontology=ontology,
         box_threshold=0.35,
@@ -118,7 +132,7 @@ while True:
         continue
 
     total_frames = len(all_keys)
-    print(f"📸 Found {total_frames} frames to process. Starting Auto-Labeling...")
+    print(f"📸 Found {total_frames} frames to process. Starting Multi-Prompt Auto-Labeling...")
 
     count = 0
     labeled_count = 0
@@ -133,7 +147,6 @@ while True:
         # --- S3 CHECKPOINTING ---
         try:
             s3.head_object(Bucket=BUCKET_NAME, Key=s3_label_out)
-            # If no error is thrown, the file exists! Skip this frame.
             count += 1
             continue
         except ClientError as e:
@@ -141,14 +154,12 @@ while True:
                 print(f"Unexpected S3 error checking checkpoint: {e}")
             pass
 
-        # Download image from S3
         s3.download_file(BUCKET_NAME, img_key, local_img_path)
         image = cv2.imread(local_img_path)
         
-        # Run AI Prediction
+        # Run AI Prediction across all candidate prompts simultaneously
         detections = model.predict(image)
 
-        # Skip frame if AI finds nothing
         if len(detections.xyxy) == 0:
             os.remove(local_img_path)
             del image
@@ -156,7 +167,6 @@ while True:
             count += 1
             continue
 
-        # --- EXTRACT CONFIDENCE SCORE ---
         try:
             max_conf = max(detections.confidence)
             print(f"  -> Frame {img_name}: Object found with {max_conf * 100:.1f}% confidence")
@@ -167,7 +177,6 @@ while True:
         h, w, _ = image.shape
         img_area = w * h
         
-        # 1. Pair boxes with confidence and filter out >90% screen size anomalies
         valid_detections = []
         for box, conf in zip(detections.xyxy, detections.confidence):
             box_area = (box[2] - box[0]) * (box[3] - box[1])
@@ -175,35 +184,29 @@ while True:
                 valid_detections.append((box, conf))
                 
         if not valid_detections:
-            # Failsafe: Use highest confidence box if everything was over 90% screen size
             best_idx = np.argmax(detections.confidence)
             valid_detections = [(detections.xyxy[best_idx], detections.confidence[best_idx])]
 
-        # 2. Sort by confidence (Highest first) to set our "Anchor"
         valid_detections.sort(key=lambda x: x[1], reverse=True)
         anchor_box = valid_detections[0][0]
         boxes_to_merge = [anchor_box]
 
-        # 3. Helper function to check if a box touches/is close to the anchor box
         def is_close_to_anchor(b1, b2, threshold):
             b1_expanded = [b1[0]-threshold, b1[1]-threshold, b1[2]+threshold, b1[3]+threshold]
             if b1_expanded[0] > b2[2] or b1_expanded[2] < b2[0]: return False
             if b1_expanded[1] > b2[3] or b1_expanded[3] < b2[1]: return False
             return True
 
-        # 4. Outlier Rejection: Only merge boxes within 10% distance of the Anchor
         proximity_threshold = max(w, h) * 0.10
         for box, conf in valid_detections[1:]:
             if is_close_to_anchor(anchor_box, box, threshold=proximity_threshold):
                 boxes_to_merge.append(box)
 
-        # 5. Get the tight boundaries of all valid parts
         x_min = min(b[0] for b in boxes_to_merge)
         y_min = min(b[1] for b in boxes_to_merge)
         x_max = max(b[2] for b in boxes_to_merge)
         y_max = max(b[3] for b in boxes_to_merge)
 
-        # 6. Apply Proportional 4% Padding
         padding_pct = 0.04
         box_w = x_max - x_min
         box_h = y_max - y_min
@@ -216,7 +219,6 @@ while True:
         final_xmax = min(w, x_max + pad_x)
         final_ymax = min(h, y_max + pad_y)
 
-        # 7. Convert to YOLO format (strictly clamped between 0.0 and 1.0)
         x_center = max(0.0, min(1.0, ((final_xmin + final_xmax) / 2) / w))
         y_center = max(0.0, min(1.0, ((final_ymin + final_ymax) / 2) / h))
         bw = max(0.0, min(1.0, (final_xmax - final_xmin) / w))
@@ -224,22 +226,17 @@ while True:
         
         yolo_lines = [f"0 {x_center:.6f} {y_center:.6f} {bw:.6f} {bh:.6f}"]
 
-        # Save label file locally
         local_label_path = f"/tmp/{label_name}"
         with open(local_label_path, "w") as f:
             f.write("\n".join(yolo_lines))
 
-        # Upload to final dataset folders
         s3_img_out = f"neg-dataset/{class_name}/images/{img_name}"
-
         s3.upload_file(local_img_path, BUCKET_NAME, s3_img_out)
         s3.upload_file(local_label_path, BUCKET_NAME, s3_label_out)
 
-        # Clean up /tmp/
         os.remove(local_img_path)
         os.remove(local_label_path)
         
-        # --- TRUE MEMORY WIPE ---
         del image
         del detections
             
