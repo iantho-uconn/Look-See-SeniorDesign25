@@ -517,7 +517,12 @@ struct LandmarkRecord: View {
             
             negativePhotoSection
         }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            IsKeyboard = false
+        }
     }
+    
 
     private var positiveAlreadySavedCard: some View {
         HStack(alignment: .top, spacing: 16) {
