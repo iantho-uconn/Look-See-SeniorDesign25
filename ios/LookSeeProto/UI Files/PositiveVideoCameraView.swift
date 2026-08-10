@@ -92,10 +92,15 @@ struct PositiveVideoCameraView: View {
     @State private var zoomInstructionTask: Task<Void, Never>?
 
     private let onDone: ([URL]) -> Void
+    private let completionButtonTitle: String
     private let maxTotalTimeLimit: Int = 90
     private let minTotalTimeLimit: Int = 30
 
-    init(onDone: @escaping ([URL]) -> Void) {
+    init(
+        completionButtonTitle: String = "Finish Submission",
+        onDone: @escaping ([URL]) -> Void
+    ) {
+        self.completionButtonTitle = completionButtonTitle
         self.onDone = onDone
     }
 
@@ -600,7 +605,7 @@ struct PositiveVideoCameraView: View {
                         onDone(recordedClips.map { $0.url })
                         dismiss()
                     } label: {
-                        Text("Finish Submission")
+                        Text(completionButtonTitle)
                             .font(.system(size: 17, weight: .bold, design: .rounded))
                             .foregroundStyle(.primary)
                             .frame(maxWidth: .infinity)
