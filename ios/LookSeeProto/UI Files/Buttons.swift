@@ -20,7 +20,7 @@ struct Buttons: View {
     @State private var pendingUploadLandmarkId: String?
     @State private var showRecordSheet = false
     
-    // 🚀 Functionality ONLY - Timers to keep camera alive during swipe animations
+    // 🚀 Functionality ONLY - Timers to keep camera alive during sheet animations
     @State private var keepScanCameraAlive = false
     @State private var isRecordSheetAnimating = false
 
@@ -55,14 +55,15 @@ struct Buttons: View {
 
     var isActive: Bool = true
     
-    // 🚀 Functionality ONLY - Evaluates exactly when the camera should shut off
+    // 🚀 THE FIX: Evaluates exactly when the camera should shut off
     var isScanCameraActive: Bool {
+        // 1. MUST turn off for Record sheet so the hardware lenses don't crash
         if showRecordSheet || isRecordSheetAnimating { return false }
-        if currentTab == 0 { return true }
-        // Changed to != 0 so ANY swipe direction keeps the camera from freezing the main thread
-        if dragOffset != 0 { return true }
-        if keepScanCameraAlive { return true }
-        return false
+        
+        // 2. ALWAYS KEEP WARM otherwise!
+        // This completely eliminates the black flash on swipe AND the stutter/lag
+        // when returning to Scan, because the hardware never has to boot up.
+        return true
     }
 
     var body: some View {
@@ -206,11 +207,12 @@ struct Buttons: View {
                     }
                 )
             }
-            // 🚀 FUNCTIONALITY FIX: Now actually triggered. Prevents camera freeze on sheet dismissal.
+            // 🚀 SURGICAL FIX: Smoothly re-engages the Scan camera when closing Record without stuttering
             .onChange(of: showRecordSheet) { _, isShown in
                 if !isShown {
                     isRecordSheetAnimating = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    // Give iOS 0.3s to fully clear the record sheet hardware before waking up Scan
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                         isRecordSheetAnimating = false
                     }
                 }
@@ -241,14 +243,6 @@ struct Buttons: View {
         .onChange(of: currentTab) { _, newTab in
             revealChromeThenFade()
             updateIdleTimer(for: newTab, active: isActive)
-            
-            // 🚀 FUNCTIONALITY FIX: This was missing! It keeps the camera alive for 0.4s to let the swipe finish.
-            if newTab != 0 {
-                keepScanCameraAlive = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                    keepScanCameraAlive = false
-                }
-            }
         }
         .onChange(of: isActive) { _, newActive in
             updateIdleTimer(for: currentTab, active: newActive)
@@ -280,7 +274,6 @@ struct Buttons: View {
                 onTap: revealChromeThenFade,
                 isDetecting: $isDetecting,
                 isNavVisible: $chromeVisible,
-                // 🚀 FUNCTIONALITY FIX: Plugged the logic in here so the camera actually listens to the swipe timer!
                 isActive: isScanCameraActive
             )
         } else if index == mapTabIndex {
@@ -448,16 +441,9 @@ struct Buttons: View {
                     Text("Record")
                         .font(.system(size: 11, weight: .bold, design: .rounded))
                 }
-                .foregroundStyle(.white)
+                .foregroundStyle(Color.secondary)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 10)
-                // Solid Blue Background for emphasis
-                .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color(red: 0.22, green: 0.49, blue: 1.00))
-                        .shadow(color: Color(red: 0.22, green: 0.49, blue: 1.00).opacity(0.3), radius: 6, x: 0, y: 3)
-                )
-                .padding(.horizontal, 6)
             }
             
             tabButton(title: "Map", icon: "map", tab: mapTabIndex, locked: false)
@@ -612,7 +598,14 @@ struct Buttons: View {
         }
         .foregroundStyle(locked ? Color(uiColor: .quaternaryLabel) : currentTab == tab ? Color(red: 0.22, green: 0.49, blue: 1.00) : Color.secondary)
         .frame(maxWidth: .infinity).padding(.vertical, 10)
-        .background(Group { if currentTab == tab && !locked { RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(red: 0.22, green: 0.49, blue: 1.00).opacity(0.15)) } })
+        .overlay(alignment: .bottom) {
+            if currentTab == tab && !locked {
+                Capsule()
+                    .fill(Color(red: 0.22, green: 0.49, blue: 1.00))
+                    .frame(width: 24, height: 3)
+                    .offset(y: -2)
+            }
+        }
         .contentShape(Rectangle())
         .highPriorityGesture(TapGesture().onEnded {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
