@@ -185,7 +185,7 @@ struct LandmarkRecord: View {
                     dismiss()
                 }
             }
-        } message: { Text("Your landmark media and negative reference video were uploaded successfully.") }
+        } message: { Text("Your landmark media was uploaded. The negative reference video may continue processing in the background.") }
         .alert("Connection Offline", isPresented: $showAutoQueueAlert) { Button("OK", role: .cancel) { if archivedMedia != nil { dismiss() } } } message: { Text("You currently have no internet connection. This landmark has been securely added to your Upload Queue and will automatically sync when service returns!") }
         .alert(limitAlertTitle, isPresented: $showLimitAlert) {
             Button("OK", role: .cancel) { }
@@ -750,7 +750,7 @@ struct LandmarkRecord: View {
                 
                 completedLandmarkId = finalLandmarkId
                 isFullSubmissionComplete = true
-                statusText = String(localized: "Landmark and reference video uploaded successfully.")
+                statusText = String(localized: "Landmark uploaded. The reference video is processing in the background.")
                 showCompletionPopup = true
                 
                 if let media = archivedMedia { OfflineMediaManager.shared.deleteArchive(media: media) }

@@ -69,7 +69,15 @@ final class HardNegativeUploadService: ObservableObject {
             }
 
             progress = 1
-            status = String(localized: "Negative video uploaded ✅")
+            let backendStatus = completeResponse.processed.first?.status
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .uppercased()
+
+            if backendStatus == "READY" {
+                status = String(localized: "Negative video is ready.")
+            } else {
+                status = String(localized: "Negative video uploaded and is processing.")
+            }
 
             return completeResponse
 

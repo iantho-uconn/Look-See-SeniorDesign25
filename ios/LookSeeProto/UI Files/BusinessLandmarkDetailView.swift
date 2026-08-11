@@ -42,8 +42,12 @@ struct BusinessLandmarkDetailView: View {
 
     @State private var showPositivePicker = false
     @State private var showNegativePicker = false
+    @State private var showPositiveCamera = false
+    @State private var showNegativeCamera = false
     @State private var selectedPositiveMediaItems: [PhotosPickerItem] = []
     @State private var selectedNegativeMediaItems: [PhotosPickerItem] = []
+    @State private var pendingPositiveVideoURLs: [URL] = []
+    @State private var pendingNegativeVideo: CapturedNegativeVideo?
 
     @State private var isUploadingMedia = false
     @State private var activeUploadRole: BusinessDatasetRole?
@@ -411,11 +415,15 @@ struct BusinessLandmarkDetailView: View {
 
                         Divider()
 
+                        positiveCameraButton
+                        positiveRecordedVideoControls
                         positivePickerButton
                         positiveSelectionControls
 
                         Divider()
 
+                        negativeCameraButton
+                        negativeRecordedVideoControls
                         negativePickerButton
                         negativeSelectionControls
 
@@ -427,7 +435,7 @@ struct BusinessLandmarkDetailView: View {
                     .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2)
                     .padding(.horizontal)
 
-                    Text("Choose media first, confirm your selection in the photo picker, then submit when ready.")
+                    Text("Record new video with the camera or choose existing photos and videos from your library.")
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 20)
@@ -539,6 +547,22 @@ struct BusinessLandmarkDetailView: View {
             ) {
                 Task {
                     await loadPromotions()
+                }
+            }
+        }
+        .fullScreenCover(isPresented: $showPositiveCamera) {
+            PositiveVideoCameraView(completionButtonTitle: "Use Recorded Videos") { urls in
+                pendingPositiveVideoURLs = urls
+                Task {
+                    await uploadPendingPositiveRecording()
+                }
+            }
+        }
+        .fullScreenCover(isPresented: $showNegativeCamera) {
+            NegativeVideoCameraView { video in
+                pendingNegativeVideo = video
+                Task {
+                    await uploadPendingNegativeRecording()
                 }
             }
         }
@@ -712,6 +736,105 @@ struct BusinessLandmarkDetailView: View {
         else if !start.isEmpty { dateText = "Starts \(start)" }
         else { dateText = "Ends \(end)" }
         return promotion.enabled ? "Active • \(dateText)" : "Inactive • \(dateText)"
+    }
+
+    // MARK: - Camera Recording
+
+    private var positiveCameraButton: some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            clearPendingPositiveRecording()
+            uploadStatusMessage = nil
+            showPositiveCamera = true
+        } label: {
+            uploadRow(
+                title: "Record Positive Video",
+                subtitle: pendingPositiveVideoURLs.isEmpty
+                    ? "Record new views of this landmark with the camera."
+                    : "A recording is ready to retry.",
+                systemImage: "video.circle.fill",
+                color: primaryColor
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(isUploadingMedia)
+    }
+
+    private var negativeCameraButton: some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            clearPendingNegativeRecording()
+            uploadStatusMessage = nil
+            showNegativeCamera = true
+        } label: {
+            uploadRow(
+                title: "Record Negative Video",
+                subtitle: pendingNegativeVideo == nil
+                    ? "Record nearby objects without including the landmark."
+                    : "A negative recording is ready to retry.",
+                systemImage: "video.fill",
+                color: .orange
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(isUploadingMedia)
+    }
+
+    @ViewBuilder
+    private var positiveRecordedVideoControls: some View {
+        if !pendingPositiveVideoURLs.isEmpty && !isUploadingMedia {
+            recordedVideoRetryControls(
+                retryTitle: "Retry Positive Upload",
+                retryColor: primaryColor,
+                retry: {
+                    Task { await uploadPendingPositiveRecording() }
+                },
+                clear: clearPendingPositiveRecording
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var negativeRecordedVideoControls: some View {
+        if pendingNegativeVideo != nil && !isUploadingMedia {
+            recordedVideoRetryControls(
+                retryTitle: "Retry Negative Upload",
+                retryColor: .orange,
+                retry: {
+                    Task { await uploadPendingNegativeRecording() }
+                },
+                clear: clearPendingNegativeRecording
+            )
+        }
+    }
+
+    private func recordedVideoRetryControls(
+        retryTitle: String,
+        retryColor: Color,
+        retry: @escaping () -> Void,
+        clear: @escaping () -> Void
+    ) -> some View {
+        HStack(spacing: 10) {
+            Button(action: retry) {
+                Text(retryTitle)
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 11)
+                    .background(retryColor)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+
+            Button(role: .destructive, action: clear) {
+                Text("Clear")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(.red)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 11)
+                    .background(Color.red.opacity(0.1))
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+        }
     }
 
     // MARK: - Picker Buttons
@@ -1028,6 +1151,176 @@ struct BusinessLandmarkDetailView: View {
     private var uploadingText: String {
         if let activeUploadRole { return "Uploading \(activeUploadRole.displayName.lowercased())..." }
         return "Uploading media..."
+    }
+
+    // MARK: - Recorded Camera Uploads
+
+    private func uploadPendingPositiveRecording() async {
+        guard !isUploadingMedia else { return }
+        let sourceURLs = pendingPositiveVideoURLs
+        guard !sourceURLs.isEmpty else { return }
+
+        await beginRecordedVideoUpload(
+            datasetRole: .positive,
+            progressText: sourceURLs.count == 1
+                ? "Preparing recorded video..."
+                : "Combining \(sourceURLs.count) recorded clips..."
+        )
+
+        var generatedMergedURL: URL?
+
+        do {
+            let uploadURL = try await VideoMerger.mergeAndValidate(
+                clipURLs: sourceURLs,
+                minimumDuration: 30
+            )
+
+            if !sourceURLs.contains(uploadURL) {
+                generatedMergedURL = uploadURL
+            }
+
+            await MainActor.run {
+                uploadProgressText = "Uploading positive recording..."
+            }
+
+            let mediaData = try await loadRecordedVideoData(from: uploadURL)
+            let response = try await service.uploadBusinessMedia(
+                landmarkId: landmark.landmarkId,
+                datasetRole: .positive,
+                mediaKind: .video,
+                filename: makeRecordedVideoFilename(datasetRole: .positive),
+                contentType: "video/quicktime",
+                data: mediaData
+            )
+
+            var filesToDelete = sourceURLs
+            if let generatedMergedURL {
+                filesToDelete.append(generatedMergedURL)
+            }
+            deleteLocalFiles(filesToDelete)
+
+            await MainActor.run {
+                pendingPositiveVideoURLs.removeAll()
+                finishRecordedVideoUpload(
+                    successMessage: "Positive recording uploaded successfully. Submission: \(response.submissionId)"
+                )
+            }
+        } catch {
+            if let generatedMergedURL {
+                deleteLocalFiles([generatedMergedURL])
+            }
+
+            await MainActor.run {
+                failRecordedVideoUpload(error)
+            }
+        }
+    }
+
+    private func uploadPendingNegativeRecording() async {
+        guard !isUploadingMedia else { return }
+        guard let video = pendingNegativeVideo else { return }
+
+        await beginRecordedVideoUpload(
+            datasetRole: .hardNegative,
+            progressText: "Preparing negative recording..."
+        )
+
+        do {
+            let mediaData = try await loadRecordedVideoData(from: video.fileURL)
+
+            await MainActor.run {
+                uploadProgressText = "Uploading negative recording..."
+            }
+
+            let response = try await service.uploadBusinessMedia(
+                landmarkId: landmark.landmarkId,
+                datasetRole: .hardNegative,
+                mediaKind: .video,
+                filename: makeRecordedVideoFilename(datasetRole: .hardNegative),
+                contentType: "video/quicktime",
+                data: mediaData
+            )
+
+            video.deleteLocalFile()
+
+            await MainActor.run {
+                pendingNegativeVideo = nil
+                finishRecordedVideoUpload(
+                    successMessage: "Negative recording uploaded successfully. Submission: \(response.submissionId)"
+                )
+            }
+        } catch {
+            await MainActor.run {
+                failRecordedVideoUpload(error)
+            }
+        }
+    }
+
+    private func beginRecordedVideoUpload(
+        datasetRole: BusinessDatasetRole,
+        progressText: String
+    ) async {
+        await MainActor.run {
+            isUploadingMedia = true
+            activeUploadRole = datasetRole
+            uploadStatusMessage = nil
+            uploadErrorMessage = nil
+            uploadProgressText = progressText
+        }
+    }
+
+    @MainActor
+    private func finishRecordedVideoUpload(successMessage: String) {
+        isUploadingMedia = false
+        activeUploadRole = nil
+        uploadProgressText = nil
+        uploadErrorMessage = nil
+        uploadStatusMessage = successMessage
+    }
+
+    @MainActor
+    private func failRecordedVideoUpload(_ error: Error) {
+        isUploadingMedia = false
+        activeUploadRole = nil
+        uploadProgressText = nil
+        uploadStatusMessage = nil
+        uploadErrorMessage = error.localizedDescription
+    }
+
+    private func loadRecordedVideoData(from url: URL) async throws -> Data {
+        try await Task.detached(priority: .userInitiated) {
+            guard FileManager.default.fileExists(atPath: url.path) else {
+                throw MediaSelectionError.couldNotLoadMedia
+            }
+            return try Data(contentsOf: url, options: .mappedIfSafe)
+        }.value
+    }
+
+    private func makeRecordedVideoFilename(datasetRole: BusinessDatasetRole) -> String {
+        let cleanedLabel = landmark.label
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: " ", with: "_")
+            .replacingOccurrences(of: "/", with: "_")
+        let labelComponent = cleanedLabel.isEmpty ? landmark.landmarkId : cleanedLabel
+        return "\(labelComponent)_\(datasetRole.filenameComponent)_camera_\(UUID().uuidString).mov"
+    }
+
+    private func clearPendingPositiveRecording() {
+        deleteLocalFiles(pendingPositiveVideoURLs)
+        pendingPositiveVideoURLs.removeAll()
+        uploadErrorMessage = nil
+    }
+
+    private func clearPendingNegativeRecording() {
+        pendingNegativeVideo?.deleteLocalFile()
+        pendingNegativeVideo = nil
+        uploadErrorMessage = nil
+    }
+
+    private func deleteLocalFiles(_ urls: [URL]) {
+        for url in Set(urls) where FileManager.default.fileExists(atPath: url.path) {
+            try? FileManager.default.removeItem(at: url)
+        }
     }
 
     private func uploadSelectedMediaItems(items: [PhotosPickerItem], datasetRole: BusinessDatasetRole) async {
