@@ -2,14 +2,6 @@
 //  Buttons.swift
 //  LookSeeProto
 //
-//  Created by Christian Barbara on 1/25/26.
-//
-//  Updated: TabView-based paging replaced with a manual HStack pager so
-//  swiping shows a live, finger-following preview of the adjacent page
-//  (camera/record/map) instead of only snapping after release.
-//  Merged back in: VariableContainer/PopUp landmark-info overlay, which the
-//  pager rewrite had dropped.
-//
 
 import SwiftUI
 
@@ -24,7 +16,9 @@ struct Buttons: View {
     @State private var showSignUpPrompt = false
     @State private var showSignUp = false
     @State private var currentTab = 0
+
     @State private var pendingUploadLandmarkId: String?
+    @State private var showRecordSheet = false
 
     @State private var chromeVisible = true
     @State private var chromeFadeTask: Task<Void, Never>?
@@ -34,31 +28,25 @@ struct Buttons: View {
     @State private var showSideMenu = false
     @State private var isReticlePulsing = false
 
-    // Live horizontal offset while a swipe is in progress. 0 when idle.
     @State private var dragOffset: CGFloat = 0
+    @State private var isDragging: Bool = false
+    @GestureState private var isDraggingState: Bool = false
+    @GestureState private var isSwipingState: Bool = false
 
-    // 🚀 THE FIX: Completely ignores Cognito authState.tier.
-    // If they haven't actually paid (or aren't legacy), they get NOTHING.
+    @State private var hasPreloadedMap = false
+
     private var isBusinessMode: Bool {
         return vm.hasActiveSubscription
     }
 
-    var tabCount: Int {
-        return isBusinessMode ? 3 : 2
-    }
+    var tabCount: Int { return 2 }
 
     private var isScanTab: Bool { currentTab == 0 }
-
-    private var mapTabIndex: Int {
-        return tabCount - 1
-    }
-
-    private var recordTabIndex: Int { 1 }
+    private var mapTabIndex: Int { 1 }
 
     private var topBarTitle: String {
         if currentTab == 0 { return "LookSee" }
-        if currentTab == mapTabIndex { return "Map" }
-        return "Record"
+        return "Map"
     }
 
     var isActive: Bool = true
@@ -80,10 +68,14 @@ struct Buttons: View {
                                 withAnimation(.easeOut(duration: 0.1)) { chromeVisible = false }
                             }
                         }
-                        // Full-width live-tracking swipe — disabled when side menu is open
                         .simultaneousGesture(
                             (currentTab != mapTabIndex && !infoView.infoView && !showSideMenu)
                                 ? DragGesture(minimumDistance: 12)
+                                    .updating($isSwipingState) { value, state, _ in
+                                        if abs(value.translation.width) > abs(value.translation.height) {
+                                            state = true
+                                        }
+                                    }
                                     .onChanged { value in
                                         guard abs(value.translation.width) > abs(value.translation.height) else { return }
                                         dragOffset = clampedDragOffset(value.translation.width, width: pageWidth)
@@ -118,6 +110,7 @@ struct Buttons: View {
                         }
                         .transition(.opacity)
                         .animation(.easeOut(duration: 0.3), value: chromeVisible)
+                        .allowsHitTesting(!isSwipingState)
                     }
 
                     if showSignUpPrompt { signUpPromptOverlay }
@@ -132,19 +125,15 @@ struct Buttons: View {
                     }
 
                     HStack(spacing: 0) {
-                        Spacer()
                         Settings()
                             .environmentObject(vm)
-                            .frame(width: pageWidth * 0.75)
                             .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
-                            .offset(x: showSideMenu ? 0 : pageWidth)
-                            // 🚀 REMOVED the broken highPriorityGesture here so Settings scroll view works normally!
                     }
+                    .frame(width: pageWidth, alignment: .leading)
+                    .background(Color.clear)
+                    .offset(x: showSideMenu ? 0 : pageWidth)
                     .animation(.easeOut(duration: 0.25), value: showSideMenu)
-
-                    // Present the landmark info popup at the root level so it
-                    // always sits above the pager, top bar, bottom bar, and
-                    // side menu.
+                    
                     if infoView.infoView {
                         ZStack {
                             Color.black
@@ -163,21 +152,24 @@ struct Buttons: View {
                     }
                 }
                 .simultaneousGesture(
-                    // Side-menu swipe-to-dismiss stays independent of paging.
-                    DragGesture(minimumDistance: 30).onEnded { value in
-                        guard !infoView.infoView else { return }
-                        guard showSideMenu else { return }
-                        if value.translation.width > 40 {
-                            withAnimation(.easeOut(duration: 0.25)) { showSideMenu = false }
+                    DragGesture(minimumDistance: 15)
+                        .updating($isDraggingState) { value, state, transaction in
+                            state = true
                         }
-                    }
+                        .onEnded { value in
+                            guard !infoView.infoView else { return }
+                            guard showSideMenu else { return }
+                            if value.translation.width > 40 {
+                                withAnimation(.easeOut(duration: 0.25)) { showSideMenu = false }
+                            }
+                        }
                 )
+                .allowsHitTesting(!isDraggingState)
                 .onChange(of: infoView.infoView) { _, isShowingPopup in
                     chromeFadeTask?.cancel()
 
                     if isShowingPopup {
                         showSideMenu = false
-
                         withAnimation(.easeOut(duration: 0.15)) {
                             chromeVisible = false
                         }
@@ -185,9 +177,16 @@ struct Buttons: View {
                         revealChromeThenFade()
                     }
                 }
-                .animation(
-                    .spring(response: 0.35, dampingFraction: 0.82),
-                    value: infoView.infoView
+                .animation(.spring(response: 0.35, dampingFraction: 0.82), value: infoView.infoView)
+            }
+            .fullScreenCover(isPresented: $showRecordSheet) {
+                LandmarkRecord(
+                    isNavVisible: .constant(true),
+                    isActive: true,
+                    onAddMoreMedia: { landmarkId in
+                        pendingUploadLandmarkId = landmarkId
+                        showRecordSheet = false
+                    }
                 )
             }
             .fullScreenCover(isPresented: $showSignUp) {
@@ -202,35 +201,26 @@ struct Buttons: View {
                     .presentationBackground(.ultraThinMaterial)
             }
             .toolbar(.hidden, for: .navigationBar)
-                }
-                .onAppear {
-                    scheduleChromeFadeIfNeeded()
-                    viewfinderTimingReset()
-                    UITabBar.appearance().isHidden = true
-                    
-                    updateIdleTimer(for: currentTab, active: isActive)
-                }
-//                .onDisappear {
-//                    // Ensure idle timer is re-enabled if this view disappears completely
-//                    UIApplication.shared.isIdleTimerDisabled = false
-//                    print("restored auto lock timer (view disappeared)", UIApplication.shared.isIdleTimerDisabled)
-//
-//                }
-                .onChange(of: currentTab) { _, newTab in
-                    revealChromeThenFade()
-                    updateIdleTimer(for: newTab, active: isActive)
-                }
-                .onChange(of: isActive) { _, newActive in
-                    updateIdleTimer(for: currentTab, active: newActive)
-                }
+        }
+        .onAppear {
+            scheduleChromeFadeIfNeeded()
+            viewfinderTimingReset()
+            UITabBar.appearance().isHidden = true
+            updateIdleTimer(for: currentTab, active: isActive)
+            
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                hasPreloadedMap = true
+            }
+        }
+        .onChange(of: currentTab) { _, newTab in
+            revealChromeThenFade()
+            updateIdleTimer(for: newTab, active: isActive)
+        }
+        .onChange(of: isActive) { _, newActive in
+            updateIdleTimer(for: currentTab, active: newActive)
+        }
     }
 
-    // MARK: - Pager
-
-    /// Lays every tab's content side-by-side in one HStack and shifts it by
-    /// -currentTab * width, live-adjusted by dragOffset while swiping. This
-    /// keeps the adjacent page mounted and visible as it slides in, instead
-    /// of only appearing after the gesture ends.
     private func pager() -> some View {
         GeometryReader { proxy in
             let width = proxy.size.width
@@ -255,42 +245,28 @@ struct Buttons: View {
             LandmarkScan(
                 onTap: revealChromeThenFade,
                 isDetecting: $isDetecting,
-                isNavVisible: $chromeVisible
+                isNavVisible: $chromeVisible,
+                // Keep active continuously so swipe doesn't flash black or freeze hardware
+                isActive: isActive
             )
-        } else if isBusinessMode && index == recordTabIndex {
-            LandmarkRecord { landmarkId in
-                pendingUploadLandmarkId = landmarkId
-                withAnimation(.easeInOut(duration: 0.25)) { currentTab = 0 }
-            }
-            .safeAreaInset(edge: .top) { Color.clear.frame(height: 45) }
-            .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 90) }
         } else if index == mapTabIndex {
             LandmarkMapView()
                 .safeAreaInset(edge: .top) { Color.clear.frame(height: 45) }
                 .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 90) }
+                .opacity(hasPreloadedMap ? 1.0 : 0.99)
         } else {
             EmptyView()
         }
     }
 
-    // MARK: - Drag handling
-
-    /// Prevents dragging past the first or last tab from producing an
-    /// unbounded offset — light rubber-band resistance at the ends.
     private func clampedDragOffset(_ translation: CGFloat, width: CGFloat) -> CGFloat {
-        if currentTab == 0 && translation > 0 {
-            return translation * 0.35
-        }
-        if currentTab == tabCount - 1 && translation < 0 {
-            return translation * 0.35
-        }
+        if currentTab == 0 && translation > 0 { return translation * 0.35 }
+        if currentTab == tabCount - 1 && translation < 0 { return translation * 0.35 }
         return translation
     }
 
     private func commitDrag(translation: CGFloat, predicted: CGFloat, width: CGFloat) {
         let threshold = width * 0.28
-        // A fast flick should commit even if the finger didn't travel the
-        // full threshold distance — use whichever translation is larger.
         let effective = abs(predicted) > abs(translation) ? predicted : translation
 
         var newTab = currentTab
@@ -315,23 +291,20 @@ struct Buttons: View {
             dragOffset = 0
         }
     }
-    //idle timer to keep screen active when needed
+
     private func updateIdleTimer(for tab: Int, active: Bool) {
-            let shouldDisableAutoLock = (tab == 0 && active )
-            if shouldDisableAutoLock {
-                if !UIApplication.shared.isIdleTimerDisabled {
-                    UIApplication.shared.isIdleTimerDisabled = true
-                    print("disable auto lock screen timer", UIApplication.shared.isIdleTimerDisabled)}
-            } else {
-                if UIApplication.shared.isIdleTimerDisabled {
-                    UIApplication.shared.isIdleTimerDisabled = false
-                    print("restored auto lock timer",UIApplication.shared.isIdleTimerDisabled)
-                }
+        let shouldDisableAutoLock = (tab == 0 && active )
+        if shouldDisableAutoLock {
+            if !UIApplication.shared.isIdleTimerDisabled {
+                UIApplication.shared.isIdleTimerDisabled = true
+            }
+        } else {
+            if UIApplication.shared.isIdleTimerDisabled {
+                UIApplication.shared.isIdleTimerDisabled = false
             }
         }
+    }
     
-    /// Narrow live-drag strips on the Map tab, so swiping in/out of the map
-    /// works without hijacking the map's own pan/zoom gestures everywhere else.
     private func mapEdgeSwipeZones(width: CGFloat) -> some View {
         HStack {
             Color.white.opacity(0.001)
@@ -395,50 +368,109 @@ struct Buttons: View {
                         else { showBusinessAlert = true }
                     }
                 )
-            // old promotion editor replaced by landmark management
-                //.sheet(isPresented: $showPromotion) { PromotionEditor() }
-//                .alert("Premium Account Required", isPresented: $showBusinessAlert) {
-//                    Button("OK", role: .cancel) {}
-//                } message: {
-//                    Text("You need an active subscription to access the Promotion Editor.")
-//                }
             Spacer()
 
-            Button {
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                withAnimation(.easeOut(duration: 0.25)) {
-                    showSideMenu = true
-                }
+            NavigationLink {
+                Settings()
+                    .environmentObject(vm)
             } label: {
                 NavButton(icon: "line.3.horizontal", label: "Menu")
             }
+            .simultaneousGesture(
+                TapGesture().onEnded {
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                }
+            )
         }
         .padding(.horizontal, 24)
         .padding(.top, 16)
         .padding(.bottom, 10)
     }
 
+    // 🚀 PROPORTIONAL & PRO-SIZED FLOATING NAV BAR
     private var bottomBar: some View {
-        HStack(spacing: 0) {
-            tabButton(title: "Scan", icon: "camera.aperture", tab: 0, locked: false)
-            if isBusinessMode {
-                tabButton(title: "Record", icon: "video", tab: recordTabIndex, locked: false)
+        ZStack(alignment: .bottom) {
+            
+            // 1. Sleek Elevated Pill Capsule (The Shoulders)
+            HStack(spacing: 0) {
+                // Left Tab: Scan
+                Button {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { currentTab = 0 }
+                } label: {
+                    VStack(spacing: 5) {
+                        Image(systemName: "viewfinder")
+                            .font(.system(size: 24, weight: .medium))
+                        Text("Scan")
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                    }
+                    .foregroundStyle(currentTab == 0 ? Color(red: 0.22, green: 0.49, blue: 1.00) : Color.secondary)
+                    .frame(maxWidth: .infinity)
+                }
+                
+                // Generous Gap for the Central Button
+                Spacer()
+                    .frame(width: 80)
+                
+                // Right Tab: Map
+                Button {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { currentTab = mapTabIndex }
+                } label: {
+                    VStack(spacing: 5) {
+                        Image(systemName: "map")
+                            .font(.system(size: 24, weight: .medium))
+                        Text("Map")
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                    }
+                    .foregroundStyle(currentTab == mapTabIndex ? Color(red: 0.22, green: 0.49, blue: 1.00) : Color.secondary)
+                    .frame(maxWidth: .infinity)
+                }
             }
-            tabButton(title: "Map", icon: "map", tab: mapTabIndex, locked: false)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 14)
+            .background(Capsule().fill(.ultraThinMaterial))
+            .overlay(Capsule().stroke(Color(uiColor: .separator).opacity(0.4), lineWidth: 0.5))
+            .shadow(color: .black.opacity(0.18), radius: 20, x: 0, y: 10)
+            .padding(.horizontal, 16)
+            .offset(y: -10)
+            
+            // 2. Large Central Floating Action '+' Button
+            Button {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                if !isBusinessMode {
+                    showSignUpPrompt = true
+                } else {
+                    showRecordSheet = true
+                }
+            } label: {
+                ZStack {
+                    Circle()
+                        .fill(Color(red: 0.22, green: 0.49, blue: 1.00))
+                        .frame(width: 68, height: 68)
+                        .shadow(color: Color(red: 0.22, green: 0.49, blue: 1.00).opacity(0.45), radius: 10, x: 0, y: 5)
+                    
+                    Image(systemName: "plus")
+                        .font(.system(size: 30, weight: .bold))
+                        .foregroundColor(.white)
+                    
+                    if !isBusinessMode {
+                        Image(systemName: "lock.fill")
+                            .font(.system(size: 13))
+                            .foregroundStyle(.white)
+                            .offset(x: 18, y: -18)
+                            .shadow(radius: 2)
+                    }
+                }
+            }
+            .offset(y: -20) // Perfectly sits on top of the capsule shoulders
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(Capsule().fill(.ultraThinMaterial))
-        .overlay(Capsule().stroke(Color(uiColor: .separator).opacity(0.5), lineWidth: 0.5))
-        .shadow(color: .black.opacity(0.15), radius: 20, x: 0, y: 10)
-        .padding(.horizontal, 24)
         .padding(.bottom, 12)
     }
 
     private var tutorialContent: some View {
         ZStack {
             Color(uiColor: .systemBackground).ignoresSafeArea()
-
             VStack(spacing: 24) {
                 Group {
                     if currentTab == 0 {
@@ -456,7 +488,7 @@ struct Buttons: View {
                                 .font(.system(size: 16, weight: .medium))
                                 .foregroundStyle(.secondary)
                         }
-                    } else if currentTab == mapTabIndex {
+                    } else {
                         Image(systemName: "map.fill")
                             .font(.system(size: 60))
                             .foregroundStyle(Color(red: 0.22, green: 0.49, blue: 1.00))
@@ -470,25 +502,10 @@ struct Buttons: View {
                                 .font(.system(size: 16, weight: .medium))
                                 .foregroundStyle(.secondary)
                         }
-                    } else {
-                        Image(systemName: "video.fill")
-                            .font(.system(size: 60))
-                            .foregroundStyle(Color(red: 0.22, green: 0.49, blue: 1.00))
-                            .shadow(color: Color(red: 0.22, green: 0.49, blue: 1.00).opacity(0.5), radius: 10, x: 0, y: 5)
-
-                        VStack(spacing: 8) {
-                            Text("Record Landmark")
-                                .font(.system(size: 24, weight: .bold, design: .rounded))
-                                .foregroundStyle(.primary)
-                            Text("Record a short video of a nearby landmark to help improve our recognition models.")
-                                .font(.system(size: 16, weight: .medium))
-                                .foregroundStyle(.secondary)
-                        }
                     }
                 }
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
-
                 Spacer()
             }
             .padding(.top, 32)
@@ -578,26 +595,6 @@ struct Buttons: View {
             .overlay(RoundedRectangle(cornerRadius: 32, style: .continuous).stroke(Color(uiColor: .separator).opacity(0.5), lineWidth: 0.5))
             .padding(.horizontal, 24)
         }
-    }
-
-    @ViewBuilder
-    func tabButton(title: String, icon: String, tab: Int, locked: Bool) -> some View {
-        VStack(spacing: 4) {
-            ZStack(alignment: .topTrailing) {
-                Image(systemName: icon).font(.system(size: 22, weight: .medium))
-                if locked { Image(systemName: "lock.fill").font(.system(size: 10)).foregroundStyle(.secondary).offset(x: 8, y: -4) }
-            }
-            Text(title).font(.system(size: 11, weight: .bold, design: .rounded))
-        }
-        .foregroundStyle(locked ? Color(uiColor: .quaternaryLabel) : currentTab == tab ? Color(red: 0.22, green: 0.49, blue: 1.00) : Color.secondary)
-        .frame(maxWidth: .infinity).padding(.vertical, 10)
-        .background(Group { if currentTab == tab && !locked { RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(red: 0.22, green: 0.49, blue: 1.00).opacity(0.15)) } })
-        .contentShape(Rectangle())
-        .highPriorityGesture(TapGesture().onEnded {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            if locked { showSignUpPrompt = true }
-            else { withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { currentTab = tab } }
-        })
     }
 
     private struct NavButton: View {

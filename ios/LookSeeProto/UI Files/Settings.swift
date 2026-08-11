@@ -200,14 +200,18 @@ struct Settings: View {
                                     presenter.showSubscriptionFlow = true
                                 } label: {
                                     if !vm.hasActiveSubscription {
-                                        Text("Subscribe").font(.system(size: 15, weight: .bold, design: .rounded)).frame(maxWidth: .infinity).padding(.vertical, 12).background(primaryColor.opacity(0.1)).foregroundStyle(primaryColor).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                        Text("sign Up").font(.system(size: 15, weight: .bold, design: .rounded)).frame(maxWidth: .infinity).padding(.vertical, 12).background(primaryColor.opacity(0.1)).foregroundStyle(primaryColor).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                                     } else {
                                         Text("Manage Plan").font(.system(size: 15, weight: .bold, design: .rounded)).frame(maxWidth: .infinity).padding(.vertical, 12).background(primaryColor.opacity(0.1)).foregroundStyle(primaryColor).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                                     }
                                 }
                                 
                                 Button { showCancelAlert = true } label: {
-                                    Text("Cancel").font(.system(size: 15, weight: .bold, design: .rounded)).frame(maxWidth: .infinity).padding(.vertical, 12).background(Color.red.opacity(0.1)).foregroundStyle(.red).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                    Text("Cancel").font(.system(size: 15, weight: .bold, design: .rounded)).frame(maxWidth: .infinity).foregroundStyle(.red).padding(.vertical, 12).background(Color(.systemBackground)).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous)).overlay(
+                                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                            // 3. Adaptive stroke color
+                                            .stroke(.red.opacity(0.8), lineWidth: 2)
+                                    )
                                 }
                             }
                         }
@@ -305,12 +309,12 @@ struct Settings: View {
                     }.frame(width: 48, height: 48).shadow(color: primaryColor.opacity(0.5), radius: 8, x: 0, y: 4)
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Join LookSee").font(.system(size: 18, weight: .bold, design: .rounded)).foregroundStyle(.white)
-                        Text("Upload landmarks and manage data.").font(.system(size: 14, weight: .medium)).foregroundStyle(.white.opacity(0.7))
+                        Text("Upload landmarks and manage data. Free trail available.").font(.system(size: 14, weight: .medium)).foregroundStyle(.white.opacity(0.7))
                     }
                 }
                 HStack(spacing: 12) {
                     Button { presenter.showSubscriptionFlow = true } label: {
-                        Text("Subscribe").font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(.white).frame(maxWidth: .infinity).padding(.vertical, 14).background(primaryColor).clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        Text("Sign up").font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(.white).frame(maxWidth: .infinity).padding(.vertical, 14).background(primaryColor).clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                     }.buttonStyle(.plain)
                     
                     if !isFullyLoggedIn {
@@ -423,7 +427,7 @@ struct DeepSettingsView: View {
                 
                 if isFullyLoggedIn {
                     Button { showAlertSignOut = true } label: {
-                        HStack(spacing: 12) { Image(systemName: "rectangle.portrait.and.arrow.right"); Text("Sign Out") }.font(.system(size: 16, weight: .bold, design: .rounded)).foregroundStyle(.red).frame(maxWidth: .infinity).padding(.vertical, 16).background(Color.red.opacity(0.1)).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous)).padding(.horizontal)
+                        HStack(spacing: 12) { Image(systemName: "rectangle.portrait.and.arrow.right"); Text("Sign Out") }.font(.system(size: 16, weight: .bold, design: .rounded)).foregroundStyle(.red).frame(maxWidth: .infinity).padding(.vertical, 16).background(Color.white.opacity(0.1)).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous)).padding(.horizontal)
                     }
                     .alert("Are you sure you want to sign out?", isPresented: $showAlertSignOut) {
                         Button("Cancel", role: .cancel) {}

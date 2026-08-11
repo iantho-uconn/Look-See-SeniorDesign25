@@ -219,11 +219,11 @@ struct NegativeVideoCameraView: View {
         VStack(spacing: 20) {
             Text("Add More Background?")
                 .font(.system(size: 22, weight: .bold, design: .rounded))
-                .foregroundStyle(.primary)
+                .foregroundStyle(.white)
             
             Text("Would you like to add another background pan to further improve recognition?")
                 .font(.system(size: 15, weight: .medium))
-                .foregroundColor(.secondary)
+                .foregroundColor(.white)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 10)
             
@@ -256,7 +256,7 @@ struct NegativeVideoCameraView: View {
                         .foregroundStyle(.primary)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)
-                        .background(Color(uiColor: .tertiarySystemFill))
+                        .background(Color(.systemBackground))
                         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }
             }

@@ -16,12 +16,78 @@
 		3C4E57012FE443230045B2D4 /* TextScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C4E57002FE443230045B2D4 /* TextScannerView.swift */; };
 		3C4E57072FE443E70045B2D4 /* LandmarkRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C4E57062FE443E70045B2D4 /* LandmarkRecord.swift */; };
 		3C56010F3005BEE500EB4493 /* BusinessPromotionEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C56010E3005BEDB00EB4493 /* BusinessPromotionEditor.swift */; };
+		3C5BC59F301E356400953451 /* Main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 562DAAAC2F2A71740083A71E /* Main.swift */; };
+		3C5BC5A0301E356400953451 /* BusinessLandmarkDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C3D161F2FFCA9B700C8A544 /* BusinessLandmarkDetailView.swift */; };
+		3C5BC5A1301E356400953451 /* Signup.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0DE8C0C2F516FD3008E1512 /* Signup.swift */; };
+		3C5BC5A2301E356400953451 /* GuidedCaptureOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0E78BCC3006A63200E5FE00 /* GuidedCaptureOverlay.swift */; };
+		3C5BC5A3301E356400953451 /* GuestSignUpView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0E78BE13008FF8D00E5FE00 /* GuestSignUpView.swift */; };
+		3C5BC5A4301E356400953451 /* PositiveVideoCameraView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0E78BCE3006F92500E5FE00 /* PositiveVideoCameraView.swift */; };
+		3C5BC5A5301E356400953451 /* BusinessMediaHistoryNavigationRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C7452BC301187DB0016E21D /* BusinessMediaHistoryNavigationRow.swift */; };
+		3C5BC5A6301E356400953451 /* LandmarkScan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 562DAAB22F2A895B0083A71E /* LandmarkScan.swift */; };
+		3C5BC5A7301E356400953451 /* VariableContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C63C8A72F91875E0006C5DD /* VariableContainer.swift */; };
+		3C5BC5A8301E356400953451 /* MerchantCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0CA58413017C59D00058BB3 /* MerchantCard.swift */; };
+		3C5BC5A9301E356400953451 /* NetworkMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0E78B7A300545E200E5FE00 /* NetworkMonitor.swift */; };
+		3C5BC5AA301E356400953451 /* LandmarkRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C4E57062FE443E70045B2D4 /* LandmarkRecord.swift */; };
+		3C5BC5AB301E356400953451 /* CapturedNegativePhoto.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CF188BC2FE19AA300FED231 /* CapturedNegativePhoto.swift */; };
+		3C5BC5AC301E356400953451 /* Login.swift in Sources */ = {isa = PBXBuildFile; fileRef = 562AD38B2ECBAF1800D5144C /* Login.swift */; };
+		3C5BC5AD301E356400953451 /* AuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0DC9CA42F4F849A004A9452 /* AuthService.swift */; };
+		3C5BC5AE301E356400953451 /* OfflineMediaManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0B0B12B2FE48EBD00C75E25 /* OfflineMediaManager.swift */; };
+		3C5BC5AF301E356400953451 /* ForgotPasswordView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CF370413006BE7F005780B3 /* ForgotPasswordView.swift */; };
+		3C5BC5B0301E356400953451 /* QuickUploadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0B0B1312FE59EF800C75E25 /* QuickUploadView.swift */; };
+		3C5BC5B1301E356400953451 /* BusinessMediaHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C7452B8301187AF0016E21D /* BusinessMediaHistoryView.swift */; };
+		3C5BC5B2301E356400953451 /* CameraPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C90209D2F3ABCD300EE30BF /* CameraPreview.swift */; };
+		3C5BC5B3301E356400953451 /* PayInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56BDFD602EC63B46006D1B84 /* PayInfo.swift */; };
+		3C5BC5B4301E356400953451 /* NegativeVideoCameraView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0E7888C2FF2E3C000E5FE00 /* NegativeVideoCameraView.swift */; };
+		3C5BC5B5301E356400953451 /* FinalDetector.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3C19EB482F9943F400D1AA43 /* FinalDetector.mlpackage */; };
+		3C5BC5B6301E356400953451 /* AuthViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0DC9CA72F4F84B2004A9452 /* AuthViewModel.swift */; };
+		3C5BC5B7301E356400953451 /* ModelLoadingScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00F16722F9328360057430F /* ModelLoadingScreen.swift */; };
+		3C5BC5B8301E356400953451 /* VideoMerge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 374FCAFA2FFE98CB0035A674 /* VideoMerge.swift */; };
+		3C5BC5B9301E356400953451 /* AutoUploadManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0E78B7E3005462200E5FE00 /* AutoUploadManager.swift */; };
+		3C5BC5BA301E356400953451 /* Library.swift in Sources */ = {isa = PBXBuildFile; fileRef = 561FF74A2EB258CC00411CF8 /* Library.swift */; };
+		3C5BC5BB301E356400953451 /* MultiPhotoCameraView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CF188C22FE19B5A00FED231 /* MultiPhotoCameraView.swift */; };
+		3C5BC5BC301E356400953451 /* AccountSecurityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CF3703D3006BE24005780B3 /* AccountSecurityView.swift */; };
+		3C5BC5BD301E356400953451 /* VariableContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B002FA0E2F91815500120C4F /* VariableContainer.swift */; };
+		3C5BC5BE301E356400953451 /* BusinessPromotionEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C56010E3005BEDB00EB4493 /* BusinessPromotionEditor.swift */; };
+		3C5BC5BF301E356400953451 /* best.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3C72AA362F5141A000A90328 /* best.mlpackage */; };
+		3C5BC5C0301E356400953451 /* Settings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56C3FA052EA6CA3100EA6153 /* Settings.swift */; };
+		3C5BC5C1301E356400953451 /* VideoPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CE8899B2F3FEE2300B66044 /* VideoPicker.swift */; };
+		3C5BC5C2301E356400953451 /* BusinessLandmarksView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C3D161D2FFCA97200C8A544 /* BusinessLandmarksView.swift */; };
+		3C5BC5C3301E356400953451 /* Tier2LandmarkRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C5FED6A2F907D270018FF06 /* Tier2LandmarkRecord.swift */; };
+		3C5BC5C4301E356400953451 /* TextScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C4E57002FE443230045B2D4 /* TextScannerView.swift */; };
+		3C5BC5C5301E356400953451 /* AuthState.swift in Sources */ = {isa = PBXBuildFile; fileRef = B002FA102F91D22F00120C4F /* AuthState.swift */; };
+		3C5BC5C6301E356400953451 /* NegativeGalleryPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0E7888E2FF39A9500E5FE00 /* NegativeGalleryPicker.swift */; };
+		3C5BC5C7301E356400953451 /* BusinessBulkDeleteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CCEC31330198FCD00981B07 /* BusinessBulkDeleteView.swift */; };
+		3C5BC5C8301E356400953451 /* Splash.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56C3FA062EA6CA3100EA6153 /* Splash.swift */; };
+		3C5BC5C9301E356400953451 /* LandmarkInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 568CE2CC2F5654F6009A8775 /* LandmarkInfo.swift */; };
+		3C5BC5CA301E356400953451 /* NegativeVideoCameraService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0E788872FF2E1C700E5FE00 /* NegativeVideoCameraService.swift */; };
+		3C5BC5CB301E356400953451 /* ArchiveView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0B0B12D2FE48EF500C75E25 /* ArchiveView.swift */; };
+		3C5BC5CC301E356400953451 /* ConfirmSignup.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0DE8C0E2F51712F008E1512 /* ConfirmSignup.swift */; };
+		3C5BC5CD301E356400953451 /* LocationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C9020A52F3ABCE900EE30BF /* LocationManager.swift */; };
+		3C5BC5CE301E356400953451 /* CokeCanDetect.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3C9020BD2F3AC88600EE30BF /* CokeCanDetect.mlpackage */; };
+		3C5BC5CF301E356400953451 /* again.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3C72AA3A2F51570300A90328 /* again.mlpackage */; };
+		3C5BC5D0301E356400953451 /* fruits_and_cans_2.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3C9020BE2F3AC88600EE30BF /* fruits_and_cans_2.mlpackage */; };
+		3C5BC5D1301E356400953451 /* LoadingAnimation_2.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CF014A8300A994A009BD61F /* LoadingAnimation_2.swift */; };
+		3C5BC5D2301E356400953451 /* AnimatedBackground_2.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CF014A7300A994A009BD61F /* AnimatedBackground_2.swift */; };
+		3C5BC5D3301E356400953451 /* BusinessBulkPromotionEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CCEC31130198FBD00981B07 /* BusinessBulkPromotionEditor.swift */; };
+		3C5BC5D4301E356400953451 /* LandmarkMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0B0B12F2FE51DB500C75E25 /* LandmarkMapView.swift */; };
+		3C5BC5D5301E356400953451 /* Help.swift in Sources */ = {isa = PBXBuildFile; fileRef = 562DAAAE2F2A85B20083A71E /* Help.swift */; };
+		3C5BC5D6301E356400953451 /* PhotoPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C1FC9CB2F42C9DA0006C1D3 /* PhotoPicker.swift */; };
+		3C5BC5D7301E356400953451 /* PopUp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 568CE2CE2F565512009A8775 /* PopUp.swift */; };
+		3C5BC5D8301E356400953451 /* Detector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C9020A12F3ABCE200EE30BF /* Detector.swift */; };
+		3C5BC5D9301E356400953451 /* Buttons.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CB715B32FE5BF2E006ACB74 /* Buttons.swift */; };
+		3C5BC5DB301E356400953451 /* AWSS3StoragePlugin in Frameworks */ = {isa = PBXBuildFile; productRef = 3C5BC59D301E356400953451 /* AWSS3StoragePlugin */; };
+		3C5BC5DC301E356400953451 /* StripePaymentSheet in Frameworks */ = {isa = PBXBuildFile; productRef = 3C5BC59B301E356400953451 /* StripePaymentSheet */; };
+		3C5BC5DD301E356400953451 /* Amplify in Frameworks */ = {isa = PBXBuildFile; productRef = 3C5BC596301E356400953451 /* Amplify */; };
+		3C5BC5DE301E356400953451 /* AWSCognitoAuthPlugin in Frameworks */ = {isa = PBXBuildFile; productRef = 3C5BC598301E356400953451 /* AWSCognitoAuthPlugin */; };
+		3C5BC5DF301E356400953451 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = 3C5BC599301E356400953451 /* ZIPFoundation */; };
+		3C5BC5E1301E356400953451 /* ITlo.gpx in Resources */ = {isa = PBXBuildFile; fileRef = 3CF3703B300683FB005780B3 /* ITlo.gpx */; };
 		3C5FED6B2F907D270018FF06 /* Tier2LandmarkRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C5FED6A2F907D270018FF06 /* Tier2LandmarkRecord.swift */; };
 		3C63C8A82F91875E0006C5DD /* VariableContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C63C8A72F91875E0006C5DD /* VariableContainer.swift */; };
 		3C72AA372F5141A000A90328 /* best.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3C72AA362F5141A000A90328 /* best.mlpackage */; };
 		3C72AA3B2F51570300A90328 /* again.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3C72AA3A2F51570300A90328 /* again.mlpackage */; };
 		3C7452B9301187AF0016E21D /* BusinessMediaHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C7452B8301187AF0016E21D /* BusinessMediaHistoryView.swift */; };
 		3C7452BD301187DB0016E21D /* BusinessMediaHistoryNavigationRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C7452BC301187DB0016E21D /* BusinessMediaHistoryNavigationRow.swift */; };
+		3C74532630133A950016E21D /* VariableContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B002FA0E2F91815500120C4F /* VariableContainer.swift */; };
 		3C90209E2F3ABCD300EE30BF /* CameraPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C90209D2F3ABCD300EE30BF /* CameraPreview.swift */; };
 		3C90209F2F3ABCD300EE30BF /* CameraPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C90209D2F3ABCD300EE30BF /* CameraPreview.swift */; };
 		3C9020A02F3ABCD300EE30BF /* CameraPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C90209D2F3ABCD300EE30BF /* CameraPreview.swift */; };
@@ -62,7 +128,6 @@
 		B0DC9CA92F4F84B2004A9452 /* AuthViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0DC9CA72F4F84B2004A9452 /* AuthViewModel.swift */; };
 		B0DE8C0D2F516FDD008E1512 /* Signup.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0DE8C0C2F516FD3008E1512 /* Signup.swift */; };
 		B0DE8C0F2F517138008E1512 /* ConfirmSignup.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0DE8C0E2F51712F008E1512 /* ConfirmSignup.swift */; };
-		D0589FCF302AFB6C0029FDFC /* VariableContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0589FCE302AFB660029FDFC /* VariableContainer.swift */; };
 		D0B0B12C2FE48EC100C75E25 /* OfflineMediaManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0B0B12B2FE48EBD00C75E25 /* OfflineMediaManager.swift */; };
 		D0B0B12E2FE48EF800C75E25 /* ArchiveView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0B0B12D2FE48EF500C75E25 /* ArchiveView.swift */; };
 		D0B0B1302FE51DBA00C75E25 /* LandmarkMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0B0B12F2FE51DB500C75E25 /* LandmarkMapView.swift */; };
@@ -110,6 +175,7 @@
 		3C4E57002FE443230045B2D4 /* TextScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextScannerView.swift; sourceTree = "<group>"; };
 		3C4E57062FE443E70045B2D4 /* LandmarkRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LandmarkRecord.swift; sourceTree = "<group>"; };
 		3C56010E3005BEDB00EB4493 /* BusinessPromotionEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BusinessPromotionEditor.swift; sourceTree = "<group>"; };
+		3C5BC5E5301E356400953451 /* LookSee Preview.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "LookSee Preview.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		3C5FED6A2F907D270018FF06 /* Tier2LandmarkRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tier2LandmarkRecord.swift; sourceTree = "<group>"; };
 		3C63C8A72F91875E0006C5DD /* VariableContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VariableContainer.swift; sourceTree = "<group>"; };
 		3C72AA362F5141A000A90328 /* best.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = best.mlpackage; sourceTree = "<group>"; };
@@ -145,13 +211,13 @@
 		56BDFD602EC63B46006D1B84 /* PayInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PayInfo.swift; sourceTree = "<group>"; };
 		56C3FA052EA6CA3100EA6153 /* Settings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Settings.swift; sourceTree = "<group>"; };
 		56C3FA062EA6CA3100EA6153 /* Splash.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Splash.swift; sourceTree = "<group>"; };
+		B002FA0E2F91815500120C4F /* VariableContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VariableContainer.swift; sourceTree = "<group>"; };
 		B002FA102F91D22F00120C4F /* AuthState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthState.swift; sourceTree = "<group>"; };
 		B00F16722F9328360057430F /* ModelLoadingScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelLoadingScreen.swift; sourceTree = "<group>"; };
 		B0DC9CA42F4F849A004A9452 /* AuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthService.swift; sourceTree = "<group>"; };
 		B0DC9CA72F4F84B2004A9452 /* AuthViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthViewModel.swift; sourceTree = "<group>"; };
 		B0DE8C0C2F516FD3008E1512 /* Signup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Signup.swift; sourceTree = "<group>"; };
 		B0DE8C0E2F51712F008E1512 /* ConfirmSignup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfirmSignup.swift; sourceTree = "<group>"; };
-		D0589FCE302AFB660029FDFC /* VariableContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VariableContainer.swift; sourceTree = "<group>"; };
 		D0B0B12B2FE48EBD00C75E25 /* OfflineMediaManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineMediaManager.swift; sourceTree = "<group>"; };
 		D0B0B12D2FE48EF500C75E25 /* ArchiveView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchiveView.swift; sourceTree = "<group>"; };
 		D0B0B12F2FE51DB500C75E25 /* LandmarkMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LandmarkMapView.swift; sourceTree = "<group>"; };
@@ -167,9 +233,36 @@
 		D0E78BE13008FF8D00E5FE00 /* GuestSignUpView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuestSignUpView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
+		3C5BC616301E398600953451 /* Exceptions for "LookSeeProto" folder in "Compile Sources" phase from "LookSee Preview" target */ = {
+			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
+			buildPhase = 3C5BC59E301E356400953451 /* Sources */;
+			membershipExceptions = (
+				amplifyconfiguration.json,
+				Assets.xcassets,
+				InfoPlist.xcstrings,
+				Localizable.xcstrings,
+			);
+		};
+		3C5BC617301E398600953451 /* Exceptions for "Resources" folder in "Compile Sources" phase from "LookSee Preview" target */ = {
+			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
+			buildPhase = 3C5BC59E301E356400953451 /* Sources */;
+			membershipExceptions = (
+				about.txt,
+				"cluster-0-landmark-manifest.json",
+				LookSee_Logo_cropped.icon,
+				LookSee_Logo.jpg,
+				LookSee.icon,
+			);
+		};
+/* End PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		3C918F9F2E9ECE5F00AF5DAF /* LookSeeProto */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				3C5BC616301E398600953451 /* Exceptions for "LookSeeProto" folder in "Compile Sources" phase from "LookSee Preview" target */,
+			);
 			path = LookSeeProto;
 			sourceTree = "<group>";
 		};
@@ -185,6 +278,9 @@
 		};
 		565542B22EBD02DF007DBA98 /* Resources */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				3C5BC617301E398600953451 /* Exceptions for "Resources" folder in "Compile Sources" phase from "LookSee Preview" target */,
+			);
 			path = Resources;
 			sourceTree = "<group>";
 		};
@@ -196,6 +292,18 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		3C5BC5DA301E356400953451 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				3C5BC5DB301E356400953451 /* AWSS3StoragePlugin in Frameworks */,
+				3C5BC5DC301E356400953451 /* StripePaymentSheet in Frameworks */,
+				3C5BC5DD301E356400953451 /* Amplify in Frameworks */,
+				3C5BC5DE301E356400953451 /* AWSCognitoAuthPlugin in Frameworks */,
+				3C5BC5DF301E356400953451 /* ZIPFoundation in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		3C918F9A2E9ECE5F00AF5DAF /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -274,6 +382,7 @@
 				3C918F9D2E9ECE5F00AF5DAF /* LookSeeProto.app */,
 				3C918FAA2E9ECE6100AF5DAF /* LookSeeProtoTests.xctest */,
 				3C918FB42E9ECE6100AF5DAF /* LookSeeProtoUITests.xctest */,
+				3C5BC5E5301E356400953451 /* LookSee Preview.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -281,49 +390,49 @@
 		56C3FA072EA6CA3100EA6153 /* UI Files */ = {
 			isa = PBXGroup;
 			children = (
-				3CF3703D3006BE24005780B3 /* AccountSecurityView.swift */,
-				3CF014A7300A994A009BD61F /* AnimatedBackground_2.swift */,
-				D0B0B12D2FE48EF500C75E25 /* ArchiveView.swift */,
-				3CCEC31330198FCD00981B07 /* BusinessBulkDeleteView.swift */,
+				D0CA58413017C59D00058BB3 /* MerchantCard.swift */,
+				3C56010E3005BEDB00EB4493 /* BusinessPromotionEditor.swift */,
 				3CCEC31130198FBD00981B07 /* BusinessBulkPromotionEditor.swift */,
+				3CF3703D3006BE24005780B3 /* AccountSecurityView.swift */,
+				D0E78BE13008FF8D00E5FE00 /* GuestSignUpView.swift */,
+				D0E78BCE3006F92500E5FE00 /* PositiveVideoCameraView.swift */,
+				3CCEC31330198FCD00981B07 /* BusinessBulkDeleteView.swift */,
+				3C7452BC301187DB0016E21D /* BusinessMediaHistoryNavigationRow.swift */,
+				D0E78BCC3006A63200E5FE00 /* GuidedCaptureOverlay.swift */,
 				3C3D161F2FFCA9B700C8A544 /* BusinessLandmarkDetailView.swift */,
 				3C3D161D2FFCA97200C8A544 /* BusinessLandmarksView.swift */,
-				3C7452BC301187DB0016E21D /* BusinessMediaHistoryNavigationRow.swift */,
 				3C7452B8301187AF0016E21D /* BusinessMediaHistoryView.swift */,
-				3C56010E3005BEDB00EB4493 /* BusinessPromotionEditor.swift */,
-				3CB715B32FE5BF2E006ACB74 /* Buttons.swift */,
-				3CF188BC2FE19AA300FED231 /* CapturedNegativePhoto.swift */,
-				B0DE8C0E2F51712F008E1512 /* ConfirmSignup.swift */,
-				3CF370413006BE7F005780B3 /* ForgotPasswordView.swift */,
-				D0E78BE13008FF8D00E5FE00 /* GuestSignUpView.swift */,
-				D0E78BCC3006A63200E5FE00 /* GuidedCaptureOverlay.swift */,
-				562DAAAE2F2A85B20083A71E /* Help.swift */,
-				568CE2CC2F5654F6009A8775 /* LandmarkInfo.swift */,
-				D0B0B12F2FE51DB500C75E25 /* LandmarkMapView.swift */,
-				3C4E57062FE443E70045B2D4 /* LandmarkRecord.swift */,
-				562DAAB22F2A895B0083A71E /* LandmarkScan.swift */,
-				561FF74A2EB258CC00411CF8 /* Library.swift */,
-				3CF014A8300A994A009BD61F /* LoadingAnimation_2.swift */,
-				562AD38B2ECBAF1800D5144C /* Login.swift */,
-				562DAAAC2F2A71740083A71E /* Main.swift */,
-				D0CA58413017C59D00058BB3 /* MerchantCard.swift */,
-				B00F16722F9328360057430F /* ModelLoadingScreen.swift */,
-				3CF188C22FE19B5A00FED231 /* MultiPhotoCameraView.swift */,
-				D0E7888C2FF2E3C000E5FE00 /* NegativeVideoCameraView.swift */,
-				56BDFD602EC63B46006D1B84 /* PayInfo.swift */,
-				3C1FC9CB2F42C9DA0006C1D3 /* PhotoPicker.swift */,
-				568CE2CE2F565512009A8775 /* PopUp.swift */,
-				D0E78BCE3006F92500E5FE00 /* PositiveVideoCameraView.swift */,
-				D0B0B1312FE59EF800C75E25 /* QuickUploadView.swift */,
-				56C3FA052EA6CA3100EA6153 /* Settings.swift */,
-				B0DE8C0C2F516FD3008E1512 /* Signup.swift */,
-				56C3FA062EA6CA3100EA6153 /* Splash.swift */,
-				3C4E57002FE443230045B2D4 /* TextScannerView.swift */,
-				3C5FED6A2F907D270018FF06 /* Tier2LandmarkRecord.swift */,
-				D0589FCE302AFB660029FDFC /* VariableContainer.swift */,
-				3C63C8A72F91875E0006C5DD /* VariableContainer.swift */,
 				374FCAFA2FFE98CB0035A674 /* VideoMerge.swift */,
+				D0E7888C2FF2E3C000E5FE00 /* NegativeVideoCameraView.swift */,
+				D0B0B1312FE59EF800C75E25 /* QuickUploadView.swift */,
+				3CF014A7300A994A009BD61F /* AnimatedBackground_2.swift */,
+				3CF014A8300A994A009BD61F /* LoadingAnimation_2.swift */,
+				D0B0B12F2FE51DB500C75E25 /* LandmarkMapView.swift */,
+				D0B0B12D2FE48EF500C75E25 /* ArchiveView.swift */,
+				3CF188C22FE19B5A00FED231 /* MultiPhotoCameraView.swift */,
+				B0DE8C0E2F51712F008E1512 /* ConfirmSignup.swift */,
+				B0DE8C0C2F516FD3008E1512 /* Signup.swift */,
+				3CF188BC2FE19AA300FED231 /* CapturedNegativePhoto.swift */,
+				562DAAAE2F2A85B20083A71E /* Help.swift */,
+				3C4E57062FE443E70045B2D4 /* LandmarkRecord.swift */,
+				562AD38B2ECBAF1800D5144C /* Login.swift */,
+				562DAAB22F2A895B0083A71E /* LandmarkScan.swift */,
+				3C1FC9CB2F42C9DA0006C1D3 /* PhotoPicker.swift */,
+				3CF370413006BE7F005780B3 /* ForgotPasswordView.swift */,
 				3CE8899B2F3FEE2300B66044 /* VideoPicker.swift */,
+				562DAAAC2F2A71740083A71E /* Main.swift */,
+				3C5FED6A2F907D270018FF06 /* Tier2LandmarkRecord.swift */,
+				3C63C8A72F91875E0006C5DD /* VariableContainer.swift */,
+				3CB715B32FE5BF2E006ACB74 /* Buttons.swift */,
+				56BDFD602EC63B46006D1B84 /* PayInfo.swift */,
+				56C3FA052EA6CA3100EA6153 /* Settings.swift */,
+				568CE2CC2F5654F6009A8775 /* LandmarkInfo.swift */,
+				3C4E57002FE443230045B2D4 /* TextScannerView.swift */,
+				568CE2CE2F565512009A8775 /* PopUp.swift */,
+				561FF74A2EB258CC00411CF8 /* Library.swift */,
+				56C3FA062EA6CA3100EA6153 /* Splash.swift */,
+				B002FA0E2F91815500120C4F /* VariableContainer.swift */,
+				B00F16722F9328360057430F /* ModelLoadingScreen.swift */,
 			);
 			path = "UI Files";
 			sourceTree = "<group>";
@@ -358,6 +467,35 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		3C5BC595301E356400953451 /* LookSee Preview */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 3C5BC5E2301E356400953451 /* Build configuration list for PBXNativeTarget "LookSee Preview" */;
+			buildPhases = (
+				3C5BC59E301E356400953451 /* Sources */,
+				3C5BC5DA301E356400953451 /* Frameworks */,
+				3C5BC5E0301E356400953451 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				3C918F9F2E9ECE5F00AF5DAF /* LookSeeProto */,
+				565542B22EBD02DF007DBA98 /* Resources */,
+				565542BF2EBD8384007DBA98 /* Models */,
+			);
+			name = "LookSee Preview";
+			packageProductDependencies = (
+				3C5BC596301E356400953451 /* Amplify */,
+				3C5BC598301E356400953451 /* AWSCognitoAuthPlugin */,
+				3C5BC599301E356400953451 /* ZIPFoundation */,
+				3C5BC59B301E356400953451 /* StripePaymentSheet */,
+				3C5BC59D301E356400953451 /* AWSS3StoragePlugin */,
+			);
+			productName = LookSeeProto;
+			productReference = 3C5BC5E5301E356400953451 /* LookSee Preview.app */;
+			productType = "com.apple.product-type.application";
+		};
 		3C918F9C2E9ECE5F00AF5DAF /* LookSeeProto */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 3C918FBE2E9ECE6100AF5DAF /* Build configuration list for PBXNativeTarget "LookSeeProto" */;
@@ -482,11 +620,20 @@
 				3C918F9C2E9ECE5F00AF5DAF /* LookSeeProto */,
 				3C918FA92E9ECE6100AF5DAF /* LookSeeProtoTests */,
 				3C918FB32E9ECE6100AF5DAF /* LookSeeProtoUITests */,
+				3C5BC595301E356400953451 /* LookSee Preview */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		3C5BC5E0301E356400953451 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				3C5BC5E1301E356400953451 /* ITlo.gpx in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		3C918F9B2E9ECE5F00AF5DAF /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -512,6 +659,72 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		3C5BC59E301E356400953451 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				3C5BC59F301E356400953451 /* Main.swift in Sources */,
+				3C5BC5A0301E356400953451 /* BusinessLandmarkDetailView.swift in Sources */,
+				3C5BC5A1301E356400953451 /* Signup.swift in Sources */,
+				3C5BC5A2301E356400953451 /* GuidedCaptureOverlay.swift in Sources */,
+				3C5BC5A3301E356400953451 /* GuestSignUpView.swift in Sources */,
+				3C5BC5A4301E356400953451 /* PositiveVideoCameraView.swift in Sources */,
+				3C5BC5A5301E356400953451 /* BusinessMediaHistoryNavigationRow.swift in Sources */,
+				3C5BC5A6301E356400953451 /* LandmarkScan.swift in Sources */,
+				3C5BC5A7301E356400953451 /* VariableContainer.swift in Sources */,
+				3C5BC5A8301E356400953451 /* MerchantCard.swift in Sources */,
+				3C5BC5A9301E356400953451 /* NetworkMonitor.swift in Sources */,
+				3C5BC5AA301E356400953451 /* LandmarkRecord.swift in Sources */,
+				3C5BC5AB301E356400953451 /* CapturedNegativePhoto.swift in Sources */,
+				3C5BC5AC301E356400953451 /* Login.swift in Sources */,
+				3C5BC5AD301E356400953451 /* AuthService.swift in Sources */,
+				3C5BC5AE301E356400953451 /* OfflineMediaManager.swift in Sources */,
+				3C5BC5AF301E356400953451 /* ForgotPasswordView.swift in Sources */,
+				3C5BC5B0301E356400953451 /* QuickUploadView.swift in Sources */,
+				3C5BC5B1301E356400953451 /* BusinessMediaHistoryView.swift in Sources */,
+				3C5BC5B2301E356400953451 /* CameraPreview.swift in Sources */,
+				3C5BC5B3301E356400953451 /* PayInfo.swift in Sources */,
+				3C5BC5B4301E356400953451 /* NegativeVideoCameraView.swift in Sources */,
+				3C5BC5B5301E356400953451 /* FinalDetector.mlpackage in Sources */,
+				3C5BC5B6301E356400953451 /* AuthViewModel.swift in Sources */,
+				3C5BC5B7301E356400953451 /* ModelLoadingScreen.swift in Sources */,
+				3C5BC5B8301E356400953451 /* VideoMerge.swift in Sources */,
+				3C5BC5B9301E356400953451 /* AutoUploadManager.swift in Sources */,
+				3C5BC5BA301E356400953451 /* Library.swift in Sources */,
+				3C5BC5BB301E356400953451 /* MultiPhotoCameraView.swift in Sources */,
+				3C5BC5BC301E356400953451 /* AccountSecurityView.swift in Sources */,
+				3C5BC5BD301E356400953451 /* VariableContainer.swift in Sources */,
+				3C5BC5BE301E356400953451 /* BusinessPromotionEditor.swift in Sources */,
+				3C5BC5BF301E356400953451 /* best.mlpackage in Sources */,
+				3C5BC5C0301E356400953451 /* Settings.swift in Sources */,
+				3C5BC5C1301E356400953451 /* VideoPicker.swift in Sources */,
+				3C5BC5C2301E356400953451 /* BusinessLandmarksView.swift in Sources */,
+				3C5BC5C3301E356400953451 /* Tier2LandmarkRecord.swift in Sources */,
+				3C5BC5C4301E356400953451 /* TextScannerView.swift in Sources */,
+				3C5BC5C5301E356400953451 /* AuthState.swift in Sources */,
+				3C5BC5C6301E356400953451 /* NegativeGalleryPicker.swift in Sources */,
+				3C5BC5C7301E356400953451 /* BusinessBulkDeleteView.swift in Sources */,
+				3C5BC5C8301E356400953451 /* Splash.swift in Sources */,
+				3C5BC5C9301E356400953451 /* LandmarkInfo.swift in Sources */,
+				3C5BC5CA301E356400953451 /* NegativeVideoCameraService.swift in Sources */,
+				3C5BC5CB301E356400953451 /* ArchiveView.swift in Sources */,
+				3C5BC5CC301E356400953451 /* ConfirmSignup.swift in Sources */,
+				3C5BC5CD301E356400953451 /* LocationManager.swift in Sources */,
+				3C5BC5CE301E356400953451 /* CokeCanDetect.mlpackage in Sources */,
+				3C5BC5CF301E356400953451 /* again.mlpackage in Sources */,
+				3C5BC5D0301E356400953451 /* fruits_and_cans_2.mlpackage in Sources */,
+				3C5BC5D1301E356400953451 /* LoadingAnimation_2.swift in Sources */,
+				3C5BC5D2301E356400953451 /* AnimatedBackground_2.swift in Sources */,
+				3C5BC5D3301E356400953451 /* BusinessBulkPromotionEditor.swift in Sources */,
+				3C5BC5D4301E356400953451 /* LandmarkMapView.swift in Sources */,
+				3C5BC5D5301E356400953451 /* Help.swift in Sources */,
+				3C5BC5D6301E356400953451 /* PhotoPicker.swift in Sources */,
+				3C5BC5D7301E356400953451 /* PopUp.swift in Sources */,
+				3C5BC5D8301E356400953451 /* Detector.swift in Sources */,
+				3C5BC5D9301E356400953451 /* Buttons.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		3C918F992E9ECE5F00AF5DAF /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -541,12 +754,12 @@
 				3C19EB492F9943F400D1AA43 /* FinalDetector.mlpackage in Sources */,
 				B0DC9CA92F4F84B2004A9452 /* AuthViewModel.swift in Sources */,
 				B00F16732F9328370057430F /* ModelLoadingScreen.swift in Sources */,
-				D0589FCF302AFB6C0029FDFC /* VariableContainer.swift in Sources */,
 				374FCAFB2FFE98CB0035A674 /* VideoMerge.swift in Sources */,
 				D0E78B803005462600E5FE00 /* AutoUploadManager.swift in Sources */,
 				561FF74B2EB258D400411CF8 /* Library.swift in Sources */,
 				3CF188C32FE19B6D00FED231 /* MultiPhotoCameraView.swift in Sources */,
 				3CF3703E3006BE24005780B3 /* AccountSecurityView.swift in Sources */,
+				3C74532630133A950016E21D /* VariableContainer.swift in Sources */,
 				3C56010F3005BEE500EB4493 /* BusinessPromotionEditor.swift in Sources */,
 				3C72AA372F5141A000A90328 /* best.mlpackage in Sources */,
 				56C3FA082EA6CA3100EA6153 /* Settings.swift in Sources */,
@@ -618,6 +831,84 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		3C5BC5E3301E356400953451 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = C66T6ZH83N;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_LSApplicationCategoryType = "";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Camera is used to scan objects in real time.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Location services are used to tags scans made in app and help strengthen model data.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Microphone is used in video recordings for training data";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "\"LookSee needs access to your gallery so you can upload existing videos and photos of landmarks.\"";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = looksee.ianagain.com;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		3C5BC5E4301E356400953451 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = C66T6ZH83N;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_LSApplicationCategoryType = "";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Camera is used to scan objects in real time.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Location services are used to tags scans made in app and help strengthen model data.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Microphone is used in video recordings for training data";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "\"LookSee needs access to your gallery so you can upload existing videos and photos of landmarks.\"";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = looksee.ianagain.com;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 		3C918FBC2E9ECE6100AF5DAF /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -769,7 +1060,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = looksee.anggelll.com;
+				PRODUCT_BUNDLE_IDENTIFIER = looksee.anggel.com;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -790,7 +1081,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = ZLBPU9JP27;
+				DEVELOPMENT_TEAM = C66T6ZH83N;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
@@ -808,7 +1099,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = looksee.anggelll.com;
+				PRODUCT_BUNDLE_IDENTIFIER = looksee.ian.com;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -908,6 +1199,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		3C5BC5E2301E356400953451 /* Build configuration list for PBXNativeTarget "LookSee Preview" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				3C5BC5E3301E356400953451 /* Debug */,
+				3C5BC5E4301E356400953451 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		3C918F982E9ECE5F00AF5DAF /* Build configuration list for PBXProject "LookSeeProto" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -955,6 +1255,30 @@
 				minimumVersion = 0.9.20;
 			};
 		};
+		3C5BC597301E356400953451 /* XCRemoteSwiftPackageReference "amplify-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/aws-amplify/amplify-swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.53.3;
+			};
+		};
+		3C5BC59A301E356400953451 /* XCRemoteSwiftPackageReference "ZIPFoundation" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/weichsel/ZIPFoundation.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.9.20;
+			};
+		};
+		3C5BC59C301E356400953451 /* XCRemoteSwiftPackageReference "stripe-ios-spm" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/stripe/stripe-ios-spm";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 26.3.0;
+			};
+		};
 		B03AD91D2F462B2B0009E3AE /* XCRemoteSwiftPackageReference "amplify-swift" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/aws-amplify/amplify-swift";
@@ -978,6 +1302,31 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 3C19EB3F2F981FA400D1AA43 /* XCRemoteSwiftPackageReference "ZIPFoundation" */;
 			productName = ZIPFoundation;
+		};
+		3C5BC596301E356400953451 /* Amplify */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 3C5BC597301E356400953451 /* XCRemoteSwiftPackageReference "amplify-swift" */;
+			productName = Amplify;
+		};
+		3C5BC598301E356400953451 /* AWSCognitoAuthPlugin */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 3C5BC597301E356400953451 /* XCRemoteSwiftPackageReference "amplify-swift" */;
+			productName = AWSCognitoAuthPlugin;
+		};
+		3C5BC599301E356400953451 /* ZIPFoundation */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 3C5BC59A301E356400953451 /* XCRemoteSwiftPackageReference "ZIPFoundation" */;
+			productName = ZIPFoundation;
+		};
+		3C5BC59B301E356400953451 /* StripePaymentSheet */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 3C5BC59C301E356400953451 /* XCRemoteSwiftPackageReference "stripe-ios-spm" */;
+			productName = StripePaymentSheet;
+		};
+		3C5BC59D301E356400953451 /* AWSS3StoragePlugin */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 3C5BC597301E356400953451 /* XCRemoteSwiftPackageReference "amplify-swift" */;
+			productName = AWSS3StoragePlugin;
 		};
 		B02344EA2F46355C00F4230E /* Amplify */ = {
 			isa = XCSwiftPackageProductDependency;

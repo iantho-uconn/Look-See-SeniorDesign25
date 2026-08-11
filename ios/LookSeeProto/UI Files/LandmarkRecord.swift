@@ -11,12 +11,22 @@ import AVFoundation
 
 struct LandmarkRecord: View {
     @EnvironmentObject var vm: AuthViewModel
-    @Environment(\.dismiss) var dismiss
+    @Environment(\.dismiss) var dismiss // 🚀 Native SwiftUI Dismissal
+
+    @Binding var isNavVisible: Bool
+    var isActive: Bool
 
     private let onAddMoreMedia: (String) -> Void
     var archivedMedia: ArchivedMedia?
 
-    init(archivedMedia: ArchivedMedia? = nil, onAddMoreMedia: @escaping (String) -> Void = { _ in }) {
+    init(
+        isNavVisible: Binding<Bool> = .constant(true),
+        isActive: Bool = true,
+        archivedMedia: ArchivedMedia? = nil,
+        onAddMoreMedia: @escaping (String) -> Void = { _ in }
+    ) {
+        self._isNavVisible = isNavVisible
+        self.isActive = isActive
         self.archivedMedia = archivedMedia
         self.onAddMoreMedia = onAddMoreMedia
     }
@@ -28,8 +38,6 @@ struct LandmarkRecord: View {
     @State private var pickedVideoURLs: [URL] = []
     @State private var pickedImage: UIImage?
     @State private var clipDurations: [URL: Double] = [:]
-    
-    @State private var showVideoCamera = false
     
     @State private var extractedLatitude: Double? = nil
     @State private var extractedLongitude: Double? = nil
@@ -62,7 +70,6 @@ struct LandmarkRecord: View {
     
     @FocusState private var IsKeyboard: Bool
 
-
     private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00)
     
     private let minimumCombinedVideoDuration: Double = 15.0
@@ -84,51 +91,59 @@ struct LandmarkRecord: View {
 
     var body: some View {
         ZStack {
-            Color(uiColor: .systemGroupedBackground).ignoresSafeArea()
-            
-            ScrollView {
-                VStack(spacing: 20) {
-                    if !hasPositiveMedia {
-                        positiveMediaInstructions
-                        positiveMediaButtons
+            if !hasPositiveMedia && !isFormVisible {
+                PositiveVideoCameraView(isActive: isActive, isNavVisible: $isNavVisible) { urls in
+                    withAnimation(.spring()) {
+                        pendingArchiveURLs = urls
+                        showArchivePrompt = true
                     }
-                    
-                    positiveMediaPreview
-                    
-                    if !statusText.isEmpty {
-                        Text(statusText)
-                            .font(.system(size: 13, weight: .semibold, design: .rounded))
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal)
-                    }
-                    
-                    locationSection
-                    
-                    if isFormVisible {
-                        landmarkForm
-                        uploadButtonRow
-                        positiveUploadStatusCard
-                        negativeUploadStatusCard
-                        overallCompletionCard
-                    }
-                    
-                    Spacer(minLength: 40)
-                }.padding(.top, 16)
-            }
-            .contentShape(Rectangle())
-                        .onTapGesture {
-                            print("tap detected in record page")
-                            IsKeyboard = false
+                } onCancel: {
+                    dismiss() // 🚀 THE FIX: Clicking the top left 'X' instantly escapes you!
+                }
+                .ignoresSafeArea()
+                .transition(.opacity) // 🚀 Smooths switch to form
+            } else {
+                Color(uiColor: .systemGroupedBackground).ignoresSafeArea()
+                
+                ScrollView {
+                    VStack(spacing: 20) {
+                        positiveMediaPreview
+                        
+                        if !statusText.isEmpty {
+                            Text(statusText)
+                                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal)
                         }
-            .scrollDismissesKeyboard(.immediately)
-            .safeAreaInset(edge: .top) { Color.clear.frame(height: 50) }
+                        
+                        locationSection
+                        
+                        if isFormVisible {
+                            landmarkForm
+                            uploadButtonRow
+                            positiveUploadStatusCard
+                            negativeUploadStatusCard
+                            overallCompletionCard
+                        }
+                        
+                        Spacer(minLength: 40)
+                    }
+                    .padding(.top, 16)
+                }
+                .transition(.opacity) // 🚀 Smooths switch from camera
+                .scrollDismissesKeyboard(.immediately)
+                .safeAreaInset(edge: .top) { Color.clear.frame(height: 50) }
+                .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 90) }
+            }
             
             if showArchivePrompt { archivePromptOverlay }
             if isStitchingVideos { processingOverlay }
         }
+        .animation(.easeInOut(duration: 0.3), value: isFormVisible) // 🚀 Drives the transition logic smoothly
         .task {
             if let archive = archivedMedia {
-                isFormVisible = true
+                // 🚀 Wrapped in withAnimation to prevent jitter if it takes a split second to load
+                withAnimation { isFormVisible = true }
                 Task.detached {
                     let fileURL = OfflineMediaManager.shared.getFileURL(for: archive)
                     var videoURLs: [URL] = []
@@ -162,27 +177,15 @@ struct LandmarkRecord: View {
                 }
             }
         }
-        .fullScreenCover(isPresented: $showVideoCamera) {
-            PositiveVideoCameraView { urls in
-                withAnimation(.spring()) {
-                    pendingArchiveURLs = urls
-                    showArchivePrompt = true
-                }
-            }
-        }
         .sheet(isPresented: $showTextScanner) { ScannerSheet(scannedText: $shortDescription) }
         .fullScreenCover(isPresented: $showNegativeCamera) { NegativeVideoCameraView(onDone: { video in capturedNegativeVideo = video; if !hardNegativeUploadService.isUploading { hardNegativeUploadService.reset() } }) }
         .alert("Discard this upload?", isPresented: $showDiscardAlert) { Button("Discard", role: .destructive) { clearScreen() }; Button("Cancel", role: .cancel) { } } message: { Text("This will remove the media and clear the form.") }
-        
         .alert("Landmark Uploaded!", isPresented: $showCompletionPopup) {
             if archivedMedia != nil {
                 Button("Done", role: .cancel) { dismiss() }
             } else {
                 Button("Record Another Landmark") {
                     resetForAnotherLandmark()
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                        showVideoCamera = true
-                    }
                 }
                 Button("Done", role: .cancel) {
                     resetForAnotherLandmark()
@@ -264,8 +267,10 @@ struct LandmarkRecord: View {
                             .foregroundStyle(.red)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 16)
-                            .background(Color.red.opacity(0.15))
+                            .background(Color.white.opacity(0.15))
                             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.red.opacity(0.8), lineWidth: 2))
                     }
                 }
             }
@@ -274,54 +279,6 @@ struct LandmarkRecord: View {
             .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
             .padding(.horizontal, 24)
         }
-    }
-
-    private var positiveMediaInstructions: some View {
-        HStack(alignment: .top, spacing: 16) {
-            Image(systemName: "camera.viewfinder")
-                .font(.system(size: 24, weight: .light))
-                .foregroundStyle(primaryColor)
-                .padding(.top, 4)
-            
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Capture Positive Media")
-                    .font(.system(size: 17, weight: .bold, design: .rounded))
-                    .foregroundStyle(.primary)
-                Text("Follow the on-screen steps to capture the different angles of the landmark. This video should be from a typical place where a user may see the landmark.")
-                    .font(.system(size: 15, weight: .regular))
-                    .foregroundStyle(.secondary)
-                    .lineSpacing(2)
-            }
-            Spacer()
-        }
-        .padding(20)
-        .background(Color(uiColor: .secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .padding(.horizontal)
-    }
-
-    private var positiveMediaButtons: some View {
-        HStack {
-            Button {
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                showVideoCamera = true
-                startrecording = true
-            } label: {
-                HStack(spacing: 10) {
-                    Image(systemName: "video.fill")
-                    Text("Start Recording Process")
-                }
-                .font(.system(size: 17, weight: .bold, design: .rounded))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
-            }
-            .foregroundStyle(.white)
-            .background(primaryColor)
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .disabled(arePositiveDetailsLocked)
-            .opacity(arePositiveDetailsLocked ? 0.6 : 1)
-        }
-        .padding(.horizontal)
     }
 
     @ViewBuilder private var positiveMediaPreview: some View {
@@ -638,7 +595,6 @@ struct LandmarkRecord: View {
                     HStack(spacing: 10) {
                         if isSubmissionRunning {
                             ProgressView().tint(.white)
-                            // 🚀 FIXED: Removed nested ternary inside the Text view
                             if hardNegativeUploadService.isUploading {
                                 Text("Uploading reference...")
                             } else if isStitchingVideos {
@@ -826,7 +782,6 @@ struct LandmarkRecord: View {
 
     private func processAndStitchPendingMedia() {
         guard !pendingArchiveURLs.isEmpty else { return }
-        isFormVisible = false
         isStitchingVideos = true
         let urlsToStitch = pendingArchiveURLs
         Task.detached {
@@ -845,7 +800,12 @@ struct LandmarkRecord: View {
                 if self.extractedLatitude == nil { self.extractedLatitude = self.locationManager.latitude }
                 if self.extractedLongitude == nil { self.extractedLongitude = self.locationManager.longitude }
                 if self.businessLandmarkId == nil { self.businessLandmarkId = self.makeBusinessLandmarkId() }
-                self.uploadService.reset(); self.pendingArchiveURLs = []; self.isStitchingVideos = false; self.isFormVisible = true
+                self.uploadService.reset(); self.pendingArchiveURLs = []; self.isStitchingVideos = false
+                
+                // 🚀 Wrapped in withAnimation to smoothly reveal the form
+                withAnimation(.easeInOut(duration: 0.4)) {
+                    self.isFormVisible = true
+                }
             }
         }
     }
@@ -901,7 +861,9 @@ struct LandmarkRecord: View {
         deleteAllTemporaryVideos(pickedVideoURLs); capturedNegativeVideo?.deleteLocalFile(); pickedVideoURLs = []; clipDurations = [:]
         pickedImage = nil; extractedLatitude = nil; extractedLongitude = nil; labelText = ""; shortDescription = ""
         businessLandmarkId = nil; capturedNegativeVideo = nil; completedPositiveResult = nil; completedLandmarkId = nil
-        isFullSubmissionComplete = false; isFormVisible = false; statusText = String(localized: "No landmark media selected.")
+        isFullSubmissionComplete = false
+        withAnimation(.easeInOut(duration: 0.3)) { isFormVisible = false }
+        statusText = String(localized: "No landmark media selected.")
         uploadService.reset(); hardNegativeUploadService.reset()
     }
     
