@@ -52,7 +52,7 @@ class UploadServiceTest {
         assertEquals("PUT_BYTES", http.calls[1].method)
         assertEquals("image/jpeg", http.calls[1].contentType)
         assertTrue(http.calls[2].url.endsWith("/submissions/complete"))
-        assertTrue(http.calls[2].body.contains("\"shortDescription\":null"))
+        assertFalse(http.calls[2].body.contains("\"shortDescription\""))
         assertTrue(http.calls[2].body.contains("\"userDescription\":\"Near the library\""))
     }
 

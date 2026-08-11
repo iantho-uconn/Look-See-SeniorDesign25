@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Typeface
+import androidx.annotation.OptIn
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.Camera
@@ -16,6 +17,7 @@ import androidx.camera.core.Preview
 import androidx.camera.core.UseCaseGroup
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.camera.view.TransformExperimental
 import androidx.camera.view.transform.CoordinateTransform
 import androidx.camera.view.transform.ImageProxyTransformFactory
 import androidx.compose.foundation.Canvas
@@ -62,6 +64,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import java.nio.ByteBuffer
 import java.util.concurrent.ExecutorService
@@ -105,6 +108,7 @@ internal class CameraSessionCoordinator(
     private var requestedZoom = 1f
 
     /** Starts or rebinds preview and analysis after [previewView] has a viewport. */
+    @OptIn(TransformExperimental::class)
     fun start(
         lifecycleOwner: LifecycleOwner,
         previewView: PreviewView,
@@ -280,7 +284,7 @@ fun CameraPreview(
     var cameraPermissionGranted by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
-                PackageManager.PERMISSION_GRANTED,
+                    PackageManager.PERMISSION_GRANTED,
         )
     }
     var previewView by remember { mutableStateOf<PreviewView?>(null) }
@@ -725,7 +729,7 @@ internal fun rgbaPlaneToArgb(
 
     val lastByteOffset =
         (cropTop + cropHeight - 1) * rowStride +
-            (cropLeft + cropWidth - 1) * pixelStride + 3
+                (cropLeft + cropWidth - 1) * pixelStride + 3
     require(lastByteOffset < buffer.capacity()) {
         "RGBA plane is smaller than its declared dimensions and strides."
     }
@@ -751,7 +755,7 @@ internal fun rgbaPlaneToArgb(
 /** Small StateFlow adapter that avoids adding lifecycle-runtime-compose. */
 @Composable
 private fun <T> kotlinx.coroutines.flow.StateFlow<T>.collectAsComposeState():
-    androidx.compose.runtime.State<T> {
+        androidx.compose.runtime.State<T> {
     val state = remember(this) { mutableStateOf(value) }
     LaunchedEffect(this) { collect { state.value = it } }
     return state

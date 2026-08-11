@@ -52,7 +52,6 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(libs.androidx.compose.ui.tooling)
 
-    // AWS Amplify (kept unchanged while the Detection feature is ported).
     implementation("com.amplifyframework:aws-api:2.14.0")
     implementation("com.amplifyframework:aws-datastore:2.14.0")
     implementation("com.amplifyframework:aws-auth-cognito:2.14.0")
@@ -73,6 +72,9 @@ dependencies {
     implementation("androidx.media3:media3-transformer:$media3Version")
     implementation("androidx.media3:media3-effect:$media3Version")
     implementation("androidx.media3:media3-common:$media3Version")
+
+    // Checkpoint 11: durable, network-constrained background uploads.
+    implementation("androidx.work:work-runtime-ktx:2.11.2")
 
     // Keep 2.1.5: LiteRT 2.1.6 has the duplicate-namespace packaging bug.
     implementation("com.google.ai.edge.litert:litert:2.1.5")

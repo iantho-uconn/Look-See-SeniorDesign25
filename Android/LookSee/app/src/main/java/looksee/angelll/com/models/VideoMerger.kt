@@ -5,7 +5,9 @@ import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import androidx.annotation.OptIn
 import androidx.media3.common.MediaItem
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.EditedMediaItemSequence
@@ -45,7 +47,7 @@ sealed class VideoMergeError(message: String) : Exception(message) {
     data class TooShort(val actualSeconds: Double, val minimumSeconds: Double) :
         VideoMergeError(
             "Please record at least ${minimumSeconds.toInt()} seconds of video " +
-                "(${actualSeconds.toInt()} seconds selected).",
+                    "(${actualSeconds.toInt()} seconds selected).",
         )
 
     data class ExportFailed(val reason: String) :
@@ -104,6 +106,7 @@ class Media3VideoMerger(context: Context) : PositiveVideoMerger {
         }
     }
 
+    @OptIn(UnstableApi::class)
     private suspend fun exportComposition(clipFiles: List<File>, outputFile: File) {
         withContext(Dispatchers.Main.immediate) {
             suspendCancellableCoroutine { continuation ->
