@@ -18,7 +18,7 @@ struct VideoPicker: UIViewControllerRepresentable {
     var onPicked: (URL, CLLocationCoordinate2D?) -> Void
     var onInvalidDuration: (String) -> Void
 
-    private let maxDuration: Double = 60
+    private let maxDuration: Double = 90
 
     func makeUIViewController(context: Context) -> UIImagePickerController {
         let picker = UIImagePickerController()
@@ -91,7 +91,7 @@ struct VideoPicker: UIViewControllerRepresentable {
             // No per-clip minimum anymore — clips are combined and the
             // combined total is validated against the 15s minimum elsewhere.
             if durationSeconds > maxDuration {
-                onInvalidDuration("Each clip must be 60 seconds or less.")
+                onInvalidDuration("Each clip must be 90 seconds or less.")
                 return
             }
 

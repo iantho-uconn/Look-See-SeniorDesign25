@@ -8,6 +8,7 @@ import SwiftUI
 import UIKit
 import AVKit
 
+
 enum CameraPhase: Equatable {
     case mandatory(Int)
     case optional(Int)
@@ -25,7 +26,7 @@ enum CameraPhase: Equatable {
             if idx == 3 { return "Step 3: Third Angle" }
             return "Step \(idx): Fourth Angle"
         case .optional:
-            return "Extra Coverage"
+            return "Additional Coverage"
         }
     }
     
@@ -101,6 +102,15 @@ struct PositiveVideoCameraView: View {
     init(isActive: Bool, isNavVisible: Binding<Bool>, onDone: @escaping ([URL]) -> Void, onCancel: @escaping () -> Void) {
         self.isActive = isActive
         self._isNavVisible = isNavVisible
+    private let completionButtonTitle: String
+    private let maxTotalTimeLimit: Int = 90
+    private let minTotalTimeLimit: Int = 30
+
+    init(
+        completionButtonTitle: String = "Finish Submission",
+        onDone: @escaping ([URL]) -> Void
+    ) {
+        self.completionButtonTitle = completionButtonTitle
         self.onDone = onDone
         self.onCancel = onCancel
     }
@@ -120,7 +130,7 @@ struct PositiveVideoCameraView: View {
 
     private var maxPhaseTimeLimit: Int {
         if currentPhase.isMandatory {
-            return 60 / expectedAngles
+            return maxTotalTimeLimit / expectedAngles
         } else {
             return maxTotalTimeLimit - totalDurationElapsedInt
         }
@@ -679,7 +689,7 @@ struct PositiveVideoCameraView: View {
                         UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
                         onDone(recordedClips.map { $0.url })
                     } label: {
-                        Text("Finish Submission")
+                        Text(completionButtonTitle)
                             .font(.system(size: 17, weight: .bold, design: .rounded))
                             .foregroundStyle(.primary)
                             .frame(maxWidth: .infinity)
@@ -701,6 +711,9 @@ struct PositiveVideoCameraView: View {
                         currentPhase = .optional(recordedClips.count + 1)
                         withAnimation(.spring()) { flowState = .instruction }
                     } label: {
+                        
+                       
+                        
                         Text("Add Extra Clip")
                             .font(.system(size: 17, weight: .semibold, design: .rounded))
                             .foregroundStyle(Color(.white))
@@ -710,6 +723,7 @@ struct PositiveVideoCameraView: View {
                             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                     }
                 }
+                
             }
         }
         .padding(24)

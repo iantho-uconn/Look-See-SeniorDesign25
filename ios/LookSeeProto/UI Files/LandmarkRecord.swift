@@ -72,7 +72,7 @@ struct LandmarkRecord: View {
 
     private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00)
     
-    private let minimumCombinedVideoDuration: Double = 15.0
+    private let minimumCombinedVideoDuration: Double = 30.0
 
     private var hasPositiveMedia: Bool { !pickedVideoURLs.isEmpty || pickedImage != nil }
     private var hasLabel: Bool { !labelText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
@@ -192,7 +192,7 @@ struct LandmarkRecord: View {
                     dismiss()
                 }
             }
-        } message: { Text("Your landmark media and negative reference video were uploaded successfully.") }
+        } message: { Text("Your landmark media was uploaded. The negative reference video may continue processing in the background.") }
         .alert("Connection Offline", isPresented: $showAutoQueueAlert) { Button("OK", role: .cancel) { if archivedMedia != nil { dismiss() } } } message: { Text("You currently have no internet connection. This landmark has been securely added to your Upload Queue and will automatically sync when service returns!") }
         .alert(limitAlertTitle, isPresented: $showLimitAlert) {
             Button("OK", role: .cancel) { }
@@ -299,7 +299,13 @@ struct LandmarkRecord: View {
                         if !arePositiveDetailsLocked {
                             Button {
                                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                                removeClip(url: url)
+                                if pickedVideoURLs.count == 1 {
+                                    // Last remaining clip — clear the whole form instead of
+                                    // leaving an empty media state behind.
+                                    clearScreen()
+                                } else {
+                                    removeClip(url: url)
+                                }
                             } label: {
                                 Image(systemName: "xmark")
                                     .font(.system(size: 14, weight: .bold))
@@ -476,7 +482,12 @@ struct LandmarkRecord: View {
             
             negativePhotoSection
         }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            IsKeyboard = false
+        }
     }
+    
 
     private var positiveAlreadySavedCard: some View {
         HStack(alignment: .top, spacing: 16) {
@@ -697,7 +708,7 @@ struct LandmarkRecord: View {
                 
                 completedLandmarkId = finalLandmarkId
                 isFullSubmissionComplete = true
-                statusText = String(localized: "Landmark and reference video uploaded successfully.")
+                statusText = String(localized: "Landmark uploaded. The reference video is processing in the background.")
                 showCompletionPopup = true
                 
                 if let media = archivedMedia { OfflineMediaManager.shared.deleteArchive(media: media) }

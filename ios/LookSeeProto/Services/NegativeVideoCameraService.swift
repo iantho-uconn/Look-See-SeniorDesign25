@@ -31,6 +31,8 @@ final class NegativeVideoCameraService: NSObject, ObservableObject {
 
     var onVideoRecorded: ((URL) -> Void)?
 
+    // ... init/deinit unchanged ...
+
     func start() {
         checkPermissionsAndStart()
     }

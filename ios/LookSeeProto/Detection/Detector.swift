@@ -127,7 +127,7 @@ final class Detector: NSObject, ObservableObject {
     private let cooldownInterval: TimeInterval = 6.0
 
     private let inputSize = CGSize(width: 640, height: 640)
-    private let confidenceThreshold: Float = 0.80
+    @Published var confidenceThreshold: Float = 0.65
     private let iouThreshold: Float = 0.45
 
     private var smoothers: [String: BoundingBoxSmoother] = [:]
@@ -376,6 +376,7 @@ final class Detector: NSObject, ObservableObject {
         modelIdentifier: String,
         expectedClassCount: Int
     ) -> [Detection] {
+        
         let ptr = combinedArray.dataPointer.bindMemory(to: Float.self, capacity: combinedArray.count)
         let shape = combinedArray.shape.map { $0.intValue }
         
@@ -473,6 +474,7 @@ final class Detector: NSObject, ObservableObject {
         modelIdentifier: String,
         expectedClassCount: Int
     ) -> [Detection] {
+        let startTime = CFAbsoluteTimeGetCurrent()
 
         let confPtr = confArray.dataPointer.bindMemory(to: Float.self, capacity: confArray.count)
         let coordPtr = coordArray.dataPointer.bindMemory(to: Float.self, capacity: coordArray.count)
@@ -551,6 +553,9 @@ final class Detector: NSObject, ObservableObject {
                 )
             }
         }
+        let elapsedTime = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
+        let formattedTime = elapsedTime.formatted(.number.precision(.fractionLength(2)))
+        print("⏱ Parsing took \(formattedTime) ms | required frames: \(requiredFramesForDetection)" , "Avg: 6 frames")
         return finalResults
     }
 

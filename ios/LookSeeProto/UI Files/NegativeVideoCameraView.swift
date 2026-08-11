@@ -48,13 +48,15 @@ struct NegativeVideoCameraView: View {
     @State private var totalDurationElapsed: Double = 0.0
     @State private var collectedURLs: [URL] = []
     @State private var isCancelled = false
+    @State private var isFinishing = false
+    @State private var finishingErrorMessage: String?
 
     @State private var zoomLevel: CGFloat = 1.0
     @State private var showZoomIndicator = false
     @State private var zoomFadeTask: Task<Void, Never>?
 
     private let onDone: (CapturedNegativeVideo) -> Void
-    private let maxTotalTimeLimit: Int = 60
+    private let maxTotalTimeLimit: Int = 30
 
     init(onDone: @escaping (CapturedNegativeVideo) -> Void) {
         self.onDone = onDone
@@ -151,6 +153,19 @@ struct NegativeVideoCameraView: View {
             cameraService.stop()
             stopTimer()
             zoomFadeTask?.cancel()
+        }
+        .alert(
+            "Couldn't Prepare Video",
+            isPresented: Binding(
+                get: { finishingErrorMessage != nil },
+                set: { if !$0 { finishingErrorMessage = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {
+                finishingErrorMessage = nil
+            }
+        } message: {
+            Text(finishingErrorMessage ?? "Please try again.")
         }
     }
     
@@ -258,7 +273,20 @@ struct NegativeVideoCameraView: View {
                         .padding(.vertical, 16)
                         .background(Color(.systemBackground))
                         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    HStack(spacing: 8) {
+                        if isFinishing {
+                            ProgressView()
+                        }
+                        Text(isFinishing ? "Preparing Video..." : "No, Finish Background")
+                            .font(.system(size: 17, weight: .semibold, design: .rounded))
+                    }
+                    .foregroundStyle(.primary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .background(Color(.systemBackground))
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }
+                .disabled(isFinishing)
             }
         }
         .padding(30)
@@ -431,6 +459,7 @@ struct NegativeVideoCameraView: View {
         recordingTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
             timeElapsed += 1
             if timeElapsed >= maxPhaseTimeLimit {
+                totalDurationElapsed += Double(timeElapsed)
                 stopTimer()
                 cameraService.stopRecording()
             }
@@ -443,39 +472,37 @@ struct NegativeVideoCameraView: View {
     }
 
     private func finishAndStitch() {
-        Task {
-            if collectedURLs.count > 1, let stitched = await stitchVideos(urls: collectedURLs) {
-                let video = CapturedNegativeVideo(fileURL: stitched)
-                onDone(video)
-            } else if let first = collectedURLs.first {
-                let video = CapturedNegativeVideo(fileURL: first)
-                onDone(video)
-            }
-            dismiss()
+        guard !isFinishing else { return }
+        guard !collectedURLs.isEmpty else {
+            finishingErrorMessage = "No recorded video was available."
+            return
         }
-    }
 
-    private func stitchVideos(urls: [URL]) async -> URL? {
-        let composition = AVMutableComposition()
-        guard let videoTrack = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) else { return nil }
-        var currentTime = CMTime.zero
-        for url in urls {
-            let asset = AVURLAsset(url: url)
+        isFinishing = true
+        finishingErrorMessage = nil
+
+        Task {
             do {
-                guard let assetVideoTrack = try await asset.loadTracks(withMediaType: .video).first else { continue }
-                let duration = try await asset.load(.duration)
-                let timeRange = CMTimeRange(start: .zero, duration: duration)
-                try videoTrack.insertTimeRange(timeRange, of: assetVideoTrack, at: currentTime)
-                videoTrack.preferredTransform = try await assetVideoTrack.load(.preferredTransform)
-                currentTime = CMTimeAdd(currentTime, duration)
-            } catch { return nil }
+                let outputURL = try await VideoMerger.mergeAndValidate(
+                    clipURLs: collectedURLs,
+                    minimumDuration: 10
+                )
+
+                if !collectedURLs.contains(outputURL) {
+                    for sourceURL in collectedURLs {
+                        try? FileManager.default.removeItem(at: sourceURL)
+                    }
+                }
+
+                let video = CapturedNegativeVideo(fileURL: outputURL)
+                onDone(video)
+                isFinishing = false
+                dismiss()
+            } catch {
+                isFinishing = false
+                finishingErrorMessage = error.localizedDescription
+            }
         }
-        let outputURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + "_neg_stitched.mov")
-        guard let exporter = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetHighestQuality) else { return nil }
-        exporter.outputURL = outputURL
-        exporter.outputFileType = .mov
-        await exporter.export()
-        return exporter.status == .completed ? outputURL : nil
     }
 
     private func cameraErrorOverlay(message: String) -> some View {

@@ -149,7 +149,7 @@ struct QuickUploadView: View {
                                 .padding(.horizontal, 24)
                                 .padding(.top, 10)
                                 
-                                Text("Videos must be 15 - 60 seconds.")
+                                Text("Videos must be 30 - 90 seconds.")
                                     .font(.system(.caption2, design: .monospaced))
                                     .foregroundStyle(.gray)
                             }

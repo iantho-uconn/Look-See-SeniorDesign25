@@ -40,7 +40,7 @@ enum PositiveUploadStage: Equatable {
 @MainActor
 final class UploadService: ObservableObject {
 
-    @Published private(set) var status: String = String(localized: "Ready to upload")
+    @Published private(set) var status: String = String(localized: "Continue landmark entries below")
 
     @Published private(set) var detail: String =
         String(localized: "Your landmark media has not been uploaded yet.")
@@ -55,7 +55,7 @@ final class UploadService: ObservableObject {
     private let baseURL = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev")!
     private let apiTimeout: TimeInterval = 60
     private let mediaUploadTimeout: TimeInterval = 300
-    private let minimumCombinedVideoDuration: Double = 15
+    private let minimumCombinedVideoDuration: Double = 30
 
     // MARK: Errors
     enum UploadError: LocalizedError {
