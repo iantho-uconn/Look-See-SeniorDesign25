@@ -71,7 +71,39 @@ struct LandmarkScan: View {
                         .ignoresSafeArea()
                         .zIndex(2)
                 }
+                
+                // --- Confidence Slider just for Matt will be removed when published---
+                if isActive && !infoView.infoView {
+                    HStack {
+                        Spacer() // Pushes control to the right side
+                        
+                        VStack(spacing: 12) {
+                            // Text label on top showing percentage
+                            Text("\(Int(detector.confidenceThreshold * 100))%")
+                                .font(.caption2.monospacedDigit())
+                                .fontWeight(.bold)
+                                .foregroundStyle(.white)
 
+                            // Rotated slider wrapped in an explicit frame so the background expands properly
+                            Slider(value: $detector.confidenceThreshold, in: 0.1...0.95, step: 0.05)
+                                .tint(.green)
+                                .frame(width: 120, height: 20) // Slider width becomes its vertical height after rotation
+                                .rotationEffect(.degrees(-90))
+                                .frame(width: 20, height: 120) // Forces layout engine to recognize the new vertical dimensions
+                        }
+                        .padding(.vertical, 16)
+                        .padding(.horizontal, 8)
+                        .background(
+                            Color.black.opacity(0.6),
+                            in: RoundedRectangle(cornerRadius: 12)
+                        )
+                        .padding(.trailing, 16)
+                        .padding(.bottom, 120) // Raises above bottom nav bar
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                    .zIndex(6)
+                }
+                
                 // PopUp is presented by Buttons at the root level so it
                 // always appears above the app chrome.
 
