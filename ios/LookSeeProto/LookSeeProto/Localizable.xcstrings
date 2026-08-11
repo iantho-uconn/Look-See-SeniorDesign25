@@ -1933,7 +1933,6 @@
 
     },
     "Record" : {
-      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {

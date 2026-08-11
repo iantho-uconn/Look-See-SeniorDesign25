@@ -5,6 +5,7 @@
 //  Created by Angel Pineda on 6/29/26.
 //
 
+
 import AVFoundation
 import UIKit
 import Combine
@@ -19,7 +20,10 @@ final class NegativeVideoCameraService: NSObject, ObservableObject {
     let session = AVCaptureSession()
     private let videoOutput = AVCaptureMovieFileOutput()
     private var activeFileURL: URL?
-    private var isConfigured = false   // NEW: tracks whether inputs/outputs are already attached
+    private var isConfigured = false
+
+    // 🚀 NEW: Dedicated queue for hardware operations prevents Main Thread freezing
+    private let sessionQueue = DispatchQueue(label: "com.looksee.camera.sessionQueue")
 
     private var segmentURLs: [URL] = []
     private var isIntentionalStop = false
@@ -32,9 +36,9 @@ final class NegativeVideoCameraService: NSObject, ObservableObject {
     }
 
     func stop() {
-        // Ensure this happens off the main thread so UI doesn't hitch
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            self?.session.stopRunning()
+        sessionQueue.async { [weak self] in
+            guard let self = self, self.session.isRunning else { return }
+            self.session.stopRunning()
         }
     }
 
@@ -46,10 +50,10 @@ final class NegativeVideoCameraService: NSObject, ObservableObject {
         case .authorized:
             setupSession()
         case .notDetermined:
-            AVCaptureDevice.requestAccess(for: .video) { granted in
+            AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
                 Task { @MainActor in
-                    self.authorizationStatus = granted ? .authorized : .denied
-                    if granted { self.setupSession() }
+                    self?.authorizationStatus = granted ? .authorized : .denied
+                    if granted { self?.setupSession() }
                 }
             }
         default:
@@ -59,10 +63,9 @@ final class NegativeVideoCameraService: NSObject, ObservableObject {
     }
 
     private func resumeRunningIfNeeded() {
-        guard !session.isRunning else { return }
-        errorMessage = nil // clear any stale error from before
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            self?.session.startRunning()
+        sessionQueue.async { [weak self] in
+            guard let self = self, !self.session.isRunning else { return }
+            self.session.startRunning()
         }
     }
 
@@ -84,47 +87,52 @@ final class NegativeVideoCameraService: NSObject, ObservableObject {
             resumeRunningIfNeeded()
             return
         }
-        guard !session.isRunning else { return }
 
-        session.beginConfiguration()
-        
-        // 🚀 THE FIX: Cap at 1080p. 4K encoding overheats phones.
-        if session.canSetSessionPreset(.hd1920x1080) {
-            session.sessionPreset = .hd1920x1080
-        } else {
-            session.sessionPreset = .high
-        }
+        // 🚀 NEW: Pushes hardware configuration off the UI thread
+        sessionQueue.async { [weak self] in
+            guard let self = self else { return }
+            
+            self.session.beginConfiguration()
+            
+            if self.session.canSetSessionPreset(.hd1920x1080) {
+                self.session.sessionPreset = .hd1920x1080
+            } else {
+                self.session.sessionPreset = .high
+            }
 
-        guard let videoDevice = getBestCamera(),
-              let videoInput = try? AVCaptureDeviceInput(device: videoDevice),
-              session.canAddInput(videoInput) else {
-            errorMessage = "Unable to access the back camera."
-            session.commitConfiguration()
-            return
-        }
-        
-        session.addInput(videoInput)
+            guard let videoDevice = self.getBestCamera(),
+                  let videoInput = try? AVCaptureDeviceInput(device: videoDevice),
+                  self.session.canAddInput(videoInput) else {
+                Task { @MainActor in
+                    self.errorMessage = "Unable to access the back camera."
+                }
+                self.session.commitConfiguration()
+                return
+            }
+            
+            self.session.addInput(videoInput)
 
-        if session.canAddOutput(videoOutput) {
-            session.addOutput(videoOutput)
-            if let connection = videoOutput.connection(with: .video) {
-                if connection.isVideoStabilizationSupported {
-                    connection.preferredVideoStabilizationMode = .cinematicExtended
+            if self.session.canAddOutput(self.videoOutput) {
+                self.session.addOutput(self.videoOutput)
+                if let connection = self.videoOutput.connection(with: .video) {
+                    if connection.isVideoStabilizationSupported {
+                        connection.preferredVideoStabilizationMode = .cinematicExtended
+                    }
                 }
             }
-        }
 
-        session.commitConfiguration()
-        isConfigured = true
-        
-        DispatchQueue.global(qos: .userInitiated).async {
+            self.session.commitConfiguration()
             self.session.startRunning()
+
+            Task { @MainActor in
+                self.isConfigured = true
+            }
         }
     }
 
     func startRecording() {
         guard !isRecording else { return }
-        segmentURLs = [] // fresh logical "recording" starts here
+        segmentURLs = []
         beginNewSegment()
     }
 
@@ -166,11 +174,7 @@ final class NegativeVideoCameraService: NSObject, ObservableObject {
     private func handleInterruptionEnded() {
         isInterrupted = false
 
-        if !session.isRunning {
-            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                self?.session.startRunning()
-            }
-        }
+        resumeRunningIfNeeded()
 
         guard wasRecordingBeforeInterruption else { return }
         wasRecordingBeforeInterruption = false

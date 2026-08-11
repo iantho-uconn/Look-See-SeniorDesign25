@@ -87,6 +87,9 @@ struct PositiveVideoCameraView: View {
     @State private var showZoomInstruction = false
     @State private var zoomInstructionTask: Task<Void, Never>?
 
+    // 🚀 NEW: Functionality ONLY - Tracks camera warmup to fade in smoothly
+    @State private var isCameraWarmedUp = false
+
     var isActive: Bool
     @Binding var isNavVisible: Bool
     
@@ -154,13 +157,16 @@ struct PositiveVideoCameraView: View {
 
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            // 🚀 NEW: Functionality ONLY - Uses standard gray instead of black to mask the camera flash
+            Color(uiColor: .systemGroupedBackground).ignoresSafeArea()
 
-            // 🚀 Reverted to raw Native AVFoundation performance.
             PositiveVideoCameraPreview(session: cameraService.session, zoomLevel: $zoomLevel) {
                 showZoomIndicatorThenFade()
             }
             .ignoresSafeArea()
+            // 🚀 Fades in gracefully
+            .opacity((flowState == .gallery || isReviewingRecent) ? 0 : (isCameraWarmedUp ? 1 : 0.001))
+            .animation(.easeInOut(duration: 0.4), value: isCameraWarmedUp)
             .zIndex(0)
             
             if case .reviewingRecent(let url, _) = flowState {
@@ -265,12 +271,20 @@ struct PositiveVideoCameraView: View {
                 }
             }
             if isActive {
-                DispatchQueue.global(qos: .userInitiated).async { self.cameraService.start() }
+                DispatchQueue.global(qos: .userInitiated).async {
+                    self.cameraService.start()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                        self.isCameraWarmedUp = true
+                    }
+                }
             }
         }
         .onDisappear {
             isNavVisible = true
-            DispatchQueue.global(qos: .userInitiated).async { self.cameraService.stop() }
+            isCameraWarmedUp = false
+            DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.5) {
+                self.cameraService.stop()
+            }
             stopTimer()
             zoomFadeTask?.cancel()
             zoomInstructionTask?.cancel()
@@ -278,10 +292,16 @@ struct PositiveVideoCameraView: View {
         .onChange(of: isActive) { _, active in
             if active {
                 if !wasRecordingBeforeBackground {
-                    DispatchQueue.global(qos: .userInitiated).async { self.cameraService.start() }
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        self.cameraService.start()
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                            self.isCameraWarmedUp = true
+                        }
+                    }
                 }
             } else {
                 DispatchQueue.global(qos: .userInitiated).async { self.cameraService.stop() }
+                isCameraWarmedUp = false
             }
         }
         .onChange(of: flowState) { _, state in
@@ -420,9 +440,7 @@ struct PositiveVideoCameraView: View {
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                     flowState = .recording
                 }
-                DispatchQueue.global(qos: .userInitiated).async {
-                    cameraService.startRecording()
-                }
+                cameraService.startRecording()
                 startTimer()
             } label: {
                 Text("Start Recording")
@@ -772,9 +790,7 @@ struct PositiveVideoCameraView: View {
         guard wasRecordingBeforeBackground else { return }
         wasRecordingBeforeBackground = false
         cameraService.errorMessage = nil
-        DispatchQueue.global(qos: .userInitiated).async {
-            self.cameraService.start()
-        }
+        cameraService.start()
     }
 }
 

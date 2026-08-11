@@ -19,6 +19,10 @@ struct Buttons: View {
 
     @State private var pendingUploadLandmarkId: String?
     @State private var showRecordSheet = false
+    
+    // 🚀 Functionality ONLY - Timers to keep camera alive during swipe animations
+    @State private var keepScanCameraAlive = false
+    @State private var isRecordSheetAnimating = false
 
     @State private var chromeVisible = true
     @State private var chromeFadeTask: Task<Void, Never>?
@@ -50,6 +54,16 @@ struct Buttons: View {
     }
 
     var isActive: Bool = true
+    
+    // 🚀 Functionality ONLY - Evaluates exactly when the camera should shut off
+    var isScanCameraActive: Bool {
+        if showRecordSheet || isRecordSheetAnimating { return false }
+        if currentTab == 0 { return true }
+        // Changed to != 0 so ANY swipe direction keeps the camera from freezing the main thread
+        if dragOffset != 0 { return true }
+        if keepScanCameraAlive { return true }
+        return false
+    }
 
     var body: some View {
         NavigationStack {
@@ -177,7 +191,10 @@ struct Buttons: View {
                         revealChromeThenFade()
                     }
                 }
-                .animation(.spring(response: 0.35, dampingFraction: 0.82), value: infoView.infoView)
+                .animation(
+                    .spring(response: 0.35, dampingFraction: 0.82),
+                    value: infoView.infoView
+                )
             }
             .fullScreenCover(isPresented: $showRecordSheet) {
                 LandmarkRecord(
@@ -188,6 +205,15 @@ struct Buttons: View {
                         showRecordSheet = false
                     }
                 )
+            }
+            // 🚀 FUNCTIONALITY FIX: Now actually triggered. Prevents camera freeze on sheet dismissal.
+            .onChange(of: showRecordSheet) { _, isShown in
+                if !isShown {
+                    isRecordSheetAnimating = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        isRecordSheetAnimating = false
+                    }
+                }
             }
             .fullScreenCover(isPresented: $showSignUp) {
                 NavigationStack {
@@ -215,6 +241,14 @@ struct Buttons: View {
         .onChange(of: currentTab) { _, newTab in
             revealChromeThenFade()
             updateIdleTimer(for: newTab, active: isActive)
+            
+            // 🚀 FUNCTIONALITY FIX: This was missing! It keeps the camera alive for 0.4s to let the swipe finish.
+            if newTab != 0 {
+                keepScanCameraAlive = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                    keepScanCameraAlive = false
+                }
+            }
         }
         .onChange(of: isActive) { _, newActive in
             updateIdleTimer(for: currentTab, active: newActive)
@@ -246,8 +280,8 @@ struct Buttons: View {
                 onTap: revealChromeThenFade,
                 isDetecting: $isDetecting,
                 isNavVisible: $chromeVisible,
-                // Keep active continuously so swipe doesn't flash black or freeze hardware
-                isActive: isActive
+                // 🚀 FUNCTIONALITY FIX: Plugged the logic in here so the camera actually listens to the swipe timer!
+                isActive: isScanCameraActive
             )
         } else if index == mapTabIndex {
             LandmarkMapView()
@@ -387,55 +421,12 @@ struct Buttons: View {
         .padding(.bottom, 10)
     }
 
-    // 🚀 PROPORTIONAL & PRO-SIZED FLOATING NAV BAR
     private var bottomBar: some View {
-        ZStack(alignment: .bottom) {
+        HStack(alignment: .center, spacing: 0) {
             
-            // 1. Sleek Elevated Pill Capsule (The Shoulders)
-            HStack(spacing: 0) {
-                // Left Tab: Scan
-                Button {
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { currentTab = 0 }
-                } label: {
-                    VStack(spacing: 5) {
-                        Image(systemName: "viewfinder")
-                            .font(.system(size: 24, weight: .medium))
-                        Text("Scan")
-                            .font(.system(size: 12, weight: .bold, design: .rounded))
-                    }
-                    .foregroundStyle(currentTab == 0 ? Color(red: 0.22, green: 0.49, blue: 1.00) : Color.secondary)
-                    .frame(maxWidth: .infinity)
-                }
-                
-                // Generous Gap for the Central Button
-                Spacer()
-                    .frame(width: 80)
-                
-                // Right Tab: Map
-                Button {
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { currentTab = mapTabIndex }
-                } label: {
-                    VStack(spacing: 5) {
-                        Image(systemName: "map")
-                            .font(.system(size: 24, weight: .medium))
-                        Text("Map")
-                            .font(.system(size: 12, weight: .bold, design: .rounded))
-                    }
-                    .foregroundStyle(currentTab == mapTabIndex ? Color(red: 0.22, green: 0.49, blue: 1.00) : Color.secondary)
-                    .frame(maxWidth: .infinity)
-                }
-            }
-            .padding(.horizontal, 24)
-            .padding(.vertical, 14)
-            .background(Capsule().fill(.ultraThinMaterial))
-            .overlay(Capsule().stroke(Color(uiColor: .separator).opacity(0.4), lineWidth: 0.5))
-            .shadow(color: .black.opacity(0.18), radius: 20, x: 0, y: 10)
-            .padding(.horizontal, 16)
-            .offset(y: -10)
+            tabButton(title: "Scan", icon: "viewfinder", tab: 0, locked: false)
             
-            // 2. Large Central Floating Action '+' Button
+            // Middle Action: Explicitly labeled "Record" with a Video icon
             Button {
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 if !isBusinessMode {
@@ -444,27 +435,40 @@ struct Buttons: View {
                     showRecordSheet = true
                 }
             } label: {
-                ZStack {
-                    Circle()
-                        .fill(Color(red: 0.22, green: 0.49, blue: 1.00))
-                        .frame(width: 68, height: 68)
-                        .shadow(color: Color(red: 0.22, green: 0.49, blue: 1.00).opacity(0.45), radius: 10, x: 0, y: 5)
-                    
-                    Image(systemName: "plus")
-                        .font(.system(size: 30, weight: .bold))
-                        .foregroundColor(.white)
-                    
-                    if !isBusinessMode {
-                        Image(systemName: "lock.fill")
-                            .font(.system(size: 13))
-                            .foregroundStyle(.white)
-                            .offset(x: 18, y: -18)
-                            .shadow(radius: 2)
+                VStack(spacing: 4) {
+                    ZStack(alignment: .topTrailing) {
+                        Image(systemName: "video.fill")
+                            .font(.system(size: 22, weight: .medium))
+                        if !isBusinessMode {
+                            Image(systemName: "lock.fill")
+                                .font(.system(size: 10))
+                                .offset(x: 12, y: -4)
+                        }
                     }
+                    Text("Record")
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
                 }
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                // Solid Blue Background for emphasis
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color(red: 0.22, green: 0.49, blue: 1.00))
+                        .shadow(color: Color(red: 0.22, green: 0.49, blue: 1.00).opacity(0.3), radius: 6, x: 0, y: 3)
+                )
+                .padding(.horizontal, 6)
             }
-            .offset(y: -20) // Perfectly sits on top of the capsule shoulders
+            
+            tabButton(title: "Map", icon: "map", tab: mapTabIndex, locked: false)
+            
         }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 10)
+        .background(Capsule().fill(.ultraThinMaterial))
+        .overlay(Capsule().stroke(Color(uiColor: .separator).opacity(0.5), lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.15), radius: 20, x: 0, y: 10)
+        .padding(.horizontal, 24)
         .padding(.bottom, 12)
     }
 
@@ -595,6 +599,26 @@ struct Buttons: View {
             .overlay(RoundedRectangle(cornerRadius: 32, style: .continuous).stroke(Color(uiColor: .separator).opacity(0.5), lineWidth: 0.5))
             .padding(.horizontal, 24)
         }
+    }
+
+    @ViewBuilder
+    func tabButton(title: String, icon: String, tab: Int, locked: Bool) -> some View {
+        VStack(spacing: 4) {
+            ZStack(alignment: .topTrailing) {
+                Image(systemName: icon).font(.system(size: 22, weight: .medium))
+                if locked { Image(systemName: "lock.fill").font(.system(size: 10)).foregroundStyle(.secondary).offset(x: 8, y: -4) }
+            }
+            Text(title).font(.system(size: 11, weight: .bold, design: .rounded))
+        }
+        .foregroundStyle(locked ? Color(uiColor: .quaternaryLabel) : currentTab == tab ? Color(red: 0.22, green: 0.49, blue: 1.00) : Color.secondary)
+        .frame(maxWidth: .infinity).padding(.vertical, 10)
+        .background(Group { if currentTab == tab && !locked { RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(red: 0.22, green: 0.49, blue: 1.00).opacity(0.15)) } })
+        .contentShape(Rectangle())
+        .highPriorityGesture(TapGesture().onEnded {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            if locked { showSignUpPrompt = true }
+            else { withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { currentTab = tab } }
+        })
     }
 
     private struct NavButton: View {
