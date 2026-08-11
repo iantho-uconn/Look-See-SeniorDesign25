@@ -266,6 +266,13 @@ struct NegativeVideoCameraView: View {
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                     finishAndStitch()
                 } label: {
+                    Text("No, Finish Background")
+                        .font(.system(size: 17, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.primary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                        .background(Color(.systemBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                     HStack(spacing: 8) {
                         if isFinishing {
                             ProgressView()

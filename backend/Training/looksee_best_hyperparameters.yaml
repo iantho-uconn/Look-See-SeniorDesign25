@@ -14,11 +14,11 @@ hsv_s: 0.82563
 hsv_v: 0.28724
 degrees: 0.0
 translate: 0.06094
-scale: 0.45792
+scale: 0.9
 shear: 0.0
 perspective: 0.0
 flipud: 0.0
-fliplr: 0.36058
+fliplr: 0.0
 bgr: 0.0
 mosaic: 0.87439
 mixup: 0.0

@@ -5,6 +5,7 @@
 //  Created by Angel Pineda on 6/29/26.
 //
 
+
 import AVFoundation
 import UIKit
 import Combine
@@ -19,7 +20,10 @@ final class NegativeVideoCameraService: NSObject, ObservableObject {
     let session = AVCaptureSession()
     private let videoOutput = AVCaptureMovieFileOutput()
     private var activeFileURL: URL?
-    private var isConfigured = false   // NEW: tracks whether inputs/outputs are already attached
+    private var isConfigured = false
+
+    // 🚀 NEW: Dedicated queue for hardware operations prevents Main Thread freezing
+    private let sessionQueue = DispatchQueue(label: "com.looksee.camera.sessionQueue")
 
     private var segmentURLs: [URL] = []
     private var isIntentionalStop = false
@@ -34,7 +38,10 @@ final class NegativeVideoCameraService: NSObject, ObservableObject {
     }
 
     func stop() {
-        session.stopRunning()
+        sessionQueue.async { [weak self] in
+            guard let self = self, self.session.isRunning else { return }
+            self.session.stopRunning()
+        }
     }
 
     private func checkPermissionsAndStart() {
@@ -45,10 +52,10 @@ final class NegativeVideoCameraService: NSObject, ObservableObject {
         case .authorized:
             setupSession()
         case .notDetermined:
-            AVCaptureDevice.requestAccess(for: .video) { granted in
+            AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
                 Task { @MainActor in
-                    self.authorizationStatus = granted ? .authorized : .denied
-                    if granted { self.setupSession() }
+                    self?.authorizationStatus = granted ? .authorized : .denied
+                    if granted { self?.setupSession() }
                 }
             }
         default:
@@ -57,18 +64,12 @@ final class NegativeVideoCameraService: NSObject, ObservableObject {
         }
     }
 
-    
-
     private func resumeRunningIfNeeded() {
-        guard !session.isRunning else { return }
-        errorMessage = nil // clear any stale error from before
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            self?.session.startRunning()
+        sessionQueue.async { [weak self] in
+            guard let self = self, !self.session.isRunning else { return }
+            self.session.startRunning()
         }
     }
-
-    // ... rest unchanged (startRecording, beginNewSegment, stopRecording,
-    //     interruption handlers, segment merging, delegate extension) ...
 
     private func getBestCamera() -> AVCaptureDevice? {
         if let device = AVCaptureDevice.default(.builtInTripleCamera, for: .video, position: .back) {
@@ -84,51 +85,56 @@ final class NegativeVideoCameraService: NSObject, ObservableObject {
     }
 
     private func setupSession() {
-        // Already wired up (inputs/outputs attached) -- just make sure it's running.
         if isConfigured {
             resumeRunningIfNeeded()
             return
         }
-        guard !session.isRunning else { return }
 
-        session.beginConfiguration()
-        
-        if session.canSetSessionPreset(.hd1920x1080) {
-            session.sessionPreset = .hd1920x1080
-        } else {
-            session.sessionPreset = .high
-        }
+        // 🚀 NEW: Pushes hardware configuration off the UI thread
+        sessionQueue.async { [weak self] in
+            guard let self = self else { return }
+            
+            self.session.beginConfiguration()
+            
+            if self.session.canSetSessionPreset(.hd1920x1080) {
+                self.session.sessionPreset = .hd1920x1080
+            } else {
+                self.session.sessionPreset = .high
+            }
 
-        guard let videoDevice = getBestCamera(),
-              let videoInput = try? AVCaptureDeviceInput(device: videoDevice),
-              session.canAddInput(videoInput) else {
-            errorMessage = "Unable to access the back camera."
-            session.commitConfiguration()
-            return
-        }
-        
-        session.addInput(videoInput)
+            guard let videoDevice = self.getBestCamera(),
+                  let videoInput = try? AVCaptureDeviceInput(device: videoDevice),
+                  self.session.canAddInput(videoInput) else {
+                Task { @MainActor in
+                    self.errorMessage = "Unable to access the back camera."
+                }
+                self.session.commitConfiguration()
+                return
+            }
+            
+            self.session.addInput(videoInput)
 
-        if session.canAddOutput(videoOutput) {
-            session.addOutput(videoOutput)
-            if let connection = videoOutput.connection(with: .video) {
-                if connection.isVideoStabilizationSupported {
-                    connection.preferredVideoStabilizationMode = .cinematicExtended
+            if self.session.canAddOutput(self.videoOutput) {
+                self.session.addOutput(self.videoOutput)
+                if let connection = self.videoOutput.connection(with: .video) {
+                    if connection.isVideoStabilizationSupported {
+                        connection.preferredVideoStabilizationMode = .cinematicExtended
+                    }
                 }
             }
-        }
 
-        session.commitConfiguration()
-        isConfigured = true
-        
-        DispatchQueue.global(qos: .userInitiated).async {
+            self.session.commitConfiguration()
             self.session.startRunning()
+
+            Task { @MainActor in
+                self.isConfigured = true
+            }
         }
     }
 
     func startRecording() {
         guard !isRecording else { return }
-        segmentURLs = [] // fresh logical "recording" starts here
+        segmentURLs = []
         beginNewSegment()
     }
 
@@ -150,10 +156,9 @@ final class NegativeVideoCameraService: NSObject, ObservableObject {
         guard isRecording else { return }
         isIntentionalStop = true
         videoOutput.stopRecording()
-        // isRecording flips to false in the delegate callback, once the file is actually closed.
     }
 
-    // MARK: - Interruption handling (backgrounding, phone calls, Control Center camera, etc.)
+    // MARK: - Interruption handling
 
     @objc nonisolated private func handleSessionWasInterrupted(_ notification: Notification) {
         Task { @MainActor in self.handleInterruptionBegan() }
@@ -171,16 +176,11 @@ final class NegativeVideoCameraService: NSObject, ObservableObject {
     private func handleInterruptionEnded() {
         isInterrupted = false
 
-        if !session.isRunning {
-            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                self?.session.startRunning()
-            }
-        }
+        resumeRunningIfNeeded()
 
         guard wasRecordingBeforeInterruption else { return }
         wasRecordingBeforeInterruption = false
 
-        // Give the session a beat to fully come back before starting the next segment.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
             self?.resumeRecordingAfterInterruption()
         }
@@ -206,7 +206,6 @@ final class NegativeVideoCameraService: NSObject, ObservableObject {
             for url in urls { try? FileManager.default.removeItem(at: url) }
             onVideoRecorded?(merged)
         } else {
-            // Merge failed for some reason -- don't strand the user, hand back the first segment.
             onVideoRecorded?(first)
         }
     }
@@ -246,24 +245,18 @@ extension NegativeVideoCameraService: AVCaptureFileOutputRecordingDelegate {
                 let finishedSuccessfully = (error.userInfo[AVErrorRecordingSuccessfullyFinishedKey] as? Bool) ?? false
 
                 if !finishedSuccessfully {
-                    // A genuine failure (disk issue, hardware fault, etc.) -- still surface it.
                     self.errorMessage = "Failed to record video: \(error.localizedDescription)"
                     return
                 }
 
-                // File is valid but got cut short -- almost always the app backgrounding.
                 self.segmentURLs.append(outputFileURL)
 
                 if wasIntentional {
-                    // User tapped stop right as the interruption landed -- finish normally.
                     await self.finishAndDeliverSegments()
                 }
-                // Otherwise: leave it pending. handleInterruptionEnded() resumes recording
-                // automatically, and this segment gets stitched into the final clip later.
                 return
             }
 
-            // Clean, uninterrupted stop.
             self.segmentURLs.append(outputFileURL)
             await self.finishAndDeliverSegments()
         }

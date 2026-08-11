@@ -142,7 +142,7 @@ def lambda_handler(event, context):
         raw_label = item.get('landmarkId', 'Unknown')
         
     class_name = str(raw_label).replace(" ", "_")
-    prompt = item.get('aiPrompt')
+    prompt_list = item.get('prompts') # Changed from aiPrompt to handle lists
 
     folder_name = f"{submission_id}_{class_name}"
     folder_path = f"clean-frames/{folder_name}"
@@ -159,52 +159,61 @@ def lambda_handler(event, context):
         process_video(input_bucket, video_key, output_bucket, folder_path, file_prefix)
         reference_image_key = f"{folder_path}/{file_prefix}__frame_0.jpg" 
 
-    if not prompt:
+    if not prompt_list:
         try:
-            print(f"🤖 Invoking Bedrock Vision AI (Nova Lite) for reference image: {reference_image_key}")
+            print(f"🤖 Invoking Bedrock Vision AI (Nova Pro) for reference image: {reference_image_key}")
             image_obj = s3_client.get_object(Bucket=output_bucket, Key=reference_image_key)
             image_bytes = image_obj['Body'].read()
 
             bedrock_prompt = (
                 f"Identify the main target object ({class_name.replace('_', ' ')}) in this image. "
-                "Provide a short 5-to-8 word physical description of ONLY the object itself (color, material, shape). "
-                "STRICT RULE: Do NOT describe the background, floor, ground, grass, walls, or surroundings. "
-                "Do NOT use introductory text. Example output: 'brown wooden park bench with green metal frame'"
+                "Provide 3 distinct physical descriptions of ONLY the target object itself as a JSON array of strings:\n"
+                "1. A short 2-3 word noun (e.g. 'red tugboat')\n"
+                "2. A structural component description (e.g. 'red and black vessel hull')\n"
+                "3. A concise physical description (e.g. 'large red wooden tugboat')\n\n"
+                "STRICT RULES:\n"
+                "- Do NOT describe the background, floor, grass, sky, walls, or surroundings.\n"
+                "- Output ONLY a valid JSON array. Do not include markdown formatting like ```json."
             )
             
-            # Using the modern Bedrock Converse API format
             messages = [
                 {
                     "role": "user",
                     "content": [
-                        {
-                            "image": {
-                                "format": "jpeg",
-                                "source": {"bytes": image_bytes} # Converse API handles bytes natively
-                            }
-                        },
-                        {
-                            "text": bedrock_prompt
-                        }
+                        {"image": {"format": "jpeg", "source": {"bytes": image_bytes}}},
+                        {"text": bedrock_prompt}
                     ]
                 }
             ]
 
-            # Invoke Amazon Nova Lite
             response = bedrock_client.converse(
-                modelId="amazon.nova-lite-v1:0", # Cost-effective Nova Lite model
+                modelId="amazon.nova-pro-v1:0", 
                 messages=messages,
-                inferenceConfig={"maxTokens": 50} # Restricting tokens to force brevity
+                inferenceConfig={"maxTokens": 150} 
             )
             
-            # Extract response from the Converse API structure
             ai_prompt_text = response['output']['message']['content'][0]['text'].strip()
-            print(f"📝 Generated concise aiPrompt description: {ai_prompt_text}")
+            
+            # CRITICAL FIX: STRIP MARKDOWN 
+            if ai_prompt_text.startswith("```json"):
+                ai_prompt_text = ai_prompt_text.replace("```json", "").replace("```", "").strip()
+            elif ai_prompt_text.startswith("```"):
+                ai_prompt_text = ai_prompt_text.replace("```", "").strip()
+
+            try:
+                prompts_list = json.loads(ai_prompt_text)
+                if not isinstance(prompts_list, list):
+                    prompts_list = [ai_prompt_text]
+            except Exception as e:
+                print(f"⚠️ Failed to parse AI JSON, falling back to raw string: {e}")
+                prompts_list = [ai_prompt_text]
+
+            print(f"📝 Generated Multi-Prompts: {prompts_list}")
 
             table.update_item(
                 Key={'submissionId': submission_id},
-                UpdateExpression="SET aiPrompt = :p",
-                ExpressionAttributeValues={':p': ai_prompt_text}
+                UpdateExpression="SET prompts = :p",
+                ExpressionAttributeValues={':p': prompts_list}
             )
             
             landmark_id = item.get('landmarkId')
@@ -212,21 +221,22 @@ def lambda_handler(event, context):
                 landmarks_table = dynamodb.Table('LookSeeLandmarks')
                 landmarks_table.update_item(
                     Key={'landmarkId': landmark_id},
-                    UpdateExpression="SET aiPrompt = :p",
-                    ExpressionAttributeValues={':p': ai_prompt_text}
+                    UpdateExpression="SET prompts = :p",
+                    ExpressionAttributeValues={':p': prompts_list}
                 )
             
-            prompt = ai_prompt_text
+            prompt_data_to_save = prompts_list
 
         except Exception as e:
             print(f"⚠️ Bedrock/DynamoDB integration failed, skipping: {str(e)}")
-            prompt = class_name 
+            prompt_data_to_save = [class_name] 
     else:
-        print("⏭️ aiPrompt already exists in DynamoDB, skipping Bedrock.")
+        print("⏭️ Prompts already exist in DynamoDB, skipping Bedrock.")
+        prompt_data_to_save = prompt_list if isinstance(prompt_list, list) else [prompt_list]
 
     metadata_content = item.copy()
     metadata_content["class_name"] = class_name
-    metadata_content["prompt"] = prompt 
+    metadata_content["prompts"] = prompt_data_to_save 
     metadata_content["submissionId"] = submission_id
     
     s3_client.put_object(
