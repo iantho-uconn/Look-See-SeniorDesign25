@@ -127,7 +127,7 @@ final class Detector: NSObject, ObservableObject {
     private let cooldownInterval: TimeInterval = 6.0
 
     private let inputSize = CGSize(width: 640, height: 640)
-    private let confidenceThreshold: Float = 0.80
+    private let confidenceThreshold: Float = 0.65
     private let iouThreshold: Float = 0.45
 
     private var smoothers: [String: BoundingBoxSmoother] = [:]

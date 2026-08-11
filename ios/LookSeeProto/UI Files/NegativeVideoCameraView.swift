@@ -54,7 +54,7 @@ struct NegativeVideoCameraView: View {
     @State private var zoomFadeTask: Task<Void, Never>?
 
     private let onDone: (CapturedNegativeVideo) -> Void
-    private let maxTotalTimeLimit: Int = 60
+    private let maxTotalTimeLimit: Int = 90
 
     init(onDone: @escaping (CapturedNegativeVideo) -> Void) {
         self.onDone = onDone

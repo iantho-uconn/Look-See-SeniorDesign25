@@ -285,8 +285,8 @@ struct LandmarkRecord: View {
                 Text("Capture Positive Media")
                     .font(.system(size: 17, weight: .bold, design: .rounded))
                     .foregroundStyle(.primary)
-                Text("Follow the on-screen steps to capture the different angles of the landmark. This video should be from a typical place where a user may see the landmark.")
-                    .font(.system(size: 15, weight: .regular))
+                Text("Follow the on-screen steps to capture the different angles of the landmark. These videos should be from all typical places where a user may see the landmark. Each video should be at least 4 seconds and the total of all positive videos taken should be between 30 to 90 seconds.")
+                    .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .lineSpacing(2)
             }
@@ -340,7 +340,13 @@ struct LandmarkRecord: View {
                         if !arePositiveDetailsLocked {
                             Button {
                                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                                removeClip(url: url)
+                                if pickedVideoURLs.count == 1 {
+                                    // Last remaining clip — clear the whole form instead of
+                                    // leaving an empty media state behind.
+                                    clearScreen()
+                                } else {
+                                    removeClip(url: url)
+                                }
                             } label: {
                                 Image(systemName: "xmark")
                                     .font(.system(size: 14, weight: .bold))

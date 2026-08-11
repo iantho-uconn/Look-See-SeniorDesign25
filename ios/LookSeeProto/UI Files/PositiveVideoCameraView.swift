@@ -28,7 +28,7 @@ enum CameraPhase: Equatable {
             if idx == 3 { return "Step 3: Third Angle" }
             return "Step \(idx): Fourth Angle"
         case .optional:
-            return "Extra Coverage"
+            return "Additional Coverage"
         }
     }
     
@@ -114,7 +114,7 @@ struct PositiveVideoCameraView: View {
 
     private var maxPhaseTimeLimit: Int {
         if currentPhase.isMandatory {
-            return 60 / expectedAngles
+            return maxTotalTimeLimit / expectedAngles
         } else {
             return maxTotalTimeLimit - totalDurationElapsedInt
         }
@@ -567,7 +567,7 @@ struct PositiveVideoCameraView: View {
             let timeRemaining = maxTotalTimeLimit - totalDurationElapsedInt
             
             HStack {
-                Text("Total: \(totalDurationElapsedInt)s / 60s")
+                Text("Total: \(totalDurationElapsedInt)s / \(maxTotalTimeLimit)s")
                     .font(.system(size: 14, weight: .bold, design: .monospaced))
                     .foregroundStyle(.secondary)
                 Spacer()

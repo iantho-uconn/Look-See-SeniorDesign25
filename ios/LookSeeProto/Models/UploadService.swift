@@ -40,7 +40,7 @@ enum PositiveUploadStage: Equatable {
 @MainActor
 final class UploadService: ObservableObject {
 
-    @Published private(set) var status: String = String(localized: "Ready to upload")
+    @Published private(set) var status: String = String(localized: "Continue landmark entries below")
 
     @Published private(set) var detail: String =
         String(localized: "Your landmark media has not been uploaded yet.")
