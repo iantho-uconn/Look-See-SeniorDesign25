@@ -27,6 +27,13 @@ class AuthViewModel: ObservableObject {
     @Published var activePlanCents: Int = 0
     @Published var activePlanYears: Int = 0
     
+    // 🚀 NEW: Personal User Identity
+    @Published var username: String = ""
+    @Published var profileImageUrl: String = ""
+    
+    // 🚀 FIXED: Memory variable to carry the username from Signup to Login
+    @Published var pendingUsernameToSave: String = ""
+    
     @Published var storeName: String = ""
     @Published var phoneNumber: String = ""
     @Published var storeBio: String = ""
@@ -57,6 +64,13 @@ class AuthViewModel: ObservableObject {
                     requiresNewPassword = false
                     errorMessage = ""
                     await fetchUserDetails()
+                    
+                    // 🚀 FIXED: The exact moment we get the real userId, we save the pending username!
+                    if !pendingUsernameToSave.isEmpty {
+                        let _ = await updateUserIdentity(newUsername: pendingUsernameToSave)
+                        pendingUsernameToSave = "" // Clear memory
+                    }
+                    
                     await fetchUserUsageStats()
                 } else {
                     switch result.nextStep {
@@ -117,6 +131,8 @@ class AuthViewModel: ObservableObject {
                 self.stripeSubscriptionId = ""
                 self.activePlanCents = 0
                 self.activePlanYears = 0
+                self.username = ""
+                self.profileImageUrl = ""
                 self.storeName = ""
                 self.phoneNumber = ""
                 self.storeBio = ""
@@ -144,6 +160,8 @@ class AuthViewModel: ObservableObject {
                 self.isSignedIn = false
                 self.userId = ""
                 self.userEmail = ""
+                self.username = ""
+                self.profileImageUrl = ""
                 self.hasActiveSubscription = false
                 self.tokenBalance = 0
                 self.activePlanCents = 0
@@ -207,6 +225,9 @@ class AuthViewModel: ObservableObject {
                             self.stripeSubscriptionId = fetchedStripeId
                         }
                         
+                        if let fetchedUsername = json["username"] as? String, !fetchedUsername.isEmpty { self.username = fetchedUsername }
+                        if let fetchedProfileImg = json["profileImageUrl"] as? String, !fetchedProfileImg.isEmpty { self.profileImageUrl = fetchedProfileImg }
+                        
                         if let fetchedStore = json["storeName"] as? String, !fetchedStore.isEmpty { self.storeName = fetchedStore }
                         if let fetchedPhone = json["phoneNumber"] as? String, !fetchedPhone.isEmpty { self.phoneNumber = fetchedPhone }
                         if let fetchedBio = json["storeBio"] as? String, !fetchedBio.isEmpty { self.storeBio = fetchedBio }
@@ -250,6 +271,57 @@ class AuthViewModel: ObservableObject {
             print("❌ Failed to cancel subscription: \(error)")
         }
         return false
+    }
+
+    func updateUserIdentity(newUsername: String, profileBase64: String? = nil) async -> (success: Bool, error: String?) {
+        guard !userId.isEmpty else { return (false, "User not found") }
+        guard let url = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/checkout") else { return (false, "Invalid URL") }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        var body: [String: Any] = [
+            "purchaseType": "update_user_identity",
+            "userId": userId,
+            "username": newUsername,
+            "currentUsername": self.username,
+            "profileImageUrl": self.profileImageUrl
+        ]
+        
+        if let base64 = profileBase64 {
+            body["profileBase64"] = base64
+        }
+        
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse {
+                if httpResponse.statusCode == 200 {
+                    if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                        await MainActor.run {
+                            if let updatedUsername = json["username"] as? String, !updatedUsername.isEmpty {
+                                self.username = updatedUsername
+                            }
+                            if let newImage = json["profileImageUrl"] as? String, !newImage.isEmpty {
+                                self.profileImageUrl = newImage
+                            }
+                        }
+                    }
+                    return (true, nil)
+                } else {
+                    let err = String(data: data, encoding: .utf8) ?? "Unknown Error"
+                    if err.contains("ERR_USERNAME_TAKEN") {
+                        return (false, "That username is already taken.")
+                    }
+                    return (false, "Server Error: \(err)")
+                }
+            }
+        } catch {
+            return (false, error.localizedDescription)
+        }
+        return (false, "Network error")
     }
 
     func updateBusinessProfile(storeName: String, phoneNumber: String, storeBio: String, storeLogoUrl: String, storeLogoBase64: String? = nil) async -> Bool {

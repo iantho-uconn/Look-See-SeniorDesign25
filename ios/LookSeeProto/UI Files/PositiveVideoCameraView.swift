@@ -94,22 +94,23 @@ struct PositiveVideoCameraView: View {
     var isActive: Bool
     @Binding var isNavVisible: Bool
     
+    // 🚀 FIXED: Cleaned up the merged variables and reconstructed the single init block
+    private let completionButtonTitle: String
     private let onDone: ([URL]) -> Void
     private let onCancel: () -> Void
-    private let maxTotalTimeLimit: Int = 90
-    private let minTotalTimeLimit: Int = 30
-
-    init(isActive: Bool, isNavVisible: Binding<Bool>, onDone: @escaping ([URL]) -> Void, onCancel: @escaping () -> Void) {
-        self.isActive = isActive
-        self._isNavVisible = isNavVisible
-    private let completionButtonTitle: String
+    
     private let maxTotalTimeLimit: Int = 90
     private let minTotalTimeLimit: Int = 30
 
     init(
+        isActive: Bool,
+        isNavVisible: Binding<Bool>,
         completionButtonTitle: String = "Finish Submission",
-        onDone: @escaping ([URL]) -> Void
+        onDone: @escaping ([URL]) -> Void,
+        onCancel: @escaping () -> Void
     ) {
+        self.isActive = isActive
+        self._isNavVisible = isNavVisible
         self.completionButtonTitle = completionButtonTitle
         self.onDone = onDone
         self.onCancel = onCancel
@@ -711,9 +712,6 @@ struct PositiveVideoCameraView: View {
                         currentPhase = .optional(recordedClips.count + 1)
                         withAnimation(.spring()) { flowState = .instruction }
                     } label: {
-                        
-                       
-                        
                         Text("Add Extra Clip")
                             .font(.system(size: 17, weight: .semibold, design: .rounded))
                             .foregroundStyle(Color(.white))

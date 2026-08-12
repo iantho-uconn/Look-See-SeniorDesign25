@@ -300,8 +300,6 @@ struct LandmarkRecord: View {
                             Button {
                                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                                 if pickedVideoURLs.count == 1 {
-                                    // Last remaining clip — clear the whole form instead of
-                                    // leaving an empty media state behind.
                                     clearScreen()
                                 } else {
                                     removeClip(url: url)
@@ -714,7 +712,15 @@ struct LandmarkRecord: View {
                 if let media = archivedMedia { OfflineMediaManager.shared.deleteArchive(media: media) }
                 
             } catch {
-                print("Full landmark submission failed:", error.localizedDescription)
+                if error.localizedDescription.contains("ERR_SUBSCRIPTION_EXPIRED") {
+                    await MainActor.run {
+                        limitAlertTitle = String(localized: "Subscription Expired")
+                        limitAlertMessage = String(localized: "Your subscription period has ended. Please renew to continue uploading landmarks.")
+                        showLimitAlert = true
+                    }
+                } else {
+                    print("Full landmark submission failed:", error.localizedDescription)
+                }
             }
         }
     }
