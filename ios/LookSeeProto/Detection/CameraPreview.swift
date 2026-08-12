@@ -15,7 +15,13 @@ final class CameraSessionCoordinator {
 
     init() {
         session.beginConfiguration()
-        session.sessionPreset = .high
+        
+        // 🚀 THE FIX: Cap resolution to 1080p to stop thermal overheating during ML execution
+        if session.canSetSessionPreset(.hd1920x1080) {
+            session.sessionPreset = .hd1920x1080
+        } else {
+            session.sessionPreset = .high
+        }
 
         guard
             let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
@@ -25,7 +31,19 @@ final class CameraSessionCoordinator {
             session.commitConfiguration()
             return
         }
+        
         videoDevice = device
+        
+        // 🚀 THE FIX: Cap framerate to 30fps so CoreML isn't running 60 times a second
+        do {
+            try device.lockForConfiguration()
+            device.activeVideoMinFrameDuration = CMTimeMake(value: 1, timescale: 30)
+            device.activeVideoMaxFrameDuration = CMTimeMake(value: 1, timescale: 30)
+            device.unlockForConfiguration()
+        } catch {
+            print("Could not lock device to cap framerate: \(error)")
+        }
+        
         session.addInput(input)
 
         videoOutput.alwaysDiscardsLateVideoFrames = true
@@ -55,7 +73,7 @@ final class CameraSessionCoordinator {
 
     func stop() {
         guard session.isRunning else { return }
-        session.stopRunning()
+        DispatchQueue.global(qos: .userInitiated).async { self.session.stopRunning() }
     }
 }
 
@@ -97,7 +115,11 @@ final class OverlayView: UIView {
                 perimeter.lineWidth = 4.0
                 perimeter.stroke()
 
-                let labelText = "\(target.displayLabel)"
+                //let labelText = "\(target.displayLabel)"
+                // label with confi % 
+                let confidencePercent = Int(target.confidence * 100)
+                let labelText = "\(target.displayLabel) \(confidencePercent)%"
+                
                 let font = UIFont.systemFont(ofSize: 16, weight: .bold)
                 let textStyle: [NSAttributedString.Key: Any] = [
                     .font: font,

@@ -160,6 +160,12 @@ struct BusinessHardNegativeCompleteResponse: Decodable {
     let batchId: String
     let processedCount: Int
     let failedCount: Int
+    let processed: [BusinessHardNegativeProcessedItem]?
+}
+
+struct BusinessHardNegativeProcessedItem: Decodable {
+    let negativeId: String
+    let status: String
 }
 
 // MARK: - Request Bodies
@@ -199,6 +205,7 @@ private struct BusinessHardNegativeInitBody: Encodable {
 private struct BusinessHardNegativeCompleteBody: Encodable {
     let batchId: String
     let negativeIds: [String]
+    let forceRetry: Bool?
 }
 
 // MARK: - Errors
@@ -209,6 +216,7 @@ enum BusinessLandmarkServiceError: LocalizedError {
     case badStatus(Int, String)
     case invalidUploadURL
     case noHardNegativeUploadTarget
+    case hardNegativeRetryFailed
 
     var errorDescription: String? {
         switch self {
@@ -222,6 +230,8 @@ enum BusinessLandmarkServiceError: LocalizedError {
             return "The upload URL returned by the server was invalid."
         case .noHardNegativeUploadTarget:
             return "The hard-negative upload request did not return an upload target."
+        case .hardNegativeRetryFailed:
+            return "The negative media could not be queued for processing again."
         }
     }
 }
@@ -561,7 +571,9 @@ final class BusinessLandmarkService {
         return BusinessMediaUploadCompleteResponse(
             ok: completeResponse.failedCount == 0,
             submissionId: uploadTarget.negativeId,
-            status: completeResponse.failedCount == 0 ? "PROCESSING" : "FAILED",
+            status: completeResponse.failedCount == 0
+                ? (completeResponse.processed?.first?.status ?? "PROCESSING")
+                : "FAILED",
             datasetRole: BusinessDatasetRole.hardNegative.rawValue,
             mediaKind: nil,
             landmarkId: landmarkId,
@@ -611,10 +623,33 @@ final class BusinessLandmarkService {
         return try JSONDecoder().decode(BusinessHardNegativeInitResponse.self, from: data)
     }
 
+    /// Requeues an existing hard-negative source object without uploading the
+    /// video again. The backend verifies ownership and source availability.
+    func retryHardNegativeProcessing(
+        landmarkId: String,
+        batchId: String,
+        negativeId: String
+    ) async throws -> BusinessHardNegativeCompleteResponse {
+        let response = try await completeHardNegativeUpload(
+            landmarkId: landmarkId,
+            batchId: batchId,
+            negativeIds: [negativeId],
+            forceRetry: true
+        )
+
+        guard response.failedCount == 0,
+              response.processedCount == 1 else {
+            throw BusinessLandmarkServiceError.hardNegativeRetryFailed
+        }
+
+        return response
+    }
+
     private func completeHardNegativeUpload(
         landmarkId: String,
         batchId: String,
-        negativeIds: [String]
+        negativeIds: [String],
+        forceRetry: Bool = false
     ) async throws -> BusinessHardNegativeCompleteResponse {
         let idToken = try await getCognitoIDToken()
 
@@ -632,7 +667,8 @@ final class BusinessLandmarkService {
 
         let body = BusinessHardNegativeCompleteBody(
             batchId: batchId,
-            negativeIds: negativeIds
+            negativeIds: negativeIds,
+            forceRetry: forceRetry ? true : nil
         )
 
         request.httpBody = try JSONEncoder().encode(body)

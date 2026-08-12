@@ -632,14 +632,6 @@
 //  Buttons.swift
 //  LookSeeProto
 //
-//  Created by Christian Barbara on 1/25/26.
-//
-//  Updated: TabView-based paging replaced with a manual HStack pager so
-//  swiping shows a live, finger-following preview of the adjacent page
-//  (camera/record/map) instead of only snapping after release.
-//  Merged back in: VariableContainer/PopUp landmark-info overlay, which the
-//  pager rewrite had dropped.
-//
 
 import SwiftUI
 
@@ -654,7 +646,13 @@ struct Buttons: View {
     @State private var showSignUpPrompt = false
     @State private var showSignUp = false
     @State private var currentTab = 0
+
     @State private var pendingUploadLandmarkId: String?
+    @State private var showRecordSheet = false
+    
+    // 🚀 Functionality ONLY - Timers to keep camera alive during sheet animations
+    @State private var keepScanCameraAlive = false
+    @State private var isRecordSheetAnimating = false
 
     @State private var chromeVisible = true
     @State private var chromeFadeTask: Task<Void, Never>?
@@ -664,38 +662,39 @@ struct Buttons: View {
     @State private var showSideMenu = false
     @State private var isReticlePulsing = false
 
-    // Live horizontal offset while a swipe is in progress. 0 when idle.
     @State private var dragOffset: CGFloat = 0
-    
-    @State private var isDragging: Bool = false // 👈 Tracks active dragging
+    @State private var isDragging: Bool = false
     @GestureState private var isDraggingState: Bool = false
     @GestureState private var isSwipingState: Bool = false
 
-    // 🚀 THE FIX: Completely ignores Cognito authState.tier.
-    // If they haven't actually paid (or aren't legacy), they get NOTHING.
+    @State private var hasPreloadedMap = false
+
     private var isBusinessMode: Bool {
         return vm.hasActiveSubscription
     }
 
-    var tabCount: Int {
-        return isBusinessMode ? 3 : 2
-    }
+    var tabCount: Int { return 2 }
 
     private var isScanTab: Bool { currentTab == 0 }
-
-    private var mapTabIndex: Int {
-        return tabCount - 1
-    }
-
-    private var recordTabIndex: Int { 1 }
+    private var mapTabIndex: Int { 1 }
 
     private var topBarTitle: String {
         if currentTab == 0 { return "LookSee" }
-        if currentTab == mapTabIndex { return "Map" }
-        return "Record"
+        return "Map"
     }
 
     var isActive: Bool = true
+    
+    // 🚀 THE FIX: Evaluates exactly when the camera should shut off
+    var isScanCameraActive: Bool {
+        // 1. MUST turn off for Record sheet so the hardware lenses don't crash
+        if showRecordSheet || isRecordSheetAnimating { return false }
+        
+        // 2. ALWAYS KEEP WARM otherwise!
+        // This completely eliminates the black flash on swipe AND the stutter/lag
+        // when returning to Scan, because the hardware never has to boot up.
+        return true
+    }
 
     var body: some View {
         NavigationStack {
@@ -714,10 +713,6 @@ struct Buttons: View {
                                 withAnimation(.easeOut(duration: 0.1)) { chromeVisible = false }
                             }
                         }
-                        // Back to .simultaneousGesture so nested ScrollViews (Record tab) keep
-                        // normal vertical scrolling. Accidental taps on chrome buttons during a
-                        // swipe are prevented below via isSwipingState + allowsHitTesting,
-                        // instead of stealing gesture priority from every child view.
                         .simultaneousGesture(
                             (currentTab != mapTabIndex && !infoView.infoView && !showSideMenu)
                                 ? DragGesture(minimumDistance: 12)
@@ -760,7 +755,7 @@ struct Buttons: View {
                         }
                         .transition(.opacity)
                         .animation(.easeOut(duration: 0.3), value: chromeVisible)
-                        .allowsHitTesting(!isSwipingState)   // 👈 new — blocks accidental button taps mid-swipe
+                        .allowsHitTesting(!isSwipingState)
                     }
 
                     if showSignUpPrompt { signUpPromptOverlay }
@@ -779,14 +774,11 @@ struct Buttons: View {
                             .environmentObject(vm)
                             .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
                     }
-                    .frame(width: pageWidth, alignment: .leading) // 👈 Lock the parent row to exact full screen width
+                    .frame(width: pageWidth, alignment: .leading)
                     .background(Color.clear)
-                    .offset(x: showSideMenu ? 0 : pageWidth) // 👈 Slide precisely from 0 to full pageWidth
+                    .offset(x: showSideMenu ? 0 : pageWidth)
                     .animation(.easeOut(duration: 0.25), value: showSideMenu)
                     
-                    // Present the landmark info popup at the root level so it
-                    // always sits above the pager, top bar, bottom bar, and
-                    // side menu.
                     if infoView.infoView {
                         ZStack {
                             Color.black
@@ -808,7 +800,7 @@ struct Buttons: View {
                 .simultaneousGesture(
                     DragGesture(minimumDistance: 15)
                         .updating($isDraggingState) { value, state, transaction in
-                            state = true // Automatically sets back to false when gesture ends/cancels
+                            state = true
                         }
                         .onEnded { value in
                             guard !infoView.infoView else { return }
@@ -824,7 +816,6 @@ struct Buttons: View {
 
                     if isShowingPopup {
                         showSideMenu = false
-
                         withAnimation(.easeOut(duration: 0.15)) {
                             chromeVisible = false
                         }
@@ -836,6 +827,26 @@ struct Buttons: View {
                     .spring(response: 0.35, dampingFraction: 0.82),
                     value: infoView.infoView
                 )
+            }
+            .fullScreenCover(isPresented: $showRecordSheet) {
+                LandmarkRecord(
+                    isNavVisible: .constant(true),
+                    isActive: true,
+                    onAddMoreMedia: { landmarkId in
+                        pendingUploadLandmarkId = landmarkId
+                        showRecordSheet = false
+                    }
+                )
+            }
+            // 🚀 SURGICAL FIX: Smoothly re-engages the Scan camera when closing Record without stuttering
+            .onChange(of: showRecordSheet) { _, isShown in
+                if !isShown {
+                    isRecordSheetAnimating = true
+                    // Give iOS 0.3s to fully clear the record sheet hardware before waking up Scan
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        isRecordSheetAnimating = false
+                    }
+                }
             }
             .fullScreenCover(isPresented: $showSignUp) {
                 NavigationStack {
@@ -849,35 +860,26 @@ struct Buttons: View {
                     .presentationBackground(.ultraThinMaterial)
             }
             .toolbar(.hidden, for: .navigationBar)
-                }
-                .onAppear {
-                    scheduleChromeFadeIfNeeded()
-                    viewfinderTimingReset()
-                    UITabBar.appearance().isHidden = true
-                    
-                    updateIdleTimer(for: currentTab, active: isActive)
-                }
-//                .onDisappear {
-//                    // Ensure idle timer is re-enabled if this view disappears completely
-//                    UIApplication.shared.isIdleTimerDisabled = false
-//                    print("restored auto lock timer (view disappeared)", UIApplication.shared.isIdleTimerDisabled)
-//
-//                }
-                .onChange(of: currentTab) { _, newTab in
-                    revealChromeThenFade()
-                    updateIdleTimer(for: newTab, active: isActive)
-                }
-                .onChange(of: isActive) { _, newActive in
-                    updateIdleTimer(for: currentTab, active: newActive)
-                }
+        }
+        .onAppear {
+            scheduleChromeFadeIfNeeded()
+            viewfinderTimingReset()
+            UITabBar.appearance().isHidden = true
+            updateIdleTimer(for: currentTab, active: isActive)
+            
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                hasPreloadedMap = true
+            }
+        }
+        .onChange(of: currentTab) { _, newTab in
+            revealChromeThenFade()
+            updateIdleTimer(for: newTab, active: isActive)
+        }
+        .onChange(of: isActive) { _, newActive in
+            updateIdleTimer(for: currentTab, active: newActive)
+        }
     }
 
-    // MARK: - Pager
-
-    /// Lays every tab's content side-by-side in one HStack and shifts it by
-    /// -currentTab * width, live-adjusted by dragOffset while swiping. This
-    /// keeps the adjacent page mounted and visible as it slides in, instead
-    /// of only appearing after the gesture ends.
     private func pager() -> some View {
         GeometryReader { proxy in
             let width = proxy.size.width
@@ -903,45 +905,26 @@ struct Buttons: View {
                 onTap: revealChromeThenFade,
                 isDetecting: $isDetecting,
                 isNavVisible: $chromeVisible,
-                isActive: currentTab == 0   // NEW — tells LandmarkScan whether it's the visible tab
+                isActive: isScanCameraActive
             )
-            .onChange(of: currentTab) { _, newTab in
-                print("[Buttons] Scan tab active: \(newTab == 0)")
-            }
-        } else if isBusinessMode && index == recordTabIndex {
-            LandmarkRecord { landmarkId in
-                pendingUploadLandmarkId = landmarkId
-                withAnimation(.easeInOut(duration: 0.25)) { currentTab = 0 }
-            }
-            .safeAreaInset(edge: .top) { Color.clear.frame(height: 45) }
-            .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 90) }
         } else if index == mapTabIndex {
             LandmarkMapView()
                 .safeAreaInset(edge: .top) { Color.clear.frame(height: 45) }
                 .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 90) }
+                .opacity(hasPreloadedMap ? 1.0 : 0.99)
         } else {
             EmptyView()
         }
     }
 
-    // MARK: - Drag handling
-
-    /// Prevents dragging past the first or last tab from producing an
-    /// unbounded offset — light rubber-band resistance at the ends.
     private func clampedDragOffset(_ translation: CGFloat, width: CGFloat) -> CGFloat {
-        if currentTab == 0 && translation > 0 {
-            return translation * 0.35
-        }
-        if currentTab == tabCount - 1 && translation < 0 {
-            return translation * 0.35
-        }
+        if currentTab == 0 && translation > 0 { return translation * 0.35 }
+        if currentTab == tabCount - 1 && translation < 0 { return translation * 0.35 }
         return translation
     }
 
     private func commitDrag(translation: CGFloat, predicted: CGFloat, width: CGFloat) {
         let threshold = width * 0.28
-        // A fast flick should commit even if the finger didn't travel the
-        // full threshold distance — use whichever translation is larger.
         let effective = abs(predicted) > abs(translation) ? predicted : translation
 
         var newTab = currentTab
@@ -966,23 +949,20 @@ struct Buttons: View {
             dragOffset = 0
         }
     }
-    //idle timer to keep screen active when needed
+
     private func updateIdleTimer(for tab: Int, active: Bool) {
-            let shouldDisableAutoLock = (tab == 0 && active )
-            if shouldDisableAutoLock {
-                if !UIApplication.shared.isIdleTimerDisabled {
-                    UIApplication.shared.isIdleTimerDisabled = true
-                    print("disable auto lock screen timer", UIApplication.shared.isIdleTimerDisabled)}
-            } else {
-                if UIApplication.shared.isIdleTimerDisabled {
-                    UIApplication.shared.isIdleTimerDisabled = false
-                    print("restored auto lock timer",UIApplication.shared.isIdleTimerDisabled)
-                }
+        let shouldDisableAutoLock = (tab == 0 && active )
+        if shouldDisableAutoLock {
+            if !UIApplication.shared.isIdleTimerDisabled {
+                UIApplication.shared.isIdleTimerDisabled = true
+            }
+        } else {
+            if UIApplication.shared.isIdleTimerDisabled {
+                UIApplication.shared.isIdleTimerDisabled = false
             }
         }
+    }
     
-    /// Narrow live-drag strips on the Map tab, so swiping in/out of the map
-    /// works without hijacking the map's own pan/zoom gestures everywhere else.
     private func mapEdgeSwipeZones(width: CGFloat) -> some View {
         HStack {
             Color.white.opacity(0.001)
@@ -1046,13 +1026,6 @@ struct Buttons: View {
                         else { showBusinessAlert = true }
                     }
                 )
-            // old promotion editor replaced by landmark management
-                //.sheet(isPresented: $showPromotion) { PromotionEditor() }
-//              .alert("Premium Account Required", isPresented: $showBusinessAlert) {
-//                  Button("OK", role: .cancel) {}
-//              } message: {
-//                  Text("You need an active subscription to access the Promotion Editor.")
-//              }
             Spacer()
 
             NavigationLink {
@@ -1073,14 +1046,41 @@ struct Buttons: View {
     }
 
     private var bottomBar: some View {
-        HStack(spacing: 0) {
-            tabButton(title: "Scan", icon: "camera.aperture", tab: 0, locked: false)
-            if isBusinessMode {
-                tabButton(title: "Record", icon: "video", tab: recordTabIndex, locked: false)
+        HStack(alignment: .center, spacing: 0) {
+            
+            tabButton(title: "Scan", icon: "viewfinder", tab: 0, locked: false)
+            
+            // Middle Action: Explicitly labeled "Record" with a Video icon
+            Button {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                if !isBusinessMode {
+                    showSignUpPrompt = true
+                } else {
+                    showRecordSheet = true
+                }
+            } label: {
+                VStack(spacing: 4) {
+                    ZStack(alignment: .topTrailing) {
+                        Image(systemName: "video.fill")
+                            .font(.system(size: 22, weight: .medium))
+                        if !isBusinessMode {
+                            Image(systemName: "lock.fill")
+                                .font(.system(size: 10))
+                                .offset(x: 12, y: -4)
+                        }
+                    }
+                    Text("Record")
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                }
+                .foregroundStyle(Color.secondary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
             }
+            
             tabButton(title: "Map", icon: "map", tab: mapTabIndex, locked: false)
+            
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 10)
         .padding(.vertical, 10)
         .background(Capsule().fill(.ultraThinMaterial))
         .overlay(Capsule().stroke(Color(uiColor: .separator).opacity(0.5), lineWidth: 0.5))
@@ -1092,7 +1092,6 @@ struct Buttons: View {
     private var tutorialContent: some View {
         ZStack {
             Color(uiColor: .systemBackground).ignoresSafeArea()
-
             VStack(spacing: 24) {
                 Group {
                     if currentTab == 0 {
@@ -1110,7 +1109,7 @@ struct Buttons: View {
                                 .font(.system(size: 16, weight: .medium))
                                 .foregroundStyle(.secondary)
                         }
-                    } else if currentTab == mapTabIndex {
+                    } else {
                         Image(systemName: "map.fill")
                             .font(.system(size: 60))
                             .foregroundStyle(Color(red: 0.22, green: 0.49, blue: 1.00))
@@ -1124,25 +1123,10 @@ struct Buttons: View {
                                 .font(.system(size: 16, weight: .medium))
                                 .foregroundStyle(.secondary)
                         }
-                    } else {
-                        Image(systemName: "video.fill")
-                            .font(.system(size: 60))
-                            .foregroundStyle(Color(red: 0.22, green: 0.49, blue: 1.00))
-                            .shadow(color: Color(red: 0.22, green: 0.49, blue: 1.00).opacity(0.5), radius: 10, x: 0, y: 5)
-
-                        VStack(spacing: 8) {
-                            Text("Record Landmark")
-                                .font(.system(size: 24, weight: .bold, design: .rounded))
-                                .foregroundStyle(.primary)
-                            Text("Record a short video of a nearby landmark to help improve our recognition models.")
-                                .font(.system(size: 16, weight: .medium))
-                                .foregroundStyle(.secondary)
-                        }
                     }
                 }
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
-
                 Spacer()
             }
             .padding(.top, 32)
@@ -1245,7 +1229,14 @@ struct Buttons: View {
         }
         .foregroundStyle(locked ? Color(uiColor: .quaternaryLabel) : currentTab == tab ? Color(red: 0.22, green: 0.49, blue: 1.00) : Color.secondary)
         .frame(maxWidth: .infinity).padding(.vertical, 10)
-        .background(Group { if currentTab == tab && !locked { RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(red: 0.22, green: 0.49, blue: 1.00).opacity(0.15)) } })
+        .overlay(alignment: .bottom) {
+            if currentTab == tab && !locked {
+                Capsule()
+                    .fill(Color(red: 0.22, green: 0.49, blue: 1.00))
+                    .frame(width: 24, height: 3)
+                    .offset(y: -2)
+            }
+        }
         .contentShape(Rectangle())
         .highPriorityGesture(TapGesture().onEnded {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()

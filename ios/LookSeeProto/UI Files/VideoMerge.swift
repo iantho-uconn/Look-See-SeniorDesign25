@@ -38,7 +38,7 @@ enum VideoMerger {
     /// directory, then verifies the combined duration meets `minimumDuration`.
     static func mergeAndValidate(
         clipURLs: [URL],
-        minimumDuration: Double = 15
+        minimumDuration: Double = 30
     ) async throws -> URL {
 
         guard !clipURLs.isEmpty else {

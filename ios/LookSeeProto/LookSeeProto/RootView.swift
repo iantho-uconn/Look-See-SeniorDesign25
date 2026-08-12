@@ -10,11 +10,15 @@ struct RootView: View {
     @State private var appState: AppState = .checkingSession
     @State private var pendingEmail = ""
 
+    // NEW — coordinates the two concurrent tasks that both need to finish
+    // before we're allowed to leave the loading screen.
+    @State private var isModelLoadingDone = false
+    @State private var isAuthResolutionDone = false
+
     enum AppState {
         case checkingSession
         case login
         case signup
-        //case confirmSignup
         case loadingModel
         case main
     }
@@ -22,18 +26,13 @@ struct RootView: View {
     var body: some View {
         switch appState {
         case .checkingSession:
-            // Blank/loading state while we determine if the user already
-            // has a valid session, so returning users never see the Login
-            // screen flash before being redirected.
+            // Immediately hand off to loadingModel — the session check now
+            // happens concurrently with model loading instead of blocking
+            // before it starts.
             ProgressView()
                 .task {
-                    await vm.checkSession()
-                    if vm.isSignedIn {
-                        await authState.resolveTier()
-                        appState = .loadingModel
-                    } else {
-                        appState = .loadingModel
-                    }
+                    print("[RootView] Entering loadingModel — auth + model load run concurrently")
+                    appState = .loadingModel
                 }
 
         case .login:
@@ -59,21 +58,28 @@ struct RootView: View {
                 onSignupSuccess: { email in
                     pendingEmail = email
                     appState = .loadingModel
-                    //appState = .confirmSignup
                 },
                 onGoToLogin: {
                     appState = .login
                 }
             )
 
-//        case .confirmSignup:
-//            ConfirmSignup(email: pendingEmail, onConfirmed: {
-//                appState = .login
-//            })
-
         case .loadingModel:
             ModelLoadingScreen {
-                appState = .main
+                print("🧠 [RootView] Model loading finished")
+                isModelLoadingDone = true
+                advanceIfReady()
+            }
+            .task {
+                // Runs concurrently with ModelLoadingScreen's own work.
+                await vm.checkSession()
+                print("[RootView] checkSession complete — isSignedIn: \(vm.isSignedIn)")
+                if vm.isSignedIn {
+                    await authState.resolveTier()
+                    print(" [RootView] resolveTier complete — tier: \(authState.tier)")
+                }
+                isAuthResolutionDone = true
+                advanceIfReady()
             }
 
         case .main:
@@ -84,9 +90,27 @@ struct RootView: View {
                 .onChange(of: authState.didSignOut) { _, didSignOut in
                     if didSignOut {
                         authState.didSignOut = false
+                        resetLoadingFlags()
                         appState = .loadingModel
                     }
                 }
         }
+    }
+
+    // Only leave the loading screen once BOTH the model and the auth check
+    // have finished — avoids flashing Main before authState.tier is resolved.
+    private func advanceIfReady() {
+        guard isModelLoadingDone, isAuthResolutionDone else {
+            print("[RootView] Waiting — modelDone: \(isModelLoadingDone), authDone: \(isAuthResolutionDone)")
+            return
+        }
+        print("✅ [RootView] Both ready — advancing to .main")
+        resetLoadingFlags()
+        appState = .main
+    }
+
+    private func resetLoadingFlags() {
+        isModelLoadingDone = false
+        isAuthResolutionDone = false
     }
 }

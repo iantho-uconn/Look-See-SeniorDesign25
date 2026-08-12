@@ -37,6 +37,9 @@ struct BusinessMediaHistoryView: View {
         .task {
             await viewModel.loadInitial()
         }
+        .task(id: viewModel.processingPollKey) {
+            await viewModel.pollProcessingItems()
+        }
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button {
@@ -76,7 +79,15 @@ struct BusinessMediaHistoryView: View {
 
             Section(header: Text("Uploads")) {
                 ForEach(viewModel.items) { item in
-                    BusinessMediaHistoryRow(item: item)
+                    BusinessMediaHistoryRow(
+                        item: item,
+                        isRetrying: viewModel.isRetrying(item),
+                        retryError: viewModel.retryError(for: item)
+                    ) {
+                        Task {
+                            await viewModel.retryProcessing(item)
+                        }
+                    }
                 }
 
                 if viewModel.hasMoreItems {
@@ -189,20 +200,20 @@ struct BusinessMediaHistoryView: View {
 
 private struct BusinessMediaHistoryRow: View {
     let item: BusinessMediaHistoryItem
+    let isRetrying: Bool
+    let retryError: String?
+    let onRetry: () -> Void
 
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
             thumbnail
 
             VStack(alignment: .leading, spacing: 7) {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(item.roleAndMediaTitle)
-                        .font(.headline)
+                Text(item.roleAndMediaTitle)
+                    .font(.headline)
+                    .lineLimit(2)
 
-                    Spacer(minLength: 8)
-
-                    statusBadge
-                }
+                statusBadge
 
                 Label(
                     item.uploadedBy.displayText,
@@ -212,13 +223,7 @@ private struct BusinessMediaHistoryRow: View {
                 .foregroundColor(.secondary)
                 .lineLimit(1)
 
-                Label(
-                    item.uploadDate.formatted(
-                        date: .abbreviated,
-                        time: .shortened
-                    ),
-                    systemImage: "calendar"
-                )
+                Label(uploadDateText, systemImage: "calendar")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
 
@@ -240,6 +245,44 @@ private struct BusinessMediaHistoryRow: View {
                     .foregroundColor(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
+
+                if item.isProcessingDelayed {
+                    Label(
+                        "Processing longer than expected",
+                        systemImage: "exclamationmark.circle.fill"
+                    )
+                    .font(.caption2.weight(.semibold))
+                    .foregroundColor(.orange)
+                }
+
+                if item.canRetryProcessing {
+                    Button(action: onRetry) {
+                        HStack(spacing: 7) {
+                            if isRetrying {
+                                ProgressView()
+                                    .controlSize(.small)
+                            } else {
+                                Image(systemName: "arrow.clockwise.circle.fill")
+                            }
+                            Text(isRetrying ? "Requeueing..." : "Retry Processing")
+                        }
+                        .font(.caption.weight(.semibold))
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isRetrying)
+                }
+
+                if let retryCount = item.retryCount, retryCount > 0 {
+                    Text("Processing retried \(retryCount) time\(retryCount == 1 ? "" : "s")")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+
+                if let retryError {
+                    Text(retryError)
+                        .font(.caption2)
+                        .foregroundColor(.red)
+                }
             }
         }
         .padding(.vertical, 7)
@@ -297,25 +340,44 @@ private struct BusinessMediaHistoryRow: View {
     }
 
     private var statusBadge: some View {
-        Text(item.normalizedStatus)
+        Label(item.displayStatus, systemImage: statusSystemImage)
             .font(.caption2.weight(.semibold))
             .padding(.horizontal, 7)
             .padding(.vertical, 4)
             .foregroundColor(statusColor)
             .background(statusColor.opacity(0.14))
             .clipShape(Capsule())
+            .accessibilityLabel(
+                "Media status: \(item.displayStatus). Backend status: \(item.backendStatusText)"
+            )
     }
 
     private var statusColor: Color {
-        switch item.normalizedStatus.lowercased() {
-        case "ready", "complete", "completed":
-            return .green
-        case "processing", "upload pending", "initiated":
-            return .orange
-        case "failed", "error":
-            return .red
-        default:
-            return .secondary
+        switch item.lifecycleState {
+        case .ready: return .green
+        case .processing: return .orange
+        case .failed: return .red
+        case .unknown: return .secondary
         }
+    }
+
+    private var statusSystemImage: String {
+        if item.isProcessingDelayed {
+            return "exclamationmark.circle.fill"
+        }
+
+        switch item.lifecycleState {
+        case .ready: return "checkmark.circle.fill"
+        case .processing: return "clock.arrow.circlepath"
+        case .failed: return "exclamationmark.triangle.fill"
+        case .unknown: return "questionmark.circle"
+        }
+    }
+
+    private var uploadDateText: String {
+        guard let uploadDate = item.uploadDate else {
+            return "Date unavailable"
+        }
+        return uploadDate.formatted(date: .abbreviated, time: .shortened)
     }
 }

@@ -24,7 +24,8 @@ struct BusinessLandmarksView: View {
     @State private var selectedLandmarkIds: Set<String> = []
     @State private var bulkPromotionSelection: BulkLandmarkSelection?
     @State private var bulkDeleteSelection: BulkLandmarkSelection?
-
+    
+    @State private var hasLoadedOnce = false
     private let promotionService = BusinessPromotionService()
     private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00)
 
@@ -173,17 +174,22 @@ struct BusinessLandmarksView: View {
             prompt: String(localized: "Search labels or promotion titles")
         )
         .task {
-            if viewModel.landmarks.isEmpty {
+            if !hasLoadedOnce {
+                hasLoadedOnce = true
                 await viewModel.loadLandmarks()
+                await loadPromotionSearchIndex()
             }
-            await loadPromotionSearchIndex()
+        }
+        .onAppear {
+            guard hasLoadedOnce else { return }
+            Task {
+                await refreshLandmarksAndSearchIndex()
+            }
         }
         .task {
             await printCognitoTokens()
         }
         .onChange(of: viewModel.landmarks.map(\.landmarkId)) { _, validIds in
-            // Keep selection valid after refreshes or single-landmark deletion,
-            // without clearing IDs merely because search results changed.
             selectedLandmarkIds.formIntersection(Set(validIds))
         }
         .toolbar {
