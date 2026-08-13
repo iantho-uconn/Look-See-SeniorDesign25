@@ -424,7 +424,7 @@ def main():
         "dropout": 0.1,       # randomly shuts of neturons while training, helping other neturons to learn more, this might to harmful in some case like if the dataset is small.
         "workers": 8,
         #cache=True,          # only if we have enough RAM
-        "project": yolo_project_dir,
+        "project": yolo_project_dir,  
         "name": run_name,
     }
 
