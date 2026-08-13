@@ -418,9 +418,12 @@ def main():
         "patience": 15,
         "imgsz": 640,
         "batch": 32,
-        "optimizer": "AdamW",
-        "cos_lr": True,
+        "optimizer": "SGD",
         "device": 0,
+        "mixup": 0.15,        # this removes background randomly, helps to focus on traning the object itself.
+        "dropout": 0.1,       # randomly shuts of neturons while training, helping other neturons to learn more, this might to harmful in some case like if the dataset is small.
+        "workers": 8,
+        #cache=True,          # only if we have enough RAM
         "project": yolo_project_dir,
         "name": run_name,
     }

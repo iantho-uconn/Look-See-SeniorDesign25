@@ -202,7 +202,7 @@ final class UploadService: ObservableObject {
             defer { if !videoURLs.contains(mergedURL) { try? FileManager.default.removeItem(at: mergedURL) } }
 
             let mediaKind = MediaKind.video
-            let filename = "video.mov"
+            let filename = "\(label).mov"
             let contentType = "video/quicktime"
 
             let initRequest = InitSubmissionRequest(userEmail: trimmedUserEmail, label: trimmedLabel, mediaKind: mediaKind, filename: filename, contentType: contentType)

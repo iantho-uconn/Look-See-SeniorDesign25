@@ -98,7 +98,8 @@ final class OverlayView: UIView {
                 perimeter.stroke()
 
                 //let labelText = "\(target.displayLabel)"
-                // label with confi % 
+                // label with confi %
+                
                 let confidencePercent = Int(target.confidence * 100)
                 let labelText = "\(target.displayLabel) \(confidencePercent)%"
                 
