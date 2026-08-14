@@ -133,7 +133,7 @@ final class Detector: NSObject, ObservableObject {
     // MARK: Configuration
     var dynamicSafeZone: CGRect = .zero
     var manifest: ClusterLandmarkManifest?
-    var proximityThresholdMeters: Double = 15000000
+    var proximityThresholdMeters: Double = 150
 
     var userLocation: CLLocation?
 
@@ -548,13 +548,21 @@ final class Detector: NSObject, ObservableObject {
     // 🚀 NEW: Tracks and updates coasting frames universally
     private func finalizeTracking(rawDetections: [Detection]) -> [Detection] {
         let nearbyDetections = proximityFilter(rawDetections)
-        let currentLabels = Set(nearbyDetections.map { $0.label })
         
+        // 🚀 THE FIX: Filter out duplicate overlapping boxes before tracking!
+        var strongestByLabel: [String: Detection] = [:]
+        for det in nearbyDetections {
+            let currentBest = strongestByLabel[det.label]?.confidence ?? -Float.infinity
+            if det.confidence > currentBest {
+                strongestByLabel[det.label] = det
+            }
+        }
+        
+        let currentLabels = Set(strongestByLabel.keys)
         var finalResults: [Detection] = []
         
         // 1. Update trackers with active detections
-        for det in nearbyDetections {
-            let label = det.label
+        for (label, det) in strongestByLabel {
             if trackers[label] == nil { trackers[label] = DetectionTracker() }
             if let smoothedDet = trackers[label]?.update(with: det) {
                 finalResults.append(smoothedDet)
