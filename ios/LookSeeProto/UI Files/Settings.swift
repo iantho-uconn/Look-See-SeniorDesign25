@@ -45,7 +45,7 @@ struct Settings: View {
         if UserDefaults.standard.bool(forKey: "isFreeTrial_\(vm.userEmail)") {
             return "14-Day Free Trial"
         }
-        return "Yearly Subscription"
+        return "Verified Subscriber"
     }
 
     var body: some View {

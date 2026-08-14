@@ -6,6 +6,7 @@ import json
 import gc
 import time 
 import sys
+import math
 import numpy as np
 from botocore.exceptions import ClientError
 
@@ -20,9 +21,11 @@ from autodistill.detection import CaptionOntology
 # -----------------------------------------
 s3 = boto3.client('s3')
 sqs = boto3.client('sqs')
+dynamodb = boto3.resource('dynamodb', region_name=os.environ.get("AWS_REGION", "us-east-1"))
 
 BUCKET_NAME = 'looksee-models'
 QUEUE_URL = os.environ.get('QUEUE_URL')
+LANDMARKS_TABLE_NAME = os.environ.get('LANDMARKS_TABLE', 'LookSeeLandmarks')
 
 if not QUEUE_URL:
     print("❌ Error: No QUEUE_URL environment variable found.")
@@ -78,6 +81,7 @@ while True:
         continue 
 
     class_name = metadata.get('class_name', 'UnknownObject').replace(" ", "_")
+    landmark_id = metadata.get('landmarkId')
 
     raw_prompts = metadata.get('prompts')
     if isinstance(raw_prompts, list) and len(raw_prompts) > 0:
@@ -87,12 +91,10 @@ while True:
         prompts = [str(single_prompt)]
 
     # --- 🧼 PROMPT SANITIZATION STEP ---
-    # Cleans up any rogue JSON brackets, quotes, or escape characters from Bedrock formatting
     prompts = [
         p.replace('[', '').replace(']', '').replace('"', '').replace('\\', '').strip() 
         for p in prompts
     ]
-    # Filter out empty strings if any remain
     prompts = [p for p in prompts if p]
 
     print(f"🎯 Target Object: {class_name} | AI Prompts ({len(prompts)}): {prompts}")
@@ -148,6 +150,7 @@ while True:
         try:
             s3.head_object(Bucket=BUCKET_NAME, Key=s3_label_out)
             count += 1
+            labeled_count += 1
             continue
         except ClientError as e:
             if e.response['Error']['Code'] != '404':
@@ -269,6 +272,31 @@ while True:
         print(f"⚠️ WARNING: Only {count} out of {total_frames} frames were accounted for.")
 
     print(f"🏷️ Labeled {labeled_count} objects total for {class_name}.")
+
+    # -----------------------------------------
+    # 🚀 FINAL DYNAMODB STATUS UPDATE (POST-LABELING)
+    # -----------------------------------------
+    if landmark_id:
+        landmarks_table = dynamodb.Table(LANDMARKS_TABLE_NAME)
+        
+        # Frame math was already validated by the Lambda. 
+        # Now we just mark it ready for SageMaker.
+        print(f"✅ AUTOLABELING COMPLETE: {labeled_count} frames successfully labeled. Ready for training!")
+        try:
+            landmarks_table.update_item(
+                Key={'landmarkId': landmark_id},
+                UpdateExpression="SET #st = :s, finalLabeledCount = :c",
+                ExpressionAttributeNames={'#st': 'status'},
+                ExpressionAttributeValues={
+                    ':s': 'READY_FOR_TRAINING',
+                    ':c': labeled_count
+                }
+            )
+            print("💾 Successfully updated DynamoDB landmark status to 'READY_FOR_TRAINING'.")
+        except Exception as e:
+            print(f"⚠️ Failed to update DynamoDB success status: {e}")
+    else:
+        print("ℹ️ No landmarkId found in metadata; skipping DynamoDB status update.")
     
     # -----------------------------------------
     # 5. MARK MESSAGE AS DONE (DELETE FROM QUEUE)

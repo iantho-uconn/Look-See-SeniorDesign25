@@ -18,16 +18,27 @@ struct LandmarkRecord: View {
 
     private let onAddMoreMedia: (String) -> Void
     var archivedMedia: ArchivedMedia?
+    
+    // 🚀 NEW: Properties for the "Free Redo" logic
+    var existingLandmarkId: String?
+    var existingLabel: String?
+    var existingDescription: String?
 
     init(
         isNavVisible: Binding<Bool> = .constant(true),
         isActive: Bool = true,
         archivedMedia: ArchivedMedia? = nil,
+        existingLandmarkId: String? = nil, // 🚀 NEW
+        existingLabel: String? = nil,      // 🚀 NEW
+        existingDescription: String? = nil,// 🚀 NEW
         onAddMoreMedia: @escaping (String) -> Void = { _ in }
     ) {
         self._isNavVisible = isNavVisible
         self.isActive = isActive
         self.archivedMedia = archivedMedia
+        self.existingLandmarkId = existingLandmarkId
+        self.existingLabel = existingLabel
+        self.existingDescription = existingDescription
         self.onAddMoreMedia = onAddMoreMedia
     }
 
@@ -98,10 +109,10 @@ struct LandmarkRecord: View {
                         showArchivePrompt = true
                     }
                 } onCancel: {
-                    dismiss() // 🚀 THE FIX: Clicking the top left 'X' instantly escapes you!
+                    dismiss()
                 }
                 .ignoresSafeArea()
-                .transition(.opacity) // 🚀 Smooths switch to form
+                .transition(.opacity)
             } else {
                 Color(uiColor: .systemGroupedBackground).ignoresSafeArea()
                 
@@ -130,7 +141,7 @@ struct LandmarkRecord: View {
                     }
                     .padding(.top, 16)
                 }
-                .transition(.opacity) // 🚀 Smooths switch from camera
+                .transition(.opacity)
                 .scrollDismissesKeyboard(.immediately)
                 .safeAreaInset(edge: .top) { Color.clear.frame(height: 50) }
                 .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 90) }
@@ -139,10 +150,9 @@ struct LandmarkRecord: View {
             if showArchivePrompt { archivePromptOverlay }
             if isStitchingVideos { processingOverlay }
         }
-        .animation(.easeInOut(duration: 0.3), value: isFormVisible) // 🚀 Drives the transition logic smoothly
+        .animation(.easeInOut(duration: 0.3), value: isFormVisible)
         .task {
             if let archive = archivedMedia {
-                // 🚀 Wrapped in withAnimation to prevent jitter if it takes a split second to load
                 withAnimation { isFormVisible = true }
                 Task.detached {
                     let fileURL = OfflineMediaManager.shared.getFileURL(for: archive)
@@ -176,12 +186,21 @@ struct LandmarkRecord: View {
                     for url in finalURLs { await self.loadDuration(for: url) }
                 }
             }
+            // 🚀 NEW: If they passed an existing ID, pre-fill the form instantly
+            else if let existingId = existingLandmarkId {
+                await MainActor.run {
+                    self.businessLandmarkId = existingId
+                    self.labelText = existingLabel ?? ""
+                    self.shortDescription = existingDescription ?? ""
+                }
+            }
         }
         .sheet(isPresented: $showTextScanner) { ScannerSheet(scannedText: $shortDescription) }
         .fullScreenCover(isPresented: $showNegativeCamera) { NegativeVideoCameraView(onDone: { video in capturedNegativeVideo = video; if !hardNegativeUploadService.isUploading { hardNegativeUploadService.reset() } }) }
         .alert("Discard this upload?", isPresented: $showDiscardAlert) { Button("Discard", role: .destructive) { clearScreen() }; Button("Cancel", role: .cancel) { } } message: { Text("This will remove the media and clear the form.") }
         .alert("Landmark Uploaded!", isPresented: $showCompletionPopup) {
-            if archivedMedia != nil {
+            if archivedMedia != nil || existingLandmarkId != nil {
+                // 🚀 If it's an archive or a redo, we just close the sheet when done
                 Button("Done", role: .cancel) { dismiss() }
             } else {
                 Button("Record Another Landmark") {
@@ -430,7 +449,7 @@ struct LandmarkRecord: View {
                     .padding(16)
                     .background(Color(uiColor: .secondarySystemGroupedBackground))
                     .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .disabled(arePositiveDetailsLocked)
+                    .disabled(arePositiveDetailsLocked || existingLandmarkId != nil) // 🚀 Lock label if it's a redo
                 
                 if let businessLandmarkId {
                     Text("ID: \(businessLandmarkId)")
@@ -456,7 +475,7 @@ struct LandmarkRecord: View {
                         .padding(.bottom, 30)
                         .background(Color(uiColor: .secondarySystemGroupedBackground))
                         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                        .disabled(arePositiveDetailsLocked)
+                        .disabled(arePositiveDetailsLocked || existingLandmarkId != nil) // 🚀 Lock desc if it's a redo
                     
                     Button {
                         UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -470,8 +489,8 @@ struct LandmarkRecord: View {
                             .clipShape(Circle())
                     }
                     .padding(12)
-                    .disabled(arePositiveDetailsLocked)
-                    .opacity(arePositiveDetailsLocked ? 0.5 : 1)
+                    .disabled(arePositiveDetailsLocked || existingLandmarkId != nil)
+                    .opacity((arePositiveDetailsLocked || existingLandmarkId != nil) ? 0.5 : 1)
                 }
             }
             .padding(.horizontal)
@@ -613,7 +632,8 @@ struct LandmarkRecord: View {
                             }
                         } else {
                             Image(systemName: isFullSubmissionComplete ? "checkmark.circle.fill" : "arrow.up.circle.fill")
-                            Text(isFullSubmissionComplete ? "Complete" : (completedPositiveResult != nil ? "Retry Negative" : "Upload Landmark"))
+                            // 🚀 DYNAMIC BUTTON TEXT based on Redo
+                            Text(isFullSubmissionComplete ? "Complete" : (completedPositiveResult != nil ? "Retry Negative" : (existingLandmarkId != nil ? "Upload Additional Media" : "Upload Landmark")))
                         }
                     }
                     .font(.system(size: 17, weight: .bold, design: .rounded))
@@ -653,7 +673,8 @@ struct LandmarkRecord: View {
                 showLimitAlert = true
                 return
             }
-            if vm.tokenBalance <= 0 {
+            // 🚀 THE FIX: ONLY check for token balance if this is a brand new landmark!
+            if existingLandmarkId == nil && vm.tokenBalance <= 0 {
                 limitAlertTitle = String(localized: "Out of Tokens")
                 limitAlertMessage = String(localized: "You need 1 token to upload a new landmark. Purchase a token pack in Settings.")
                 showLimitAlert = true
@@ -692,9 +713,12 @@ struct LandmarkRecord: View {
                     completedPositiveResult = positiveResult
                     statusText = String(localized: "Landmark media saved. Uploading reference video…")
                     
-                    await MainActor.run {
-                        vm.tokenBalance -= 1
-                        vm.activeLandmarksCount += 1
+                    // 🚀 THE FIX: Only deduct the token if this is a brand new landmark!
+                    if existingLandmarkId == nil {
+                        await MainActor.run {
+                            vm.tokenBalance -= 1
+                            vm.activeLandmarksCount += 1
+                        }
                     }
                 }
                 
@@ -819,7 +843,6 @@ struct LandmarkRecord: View {
                 if self.businessLandmarkId == nil { self.businessLandmarkId = self.makeBusinessLandmarkId() }
                 self.uploadService.reset(); self.pendingArchiveURLs = []; self.isStitchingVideos = false
                 
-                // 🚀 Wrapped in withAnimation to smoothly reveal the form
                 withAnimation(.easeInOut(duration: 0.4)) {
                     self.isFormVisible = true
                 }
