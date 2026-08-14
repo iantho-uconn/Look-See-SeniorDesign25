@@ -25,6 +25,7 @@ struct LandmarkScan: View {
     @State private var liveInfoFetchTask: Task<Void, Never>?
 
     @State private var isCameraPaused = false
+    @State private var showThresholdControls = false
 
     var body: some View {
         GeometryReader { geo in
@@ -74,36 +75,82 @@ struct LandmarkScan: View {
                 
                 // --- Confidence Slider just for Matt will be removed when published---
                 if isActive && !infoView.infoView {
+                    VStack {
+                        Spacer()
+                        HStack {
+                            Spacer()
+                            Button {
+                                withAnimation(.easeInOut(duration: 0.25)) {
+                                    showThresholdControls.toggle()
+                                }
+                            } label: {
+                                Image(systemName: showThresholdControls ? "xmark.circle.fill" : "slider.horizontal.3")
+                                    .font(.system(size: 22))
+                                    .foregroundStyle(.white)
+                                    .padding(10)
+                                    .background(Color.black.opacity(0.6), in: Circle())
+                            }
+                            .padding(.trailing, 16)
+                            .padding(.bottom, showThresholdControls ? 16 : 16) // sits above panel when open
+                        }
+                    }
+                    .zIndex(7)
+                }
+                                
+                                // --- Confidence Slider just for Matt will be removed when published---
+                if isActive && !infoView.infoView && showThresholdControls {
                     HStack {
-                        Spacer() // Pushes control to the right side
-                        
-                        VStack(spacing: 12) {
-                            // Text label on top showing percentage
-                            Text("\(Int(detector.confidenceThreshold * 100))%")
+                        Spacer()
+                        VStack(spacing: 16) {
+                            HStack {
+                                Spacer()
+                                Button {
+                                    withAnimation(.easeInOut(duration: 0.25)) {
+                                        showThresholdControls = false
+                                    }
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundStyle(.white.opacity(0.7))
+                                }
+                            }
+
+                            Text("\(Int(detector.confidenceThreshold * 100))% - \(Int(detector.confidenceThreshold * detector.ThresholdRangemultiplier * 100))%")
                                 .font(.caption2.monospacedDigit())
                                 .fontWeight(.bold)
                                 .foregroundStyle(.white)
 
-                            // Rotated slider wrapped in an explicit frame so the background expands properly
                             Slider(value: $detector.confidenceThreshold, in: 0.1...0.95, step: 0.05)
                                 .tint(.green)
-                                .frame(width: 120, height: 20) // Slider width becomes its vertical height after rotation
+                                .frame(width: 120, height: 20)
                                 .rotationEffect(.degrees(-90))
-                                .frame(width: 20, height: 120) // Forces layout engine to recognize the new vertical dimensions
+                                .frame(width: 20, height: 120)
+
+                            Text("detector threshold (0.1-0.95) \(Int(detector.confidenceThreshold * 100))%")
+                                .font(.system(size: 10))
+
+                            Slider(value: $detector.ThresholdRangemultiplier, in: 0.1...1.0, step: 0.05)
+                                .tint(.green)
+                                .frame(width: 120, height: 20)
+                                .rotationEffect(.degrees(-90))
+                                .frame(width: 20, height: 120)
+
+                            Text("detector range multiplier (0.1-1.0) \((detector.ThresholdRangemultiplier))")
+                                .font(.system(size: 10))
                         }
                         .padding(.vertical, 16)
-                        .padding(.horizontal, 8)
-                        .background(
-                            Color.black.opacity(0.6),
-                            in: RoundedRectangle(cornerRadius: 12)
-                        )
+                        .padding(.horizontal, 12)
+                        .background(Color.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 12))
                         .padding(.trailing, 16)
-                        .padding(.bottom, 120) // Raises above bottom nav bar
+                        .padding(.bottom, 120)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                     .zIndex(6)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
                 }
-                
+
+
+
+
                 // PopUp is presented by Buttons at the root level so it
                 // always appears above the app chrome.
 

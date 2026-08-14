@@ -167,6 +167,7 @@ final class Detector: NSObject, ObservableObject {
 
     private let inputSize = CGSize(width: 640, height: 640)
     @Published var confidenceThreshold: Float = 0.65
+    @Published var ThresholdRangemultiplier: Float = 0.35
     private let iouThreshold: Float = 0.45
 
     // MARK: Self-contained location tracking
@@ -535,7 +536,7 @@ final class Detector: NSObject, ObservableObject {
             
             // 🚀 HYSTERESIS: Lower threshold if object is already being tracked
             let isTracked = trackers[String(classIdx)]?.lastDetection != nil
-            let requiredScore = isTracked ? (confidenceThreshold * 0.35) : confidenceThreshold
+            let requiredScore = isTracked ? (confidenceThreshold * ThresholdRangemultiplier) : confidenceThreshold
             guard score >= requiredScore else { continue }
 
             let x1 = rawX1 <= 1.0 ? rawX1 * inputSize.width : rawX1
@@ -609,7 +610,7 @@ final class Detector: NSObject, ObservableObject {
             
             // 🚀 HYSTERESIS
             let isTracked = trackers[String(bestClass)]?.lastDetection != nil
-            let requiredScore = isTracked ? (confidenceThreshold * 0.35) : confidenceThreshold
+            let requiredScore = isTracked ? (confidenceThreshold * ThresholdRangemultiplier) : confidenceThreshold
             guard bestScore >= requiredScore else { continue }
 
             let rawCx = CGFloat(coordPtr[i * 4 + 0])
