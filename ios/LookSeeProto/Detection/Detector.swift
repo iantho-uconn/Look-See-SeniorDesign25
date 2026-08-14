@@ -212,11 +212,15 @@ final class Detector: NSObject, ObservableObject {
                 let loadedManifest = try Self.decodeManifest(
                     from: release.manifestFileURL
                 )
+                let loadedClassLabels = (0..<loadedManifest.landmarks.count).map {
+                    loadedManifest.landmark(for: $0)?.label ?? ""
+                }
 
                 DispatchQueue.main.async {
                     // A second selection may have happened while Core ML was
                     // loading. Never install a stale result over that choice.
-                    guard ModelSelector.shared.activeRelease?.id == release.id else {
+                    guard ModelSelector.shared.activeRelease?.releaseIdentifier ==
+                            release.releaseIdentifier else {
                         return
                     }
 
@@ -226,18 +230,18 @@ final class Detector: NSObject, ObservableObject {
                         self.activeModelVersion = release.modelVersion
                         self.activeModelIdentifier = release.modelKey ?? "ota-model"
                         self.activeExpectedClassCount = inferredClassCount
-                        self.activeClassLabels = release.classLabels
+                        self.activeClassLabels = loadedClassLabels
                         self.activeReleaseIdentifier = release.releaseIdentifier
                         self.manifest = loadedManifest
                         self.resetTrackingState()
 
                         DispatchQueue.main.async {
-                            self.classLabels = release.classLabels
+                            self.classLabels = loadedClassLabels
                             self.detections.removeAll()
                             self.currentLabel = nil
                             self.newlyDetectedLandmark = nil
                             print(
-                                "✅ Detector hot-swapped to \(release.displayName) " +
+                                "✅ Detector hot-swapped to \(release.releaseIdentifier) " +
                                 "(\(inferredClassCount) classes, Metal bypassed)"
                             )
                         }
@@ -245,7 +249,7 @@ final class Detector: NSObject, ObservableObject {
                 }
             } catch {
                 print(
-                    "❌ Model load error for \(release.displayName): \(error)"
+                    "❌ Model load error for \(release.releaseIdentifier): \(error)"
                 )
             }
         }
