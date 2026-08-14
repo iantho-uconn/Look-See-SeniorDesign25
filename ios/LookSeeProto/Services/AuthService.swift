@@ -6,6 +6,7 @@
 //
 import Amplify
 import AWSCognitoAuthPlugin
+import AWSPluginsCore
 
 class AuthService {
 
@@ -49,4 +50,28 @@ class AuthService {
     func signOut() async {
         _ = await Amplify.Auth.signOut()
     }
+    
+    func fetchIdToken() async throws -> String {
+        let session = try await Amplify.Auth.fetchAuthSession()
+
+        guard let cognitoTokenProvider = session as? AuthCognitoTokensProvider else {
+            throw AuthError.service(
+                "Could not read Cognito session",
+                "Session did not provide Cognito tokens",
+                nil
+            )
+        }
+
+        let tokens = try cognitoTokenProvider.getCognitoTokens().get()
+        return tokens.idToken
+    }
+
+    // FETCH VERIFIED EMAIL — straight from Cognito's user attributes,
+    // not whatever the app happens to have cached locally
+    func fetchVerifiedEmail() async throws -> String? {
+        let attributes = try await Amplify.Auth.fetchUserAttributes()
+        return attributes.first(where: { $0.key == .email })?.value
+    }
+
 }
+

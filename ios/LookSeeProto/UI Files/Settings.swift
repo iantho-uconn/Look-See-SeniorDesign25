@@ -43,7 +43,7 @@ struct Settings: View {
         if UserDefaults.standard.bool(forKey: "isFreeTrial_\(vm.userEmail)") {
             return "14-Day Free Trial"
         }
-        return "Yearly Subscription"
+        return "Verified Subscriber"
     }
 
     var body: some View {
@@ -232,9 +232,9 @@ struct Settings: View {
 
                 // 5. OTHER SETTINGS
                 VStack(spacing: 0) {
-                    NavigationLink { Text("Help & Support Center") } label: { settingsRow(icon: "questionmark.circle.fill", iconBg: .orange, title: "Help & Support", showDivider: true) }
-                    NavigationLink { Text("Privacy Policy") } label: { settingsRow(icon: "hand.raised.fill", iconBg: .purple, title: "Privacy Policy", showDivider: true) }
-                    NavigationLink { Text("Terms of Service") } label: { settingsRow(icon: "doc.text.fill", iconBg: .green, title: "Terms of Service", showDivider: true) }
+                    NavigationLink { ReportIssueView() } label: { settingsRow(icon: "questionmark.circle.fill", iconBg: .orange, title: "Help & Support", showDivider: true) }
+                    NavigationLink { PrivacyPolicyView() } label: { settingsRow(icon: "hand.raised.fill", iconBg: .purple, title: "Privacy Policy", showDivider: true) }
+                    NavigationLink { TermsOfServiceView()  } label: { settingsRow(icon: "doc.text.fill", iconBg: .green, title: "Terms of Service", showDivider: true) }
                     NavigationLink { DeepSettingsView(isFullyLoggedIn: isFullyLoggedIn).environmentObject(vm) } label: { settingsRow(icon: "gearshape.fill", iconBg: .gray, title: "Settings & Preferences", showDivider: false) }
                 }
                 .background(Color(uiColor: .secondarySystemGroupedBackground)).clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
