@@ -12,13 +12,13 @@ struct LandmarkScan: View {
 
     @Binding var isDetecting: Bool
     @Binding var isNavVisible: Bool // Tells the Ad if the bottom nav is currently on screen
-    
+
     // Defaults to true so existing call sites do not need to pass it.
     var isActive: Bool = true
-    
+
     @StateObject private var detector = Detector()
     @ObservedObject private var infoView = VariableContainer.shared
-    
+
     @State private var zoomLevel: CGFloat = 1.0
     @State private var zoomIndicatorVisible = false
     @State private var zoomFadeTask: Task<Void, Never>?
@@ -71,12 +71,12 @@ struct LandmarkScan: View {
                         .ignoresSafeArea()
                         .zIndex(2)
                 }
-                
+
                 // --- Confidence Slider just for Matt will be removed when published---
                 if isActive && !infoView.infoView {
                     HStack {
                         Spacer() // Pushes control to the right side
-                        
+
                         VStack(spacing: 12) {
                             // Text label on top showing percentage
                             Text("\(Int(detector.confidenceThreshold * 100))%")
@@ -85,11 +85,19 @@ struct LandmarkScan: View {
                                 .foregroundStyle(.white)
 
                             // Rotated slider wrapped in an explicit frame so the background expands properly
-                            Slider(value: $detector.confidenceThreshold, in: 0.1...0.95, step: 0.05)
+                            Slider(
+                                value: confidenceThresholdBinding,
+                                in: 0.1...0.95,
+                                step: 0.05
+                            )
                                 .tint(.green)
                                 .frame(width: 120, height: 20) // Slider width becomes its vertical height after rotation
                                 .rotationEffect(.degrees(-90))
                                 .frame(width: 20, height: 120) // Forces layout engine to recognize the new vertical dimensions
+                                .accessibilityLabel("Detection confidence")
+                                .accessibilityValue(
+                                    "\(Int(detector.confidenceThreshold * 100)) percent"
+                                )
                         }
                         .padding(.vertical, 16)
                         .padding(.horizontal, 8)
@@ -103,7 +111,7 @@ struct LandmarkScan: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                     .zIndex(6)
                 }
-                
+
                 // PopUp is presented by Buttons at the root level so it
                 // always appears above the app chrome.
 
@@ -160,6 +168,13 @@ struct LandmarkScan: View {
     }
 
     // MARK: - Internal Methods
+    private var confidenceThresholdBinding: Binding<Float> {
+        Binding(
+            get: { detector.confidenceThreshold },
+            set: { detector.confidenceThreshold = $0 }
+        )
+    }
+
     private func openPopup(for detection: Detection) {
         liveInfoFetchTask?.cancel()
 

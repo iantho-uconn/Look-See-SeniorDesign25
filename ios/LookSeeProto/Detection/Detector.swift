@@ -27,8 +27,29 @@ struct Detection: Identifiable, Equatable {
     let modelIdentifier: String
     let classIndex: Int
     let classCount: Int
-    var confidence: Float // Made mutable to allow smooth decay during coasting
+    let confidence: Float
     let bbox: CGRect
+    let overrideLabel: String?
+
+    init(
+        clusterID: String,
+        modelVersion: String,
+        modelIdentifier: String,
+        classIndex: Int,
+        classCount: Int,
+        confidence: Float,
+        bbox: CGRect,
+        overrideLabel: String? = nil
+    ) {
+        self.clusterID = clusterID
+        self.modelVersion = modelVersion
+        self.modelIdentifier = modelIdentifier
+        self.classIndex = classIndex
+        self.classCount = classCount
+        self.confidence = confidence
+        self.bbox = bbox
+        self.overrideLabel = overrideLabel
+    }
 
     var releaseIdentifier: String {
         "\(clusterID)|\(modelVersion)"
@@ -43,75 +64,41 @@ struct Detection: Identifiable, Equatable {
     }
 
     var displayLabel: String {
-        landmarkEntry?.label ?? "Class \(classIndex)"
+        if let overrideLabel, !overrideLabel.isEmpty {
+            return overrideLabel
+        }
+        return landmarkEntry?.label ?? "Class \(classIndex)"
     }
 
     var label: String {
         String(classIndex)
     }
-    
+
     static func == (lhs: Detection, rhs: Detection) -> Bool {
         lhs.id == rhs.id
     }
 }
 
-// MARK: - 🚀 UPGRADED: Advanced Detection Tracker (EMA + Coasting)
+// MARK: - Bounding Box Smoother
 
-class DetectionTracker {
-    var lastDetection: Detection?
-    private var framesSinceLastSeen = 0
-    private let maxCoastFrames = 5       // Hold box for ~0.4s during motion blur/cutoffs
-    private let alpha: CGFloat = 0.80     // 0.1 = heavy lag/smooth, 0.9 = fast/jittery
+private final class BoundingBoxSmoother {
+    private var history: [CGRect] = []
+    private let maxFrames = 4
 
-    func update(with newDetection: Detection?) -> Detection? {
-        if let newDet = newDetection {
-            framesSinceLastSeen = 0
-            if let last = lastDetection {
-                // Apply Exponential Moving Average (EMA) to smooth box jitter
-                let smoothedRect = CGRect(
-                    x: last.bbox.minX + alpha * (newDet.bbox.minX - last.bbox.minX),
-                    y: last.bbox.minY + alpha * (newDet.bbox.minY - last.bbox.minY),
-                    width: last.bbox.width + alpha * (newDet.bbox.width - last.bbox.width),
-                    height: last.bbox.height + alpha * (newDet.bbox.height - last.bbox.height)
-                )
-                
-                // Smooth confidence transition
-                let smoothedConf = last.confidence + Float(alpha) * (newDet.confidence - last.confidence)
-                
-                let smoothed = Detection(
-                    clusterID: newDet.clusterID, modelVersion: newDet.modelVersion,
-                    modelIdentifier: newDet.modelIdentifier, classIndex: newDet.classIndex,
-                    classCount: newDet.classCount, confidence: smoothedConf, bbox: smoothedRect
-                )
-                lastDetection = smoothed
-                return smoothed
-            } else {
-                lastDetection = newDet
-                return newDet
-            }
-        } else {
-            // No detection this frame. Allow the box to "coast" for a few frames!
-            framesSinceLastSeen += 1
-            if framesSinceLastSeen < maxCoastFrames, let last = lastDetection {
-                // Decay confidence visually so the user knows it's losing track
-                let coasted = Detection(
-                    clusterID: last.clusterID, modelVersion: last.modelVersion,
-                    modelIdentifier: last.modelIdentifier, classIndex: last.classIndex,
-                    classCount: last.classCount, confidence: last.confidence * 0.92, bbox: last.bbox
-                )
-                lastDetection = coasted
-                return coasted
-            } else {
-                lastDetection = nil
-                return nil
-            }
-        }
+    func smooth(newBox: CGRect) -> CGRect {
+        history.append(newBox)
+        if history.count > maxFrames { history.removeFirst() }
+
+        let count = CGFloat(history.count)
+        let avgX = history.map { $0.minX }.reduce(0, +) / count
+        let avgY = history.map { $0.minY }.reduce(0, +) / count
+        let avgW = history.map { $0.width }.reduce(0, +) / count
+        let avgH = history.map { $0.height }.reduce(0, +) / count
+
+        return CGRect(x: avgX, y: avgY, width: avgW, height: avgH)
     }
 
-    func reset() {
-        lastDetection = nil
-        framesSinceLastSeen = 0
-    }
+    func reset() { history.removeAll() }
 }
 
 // MARK: - Detector
@@ -126,8 +113,8 @@ final class Detector: NSObject, ObservableObject {
     @Published var bufferSize: CGSize = .zero
     @Published var isPaused: Bool = false
     @Published var classLabels: [String] = []
-    
-    // Controls whether bounding boxes are visually passed to the UI
+
+    // NEW: Controls whether bounding boxes are visually passed to the UI
     @Published var hideBoundingBoxes: Bool = false
 
     // MARK: Configuration
@@ -141,9 +128,10 @@ final class Detector: NSObject, ObservableObject {
     private var model: MLModel?
     private let queue = DispatchQueue(label: "yolo.queue")
     private let ciContext = CIContext()
-    
-    // 🚀 NEW: Tracks active detections across frames
-    private var trackers: [String: DetectionTracker] = [:]
+
+    // N-frame confirmation and box smoothing from the latest detector.
+    private var frameCounters: [String: Int] = [:]
+    private let requiredFramesForDetection = 3
 
     private var isAttached = false
     private var throttling = false
@@ -152,19 +140,36 @@ final class Detector: NSObject, ObservableObject {
     private var activeModelVersion: String?
     private var activeModelIdentifier: String?
     private var activeExpectedClassCount: Int?
+    private var activeClassLabels: [String] = []
     private var activeReleaseIdentifier: String?
 
     private var lastDetectionLogKey: String?
     private var lastDetectionLogDate = Date.distantPast
     private let detectionLogInterval: TimeInterval = 2.0
-    
+
     // Cooldown state for notification debouncing
     private var notificationCooldowns: [String: Date] = [:]
     private let cooldownInterval: TimeInterval = 6.0
 
     private let inputSize = CGSize(width: 640, height: 640)
-    @Published var confidenceThreshold: Float = 0.65
+
+    /// UI-facing value used by the testing slider. Inference reads the
+    /// queue-confined copy below so a drag cannot race a camera frame.
+    @Published var confidenceThreshold: Float = 0.65 {
+        didSet {
+            let clamped = min(max(confidenceThreshold, 0.01), 0.99)
+            queue.async { [weak self] in
+                guard let self else { return }
+                self.inferenceConfidenceThreshold = clamped
+                self.resetTrackingState()
+                self.clearPublishedDetectionState()
+            }
+        }
+    }
+    private var inferenceConfidenceThreshold: Float = 0.65
     private let iouThreshold: Float = 0.45
+
+    private var smoothers: [String: BoundingBoxSmoother] = [:]
 
     // MARK: Self-contained location tracking
     private let locationManager = CLLocationManager()
@@ -172,58 +177,139 @@ final class Detector: NSObject, ObservableObject {
     // MARK: Init
     override init() {
         super.init()
-        observeActiveCluster()
+        observeActiveModel()
         startLocationUpdatesIfNeeded()
     }
 
-    private func observeActiveCluster() {
+    private func observeActiveModel() {
         Task { @MainActor in
             for await release in ModelSelector.shared.$activeRelease.values {
-                guard let release else { continue }
-
-                self.activeClusterID = release.clusterID
-                self.activeModelVersion = release.modelVersion
-                self.activeModelIdentifier = release.modelKey ?? "ota-model"
-                self.activeExpectedClassCount = release.classCount
-                self.activeReleaseIdentifier = release.releaseIdentifier
-
-                loadModel(from: release.compiledModelURL, clusterID: release.clusterID)
-                loadManifest(from: release.manifestFileURL)
+                if let release {
+                    self.loadModel(for: release)
+                } else {
+                    self.unloadModel()
+                }
             }
         }
     }
 
-    private func loadModel(from url: URL, clusterID: String) {
+    /// Loads the candidate completely before replacing the active inference
+    /// state. This prevents frames from being processed by the old model with
+    /// the new model's class count or labels during a hot swap.
+    private func loadModel(for release: ActiveModelRelease) {
         queue.async {
             do {
                 let config = MLModelConfiguration()
                 config.computeUnits = .cpuAndNeuralEngine
 
-                let loaded = try MLModel(contentsOf: url, configuration: config)
+                let loaded = try MLModel(
+                    contentsOf: release.compiledModelURL,
+                    configuration: config
+                )
+                let inferredClassCount = release.classCount > 0
+                    ? release.classCount
+                    : Self.inferClassCount(from: loaded)
+                let loadedManifest = try Self.decodeManifest(
+                    from: release.manifestFileURL
+                )
+
                 DispatchQueue.main.async {
-                    self.model = loaded
-                    print("✅ Detector hot-swapped to OTA cluster \(clusterID) (Metal Bypassed)")
+                    // A second selection may have happened while Core ML was
+                    // loading. Never install a stale result over that choice.
+                    guard ModelSelector.shared.activeRelease?.id == release.id else {
+                        return
+                    }
+
+                    self.queue.async {
+                        self.model = loaded
+                        self.activeClusterID = release.clusterID
+                        self.activeModelVersion = release.modelVersion
+                        self.activeModelIdentifier = release.modelKey ?? "ota-model"
+                        self.activeExpectedClassCount = inferredClassCount
+                        self.activeClassLabels = release.classLabels
+                        self.activeReleaseIdentifier = release.releaseIdentifier
+                        self.manifest = loadedManifest
+                        self.resetTrackingState()
+
+                        DispatchQueue.main.async {
+                            self.classLabels = release.classLabels
+                            self.detections.removeAll()
+                            self.currentLabel = nil
+                            self.newlyDetectedLandmark = nil
+                            print(
+                                "✅ Detector hot-swapped to \(release.displayName) " +
+                                "(\(inferredClassCount) classes, Metal bypassed)"
+                            )
+                        }
+                    }
                 }
             } catch {
-                print("❌ OTA Model load error for cluster \(clusterID): \(error)")
+                print(
+                    "❌ Model load error for \(release.displayName): \(error)"
+                )
             }
         }
     }
 
-    private func loadManifest(from url: URL) {
-        do {
-            let data = try Data(contentsOf: url)
-            let decodedManifest = try JSONDecoder().decode(ClusterLandmarkManifest.self, from: data)
-            try decodedManifest.validate()
+    private func unloadModel() {
+        queue.async {
+            self.model = nil
+            self.activeClusterID = nil
+            self.activeModelVersion = nil
+            self.activeModelIdentifier = nil
+            self.activeExpectedClassCount = nil
+            self.activeClassLabels = []
+            self.activeReleaseIdentifier = nil
+            self.manifest = nil
+            self.resetTrackingState()
 
             DispatchQueue.main.async {
-                self.manifest = decodedManifest
-                print("✅ Loaded manifest: \(url.lastPathComponent) (\(decodedManifest.landmarks.count) landmarks)")
+                self.classLabels = []
+                self.detections.removeAll()
+                self.currentLabel = nil
+                self.newlyDetectedLandmark = nil
             }
-        } catch {
-            print("❌ Failed to load manifest: \(error)")
-            DispatchQueue.main.async { self.manifest = nil }
         }
+    }
+
+    private static func inferClassCount(from model: MLModel) -> Int {
+        let outputs = model.modelDescription.outputDescriptionsByName
+
+        if let confidenceShape = outputs["confidence"]?
+            .multiArrayConstraint?.shape,
+           let last = confidenceShape.last?.intValue,
+           last > 0 {
+            return last
+        }
+
+        if let shape = outputs.values.first?
+            .multiArrayConstraint?.shape.map({ $0.intValue }),
+           shape.count >= 2 {
+            let dimensions = shape.dropFirst()
+
+            if let channels = dimensions.first(where: {
+                $0 >= 5 && $0 <= 512
+            }) {
+                // Raw YOLO tensors contain x, y, width, height, then classes.
+                // End-to-end tensors use six values but carry a class index;
+                // a large upper bound lets that validated model output pass.
+                return channels == 6 ? 10_000 : channels - 4
+            }
+        }
+
+        return 10_000
+    }
+
+    private static func decodeManifest(
+        from url: URL
+    ) throws -> ClusterLandmarkManifest {
+        let data = try Data(contentsOf: url)
+        let decodedManifest = try JSONDecoder().decode(
+            ClusterLandmarkManifest.self,
+            from: data
+        )
+        try decodedManifest.validate()
+        return decodedManifest
     }
 
     private func startLocationUpdatesIfNeeded() {
@@ -242,12 +328,28 @@ final class Detector: NSObject, ObservableObject {
     }
 
     func resetEngine() {
+        queue.async {
+            self.resetTrackingState()
+            self.clearPublishedDetectionState()
+        }
+    }
+
+    private func resetTrackingState() {
+        for smoother in smoothers.values {
+            smoother.reset()
+        }
+        smoothers.removeAll()
+        frameCounters.removeAll()
+        notificationCooldowns.removeAll()
+        lastDetectionLogKey = nil
+        lastDetectionLogDate = .distantPast
+    }
+
+    private func clearPublishedDetectionState() {
         DispatchQueue.main.async {
             self.detections.removeAll()
             self.currentLabel = nil
             self.newlyDetectedLandmark = nil
-            for tracker in self.trackers.values { tracker.reset() }
-            self.trackers.removeAll()
         }
     }
 
@@ -270,6 +372,9 @@ final class Detector: NSObject, ObservableObject {
             let expectedClassCount = activeExpectedClassCount
         else { return }
 
+        let classLabels = activeClassLabels
+        let frameConfidenceThreshold = inferenceConfidenceThreshold
+
         guard !throttling, !isPaused else { return }
 
         throttling = true
@@ -282,16 +387,20 @@ final class Detector: NSObject, ObservableObject {
         let (inputBuffer, scale, padX, padY) = letterbox(pixelBuffer: pixelBuffer)
 
         // 🚀 DYNAMIC INPUT MAPPER
+        // Checks the model description to only pass exactly what the model expects
         var inputDict: [String: Any] = ["image": MLFeatureValue(pixelBuffer: inputBuffer)]
         let inputDescriptions = model.modelDescription.inputDescriptionsByName
-        
+
         if inputDescriptions.keys.contains("iouThreshold") {
             inputDict["iouThreshold"] = NSNumber(value: iouThreshold)
         }
         if inputDescriptions.keys.contains("confidenceThreshold") {
-            // We pass 0.05 to CoreML so it gives us weak detections,
-            // allowing our Tracker to handle holding them natively.
-            inputDict["confidenceThreshold"] = NSNumber(value: 0.05)
+            // Keep the Core ML NMS gate and our parser gate on the exact same
+            // per-frame slider snapshot. This was hard-coded in one branch,
+            // which made slider changes appear to do nothing.
+            inputDict["confidenceThreshold"] = NSNumber(
+                value: frameConfidenceThreshold
+            )
         }
 
         guard let input = try? MLDictionaryFeatureProvider(dictionary: inputDict) else {
@@ -303,34 +412,57 @@ final class Detector: NSObject, ObservableObject {
         do {
             let result = try model.prediction(from: input)
             let outputKeys = result.featureNames
-            
+
             var newDetections: [Detection] = []
             var diagConfShape: [Int] = []
             var diagCoordShape: [Int] = []
 
             // 🚀 DYNAMIC OUTPUT PARSER
             if outputKeys.contains("confidence") && outputKeys.contains("coordinates") {
-                // 🍎 OLD YOLO STYLE (Separate Arrays)
+                // 🍎 OLD YOLO STYLE (Separate Confidence & Coordinate Arrays)
                 let conf = result.featureValue(for: "confidence")!.multiArrayValue!
                 let coord = result.featureValue(for: "coordinates")!.multiArrayValue!
-                
+
                 diagConfShape = conf.shape.map { $0.intValue }
                 diagCoordShape = coord.shape.map { $0.intValue }
-                
+
                 newDetections = parseDetections(
-                    confArray: conf, coordArray: coord,
-                    scale: scale, padX: padX, padY: padY, originalSize: CGSize(width: originalWidth, height: originalHeight),
-                    clusterID: clusterID, modelVersion: modelVersion, modelIdentifier: modelIdentifier, expectedClassCount: expectedClassCount
+                    confArray: conf,
+                    coordArray: coord,
+                    scale: scale,
+                    padX: padX,
+                    padY: padY,
+                    originalSize: CGSize(
+                        width: originalWidth,
+                        height: originalHeight
+                    ),
+                    clusterID: clusterID,
+                    modelVersion: modelVersion,
+                    modelIdentifier: modelIdentifier,
+                    expectedClassCount: expectedClassCount,
+                    classLabels: classLabels,
+                    confidenceThreshold: frameConfidenceThreshold
                 )
-                
+
             } else if let firstKey = outputKeys.first, let combinedArray = result.featureValue(for: firstKey)?.multiArrayValue {
-                // 🚀 NEW YOLO26 E2E STYLE (Combined Array)
+                // 🚀 NEW YOLO26 E2E STYLE (Single Combined Array)
                 diagConfShape = combinedArray.shape.map { $0.intValue }
-                
+
                 newDetections = parseEndToEndDetections(
                     combinedArray: combinedArray,
-                    scale: scale, padX: padX, padY: padY, originalSize: CGSize(width: originalWidth, height: originalHeight),
-                    clusterID: clusterID, modelVersion: modelVersion, modelIdentifier: modelIdentifier, expectedClassCount: expectedClassCount
+                    scale: scale,
+                    padX: padX,
+                    padY: padY,
+                    originalSize: CGSize(
+                        width: originalWidth,
+                        height: originalHeight
+                    ),
+                    clusterID: clusterID,
+                    modelVersion: modelVersion,
+                    modelIdentifier: modelIdentifier,
+                    expectedClassCount: expectedClassCount,
+                    classLabels: classLabels,
+                    confidenceThreshold: frameConfidenceThreshold
                 )
             } else {
                 print("❌ Unknown CoreML Output Configuration: \(outputKeys)")
@@ -339,13 +471,13 @@ final class Detector: NSObject, ObservableObject {
             logPhaseTwoDiagnostics(newDetections, expectedClassCount: expectedClassCount, confidenceShape: diagConfShape, coordinatesShape: diagCoordShape)
 
             let end = CFAbsoluteTimeGetCurrent()
-            
+
             // Check cooldowns for the notification stack
             var triggerNotification: Detection? = nil
             if let best = newDetections.max(by: { $0.confidence < $1.confidence }) {
                 let now = Date()
                 let lastNotified = notificationCooldowns[best.displayLabel] ?? Date.distantPast
-                
+
                 if now.timeIntervalSince(lastNotified) > cooldownInterval {
                     notificationCooldowns[best.displayLabel] = now
                     triggerNotification = best
@@ -356,7 +488,7 @@ final class Detector: NSObject, ObservableObject {
                 self.detections = self.hideBoundingBoxes ? [] : newDetections
                 self.lastInferenceMS = (end - start) * 1000
                 self.currentLabel = newDetections.max(by: { $0.confidence < $1.confidence })?.displayLabel
-                
+
                 if let trigger = triggerNotification {
                     self.newlyDetectedLandmark = trigger
                 }
@@ -365,7 +497,7 @@ final class Detector: NSObject, ObservableObject {
             print("❌ Prediction error: \(error)")
         }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) {
+        queue.asyncAfter(deadline: .now() + 0.03) {
             self.throttling = false
         }
     }
@@ -397,8 +529,8 @@ final class Detector: NSObject, ObservableObject {
 
         return (output!, scale, padX, padY)
     }
-    
-    // 🚀 END-TO-END PARSER FOR YOLO26
+
+    // 🚀 NEW: END-TO-END PARSER FOR YOLO26
     private func parseEndToEndDetections(
         combinedArray: MLMultiArray,
         scale: CGFloat,
@@ -408,17 +540,22 @@ final class Detector: NSObject, ObservableObject {
         clusterID: String,
         modelVersion: String,
         modelIdentifier: String,
-        expectedClassCount: Int
+        expectedClassCount: Int,
+        classLabels: [String],
+        confidenceThreshold: Float
     ) -> [Detection] {
-        
+
         let ptr = combinedArray.dataPointer.bindMemory(to: Float.self, capacity: combinedArray.count)
         let shape = combinedArray.shape.map { $0.intValue }
-        
+
         let numBoxes = shape.count == 3 ? shape[1] : shape[0]
         let boxSize = shape.last ?? 6
-        
-        guard boxSize == 6 else { return [] }
-        
+
+        guard boxSize == 6 else {
+            print("❌ Unknown E2E shape configuration: \(shape)")
+            return []
+        }
+
         let screenWidth = UIScreen.main.bounds.width
         let screenHeight = UIScreen.main.bounds.height
         let screenScale = max(screenWidth / originalSize.width, screenHeight / originalSize.height)
@@ -437,12 +574,8 @@ final class Detector: NSObject, ObservableObject {
             let score = ptr[offset + 4]
             let classIdx = Int(ptr[offset + 5])
 
+            guard score >= confidenceThreshold else { continue }
             guard classIdx >= 0, classIdx < expectedClassCount else { continue }
-            
-            // 🚀 HYSTERESIS: Lower threshold if object is already being tracked
-            let isTracked = trackers[String(classIdx)]?.lastDetection != nil
-            let requiredScore = isTracked ? (confidenceThreshold * 0.35) : confidenceThreshold
-            guard score >= requiredScore else { continue }
 
             let x1 = rawX1 <= 1.0 ? rawX1 * inputSize.width : rawX1
             let y1 = rawY1 <= 1.0 ? rawY1 * inputSize.height : rawY1
@@ -465,11 +598,11 @@ final class Detector: NSObject, ObservableObject {
             guard rect.intersects(activeSafeZone) else { continue }
 
             rawDetections.append(
-                Detection(clusterID: clusterID, modelVersion: modelVersion, modelIdentifier: modelIdentifier, classIndex: classIdx, classCount: expectedClassCount, confidence: score, bbox: rect)
+                Detection(clusterID: clusterID, modelVersion: modelVersion, modelIdentifier: modelIdentifier, classIndex: classIdx, classCount: expectedClassCount, confidence: score, bbox: rect, overrideLabel: classLabels[safe: classIdx])
             )
         }
 
-        return finalizeTracking(rawDetections: rawDetections)
+        return finalizeDetections(rawDetections)
     }
 
     // LEGACY: OLD PARSER FOR YOLOv8 / YOLOv10
@@ -483,8 +616,11 @@ final class Detector: NSObject, ObservableObject {
         clusterID: String,
         modelVersion: String,
         modelIdentifier: String,
-        expectedClassCount: Int
+        expectedClassCount: Int,
+        classLabels: [String],
+        confidenceThreshold: Float
     ) -> [Detection] {
+        let startTime = CFAbsoluteTimeGetCurrent()
 
         let confPtr = confArray.dataPointer.bindMemory(to: Float.self, capacity: confArray.count)
         let coordPtr = coordArray.dataPointer.bindMemory(to: Float.self, capacity: coordArray.count)
@@ -498,6 +634,7 @@ final class Detector: NSObject, ObservableObject {
         let screenScale = max(screenWidth / originalSize.width, screenHeight / originalSize.height)
         let offsetX = (originalSize.width * screenScale - screenWidth) / 2
         let offsetY = (originalSize.height * screenScale - screenHeight) / 2
+
         let activeSafeZone = dynamicSafeZone == .zero ? UIScreen.main.bounds : dynamicSafeZone
 
         var rawDetections: [Detection] = []
@@ -510,12 +647,8 @@ final class Detector: NSObject, ObservableObject {
                 let score = confPtr[i * numClasses + c]
                 if score > bestScore { bestScore = score; bestClass = c }
             }
+            guard bestScore >= confidenceThreshold else { continue }
             guard bestClass >= 0, bestClass < expectedClassCount else { continue }
-            
-            // 🚀 HYSTERESIS
-            let isTracked = trackers[String(bestClass)]?.lastDetection != nil
-            let requiredScore = isTracked ? (confidenceThreshold * 0.35) : confidenceThreshold
-            guard bestScore >= requiredScore else { continue }
 
             let rawCx = CGFloat(coordPtr[i * 4 + 0])
             let rawCy = CGFloat(coordPtr[i * 4 + 1])
@@ -538,42 +671,67 @@ final class Detector: NSObject, ObservableObject {
             guard rect.intersects(activeSafeZone) else { continue }
 
             rawDetections.append(
-                Detection(clusterID: clusterID, modelVersion: modelVersion, modelIdentifier: modelIdentifier, classIndex: bestClass, classCount: expectedClassCount, confidence: bestScore, bbox: rect)
+                Detection(clusterID: clusterID, modelVersion: modelVersion, modelIdentifier: modelIdentifier, classIndex: bestClass, classCount: expectedClassCount, confidence: bestScore, bbox: rect, overrideLabel: classLabels[safe: bestClass])
             )
         }
 
-        return finalizeTracking(rawDetections: rawDetections)
+        let finalResults = finalizeDetections(rawDetections)
+        let elapsedTime = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
+        let formattedTime = elapsedTime.formatted(.number.precision(.fractionLength(2)))
+        print("⏱ Parsing took \(formattedTime) ms | required frames: \(requiredFramesForDetection)" , "Avg: 6 frames")
+        return finalResults
     }
 
-    // 🚀 NEW: Tracks and updates coasting frames universally
-    private func finalizeTracking(rawDetections: [Detection]) -> [Detection] {
+    /// Applies the latest detector's proximity filtering, three-frame
+    /// confirmation, and four-frame moving-average box smoothing. Only the
+    /// strongest box for a landmark advances its tracker once per frame.
+    private func finalizeDetections(_ rawDetections: [Detection]) -> [Detection] {
         let nearbyDetections = proximityFilter(rawDetections)
-        let currentLabels = Set(nearbyDetections.map { $0.label })
-        
-        var finalResults: [Detection] = []
-        
-        // 1. Update trackers with active detections
-        for det in nearbyDetections {
-            let label = det.label
-            if trackers[label] == nil { trackers[label] = DetectionTracker() }
-            if let smoothedDet = trackers[label]?.update(with: det) {
-                finalResults.append(smoothedDet)
+        var strongestByKey: [String: Detection] = [:]
+
+        for detection in nearbyDetections {
+            let key = trackingKey(for: detection)
+            if detection.confidence > (strongestByKey[key]?.confidence ?? -Float.infinity) {
+                strongestByKey[key] = detection
             }
         }
-        
-        // 2. Handle lost detections (coasting / persistence)
-        let lostLabels = trackers.keys.filter { !currentLabels.contains($0) }
-        for label in lostLabels {
-            if let coastedDet = trackers[label]?.update(with: nil) {
-                // Object missed this frame, but tracker is coasting it
-                finalResults.append(coastedDet)
-            } else {
-                // Coasting expired. Remove tracker.
-                trackers.removeValue(forKey: label)
-            }
+
+        let currentKeys = Set(strongestByKey.keys)
+        let lostKeys = smoothers.keys.filter { !currentKeys.contains($0) }
+        for lostKey in lostKeys {
+            smoothers.removeValue(forKey: lostKey)
+            frameCounters.removeValue(forKey: lostKey)
         }
-        
-        return finalResults
+
+        return strongestByKey
+            .sorted { $0.value.classIndex < $1.value.classIndex }
+            .compactMap { key, detection in
+                let currentCount = (frameCounters[key] ?? 0) + 1
+                frameCounters[key] = currentCount
+
+                let smoother = smoothers[key] ?? BoundingBoxSmoother()
+                smoothers[key] = smoother
+                let smoothedBox = smoother.smooth(newBox: detection.bbox)
+
+                guard currentCount >= requiredFramesForDetection else {
+                    return nil
+                }
+
+                return Detection(
+                    clusterID: detection.clusterID,
+                    modelVersion: detection.modelVersion,
+                    modelIdentifier: detection.modelIdentifier,
+                    classIndex: detection.classIndex,
+                    classCount: detection.classCount,
+                    confidence: detection.confidence,
+                    bbox: smoothedBox,
+                    overrideLabel: detection.overrideLabel
+                )
+            }
+    }
+
+    private func trackingKey(for detection: Detection) -> String {
+        "\(detection.releaseIdentifier)|\(detection.classIndex)"
     }
 
     private func proximityFilter(_ detections: [Detection]) -> [Detection] {
@@ -584,11 +742,11 @@ final class Detector: NSObject, ObservableObject {
             let objectLocation = CLLocation(latitude: object.latitude, longitude: object.longitude)
             let distanceMeters = userLocation.distance(from: objectLocation)
             let isNearby = distanceMeters <= proximityThresholdMeters
-            
+
             if !isNearby {
                 print(object.label, "suppressed because object is not nearby (distance: \(distanceMeters)m)")
             }
-            
+
             return isNearby
         }
     }
@@ -617,6 +775,12 @@ final class Detector: NSObject, ObservableObject {
         print("   manifest label: \(strongest.displayLabel)")
         print("   confidence: \(String(format: "%.4f", strongest.confidence))")
         print("")
+    }
+}
+
+private extension Array {
+    subscript(safe index: Index) -> Element? {
+        indices.contains(index) ? self[index] : nil
     }
 }
 
