@@ -10,6 +10,64 @@ import Foundation
 import CoreLocation
 import Combine
 
+// MARK: - Temporary bundled-model testing
+
+/// Set this to `false` to remove the model-testing UI and return the app to
+/// location-based model selection. The rest of the production model flow does
+/// not depend on this testing feature.
+enum ModelTestingConfiguration {
+    static let isEnabled = true
+
+    /// Xcode compiles every `.mlmodel` / `.mlpackage` in the app target into a
+    /// `.mlmodelc` resource. Discovering those resources here keeps the testing
+    /// feature independent of model filenames and makes adding a new candidate
+    /// a target-membership change rather than a code change.
+    static var models: [BundledTestModel] {
+        guard isEnabled else { return [] }
+
+        let urls = Bundle.main.urls(
+            forResourcesWithExtension: "mlmodelc",
+            subdirectory: nil
+        ) ?? []
+
+        return urls
+            .map(BundledTestModel.init(compiledModelURL:))
+            .sorted {
+                $0.displayName.localizedStandardCompare($1.displayName)
+                    == .orderedAscending
+            }
+    }
+}
+
+struct BundledTestModel: Identifiable, Equatable {
+    var id: String { resourceName }
+
+    let compiledModelURL: URL
+
+    var resourceName: String {
+        compiledModelURL.deletingPathExtension().lastPathComponent
+    }
+
+    var displayName: String {
+        resourceName.replacingOccurrences(of: "_", with: " ")
+    }
+
+    var detail: String {
+        "\(resourceName).mlmodelc"
+    }
+
+    /// Optional human-readable labels can be added later if a model does not
+    /// have a matching production manifest. Index-based labels remain usable
+    /// for side-by-side model testing.
+    var classLabels: [String] {
+        []
+    }
+
+    var isInstalled: Bool {
+        FileManager.default.fileExists(atPath: compiledModelURL.path)
+    }
+}
+
 /// The complete identity Detector needs to run a model and later resolve
 /// its class indexes through the matching landmark manifest.
 struct ActiveModelRelease: Identifiable, Equatable {
@@ -20,8 +78,10 @@ struct ActiveModelRelease: Identifiable, Equatable {
     let clusterID: String
     let modelVersion: String
     let compiledModelURL: URL
-    let manifestFileURL: URL
+    let manifestFileURL: URL?
     let classCount: Int
+    let displayName: String
+    let classLabels: [String]
 
     let modelKey: String?
     let manifestKey: String?
@@ -42,6 +102,9 @@ final class ModelSelector: ObservableObject {
     /// only the cluster ID. This stays synchronized with `activeRelease`.
     @Published private(set) var activeClusterID: String?
 
+    /// Non-nil while the temporary bundled-model override is active.
+    @Published private(set) var selectedTestModelID: String?
+
     var activeModelVersion: String? {
         activeRelease?.modelVersion
     }
@@ -56,8 +119,68 @@ final class ModelSelector: ObservableObject {
     private var models: [ModelInfo] = []
     private var latestUserLocation: CLLocation?
 
+    private let selectedTestModelDefaultsKey =
+        "looksee.selectedBundledTestModel"
+
     private init() {
+        restoreTestSelection()
         observeModelState()
+    }
+
+    var availableTestModels: [BundledTestModel] {
+        ModelTestingConfiguration.isEnabled
+            ? ModelTestingConfiguration.models
+            : []
+    }
+
+    var activeDisplayName: String {
+        activeRelease?.displayName ?? "No model loaded"
+    }
+
+    func selectTestModel(_ testModel: BundledTestModel) {
+        guard
+            ModelTestingConfiguration.isEnabled,
+            testModel.isInstalled
+        else { return }
+
+        selectedTestModelID = testModel.id
+        UserDefaults.standard.set(
+            testModel.id,
+            forKey: selectedTestModelDefaultsKey
+        )
+        activate(testModel)
+    }
+
+    /// Leaves testing mode and immediately returns selection ownership to the
+    /// normal location-based production flow.
+    func useAutomaticModelSelection() {
+        guard selectedTestModelID != nil else { return }
+
+        selectedTestModelID = nil
+        UserDefaults.standard.removeObject(
+            forKey: selectedTestModelDefaultsKey
+        )
+
+        if let latestUserLocation {
+            chooseBestRelease(for: latestUserLocation)
+        } else {
+            chooseDefaultRelease()
+        }
+    }
+
+    private func restoreTestSelection() {
+        guard ModelTestingConfiguration.isEnabled else { return }
+
+        let savedID = UserDefaults.standard.string(
+            forKey: selectedTestModelDefaultsKey
+        )
+        let selected = ModelTestingConfiguration.models.first {
+            $0.id == savedID && $0.isInstalled
+        }
+
+        guard let selected else { return }
+        selectedTestModelID = selected.id
+        activate(selected)
     }
 
     // MARK: - Watch ModelService State
@@ -81,7 +204,9 @@ final class ModelSelector: ObservableObject {
                         "(\(completeCount) complete releases)"
                     )
 
-                    if let latestUserLocation = self.latestUserLocation {
+                    if self.reactivateSelectedTestModelIfNeeded() {
+                        continue
+                    } else if let latestUserLocation = self.latestUserLocation {
                         self.chooseBestRelease(
                             for: latestUserLocation
                         )
@@ -91,9 +216,11 @@ final class ModelSelector: ObservableObject {
 
                 case .notLoaded:
                     self.models = []
-                    self.clearActiveRelease(
-                        reason: "ModelService is not loaded"
-                    )
+                    if !self.reactivateSelectedTestModelIfNeeded() {
+                        self.clearActiveRelease(
+                            reason: "ModelService is not loaded"
+                        )
+                    }
 
                 case .loading:
                     // Keep the current complete release active while a
@@ -124,6 +251,11 @@ final class ModelSelector: ObservableObject {
         )
 
         latestUserLocation = userLocation
+
+        guard !reactivateSelectedTestModelIfNeeded() else {
+            return
+        }
+
         chooseBestRelease(for: userLocation)
     }
 
@@ -239,10 +371,60 @@ final class ModelSelector: ObservableObject {
         )
         print(
             "   manifest: " +
-            candidate.manifestFileURL.lastPathComponent
+            (candidate.manifestFileURL?.lastPathComponent ?? "none")
         )
         print("   reason: \(reason)")
         print("")
+    }
+
+    @discardableResult
+    private func activate(_ testModel: BundledTestModel) -> Bool {
+        guard testModel.isInstalled else {
+            print(
+                "❌ Bundled test model is missing: " +
+                "\(testModel.resourceName).mlmodelc"
+            )
+            return false
+        }
+
+        let candidate = ActiveModelRelease(
+            clusterID: "bundled-test",
+            modelVersion: "bundled-\(testModel.resourceName)",
+            compiledModelURL: testModel.compiledModelURL,
+            manifestFileURL: nil,
+            // Zero tells Detector to infer this from the model's outputs.
+            classCount: testModel.classLabels.count,
+            displayName: testModel.displayName,
+            classLabels: testModel.classLabels,
+            modelKey: testModel.resourceName,
+            manifestKey: nil
+        )
+
+        guard candidate != activeRelease else { return true }
+
+        activeRelease = candidate
+        activeClusterID = candidate.clusterID
+
+        print(
+            "🧪 Bundled test model selected: " +
+            "\(testModel.displayName)"
+        )
+        return true
+    }
+
+    @discardableResult
+    private func reactivateSelectedTestModelIfNeeded() -> Bool {
+        guard
+            ModelTestingConfiguration.isEnabled,
+            let selectedTestModelID,
+            let selected = ModelTestingConfiguration.models.first(
+                where: { $0.id == selectedTestModelID }
+            )
+        else {
+            return false
+        }
+
+        return activate(selected)
     }
 
     private func clearActiveRelease(
@@ -310,6 +492,8 @@ final class ModelSelector: ObservableObject {
             compiledModelURL: compiledModelURL,
             manifestFileURL: manifestFileURL,
             classCount: classCount,
+            displayName: "Cluster \(model.clusterID)",
+            classLabels: [],
             modelKey: model.modelKey,
             manifestKey: model.manifestKey
         )

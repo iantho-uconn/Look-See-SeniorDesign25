@@ -2,11 +2,7 @@
 //  Detector.swift
 //  LookSeeProto
 //
-//  OTA-Enabled: Actively listens to ModelSelector to hot-swap CoreML models
-//  and landmark manifests, driven by ModelSelector.activeRelease.
-//  Metal-Bypass: Restricts compute units to CPU & Neural Engine to prevent Signal 9 crashes.
-//  Self-contained location: runs its own CLLocationManager for proximity filtering,
-//  independent of the app's main LocationManager.
+//  Created by Ian Thompson on 8/14/26.
 //
 
 import Foundation
@@ -29,6 +25,7 @@ struct Detection: Identifiable, Equatable {
     let classCount: Int
     var confidence: Float // Made mutable to allow smooth decay during coasting
     let bbox: CGRect
+    let overrideLabel: String?
 
     var releaseIdentifier: String {
         "\(clusterID)|\(modelVersion)"
@@ -43,7 +40,10 @@ struct Detection: Identifiable, Equatable {
     }
 
     var displayLabel: String {
-        landmarkEntry?.label ?? "Class \(classIndex)"
+        if let overrideLabel, !overrideLabel.isEmpty {
+            return overrideLabel
+        }
+        return landmarkEntry?.label ?? "Class \(classIndex)"
     }
 
     var label: String {
@@ -152,6 +152,7 @@ final class Detector: NSObject, ObservableObject {
     private var activeModelVersion: String?
     private var activeModelIdentifier: String?
     private var activeExpectedClassCount: Int?
+    private var activeClassLabels: [String] = []
     private var activeReleaseIdentifier: String?
 
     private var lastDetectionLogKey: String?
@@ -172,58 +173,133 @@ final class Detector: NSObject, ObservableObject {
     // MARK: Init
     override init() {
         super.init()
-        observeActiveCluster()
+        observeActiveModel()
         startLocationUpdatesIfNeeded()
     }
 
-    private func observeActiveCluster() {
+    private func observeActiveModel() {
         Task { @MainActor in
             for await release in ModelSelector.shared.$activeRelease.values {
-                guard let release else { continue }
-
-                self.activeClusterID = release.clusterID
-                self.activeModelVersion = release.modelVersion
-                self.activeModelIdentifier = release.modelKey ?? "ota-model"
-                self.activeExpectedClassCount = release.classCount
-                self.activeReleaseIdentifier = release.releaseIdentifier
-
-                loadModel(from: release.compiledModelURL, clusterID: release.clusterID)
-                loadManifest(from: release.manifestFileURL)
+                if let release {
+                    self.loadModel(for: release)
+                } else {
+                    self.unloadModel()
+                }
             }
         }
     }
 
-    private func loadModel(from url: URL, clusterID: String) {
+    /// Loads the candidate completely before replacing the active inference
+    /// state. This prevents frames from being processed by the old model with
+    /// the new model's class count or labels during a hot swap.
+    private func loadModel(for release: ActiveModelRelease) {
         queue.async {
             do {
                 let config = MLModelConfiguration()
                 config.computeUnits = .cpuAndNeuralEngine
 
-                let loaded = try MLModel(contentsOf: url, configuration: config)
+                let loaded = try MLModel(
+                    contentsOf: release.compiledModelURL,
+                    configuration: config
+                )
+                let inferredClassCount = release.classCount > 0
+                    ? release.classCount
+                    : Self.inferClassCount(from: loaded)
+                let loadedManifest = try release.manifestFileURL.map {
+                    try Self.decodeManifest(from: $0)
+                }
+
                 DispatchQueue.main.async {
-                    self.model = loaded
-                    print("✅ Detector hot-swapped to OTA cluster \(clusterID) (Metal Bypassed)")
+                    // A second selection may have happened while Core ML was
+                    // loading. Never install a stale result over that choice.
+                    guard ModelSelector.shared.activeRelease?.id == release.id else {
+                        return
+                    }
+
+                    self.queue.async {
+                        self.model = loaded
+                        self.activeClusterID = release.clusterID
+                        self.activeModelVersion = release.modelVersion
+                        self.activeModelIdentifier = release.modelKey ?? "ota-model"
+                        self.activeExpectedClassCount = inferredClassCount
+                        self.activeClassLabels = release.classLabels
+                        self.activeReleaseIdentifier = release.releaseIdentifier
+                        self.manifest = loadedManifest
+
+                        DispatchQueue.main.async {
+                            self.classLabels = release.classLabels
+                            self.resetEngine()
+                            print(
+                                "✅ Detector hot-swapped to \(release.displayName) " +
+                                "(\(inferredClassCount) classes, Metal bypassed)"
+                            )
+                        }
+                    }
                 }
             } catch {
-                print("❌ OTA Model load error for cluster \(clusterID): \(error)")
+                print(
+                    "❌ Model load error for \(release.displayName): \(error)"
+                )
             }
         }
     }
 
-    private func loadManifest(from url: URL) {
-        do {
-            let data = try Data(contentsOf: url)
-            let decodedManifest = try JSONDecoder().decode(ClusterLandmarkManifest.self, from: data)
-            try decodedManifest.validate()
+    private func unloadModel() {
+        queue.async {
+            self.model = nil
+            self.activeClusterID = nil
+            self.activeModelVersion = nil
+            self.activeModelIdentifier = nil
+            self.activeExpectedClassCount = nil
+            self.activeClassLabels = []
+            self.activeReleaseIdentifier = nil
+            self.manifest = nil
 
             DispatchQueue.main.async {
-                self.manifest = decodedManifest
-                print("✅ Loaded manifest: \(url.lastPathComponent) (\(decodedManifest.landmarks.count) landmarks)")
+                self.classLabels = []
+                self.resetEngine()
             }
-        } catch {
-            print("❌ Failed to load manifest: \(error)")
-            DispatchQueue.main.async { self.manifest = nil }
         }
+    }
+
+    private static func inferClassCount(from model: MLModel) -> Int {
+        let outputs = model.modelDescription.outputDescriptionsByName
+
+        if let confidenceShape = outputs["confidence"]?
+            .multiArrayConstraint?.shape,
+           let last = confidenceShape.last?.intValue,
+           last > 0 {
+            return last
+        }
+
+        if let shape = outputs.values.first?
+            .multiArrayConstraint?.shape.map({ $0.intValue }),
+           shape.count >= 2 {
+            let dimensions = shape.dropFirst()
+
+            if let channels = dimensions.first(where: {
+                $0 >= 5 && $0 <= 512
+            }) {
+                // Raw YOLO tensors contain x, y, width, height, then classes.
+                // End-to-end tensors use six values but carry a class index;
+                // a large upper bound lets that validated model output pass.
+                return channels == 6 ? 10_000 : channels - 4
+            }
+        }
+
+        return 10_000
+    }
+
+    private static func decodeManifest(
+        from url: URL
+    ) throws -> ClusterLandmarkManifest {
+        let data = try Data(contentsOf: url)
+        let decodedManifest = try JSONDecoder().decode(
+            ClusterLandmarkManifest.self,
+            from: data
+        )
+        try decodedManifest.validate()
+        return decodedManifest
     }
 
     private func startLocationUpdatesIfNeeded() {
@@ -269,6 +345,8 @@ final class Detector: NSObject, ObservableObject {
             let modelIdentifier = activeModelIdentifier,
             let expectedClassCount = activeExpectedClassCount
         else { return }
+
+        let classLabels = activeClassLabels
 
         guard !throttling, !isPaused else { return }
 
@@ -329,8 +407,18 @@ final class Detector: NSObject, ObservableObject {
                 
                 newDetections = parseEndToEndDetections(
                     combinedArray: combinedArray,
-                    scale: scale, padX: padX, padY: padY, originalSize: CGSize(width: originalWidth, height: originalHeight),
-                    clusterID: clusterID, modelVersion: modelVersion, modelIdentifier: modelIdentifier, expectedClassCount: expectedClassCount
+                    scale: scale,
+                    padX: padX,
+                    padY: padY,
+                    originalSize: CGSize(
+                        width: originalWidth,
+                        height: originalHeight
+                    ),
+                    clusterID: clusterID,
+                    modelVersion: modelVersion,
+                    modelIdentifier: modelIdentifier,
+                    expectedClassCount: expectedClassCount,
+                    classLabels: classLabels
                 )
             } else {
                 print("❌ Unknown CoreML Output Configuration: \(outputKeys)")
@@ -408,7 +496,8 @@ final class Detector: NSObject, ObservableObject {
         clusterID: String,
         modelVersion: String,
         modelIdentifier: String,
-        expectedClassCount: Int
+        expectedClassCount: Int,
+        classLabels: [String]
     ) -> [Detection] {
         let startTime = CACurrentMediaTime()
         let ptr = combinedArray.dataPointer.bindMemory(to: Float.self, capacity: combinedArray.count)
@@ -465,7 +554,7 @@ final class Detector: NSObject, ObservableObject {
             guard rect.intersects(activeSafeZone) else { continue }
 
             rawDetections.append(
-                Detection(clusterID: clusterID, modelVersion: modelVersion, modelIdentifier: modelIdentifier, classIndex: classIdx, classCount: expectedClassCount, confidence: score, bbox: rect)
+                Detection(clusterID: clusterID, modelVersion: modelVersion, modelIdentifier: modelIdentifier, classIndex: classIdx, classCount: expectedClassCount, confidence: score, bbox: rect, overrideLabel: classLabels[safe: classIdx])
             )
         }
 
@@ -483,7 +572,8 @@ final class Detector: NSObject, ObservableObject {
         clusterID: String,
         modelVersion: String,
         modelIdentifier: String,
-        expectedClassCount: Int
+        expectedClassCount: Int,
+        classLabels: [String]
     ) -> [Detection] {
 
         let confPtr = confArray.dataPointer.bindMemory(to: Float.self, capacity: confArray.count)
@@ -538,7 +628,7 @@ final class Detector: NSObject, ObservableObject {
             guard rect.intersects(activeSafeZone) else { continue }
 
             rawDetections.append(
-                Detection(clusterID: clusterID, modelVersion: modelVersion, modelIdentifier: modelIdentifier, classIndex: bestClass, classCount: expectedClassCount, confidence: bestScore, bbox: rect)
+                Detection(clusterID: clusterID, modelVersion: modelVersion, modelIdentifier: modelIdentifier, classIndex: bestClass, classCount: expectedClassCount, confidence: bestScore, bbox: rect, overrideLabel: classLabels[safe: bestClass])
             )
         }
 
@@ -555,6 +645,16 @@ final class Detector: NSObject, ObservableObject {
         // 1. Update trackers with active detections
         for det in nearbyDetections {
             let label = det.label
+            let currentCount = (frameCounters[label] ?? 0) + 1
+            frameCounters[label] = currentCount
+
+            if smoothers[label] == nil { smoothers[label] = BoundingBoxSmoother() }
+            let smoothedBox = smoothers[label]!.smooth(newBox: det.bbox)
+
+            if currentCount >= requiredFramesForDetection {
+                finalResults.append(
+                    Detection(clusterID: det.clusterID, modelVersion: det.modelVersion, modelIdentifier: det.modelIdentifier, classIndex: det.classIndex, classCount: det.classCount, confidence: det.confidence, bbox: smoothedBox, overrideLabel: det.overrideLabel)
+                )
             if trackers[label] == nil { trackers[label] = DetectionTracker() }
             if let smoothedDet = trackers[label]?.update(with: det) {
                 finalResults.append(smoothedDet)
@@ -617,6 +717,12 @@ final class Detector: NSObject, ObservableObject {
         print("   manifest label: \(strongest.displayLabel)")
         print("   confidence: \(String(format: "%.4f", strongest.confidence))")
         print("")
+    }
+}
+
+private extension Array {
+    subscript(safe index: Index) -> Element? {
+        indices.contains(index) ? self[index] : nil
     }
 }
 

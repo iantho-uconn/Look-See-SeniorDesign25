@@ -7,14 +7,12 @@ import SwiftUI
 import Foundation
 import Combine
 import PhotosUI
-import UIKit
 
 class SettingsPresenter: ObservableObject {
     @Published var showSubscriptionFlow = false
     @Published var subscriptionStartingTab = 0
     @Published var showLoginSheet = false
     @Published var showSignUpSheet = false
-    @Published var showUserProfileEditor = false
     
     @Published var resumeCheckoutAction: String? = nil
     @Published var savedAddOnIndex: Int = 0
@@ -65,51 +63,14 @@ struct Settings: View {
                         }
                         .task { if !presenter.justPurchased { await vm.checkSession() } }
                     } else {
-                        Button {
-                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                            presenter.showUserProfileEditor = true
-                        } label: {
-                            HStack(spacing: 16) {
-                                ZStack {
-                                    Circle().fill(primaryColor.opacity(0.15))
-                                    if let url = URL(string: vm.profileImageUrl), !vm.profileImageUrl.isEmpty {
-                                        AsyncImage(url: url) { phase in
-                                            if let image = phase.image {
-                                                image.resizable().scaledToFill().clipShape(Circle())
-                                            } else {
-                                                ProgressView()
-                                            }
-                                        }
-                                    } else {
-                                        Image(systemName: "person.crop.circle.fill").font(.system(size: 48, weight: .light)).foregroundStyle(primaryColor)
-                                    }
-                                }
-                                .frame(width: 52, height: 52)
-                                .clipShape(Circle())
-                                
-                                VStack(alignment: .leading, spacing: 4) {
-                                    HStack(spacing: 4) {
-                                        Text(vm.username.isEmpty ? "Set Username" : "@\(vm.username)")
-                                            .font(.system(size: 20, weight: .bold, design: .rounded))
-                                            .foregroundStyle(.primary)
-                                        
-                                        if vm.hasActiveSubscription {
-                                            Image(systemName: "checkmark.seal.fill")
-                                                .font(.system(size: 14))
-                                                .foregroundStyle(primaryColor)
-                                        }
-                                    }
-                                    
-                                    Text(dynamicPlanTitle)
-                                        .font(.system(size: 14, weight: .medium))
-                                        .foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                Image(systemName: "chevron.right").font(.system(size: 14, weight: .bold)).foregroundStyle(Color(uiColor: .tertiaryLabel))
+                        HStack(spacing: 16) {
+                            Image(systemName: "person.crop.circle.badge.checkmark").font(.system(size: 48, weight: .light)).foregroundStyle(primaryColor)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(verbatim: vm.userEmail).font(.system(size: 20, weight: .bold, design: .rounded)).foregroundStyle(.primary)
+                                Text(dynamicPlanTitle).font(.system(size: 14, weight: .medium)).foregroundStyle(.secondary)
                             }
-                            .contentShape(Rectangle()) // 🚀 FIXED: Makes empty space tappable
+                            Spacer()
                         }
-                        .buttonStyle(.plain)
                         .task {
                             if !presenter.justPurchased {
                                 await vm.fetchUserDetails()
@@ -248,6 +209,7 @@ struct Settings: View {
                                 Button { showCancelAlert = true } label: {
                                     Text("Cancel").font(.system(size: 15, weight: .bold, design: .rounded)).frame(maxWidth: .infinity).foregroundStyle(.red).padding(.vertical, 12).background(Color(.systemBackground)).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous)).overlay(
                                         RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                            // 3. Adaptive stroke color
                                             .stroke(.red.opacity(0.8), lineWidth: 2)
                                     )
                                 }
@@ -260,7 +222,7 @@ struct Settings: View {
                             Button("Cancel Plan", role: .destructive) {
                                 isCancelling = true
                                 Task {
-                                    let _ = await vm.cancelSubscription()
+                                    await vm.cancelSubscription()
                                     await MainActor.run { isCancelling = false }
                                 }
                             }
@@ -286,7 +248,6 @@ struct Settings: View {
         .navigationTitle("Menu")
         .onChange(of: authState.didSignOut) { _, didSignOut in if didSignOut { dismiss() } }
         .sheet(isPresented: $presenter.showSubscriptionFlow) { SubscriptionPlans(presenter: presenter) }
-        .sheet(isPresented: $presenter.showUserProfileEditor) { UserProfileEditSheet().environmentObject(vm) }
         .sheet(isPresented: $presenter.showLoginSheet) {
             NavigationStack {
                 Login(vm: vm, onSignedIn: {
@@ -330,10 +291,7 @@ struct Settings: View {
                 }
                 Spacer()
                 Image(systemName: "chevron.right").font(.system(size: 14, weight: .bold)).foregroundStyle(Color(uiColor: .tertiaryLabel))
-            }
-            .padding(16)
-            .contentShape(Rectangle()) // 🚀 FIXED: Makes empty space tappable
-            
+            }.padding(16)
             if showDivider { Divider().padding(.leading, 68) }
         }
     }
@@ -374,366 +332,17 @@ struct Settings: View {
     }
 }
 
-// 🚀 REDESIGNED: Modern Social Media Style Profile Editor
-struct UserProfileEditSheet: View {
-    @Environment(\.dismiss) var dismiss
-    @EnvironmentObject var vm: AuthViewModel
-    
-    @State private var draftUsername: String = ""
-    @State private var isSaving = false
-    @State private var errorMessage = ""
-    @FocusState private var isKeyboardFocused: Bool
-
-    // Media Picking States
-    @State private var showPhotoActionSheet = false
-    @State private var showCameraPicker = false
-    @State private var showGalleryPicker = false
-    
-    @State private var selectedPhotoItem: PhotosPickerItem? = nil
-    @State private var logoUIImage: UIImage? = nil
-
-    private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00)
-
-    private func resizeImageForUpload(image: UIImage) -> UIImage {
-        let maxDimension: CGFloat = 400
-        let size = image.size
-        
-        if size.width <= maxDimension && size.height <= maxDimension {
-            return image
-        }
-        
-        let ratio = min(maxDimension / size.width, maxDimension / size.height)
-        let newSize = CGSize(width: size.width * ratio, height: size.height * ratio)
-        let renderer = UIGraphicsImageRenderer(size: newSize)
-        return renderer.image { _ in
-            image.draw(in: CGRect(origin: .zero, size: newSize))
-        }
-    }
-
-    var body: some View {
-        NavigationStack {
-            ZStack {
-                Color(red: 0.06, green: 0.06, blue: 0.10)
-                    .ignoresSafeArea()
-                    .onTapGesture { isKeyboardFocused = false }
-                
-                ScrollView {
-                    VStack(spacing: 28) {
-                        
-                        // 1. AVATAR SECTION WITH CAMERA OVERLAY
-                        VStack(spacing: 12) {
-                            ZStack(alignment: .bottomTrailing) {
-                                ZStack {
-                                    Circle()
-                                        .fill(LinearGradient(colors: [primaryColor.opacity(0.3), Color.purple.opacity(0.2)], startPoint: .topLeading, endPoint: .bottomTrailing))
-                                        .frame(width: 114, height: 114)
-                                    
-                                    if let logoUIImage {
-                                        Image(uiImage: logoUIImage)
-                                            .resizable()
-                                            .scaledToFill()
-                                            .frame(width: 108, height: 108)
-                                            .clipShape(Circle())
-                                    } else if let url = URL(string: vm.profileImageUrl), !vm.profileImageUrl.isEmpty {
-                                        AsyncImage(url: url) { phase in
-                                            if let image = phase.image {
-                                                image.resizable().scaledToFill().frame(width: 108, height: 108).clipShape(Circle())
-                                            } else {
-                                                Image(systemName: "person.fill").font(.system(size: 44)).foregroundStyle(.white.opacity(0.6))
-                                            }
-                                        }
-                                    } else {
-                                        Image(systemName: "person.fill")
-                                            .font(.system(size: 48))
-                                            .foregroundStyle(.white.opacity(0.7))
-                                    }
-                                }
-                                .overlay(Circle().stroke(LinearGradient(colors: [primaryColor, .purple], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 2))
-                                .shadow(color: primaryColor.opacity(0.3), radius: 12, x: 0, y: 6)
-
-                                // Camera Action Badge
-                                Button {
-                                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                                    withAnimation { showPhotoActionSheet = true }
-                                } label: {
-                                    ZStack {
-                                        Circle()
-                                            .fill(primaryColor)
-                                            .frame(width: 36, height: 36)
-                                        Image(systemName: "camera.fill")
-                                            .font(.system(size: 16, weight: .bold))
-                                            .foregroundStyle(.white)
-                                    }
-                                    .overlay(Circle().stroke(Color(red: 0.06, green: 0.06, blue: 0.10), lineWidth: 3))
-                                }
-                                .offset(x: 2, y: 2)
-                            }
-                            .onTapGesture {
-                                withAnimation { showPhotoActionSheet = true }
-                            }
-
-                            Button {
-                                withAnimation { showPhotoActionSheet = true }
-                            } label: {
-                                Text("Edit picture")
-                                    .font(.system(size: 14, weight: .semibold, design: .rounded))
-                                    .foregroundStyle(primaryColor)
-                            }
-                        }
-                        .padding(.top, 10)
-
-                        // 2. USERNAME INPUT CARD
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("USERNAME")
-                                .font(.system(size: 12, weight: .bold, design: .rounded))
-                                .foregroundStyle(.white.opacity(0.5))
-                                .padding(.leading, 4)
-
-                            HStack(spacing: 8) {
-                                Text("@")
-                                    .font(.system(size: 18, weight: .bold, design: .rounded))
-                                    .foregroundStyle(primaryColor)
-
-                                TextField("username", text: $draftUsername)
-                                    .focused($isKeyboardFocused)
-                                    .font(.system(size: 16, weight: .semibold, design: .rounded))
-                                    .foregroundStyle(.white)
-                                    .textInputAutocapitalization(.never)
-                                    .autocorrectionDisabled(true)
-                                    .onChange(of: draftUsername) { _, newValue in
-                                        draftUsername = newValue.lowercased().filter { "abcdefghijklmnopqrstuvwxyz0123456789_".contains($0) }
-                                    }
-                            }
-                            .padding(16)
-                            .background(Color.white.opacity(0.05))
-                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .stroke(isKeyboardFocused ? primaryColor : Color.white.opacity(0.1), lineWidth: 1)
-                            )
-
-                            Text("Usernames must be letters, numbers, and underscores only.")
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(.white.opacity(0.4))
-                                .padding(.leading, 4)
-                        }
-                        .padding(.horizontal, 20)
-
-                        // 3. ERROR MESSAGE
-                        if !errorMessage.isEmpty {
-                            HStack(alignment: .top, spacing: 8) {
-                                Image(systemName: "exclamationmark.triangle.fill")
-                                Text(errorMessage)
-                            }
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(.red)
-                            .padding(.horizontal, 20)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-
-                        // 4. SAVE BUTTON
-                        Button {
-                            UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
-                            isSaving = true
-                            errorMessage = ""
-                            Task {
-                                var base64String: String? = nil
-                                if let rawImage = logoUIImage {
-                                    let compressedImage = resizeImageForUpload(image: rawImage)
-                                    base64String = compressedImage.jpegData(compressionQuality: 0.6)?.base64EncodedString()
-                                }
-                                
-                                let result = await vm.updateUserIdentity(newUsername: draftUsername, profileBase64: base64String)
-                                isSaving = false
-                                if result.success {
-                                    dismiss()
-                                } else {
-                                    errorMessage = result.error ?? "Failed to update profile."
-                                }
-                            }
-                        } label: {
-                            HStack(spacing: 8) {
-                                if isSaving {
-                                    ProgressView().tint(.white)
-                                } else {
-                                    Text("Save Changes")
-                                        .font(.system(size: 16, weight: .bold, design: .rounded))
-                                }
-                            }
-                            .foregroundStyle(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
-                            .background(draftUsername.isEmpty || isSaving ? Color.gray.opacity(0.3) : primaryColor)
-                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                            .shadow(color: draftUsername.isEmpty ? .clear : primaryColor.opacity(0.3), radius: 10, x: 0, y: 4)
-                        }
-                        .disabled(draftUsername.isEmpty || isSaving)
-                        .padding(.horizontal, 20)
-                        .padding(.top, 10)
-                    }
-                }
-                
-                // 🚀 Custom Sleek Bottom Sheet Menu
-                if showPhotoActionSheet {
-                    ZStack {
-                        Color.black.opacity(0.5)
-                            .ignoresSafeArea()
-                            .onTapGesture {
-                                withAnimation(.easeOut(duration: 0.2)) { showPhotoActionSheet = false }
-                            }
-                        
-                        VStack {
-                            Spacer()
-                            VStack(spacing: 0) {
-                                Text("Change Profile Picture")
-                                    .font(.system(size: 15, weight: .bold))
-                                    .foregroundStyle(.secondary)
-                                    .padding(.vertical, 16)
-                                
-                                Divider().background(Color.white.opacity(0.1))
-                                
-                                Button {
-                                    withAnimation { showPhotoActionSheet = false }
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                                        showCameraPicker = true
-                                    }
-                                } label: {
-                                    Text("Take Photo")
-                                        .font(.system(size: 18, weight: .semibold))
-                                        .foregroundStyle(.white)
-                                        .frame(maxWidth: .infinity)
-                                        .padding(.vertical, 16)
-                                }
-                                
-                                Divider().background(Color.white.opacity(0.1))
-                                
-                                Button {
-                                    withAnimation { showPhotoActionSheet = false }
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                                        showGalleryPicker = true
-                                    }
-                                } label: {
-                                    Text("Choose from Library")
-                                        .font(.system(size: 18, weight: .semibold))
-                                        .foregroundStyle(.white)
-                                        .frame(maxWidth: .infinity)
-                                        .padding(.vertical, 16)
-                                }
-                                
-                                if logoUIImage != nil || !vm.profileImageUrl.isEmpty {
-                                    Divider().background(Color.white.opacity(0.1))
-                                    
-                                    Button {
-                                        withAnimation { showPhotoActionSheet = false }
-                                        logoUIImage = nil
-                                        vm.profileImageUrl = ""
-                                    } label: {
-                                        Text("Remove Photo")
-                                            .font(.system(size: 18, weight: .bold))
-                                            .foregroundStyle(.red)
-                                            .frame(maxWidth: .infinity)
-                                            .padding(.vertical, 16)
-                                    }
-                                }
-                            }
-                            .background(Color(red: 0.12, green: 0.12, blue: 0.16))
-                            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-                            .padding(.horizontal, 20)
-                            .padding(.bottom, 30)
-                        }
-                        .transition(.move(edge: .bottom))
-                    }
-                    .zIndex(100)
-                }
-            }
-            .navigationTitle("Edit Profile")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                        .foregroundStyle(.white.opacity(0.7))
-                        .disabled(isSaving)
-                }
-            }
-            .onAppear {
-                draftUsername = vm.username
-            }
-            // Camera Sheet
-            .fullScreenCover(isPresented: $showCameraPicker) {
-                CameraPicker(image: $logoUIImage)
-                    .ignoresSafeArea()
-            }
-            // Hidden PhotosPicker bound to the dedicated gallery selection variable
-            .photosPicker(isPresented: $showGalleryPicker, selection: $selectedPhotoItem, matching: .images)
-            .onChange(of: selectedPhotoItem) { _, newItem in
-                Task {
-                    guard let newItem else { return }
-                    if let data = try? await newItem.loadTransferable(type: Data.self),
-                       let uiImage = UIImage(data: data) {
-                        await MainActor.run {
-                            self.logoUIImage = uiImage
-                        }
-                    }
-                }
-            }
-        }
-        .preferredColorScheme(.dark) // 🚀 Preserves sleek dark look for this screen only
-    }
-}
-
-// 🚀 CAMERA PICKER: Wrap UIImagePickerController for Native Camera Capture
-struct CameraPicker: UIViewControllerRepresentable {
-    @Binding var image: UIImage?
-    @Environment(\.dismiss) private var dismiss
-
-    func makeUIViewController(context: Context) -> UIImagePickerController {
-        let picker = UIImagePickerController()
-        picker.sourceType = .camera
-        picker.allowsEditing = true
-        picker.delegate = context.coordinator
-        return picker
-    }
-
-    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(self)
-    }
-
-    class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
-        let parent: CameraPicker
-
-        init(_ parent: CameraPicker) {
-            self.parent = parent
-        }
-
-        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
-            if let editedImage = info[.editedImage] as? UIImage {
-                parent.image = editedImage
-            } else if let originalImage = info[.originalImage] as? UIImage {
-                parent.image = originalImage
-            }
-            parent.dismiss()
-        }
-
-        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
-            parent.dismiss()
-        }
-    }
-}
-
 // MARK: - DeepSettingsView
 struct DeepSettingsView: View {
     @EnvironmentObject var vm: AuthViewModel
     @EnvironmentObject var authState: AuthState
+    @ObservedObject private var modelSelector = ModelSelector.shared
     
     var isFullyLoggedIn: Bool
     
     @State private var showAlertSignOut = false
     @State private var isReloading = false
     @State private var showReloadSuccess = false
-    
-    @State private var activeClusterID: String = "None"
     
     private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00)
 
@@ -763,6 +372,51 @@ struct DeepSettingsView: View {
                         .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2)
                     }
                     .padding(.horizontal)
+                }
+
+                // MARK: Temporary model-testing entry point
+                if ModelTestingConfiguration.isEnabled {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Testing")
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .foregroundStyle(.secondary)
+                            .textCase(.uppercase)
+                            .padding(.horizontal, 20)
+
+                        NavigationLink {
+                            ModelSelectionView()
+                        } label: {
+                            HStack(spacing: 14) {
+                                Image(systemName: "cpu.fill")
+                                    .font(.system(size: 17, weight: .semibold))
+                                    .foregroundStyle(.white)
+                                    .frame(width: 36, height: 36)
+                                    .background(.indigo)
+                                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("Model Select")
+                                        .font(.system(size: 16, weight: .semibold))
+                                        .foregroundStyle(.primary)
+                                    Text(modelSelector.activeDisplayName)
+                                        .font(.system(size: 13))
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundStyle(.tertiary)
+                            }
+                            .padding(16)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color(uiColor: .secondarySystemGroupedBackground))
+                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2)
+                        }
+                        .padding(.horizontal)
+                    }
                 }
                 
                 VStack(spacing: 6) {
@@ -803,10 +457,10 @@ struct DeepSettingsView: View {
                     
                     HStack(spacing: 6) {
                         Image(systemName: "cpu")
-                        if activeClusterID == "None" {
-                            Text("No Cluster Loaded")
+                        if modelSelector.activeRelease == nil {
+                            Text("No Model Loaded")
                         } else {
-                            Text("Active Cluster: \(activeClusterID)")
+                            Text("Active Model: \(modelSelector.activeDisplayName)")
                         }
                     }
                     .font(.system(size: 12, weight: .bold, design: .monospaced))
@@ -828,13 +482,114 @@ struct DeepSettingsView: View {
         }
         .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
         .navigationTitle("Settings")
-        .task {
-            for await release in ModelSelector.shared.$activeRelease.values {
-                await MainActor.run {
-                    self.activeClusterID = release?.clusterID ?? "None"
+    }
+}
+
+// MARK: - Temporary bundled-model testing
+
+/// This screen and the Settings entry point above can be disabled together by
+/// setting `ModelTestingConfiguration.isEnabled` to `false`.
+struct ModelSelectionView: View {
+    @ObservedObject private var modelSelector = ModelSelector.shared
+
+    private var bundledModels: [BundledTestModel] {
+        modelSelector.availableTestModels
+    }
+
+    var body: some View {
+        List {
+            Section {
+                Button {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    modelSelector.useAutomaticModelSelection()
+                } label: {
+                    modelRow(
+                        title: "Automatic",
+                        detail: "Use the normal location-based model",
+                        systemImage: "location.fill",
+                        isSelected: modelSelector.selectedTestModelID == nil
+                    )
+                }
+                .buttonStyle(.plain)
+            } header: {
+                Text("Selection Mode")
+            }
+
+            Section {
+                if bundledModels.isEmpty {
+                    Label(
+                        "No bundled Core ML models found in this app target.",
+                        systemImage: "exclamationmark.triangle.fill"
+                    )
+                    .foregroundStyle(.orange)
+                } else {
+                    ForEach(bundledModels) { model in
+                        Button {
+                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                            modelSelector.selectTestModel(model)
+                        } label: {
+                            modelRow(
+                                title: model.displayName,
+                                detail: model.detail,
+                                systemImage: "cube.fill",
+                                isSelected: modelSelector.selectedTestModelID == model.id
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            } header: {
+                Text("Bundled Models")
+            } footer: {
+                Text("The selected model is applied immediately and remembered between launches.")
+            }
+
+            if bundledModels.count != 3 {
+                Section {
+                    Label(
+                        "Expected 3 bundled models; found \(bundledModels.count). Check each model's app-target membership in Xcode.",
+                        systemImage: "wrench.and.screwdriver.fill"
+                    )
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
                 }
             }
         }
+        .navigationTitle("Model Select")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func modelRow(
+        title: String,
+        detail: String,
+        systemImage: String,
+        isSelected: Bool
+    ) -> some View {
+        HStack(spacing: 14) {
+            Image(systemName: systemImage)
+                .foregroundStyle(isSelected ? Color.indigo : Color.secondary)
+                .frame(width: 24)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.primary)
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer()
+
+            if isSelected {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.title3)
+                    .foregroundStyle(.indigo)
+                    .accessibilityLabel("Selected")
+            }
+        }
+        .contentShape(Rectangle())
     }
 }
 
@@ -842,6 +597,7 @@ struct DeepSettingsView: View {
 struct BusinessProfileView: View {
     @EnvironmentObject var vm: AuthViewModel
     @State private var showEditSheet = false
+
 
     var body: some View {
         ScrollView {

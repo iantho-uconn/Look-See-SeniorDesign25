@@ -79,7 +79,6 @@
 		3C5BC5D5301E356400953451 /* Help.swift in Sources */ = {isa = PBXBuildFile; fileRef = 562DAAAE2F2A85B20083A71E /* Help.swift */; };
 		3C5BC5D6301E356400953451 /* PhotoPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C1FC9CB2F42C9DA0006C1D3 /* PhotoPicker.swift */; };
 		3C5BC5D7301E356400953451 /* PopUp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 568CE2CE2F565512009A8775 /* PopUp.swift */; };
-		3C5BC5D8301E356400953451 /* Detector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C9020A12F3ABCE200EE30BF /* Detector.swift */; };
 		3C5BC5D9301E356400953451 /* Buttons.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CB715B32FE5BF2E006ACB74 /* Buttons.swift */; };
 		3C5BC5DB301E356400953451 /* AWSS3StoragePlugin in Frameworks */ = {isa = PBXBuildFile; productRef = 3C5BC59D301E356400953451 /* AWSS3StoragePlugin */; };
 		3C5BC5DC301E356400953451 /* StripePaymentSheet in Frameworks */ = {isa = PBXBuildFile; productRef = 3C5BC59B301E356400953451 /* StripePaymentSheet */; };
@@ -97,9 +96,6 @@
 		3C90209E2F3ABCD300EE30BF /* CameraPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C90209D2F3ABCD300EE30BF /* CameraPreview.swift */; };
 		3C90209F2F3ABCD300EE30BF /* CameraPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C90209D2F3ABCD300EE30BF /* CameraPreview.swift */; };
 		3C9020A02F3ABCD300EE30BF /* CameraPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C90209D2F3ABCD300EE30BF /* CameraPreview.swift */; };
-		3C9020A22F3ABCE200EE30BF /* Detector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C9020A12F3ABCE200EE30BF /* Detector.swift */; };
-		3C9020A32F3ABCE200EE30BF /* Detector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C9020A12F3ABCE200EE30BF /* Detector.swift */; };
-		3C9020A42F3ABCE200EE30BF /* Detector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C9020A12F3ABCE200EE30BF /* Detector.swift */; };
 		3C9020A62F3ABCE900EE30BF /* LocationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C9020A52F3ABCE900EE30BF /* LocationManager.swift */; };
 		3C9020A72F3ABCE900EE30BF /* LocationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C9020A52F3ABCE900EE30BF /* LocationManager.swift */; };
 		3C9020A82F3ABCE900EE30BF /* LocationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C9020A52F3ABCE900EE30BF /* LocationManager.swift */; };
@@ -109,6 +105,12 @@
 		3CCEC31230198FBD00981B07 /* BusinessBulkPromotionEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CCEC31130198FBD00981B07 /* BusinessBulkPromotionEditor.swift */; };
 		3CCEC31430198FCD00981B07 /* BusinessBulkDeleteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CCEC31330198FCD00981B07 /* BusinessBulkDeleteView.swift */; };
 		3CE8899C2F3FEE2B00B66044 /* VideoPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CE8899B2F3FEE2300B66044 /* VideoPicker.swift */; };
+		3CEB2A02302D2224001A4A7C /* 1500framesTest.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3CEB2A01302D2224001A4A7C /* 1500framesTest.mlpackage */; };
+		3CEB2A03302D2224001A4A7C /* 1500framesTest.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3CEB2A01302D2224001A4A7C /* 1500framesTest.mlpackage */; };
+		3CEB2ED9302F6A89001A4A7C /* Detector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CEB2ED8302F6A85001A4A7C /* Detector.swift */; };
+		3CEB2EDA302F6A89001A4A7C /* Detector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CEB2ED8302F6A85001A4A7C /* Detector.swift */; };
+		3CEB2EDB302F6A89001A4A7C /* Detector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CEB2ED8302F6A85001A4A7C /* Detector.swift */; };
+		3CEB2EDC302F6A89001A4A7C /* Detector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CEB2ED8302F6A85001A4A7C /* Detector.swift */; };
 		3CF014A9300A994A009BD61F /* LoadingAnimation_2.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CF014A8300A994A009BD61F /* LoadingAnimation_2.swift */; };
 		3CF014AA300A994A009BD61F /* AnimatedBackground_2.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CF014A7300A994A009BD61F /* AnimatedBackground_2.swift */; };
 		3CF188BE2FE19AAD00FED231 /* CapturedNegativePhoto.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CF188BC2FE19AA300FED231 /* CapturedNegativePhoto.swift */; };
@@ -192,7 +194,6 @@
 		3C7452B8301187AF0016E21D /* BusinessMediaHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BusinessMediaHistoryView.swift; sourceTree = "<group>"; };
 		3C7452BC301187DB0016E21D /* BusinessMediaHistoryNavigationRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BusinessMediaHistoryNavigationRow.swift; sourceTree = "<group>"; };
 		3C90209D2F3ABCD300EE30BF /* CameraPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPreview.swift; sourceTree = "<group>"; };
-		3C9020A12F3ABCE200EE30BF /* Detector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Detector.swift; sourceTree = "<group>"; };
 		3C9020A52F3ABCE900EE30BF /* LocationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationManager.swift; sourceTree = "<group>"; };
 		3C9020BD2F3AC88600EE30BF /* CokeCanDetect.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = CokeCanDetect.mlpackage; sourceTree = "<group>"; };
 		3C9020BE2F3AC88600EE30BF /* fruits_and_cans_2.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = fruits_and_cans_2.mlpackage; sourceTree = "<group>"; };
@@ -203,6 +204,8 @@
 		3CCEC31130198FBD00981B07 /* BusinessBulkPromotionEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BusinessBulkPromotionEditor.swift; sourceTree = "<group>"; };
 		3CCEC31330198FCD00981B07 /* BusinessBulkDeleteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BusinessBulkDeleteView.swift; sourceTree = "<group>"; };
 		3CE8899B2F3FEE2300B66044 /* VideoPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoPicker.swift; sourceTree = "<group>"; };
+		3CEB2A01302D2224001A4A7C /* 1500framesTest.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = 1500framesTest.mlpackage; sourceTree = "<group>"; };
+		3CEB2ED8302F6A85001A4A7C /* Detector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Detector.swift; sourceTree = "<group>"; };
 		3CF014A7300A994A009BD61F /* AnimatedBackground_2.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnimatedBackground_2.swift; sourceTree = "<group>"; };
 		3CF014A8300A994A009BD61F /* LoadingAnimation_2.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoadingAnimation_2.swift; sourceTree = "<group>"; };
 		3CF188BC2FE19AA300FED231 /* CapturedNegativePhoto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CapturedNegativePhoto.swift; sourceTree = "<group>"; };
@@ -345,10 +348,10 @@
 		3C90209B2F3ABC8B00EE30BF /* Detection */ = {
 			isa = PBXGroup;
 			children = (
+				3CEB2ED8302F6A85001A4A7C /* Detector.swift */,
 				D0E78B7E3005462200E5FE00 /* AutoUploadManager.swift */,
 				D0E78B7A300545E200E5FE00 /* NetworkMonitor.swift */,
 				3C90209D2F3ABCD300EE30BF /* CameraPreview.swift */,
-				3C9020A12F3ABCE200EE30BF /* Detector.swift */,
 				3C9020A52F3ABCE900EE30BF /* LocationManager.swift */,
 			);
 			path = Detection;
@@ -362,6 +365,7 @@
 				3C72AA3A2F51570300A90328 /* again.mlpackage */,
 				3C19EB482F9943F400D1AA43 /* FinalDetector.mlpackage */,
 				3C9020BE2F3AC88600EE30BF /* fruits_and_cans_2.mlpackage */,
+				3CEB2A01302D2224001A4A7C /* 1500framesTest.mlpackage */,
 			);
 			path = MachineLearningModels;
 			sourceTree = "<group>";
@@ -719,6 +723,7 @@
 				378CB4A9302BF54400805E32 /* helpandsupport.swift in Sources */,
 				3C5BC5C6301E356400953451 /* NegativeGalleryPicker.swift in Sources */,
 				3C5BC5C7301E356400953451 /* BusinessBulkDeleteView.swift in Sources */,
+				3CEB2EDB302F6A89001A4A7C /* Detector.swift in Sources */,
 				3C5BC5C8301E356400953451 /* Splash.swift in Sources */,
 				3C5BC5C9301E356400953451 /* LandmarkInfo.swift in Sources */,
 				3C5BC5CA301E356400953451 /* NegativeVideoCameraService.swift in Sources */,
@@ -732,10 +737,10 @@
 				3C5BC5D2301E356400953451 /* AnimatedBackground_2.swift in Sources */,
 				3C5BC5D3301E356400953451 /* BusinessBulkPromotionEditor.swift in Sources */,
 				3C5BC5D4301E356400953451 /* LandmarkMapView.swift in Sources */,
+				3CEB2A03302D2224001A4A7C /* 1500framesTest.mlpackage in Sources */,
 				3C5BC5D5301E356400953451 /* Help.swift in Sources */,
 				3C5BC5D6301E356400953451 /* PhotoPicker.swift in Sources */,
 				3C5BC5D7301E356400953451 /* PopUp.swift in Sources */,
-				3C5BC5D8301E356400953451 /* Detector.swift in Sources */,
 				3C5BC5D9301E356400953451 /* Buttons.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -759,6 +764,7 @@
 				3CF188BE2FE19AAD00FED231 /* CapturedNegativePhoto.swift in Sources */,
 				562AD38C2ECBAF1B00D5144C /* Login.swift in Sources */,
 				B0DC9CA62F4F849A004A9452 /* AuthService.swift in Sources */,
+				3CEB2A02302D2224001A4A7C /* 1500framesTest.mlpackage in Sources */,
 				D0B0B12C2FE48EC100C75E25 /* OfflineMediaManager.swift in Sources */,
 				3CF370423006BE7F005780B3 /* ForgotPasswordView.swift in Sources */,
 				378CB4AA302BF54400805E32 /* helpandsupport.swift in Sources */,
@@ -779,6 +785,7 @@
 				3C56010F3005BEE500EB4493 /* BusinessPromotionEditor.swift in Sources */,
 				3C72AA372F5141A000A90328 /* best.mlpackage in Sources */,
 				56C3FA082EA6CA3100EA6153 /* Settings.swift in Sources */,
+				3CEB2EDC302F6A89001A4A7C /* Detector.swift in Sources */,
 				3CE8899C2F3FEE2B00B66044 /* VideoPicker.swift in Sources */,
 				3C3D161E2FFCA97900C8A544 /* BusinessLandmarksView.swift in Sources */,
 				378CB4C6302C0CE600805E32 /* privacypolicy.swift in Sources */,
@@ -804,7 +811,6 @@
 				562DAAAF2F2A85B40083A71E /* Help.swift in Sources */,
 				3C1FC9CC2F42C9E70006C1D3 /* PhotoPicker.swift in Sources */,
 				568CE2CF2F565512009A8775 /* PopUp.swift in Sources */,
-				3C9020A32F3ABCE200EE30BF /* Detector.swift in Sources */,
 				3CB715B42FE5BF2E006ACB74 /* Buttons.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -817,7 +823,7 @@
 				D0E78B7F3005462600E5FE00 /* AutoUploadManager.swift in Sources */,
 				3C90209F2F3ABCD300EE30BF /* CameraPreview.swift in Sources */,
 				D0E78B7B300545F500E5FE00 /* NetworkMonitor.swift in Sources */,
-				3C9020A22F3ABCE200EE30BF /* Detector.swift in Sources */,
+				3CEB2ED9302F6A89001A4A7C /* Detector.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -826,10 +832,10 @@
 			buildActionMask = 2147483647;
 			files = (
 				3C90209E2F3ABCD300EE30BF /* CameraPreview.swift in Sources */,
+				3CEB2EDA302F6A89001A4A7C /* Detector.swift in Sources */,
 				D0E78B7C300545F500E5FE00 /* NetworkMonitor.swift in Sources */,
 				D0E78B813005462600E5FE00 /* AutoUploadManager.swift in Sources */,
 				3C9020A72F3ABCE900EE30BF /* LocationManager.swift in Sources */,
-				3C9020A42F3ABCE200EE30BF /* Detector.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1060,7 +1066,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = ZLBPU9JP27;
+				DEVELOPMENT_TEAM = C66T6ZH83N;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
@@ -1078,7 +1084,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = looksee.angell.com;
+				PRODUCT_BUNDLE_IDENTIFIER = looksee.ian.com;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
