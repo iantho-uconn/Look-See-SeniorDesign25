@@ -253,7 +253,6 @@
 				amplifyconfiguration.json,
 				Assets.xcassets,
 				InfoPlist.xcstrings,
-				Localizable.xcstrings,
 			);
 		};
 		3C5BC617301E398600953451 /* Exceptions for "Resources" folder in "Compile Sources" phase from "LookSee Preview" target */ = {

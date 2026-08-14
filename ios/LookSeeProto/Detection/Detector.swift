@@ -81,7 +81,8 @@ class DetectionTracker {
                 let smoothed = Detection(
                     clusterID: newDet.clusterID, modelVersion: newDet.modelVersion,
                     modelIdentifier: newDet.modelIdentifier, classIndex: newDet.classIndex,
-                    classCount: newDet.classCount, confidence: smoothedConf, bbox: smoothedRect
+                    classCount: newDet.classCount, confidence: smoothedConf,
+                    bbox: smoothedRect, overrideLabel: newDet.overrideLabel
                 )
                 lastDetection = smoothed
                 return smoothed
@@ -97,7 +98,8 @@ class DetectionTracker {
                 let coasted = Detection(
                     clusterID: last.clusterID, modelVersion: last.modelVersion,
                     modelIdentifier: last.modelIdentifier, classIndex: last.classIndex,
-                    classCount: last.classCount, confidence: last.confidence * 0.92, bbox: last.bbox
+                    classCount: last.classCount, confidence: last.confidence * 0.92,
+                    bbox: last.bbox, overrideLabel: last.overrideLabel
                 )
                 lastDetection = coasted
                 return coasted
@@ -398,7 +400,10 @@ final class Detector: NSObject, ObservableObject {
                 newDetections = parseDetections(
                     confArray: conf, coordArray: coord,
                     scale: scale, padX: padX, padY: padY, originalSize: CGSize(width: originalWidth, height: originalHeight),
-                    clusterID: clusterID, modelVersion: modelVersion, modelIdentifier: modelIdentifier, expectedClassCount: expectedClassCount
+                    clusterID: clusterID, modelVersion: modelVersion,
+                    modelIdentifier: modelIdentifier,
+                    expectedClassCount: expectedClassCount,
+                    classLabels: classLabels
                 )
                 
             } else if let firstKey = outputKeys.first, let combinedArray = result.featureValue(for: firstKey)?.multiArrayValue {
@@ -645,7 +650,7 @@ final class Detector: NSObject, ObservableObject {
         // 1. Update trackers with active detections
         for det in nearbyDetections {
             let label = det.label
-            let currentCount = (frameCounters[label] ?? 0) + 1
+           /* let currentCount = (frameCounters[label] ?? 0) + 1
             frameCounters[label] = currentCount
 
             if smoothers[label] == nil { smoothers[label] = BoundingBoxSmoother() }
@@ -655,6 +660,7 @@ final class Detector: NSObject, ObservableObject {
                 finalResults.append(
                     Detection(clusterID: det.clusterID, modelVersion: det.modelVersion, modelIdentifier: det.modelIdentifier, classIndex: det.classIndex, classCount: det.classCount, confidence: det.confidence, bbox: smoothedBox, overrideLabel: det.overrideLabel)
                 )
+                */
             if trackers[label] == nil { trackers[label] = DetectionTracker() }
             if let smoothedDet = trackers[label]?.update(with: det) {
                 finalResults.append(smoothedDet)
