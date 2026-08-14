@@ -72,7 +72,7 @@ def process_video(input_bucket, video_key, output_bucket, folder_path, file_pref
     s3_client.download_file(input_bucket, video_key, TEMP_VIDEO_PATH)
     cap = cv2.VideoCapture(TEMP_VIDEO_PATH)
     previous_frame, frame_index = None, 0
-    saved_count = 0  # 🚀 TRACK EXTRACTED FRAMES
+    saved_count = 0 
 
     while True:
         ret, frame = cap.read()
@@ -91,7 +91,7 @@ def process_video(input_bucket, video_key, output_bucket, folder_path, file_pref
         if previous_frame is None or not are_frames_similar(previous_frame, frame, frame_index):
             save_and_upload(frame, output_bucket, folder_path, frame_index, file_prefix)
             previous_frame = frame
-            saved_count += 1  # 🚀 INCREMENT SAVED FRAMES
+            saved_count += 1 
             
         frame_index += 1
         
@@ -154,17 +154,19 @@ def lambda_handler(event, context):
     upload_hash = uuid.uuid4().hex[:6]
     file_prefix = f"{class_name}_{upload_hash}"
     
-    saved_count = 0
+    new_saved_count = 0
 
     if "/images/" in video_key:
         original_filename = video_key.split('/')[-1]
         target_filename = f"{file_prefix}__{original_filename}" 
         s3_client.copy({'Bucket': input_bucket, 'Key': video_key}, output_bucket, f"{folder_path}/{target_filename}")
         reference_image_key = f"{folder_path}/{target_filename}"
-        saved_count = 1
+        new_saved_count = 1
     else:
-        saved_count = process_video(input_bucket, video_key, output_bucket, folder_path, file_prefix)
+        new_saved_count = process_video(input_bucket, video_key, output_bucket, folder_path, file_prefix)
         reference_image_key = f"{folder_path}/{file_prefix}__frame_0.jpg" 
+        
+    print(f"Extracted {new_saved_count} frames from the latest upload.")
 
     if not prompt_list:
         try:
@@ -253,35 +255,47 @@ def lambda_handler(event, context):
     )
 
     # ---------------------------------------------------------------------------
-    # 🚀 REAL-TIME SHORTFALL CHECK & DYNAMODB STATUS UPDATE (MOVED FROM AUTOLABELER)
+    # 🚀 REAL-TIME SHORTFALL CHECK & DYNAMODB STATUS UPDATE 
     # ---------------------------------------------------------------------------
     try:
-        print("\n🚀 Evaluating frame counts and updating DynamoDB...")
+        print("\n🚀 Scanning S3 Folder to calculate Absolute Total Frame Count...")
+        
+        # 🚀 THE FIX: Actually scan the S3 folder to find the total ground truth of frames!
+        total_saved_frames = 0
+        paginator = s3_client.get_paginator('list_objects_v2')
+        for page in paginator.paginate(Bucket=output_bucket, Prefix=f"{folder_path}/"):
+            for obj in page.get('Contents', []):
+                # Only count actual image files, ignore metadata.json
+                if obj['Key'].lower().endswith(('.jpg', '.jpeg', '.png')):
+                    total_saved_frames += 1
+
+        print(f"✅ Absolute Total Frames in S3: {total_saved_frames}")
+
         required_frames = int(item.get('minRequiredFrames', int(os.environ.get('MIN_IMAGES_PER_CLASS', 1800))))
         landmark_id = item.get('landmarkId')
         
-        if saved_count < required_frames:
-            missing_frames = required_frames - saved_count
+        if total_saved_frames < required_frames:
+            missing_frames = required_frames - total_saved_frames
             seconds_needed = math.ceil(missing_frames / 30.0)
             status = 'NEEDS_MORE_MEDIA'
             
-            print(f"❌ SHORTFALL DETECTED: {saved_count}/{required_frames} clean frames. User needs ~{seconds_needed}s more video.")
+            print(f"❌ SHORTFALL DETECTED: {total_saved_frames}/{required_frames} clean frames. User needs ~{seconds_needed}s more video.")
             
             update_expr = "SET #st = :s, cleanFrameCount = :c, requiredFrames = :r, secondsNeeded = :sec"
             expr_vals = {
                 ':s': status,
-                ':c': saved_count,
+                ':c': total_saved_frames,
                 ':r': required_frames,
                 ':sec': seconds_needed
             }
         else:
             status = 'READY_FOR_AUTOLABELING'
-            print(f"✅ MEDIA THRESHOLD MET: {saved_count}/{required_frames} clean frames. Ready for autolabeling!")
+            print(f"✅ MEDIA THRESHOLD MET: {total_saved_frames}/{required_frames} clean frames. Ready for autolabeling!")
             
             update_expr = "SET #st = :s, cleanFrameCount = :c, requiredFrames = :r"
             expr_vals = {
                 ':s': status,
-                ':c': saved_count,
+                ':c': total_saved_frames,
                 ':r': required_frames
             }
 
@@ -302,10 +316,7 @@ def lambda_handler(event, context):
                 ExpressionAttributeValues=expr_vals
             )
         
-        # 📱 FUTURE: Put the AWS Pinpoint Push Notification trigger right here!
-        
     except Exception as e:
         print(f"⚠️ Critical error during DynamoDB status update: {e}")
 
-    # --- 🛑 SQS PUSH COMPLETELY REMOVED ---
     return {"statusCode": 200, "body": f"Processing complete. Status: {status}"}
