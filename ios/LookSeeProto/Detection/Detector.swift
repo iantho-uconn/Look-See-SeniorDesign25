@@ -61,7 +61,7 @@ class DetectionTracker {
     var lastDetection: Detection?
     private var framesSinceLastSeen = 0
     private let maxCoastFrames = 5       // Hold box for ~0.4s during motion blur/cutoffs
-    private let alpha: CGFloat = 0.80     // 0.1 = heavy lag/smooth, 0.9 = fast/jittery
+    private let alpha: CGFloat = 0.65     // 0.1 = heavy lag/smooth, 0.9 = fast/jittery
 
     func update(with newDetection: Detection?) -> Detection? {
         if let newDet = newDetection {
