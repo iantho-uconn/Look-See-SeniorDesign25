@@ -15,7 +15,6 @@
 		378CB4C5302C0CE600805E32 /* privacypolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 378CB4C4302C0CD600805E32 /* privacypolicy.swift */; };
 		378CB4C6302C0CE600805E32 /* privacypolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 378CB4C4302C0CD600805E32 /* privacypolicy.swift */; };
 		3C19EB412F981FA400D1AA43 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = 3C19EB402F981FA400D1AA43 /* ZIPFoundation */; };
-		3C19EB492F9943F400D1AA43 /* FinalDetector.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3C19EB482F9943F400D1AA43 /* FinalDetector.mlpackage */; };
 		3C1FC9CC2F42C9E70006C1D3 /* PhotoPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C1FC9CB2F42C9DA0006C1D3 /* PhotoPicker.swift */; };
 		3C3D161E2FFCA97900C8A544 /* BusinessLandmarksView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C3D161D2FFCA97200C8A544 /* BusinessLandmarksView.swift */; };
 		3C3D16202FFCA9C300C8A544 /* BusinessLandmarkDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C3D161F2FFCA9B700C8A544 /* BusinessLandmarkDetailView.swift */; };
@@ -44,7 +43,6 @@
 		3C5BC5B2301E356400953451 /* CameraPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C90209D2F3ABCD300EE30BF /* CameraPreview.swift */; };
 		3C5BC5B3301E356400953451 /* PayInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56BDFD602EC63B46006D1B84 /* PayInfo.swift */; };
 		3C5BC5B4301E356400953451 /* NegativeVideoCameraView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0E7888C2FF2E3C000E5FE00 /* NegativeVideoCameraView.swift */; };
-		3C5BC5B5301E356400953451 /* FinalDetector.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3C19EB482F9943F400D1AA43 /* FinalDetector.mlpackage */; };
 		3C5BC5B6301E356400953451 /* AuthViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0DC9CA72F4F84B2004A9452 /* AuthViewModel.swift */; };
 		3C5BC5B7301E356400953451 /* ModelLoadingScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00F16722F9328360057430F /* ModelLoadingScreen.swift */; };
 		3C5BC5B8301E356400953451 /* VideoMerge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 374FCAFA2FFE98CB0035A674 /* VideoMerge.swift */; };
@@ -54,7 +52,6 @@
 		3C5BC5BC301E356400953451 /* AccountSecurityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CF3703D3006BE24005780B3 /* AccountSecurityView.swift */; };
 		3C5BC5BD301E356400953451 /* VariableContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B002FA0E2F91815500120C4F /* VariableContainer.swift */; };
 		3C5BC5BE301E356400953451 /* BusinessPromotionEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C56010E3005BEDB00EB4493 /* BusinessPromotionEditor.swift */; };
-		3C5BC5BF301E356400953451 /* best.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3C72AA362F5141A000A90328 /* best.mlpackage */; };
 		3C5BC5C0301E356400953451 /* Settings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56C3FA052EA6CA3100EA6153 /* Settings.swift */; };
 		3C5BC5C1301E356400953451 /* VideoPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CE8899B2F3FEE2300B66044 /* VideoPicker.swift */; };
 		3C5BC5C2301E356400953451 /* BusinessLandmarksView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C3D161D2FFCA97200C8A544 /* BusinessLandmarksView.swift */; };
@@ -69,9 +66,6 @@
 		3C5BC5CB301E356400953451 /* ArchiveView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0B0B12D2FE48EF500C75E25 /* ArchiveView.swift */; };
 		3C5BC5CC301E356400953451 /* ConfirmSignup.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0DE8C0E2F51712F008E1512 /* ConfirmSignup.swift */; };
 		3C5BC5CD301E356400953451 /* LocationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C9020A52F3ABCE900EE30BF /* LocationManager.swift */; };
-		3C5BC5CE301E356400953451 /* CokeCanDetect.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3C9020BD2F3AC88600EE30BF /* CokeCanDetect.mlpackage */; };
-		3C5BC5CF301E356400953451 /* again.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3C72AA3A2F51570300A90328 /* again.mlpackage */; };
-		3C5BC5D0301E356400953451 /* fruits_and_cans_2.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3C9020BE2F3AC88600EE30BF /* fruits_and_cans_2.mlpackage */; };
 		3C5BC5D1301E356400953451 /* LoadingAnimation_2.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CF014A8300A994A009BD61F /* LoadingAnimation_2.swift */; };
 		3C5BC5D2301E356400953451 /* AnimatedBackground_2.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CF014A7300A994A009BD61F /* AnimatedBackground_2.swift */; };
 		3C5BC5D3301E356400953451 /* BusinessBulkPromotionEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CCEC31130198FBD00981B07 /* BusinessBulkPromotionEditor.swift */; };
@@ -79,7 +73,6 @@
 		3C5BC5D5301E356400953451 /* Help.swift in Sources */ = {isa = PBXBuildFile; fileRef = 562DAAAE2F2A85B20083A71E /* Help.swift */; };
 		3C5BC5D6301E356400953451 /* PhotoPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C1FC9CB2F42C9DA0006C1D3 /* PhotoPicker.swift */; };
 		3C5BC5D7301E356400953451 /* PopUp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 568CE2CE2F565512009A8775 /* PopUp.swift */; };
-		3C5BC5D8301E356400953451 /* Detector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C9020A12F3ABCE200EE30BF /* Detector.swift */; };
 		3C5BC5D9301E356400953451 /* Buttons.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CB715B32FE5BF2E006ACB74 /* Buttons.swift */; };
 		3C5BC5DB301E356400953451 /* AWSS3StoragePlugin in Frameworks */ = {isa = PBXBuildFile; productRef = 3C5BC59D301E356400953451 /* AWSS3StoragePlugin */; };
 		3C5BC5DC301E356400953451 /* StripePaymentSheet in Frameworks */ = {isa = PBXBuildFile; productRef = 3C5BC59B301E356400953451 /* StripePaymentSheet */; };
@@ -89,26 +82,31 @@
 		3C5BC5E1301E356400953451 /* ITlo.gpx in Resources */ = {isa = PBXBuildFile; fileRef = 3CF3703B300683FB005780B3 /* ITlo.gpx */; };
 		3C5FED6B2F907D270018FF06 /* Tier2LandmarkRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C5FED6A2F907D270018FF06 /* Tier2LandmarkRecord.swift */; };
 		3C63C8A82F91875E0006C5DD /* VariableContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C63C8A72F91875E0006C5DD /* VariableContainer.swift */; };
-		3C72AA372F5141A000A90328 /* best.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3C72AA362F5141A000A90328 /* best.mlpackage */; };
-		3C72AA3B2F51570300A90328 /* again.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3C72AA3A2F51570300A90328 /* again.mlpackage */; };
 		3C7452B9301187AF0016E21D /* BusinessMediaHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C7452B8301187AF0016E21D /* BusinessMediaHistoryView.swift */; };
 		3C7452BD301187DB0016E21D /* BusinessMediaHistoryNavigationRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C7452BC301187DB0016E21D /* BusinessMediaHistoryNavigationRow.swift */; };
 		3C74532630133A950016E21D /* VariableContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B002FA0E2F91815500120C4F /* VariableContainer.swift */; };
 		3C90209E2F3ABCD300EE30BF /* CameraPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C90209D2F3ABCD300EE30BF /* CameraPreview.swift */; };
 		3C90209F2F3ABCD300EE30BF /* CameraPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C90209D2F3ABCD300EE30BF /* CameraPreview.swift */; };
 		3C9020A02F3ABCD300EE30BF /* CameraPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C90209D2F3ABCD300EE30BF /* CameraPreview.swift */; };
-		3C9020A22F3ABCE200EE30BF /* Detector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C9020A12F3ABCE200EE30BF /* Detector.swift */; };
-		3C9020A32F3ABCE200EE30BF /* Detector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C9020A12F3ABCE200EE30BF /* Detector.swift */; };
-		3C9020A42F3ABCE200EE30BF /* Detector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C9020A12F3ABCE200EE30BF /* Detector.swift */; };
 		3C9020A62F3ABCE900EE30BF /* LocationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C9020A52F3ABCE900EE30BF /* LocationManager.swift */; };
 		3C9020A72F3ABCE900EE30BF /* LocationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C9020A52F3ABCE900EE30BF /* LocationManager.swift */; };
 		3C9020A82F3ABCE900EE30BF /* LocationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C9020A52F3ABCE900EE30BF /* LocationManager.swift */; };
-		3C9020C02F3AC88600EE30BF /* CokeCanDetect.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3C9020BD2F3AC88600EE30BF /* CokeCanDetect.mlpackage */; };
-		3C9020C12F3AC88600EE30BF /* fruits_and_cans_2.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3C9020BE2F3AC88600EE30BF /* fruits_and_cans_2.mlpackage */; };
 		3CB715B42FE5BF2E006ACB74 /* Buttons.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CB715B32FE5BF2E006ACB74 /* Buttons.swift */; };
 		3CCEC31230198FBD00981B07 /* BusinessBulkPromotionEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CCEC31130198FBD00981B07 /* BusinessBulkPromotionEditor.swift */; };
 		3CCEC31430198FCD00981B07 /* BusinessBulkDeleteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CCEC31330198FCD00981B07 /* BusinessBulkDeleteView.swift */; };
 		3CE8899C2F3FEE2B00B66044 /* VideoPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CE8899B2F3FEE2300B66044 /* VideoPicker.swift */; };
+		3CEB2A02302D2224001A4A7C /* 1500framesTest.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3CEB2A01302D2224001A4A7C /* 1500framesTest.mlpackage */; };
+		3CEB2A03302D2224001A4A7C /* 1500framesTest.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3CEB2A01302D2224001A4A7C /* 1500framesTest.mlpackage */; };
+		3CEB2ED9302F6A89001A4A7C /* Detector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CEB2ED8302F6A85001A4A7C /* Detector.swift */; };
+		3CEB2EDA302F6A89001A4A7C /* Detector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CEB2ED8302F6A85001A4A7C /* Detector.swift */; };
+		3CEB2EDB302F6A89001A4A7C /* Detector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CEB2ED8302F6A85001A4A7C /* Detector.swift */; };
+		3CEB2EDC302F6A89001A4A7C /* Detector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CEB2ED8302F6A85001A4A7C /* Detector.swift */; };
+		3CEB32B2302F80BF001A4A7C /* AlllandmarkspreOpt.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3CEB32B1302F80BF001A4A7C /* AlllandmarkspreOpt.mlpackage */; };
+		3CEB32B3302F80BF001A4A7C /* AlllandmarkspreOpt.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3CEB32B1302F80BF001A4A7C /* AlllandmarkspreOpt.mlpackage */; };
+		3CEB32B5302F8115001A4A7C /* Mysticfirsthalf.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3CEB32B4302F8115001A4A7C /* Mysticfirsthalf.mlpackage */; };
+		3CEB32B6302F8115001A4A7C /* Mysticfirsthalf.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3CEB32B4302F8115001A4A7C /* Mysticfirsthalf.mlpackage */; };
+		3CEB32B8302F817C001A4A7C /* MysticSecondHalf.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3CEB32B7302F817C001A4A7C /* MysticSecondHalf.mlpackage */; };
+		3CEB32B9302F817C001A4A7C /* MysticSecondHalf.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 3CEB32B7302F817C001A4A7C /* MysticSecondHalf.mlpackage */; };
 		3CF014A9300A994A009BD61F /* LoadingAnimation_2.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CF014A8300A994A009BD61F /* LoadingAnimation_2.swift */; };
 		3CF014AA300A994A009BD61F /* AnimatedBackground_2.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CF014A7300A994A009BD61F /* AnimatedBackground_2.swift */; };
 		3CF188BE2FE19AAD00FED231 /* CapturedNegativePhoto.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CF188BC2FE19AA300FED231 /* CapturedNegativePhoto.swift */; };
@@ -177,7 +175,6 @@
 		378CB4A8302BF53D00805E32 /* helpandsupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = helpandsupport.swift; sourceTree = "<group>"; };
 		378CB4B1302C093700805E32 /* termsofservice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = termsofservice.swift; sourceTree = "<group>"; };
 		378CB4C4302C0CD600805E32 /* privacypolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = privacypolicy.swift; sourceTree = "<group>"; };
-		3C19EB482F9943F400D1AA43 /* FinalDetector.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = FinalDetector.mlpackage; sourceTree = "<group>"; };
 		3C1FC9CB2F42C9DA0006C1D3 /* PhotoPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoPicker.swift; sourceTree = "<group>"; };
 		3C3D161D2FFCA97200C8A544 /* BusinessLandmarksView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BusinessLandmarksView.swift; sourceTree = "<group>"; };
 		3C3D161F2FFCA9B700C8A544 /* BusinessLandmarkDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BusinessLandmarkDetailView.swift; sourceTree = "<group>"; };
@@ -187,15 +184,10 @@
 		3C5BC5E5301E356400953451 /* LookSee Preview.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "LookSee Preview.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		3C5FED6A2F907D270018FF06 /* Tier2LandmarkRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tier2LandmarkRecord.swift; sourceTree = "<group>"; };
 		3C63C8A72F91875E0006C5DD /* VariableContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VariableContainer.swift; sourceTree = "<group>"; };
-		3C72AA362F5141A000A90328 /* best.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = best.mlpackage; sourceTree = "<group>"; };
-		3C72AA3A2F51570300A90328 /* again.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = again.mlpackage; sourceTree = "<group>"; };
 		3C7452B8301187AF0016E21D /* BusinessMediaHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BusinessMediaHistoryView.swift; sourceTree = "<group>"; };
 		3C7452BC301187DB0016E21D /* BusinessMediaHistoryNavigationRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BusinessMediaHistoryNavigationRow.swift; sourceTree = "<group>"; };
 		3C90209D2F3ABCD300EE30BF /* CameraPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPreview.swift; sourceTree = "<group>"; };
-		3C9020A12F3ABCE200EE30BF /* Detector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Detector.swift; sourceTree = "<group>"; };
 		3C9020A52F3ABCE900EE30BF /* LocationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationManager.swift; sourceTree = "<group>"; };
-		3C9020BD2F3AC88600EE30BF /* CokeCanDetect.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = CokeCanDetect.mlpackage; sourceTree = "<group>"; };
-		3C9020BE2F3AC88600EE30BF /* fruits_and_cans_2.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = fruits_and_cans_2.mlpackage; sourceTree = "<group>"; };
 		3C918F9D2E9ECE5F00AF5DAF /* LookSeeProto.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LookSeeProto.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		3C918FAA2E9ECE6100AF5DAF /* LookSeeProtoTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LookSeeProtoTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		3C918FB42E9ECE6100AF5DAF /* LookSeeProtoUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LookSeeProtoUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -203,6 +195,11 @@
 		3CCEC31130198FBD00981B07 /* BusinessBulkPromotionEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BusinessBulkPromotionEditor.swift; sourceTree = "<group>"; };
 		3CCEC31330198FCD00981B07 /* BusinessBulkDeleteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BusinessBulkDeleteView.swift; sourceTree = "<group>"; };
 		3CE8899B2F3FEE2300B66044 /* VideoPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoPicker.swift; sourceTree = "<group>"; };
+		3CEB2A01302D2224001A4A7C /* 1500framesTest.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = 1500framesTest.mlpackage; sourceTree = "<group>"; };
+		3CEB2ED8302F6A85001A4A7C /* Detector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Detector.swift; sourceTree = "<group>"; };
+		3CEB32B1302F80BF001A4A7C /* AlllandmarkspreOpt.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = AlllandmarkspreOpt.mlpackage; sourceTree = "<group>"; };
+		3CEB32B4302F8115001A4A7C /* Mysticfirsthalf.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = Mysticfirsthalf.mlpackage; sourceTree = "<group>"; };
+		3CEB32B7302F817C001A4A7C /* MysticSecondHalf.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = MysticSecondHalf.mlpackage; sourceTree = "<group>"; };
 		3CF014A7300A994A009BD61F /* AnimatedBackground_2.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnimatedBackground_2.swift; sourceTree = "<group>"; };
 		3CF014A8300A994A009BD61F /* LoadingAnimation_2.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoadingAnimation_2.swift; sourceTree = "<group>"; };
 		3CF188BC2FE19AA300FED231 /* CapturedNegativePhoto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CapturedNegativePhoto.swift; sourceTree = "<group>"; };
@@ -250,7 +247,6 @@
 				amplifyconfiguration.json,
 				Assets.xcassets,
 				InfoPlist.xcstrings,
-				Localizable.xcstrings,
 			);
 		};
 		3C5BC617301E398600953451 /* Exceptions for "Resources" folder in "Compile Sources" phase from "LookSee Preview" target */ = {
@@ -345,10 +341,10 @@
 		3C90209B2F3ABC8B00EE30BF /* Detection */ = {
 			isa = PBXGroup;
 			children = (
+				3CEB2ED8302F6A85001A4A7C /* Detector.swift */,
 				D0E78B7E3005462200E5FE00 /* AutoUploadManager.swift */,
 				D0E78B7A300545E200E5FE00 /* NetworkMonitor.swift */,
 				3C90209D2F3ABCD300EE30BF /* CameraPreview.swift */,
-				3C9020A12F3ABCE200EE30BF /* Detector.swift */,
 				3C9020A52F3ABCE900EE30BF /* LocationManager.swift */,
 			);
 			path = Detection;
@@ -357,11 +353,10 @@
 		3C9020BF2F3AC88600EE30BF /* MachineLearningModels */ = {
 			isa = PBXGroup;
 			children = (
-				3C9020BD2F3AC88600EE30BF /* CokeCanDetect.mlpackage */,
-				3C72AA362F5141A000A90328 /* best.mlpackage */,
-				3C72AA3A2F51570300A90328 /* again.mlpackage */,
-				3C19EB482F9943F400D1AA43 /* FinalDetector.mlpackage */,
-				3C9020BE2F3AC88600EE30BF /* fruits_and_cans_2.mlpackage */,
+				3CEB32B1302F80BF001A4A7C /* AlllandmarkspreOpt.mlpackage */,
+				3CEB32B7302F817C001A4A7C /* MysticSecondHalf.mlpackage */,
+				3CEB32B4302F8115001A4A7C /* Mysticfirsthalf.mlpackage */,
+				3CEB2A01302D2224001A4A7C /* 1500framesTest.mlpackage */,
 			);
 			path = MachineLearningModels;
 			sourceTree = "<group>";
@@ -698,9 +693,9 @@
 				3C5BC5B2301E356400953451 /* CameraPreview.swift in Sources */,
 				3C5BC5B3301E356400953451 /* PayInfo.swift in Sources */,
 				3C5BC5B4301E356400953451 /* NegativeVideoCameraView.swift in Sources */,
-				3C5BC5B5301E356400953451 /* FinalDetector.mlpackage in Sources */,
 				3C5BC5B6301E356400953451 /* AuthViewModel.swift in Sources */,
 				3C5BC5B7301E356400953451 /* ModelLoadingScreen.swift in Sources */,
+				3CEB32B9302F817C001A4A7C /* MysticSecondHalf.mlpackage in Sources */,
 				3C5BC5B8301E356400953451 /* VideoMerge.swift in Sources */,
 				3C5BC5B9301E356400953451 /* AutoUploadManager.swift in Sources */,
 				3C5BC5BA301E356400953451 /* Library.swift in Sources */,
@@ -708,7 +703,6 @@
 				3C5BC5BC301E356400953451 /* AccountSecurityView.swift in Sources */,
 				3C5BC5BD301E356400953451 /* VariableContainer.swift in Sources */,
 				3C5BC5BE301E356400953451 /* BusinessPromotionEditor.swift in Sources */,
-				3C5BC5BF301E356400953451 /* best.mlpackage in Sources */,
 				3C5BC5C0301E356400953451 /* Settings.swift in Sources */,
 				3C5BC5C1301E356400953451 /* VideoPicker.swift in Sources */,
 				378CB4B2302C094F00805E32 /* termsofservice.swift in Sources */,
@@ -717,25 +711,25 @@
 				3C5BC5C4301E356400953451 /* TextScannerView.swift in Sources */,
 				3C5BC5C5301E356400953451 /* AuthState.swift in Sources */,
 				378CB4A9302BF54400805E32 /* helpandsupport.swift in Sources */,
+				3CEB32B6302F8115001A4A7C /* Mysticfirsthalf.mlpackage in Sources */,
 				3C5BC5C6301E356400953451 /* NegativeGalleryPicker.swift in Sources */,
 				3C5BC5C7301E356400953451 /* BusinessBulkDeleteView.swift in Sources */,
+				3CEB2EDB302F6A89001A4A7C /* Detector.swift in Sources */,
 				3C5BC5C8301E356400953451 /* Splash.swift in Sources */,
 				3C5BC5C9301E356400953451 /* LandmarkInfo.swift in Sources */,
 				3C5BC5CA301E356400953451 /* NegativeVideoCameraService.swift in Sources */,
 				3C5BC5CB301E356400953451 /* ArchiveView.swift in Sources */,
 				3C5BC5CC301E356400953451 /* ConfirmSignup.swift in Sources */,
 				3C5BC5CD301E356400953451 /* LocationManager.swift in Sources */,
-				3C5BC5CE301E356400953451 /* CokeCanDetect.mlpackage in Sources */,
-				3C5BC5CF301E356400953451 /* again.mlpackage in Sources */,
-				3C5BC5D0301E356400953451 /* fruits_and_cans_2.mlpackage in Sources */,
 				3C5BC5D1301E356400953451 /* LoadingAnimation_2.swift in Sources */,
 				3C5BC5D2301E356400953451 /* AnimatedBackground_2.swift in Sources */,
 				3C5BC5D3301E356400953451 /* BusinessBulkPromotionEditor.swift in Sources */,
 				3C5BC5D4301E356400953451 /* LandmarkMapView.swift in Sources */,
+				3CEB2A03302D2224001A4A7C /* 1500framesTest.mlpackage in Sources */,
+				3CEB32B3302F80BF001A4A7C /* AlllandmarkspreOpt.mlpackage in Sources */,
 				3C5BC5D5301E356400953451 /* Help.swift in Sources */,
 				3C5BC5D6301E356400953451 /* PhotoPicker.swift in Sources */,
 				3C5BC5D7301E356400953451 /* PopUp.swift in Sources */,
-				3C5BC5D8301E356400953451 /* Detector.swift in Sources */,
 				3C5BC5D9301E356400953451 /* Buttons.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -759,15 +753,16 @@
 				3CF188BE2FE19AAD00FED231 /* CapturedNegativePhoto.swift in Sources */,
 				562AD38C2ECBAF1B00D5144C /* Login.swift in Sources */,
 				B0DC9CA62F4F849A004A9452 /* AuthService.swift in Sources */,
+				3CEB2A02302D2224001A4A7C /* 1500framesTest.mlpackage in Sources */,
 				D0B0B12C2FE48EC100C75E25 /* OfflineMediaManager.swift in Sources */,
 				3CF370423006BE7F005780B3 /* ForgotPasswordView.swift in Sources */,
 				378CB4AA302BF54400805E32 /* helpandsupport.swift in Sources */,
 				D0B0B1322FE59F0300C75E25 /* QuickUploadView.swift in Sources */,
 				3C7452B9301187AF0016E21D /* BusinessMediaHistoryView.swift in Sources */,
+				3CEB32B2302F80BF001A4A7C /* AlllandmarkspreOpt.mlpackage in Sources */,
 				3C9020A02F3ABCD300EE30BF /* CameraPreview.swift in Sources */,
 				56BDFD612EC63B52006D1B84 /* PayInfo.swift in Sources */,
 				D0E7888D2FF2E3C800E5FE00 /* NegativeVideoCameraView.swift in Sources */,
-				3C19EB492F9943F400D1AA43 /* FinalDetector.mlpackage in Sources */,
 				B0DC9CA92F4F84B2004A9452 /* AuthViewModel.swift in Sources */,
 				B00F16732F9328370057430F /* ModelLoadingScreen.swift in Sources */,
 				374FCAFB2FFE98CB0035A674 /* VideoMerge.swift in Sources */,
@@ -777,8 +772,8 @@
 				3CF3703E3006BE24005780B3 /* AccountSecurityView.swift in Sources */,
 				3C74532630133A950016E21D /* VariableContainer.swift in Sources */,
 				3C56010F3005BEE500EB4493 /* BusinessPromotionEditor.swift in Sources */,
-				3C72AA372F5141A000A90328 /* best.mlpackage in Sources */,
 				56C3FA082EA6CA3100EA6153 /* Settings.swift in Sources */,
+				3CEB2EDC302F6A89001A4A7C /* Detector.swift in Sources */,
 				3CE8899C2F3FEE2B00B66044 /* VideoPicker.swift in Sources */,
 				3C3D161E2FFCA97900C8A544 /* BusinessLandmarksView.swift in Sources */,
 				378CB4C6302C0CE600805E32 /* privacypolicy.swift in Sources */,
@@ -793,18 +788,16 @@
 				D0E788892FF2E1CD00E5FE00 /* NegativeVideoCameraService.swift in Sources */,
 				D0B0B12E2FE48EF800C75E25 /* ArchiveView.swift in Sources */,
 				B0DE8C0F2F517138008E1512 /* ConfirmSignup.swift in Sources */,
+				3CEB32B8302F817C001A4A7C /* MysticSecondHalf.mlpackage in Sources */,
 				3C9020A82F3ABCE900EE30BF /* LocationManager.swift in Sources */,
-				3C9020C02F3AC88600EE30BF /* CokeCanDetect.mlpackage in Sources */,
-				3C72AA3B2F51570300A90328 /* again.mlpackage in Sources */,
-				3C9020C12F3AC88600EE30BF /* fruits_and_cans_2.mlpackage in Sources */,
 				3CF014A9300A994A009BD61F /* LoadingAnimation_2.swift in Sources */,
 				3CF014AA300A994A009BD61F /* AnimatedBackground_2.swift in Sources */,
 				3CCEC31230198FBD00981B07 /* BusinessBulkPromotionEditor.swift in Sources */,
 				D0B0B1302FE51DBA00C75E25 /* LandmarkMapView.swift in Sources */,
 				562DAAAF2F2A85B40083A71E /* Help.swift in Sources */,
+				3CEB32B5302F8115001A4A7C /* Mysticfirsthalf.mlpackage in Sources */,
 				3C1FC9CC2F42C9E70006C1D3 /* PhotoPicker.swift in Sources */,
 				568CE2CF2F565512009A8775 /* PopUp.swift in Sources */,
-				3C9020A32F3ABCE200EE30BF /* Detector.swift in Sources */,
 				3CB715B42FE5BF2E006ACB74 /* Buttons.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -817,7 +810,7 @@
 				D0E78B7F3005462600E5FE00 /* AutoUploadManager.swift in Sources */,
 				3C90209F2F3ABCD300EE30BF /* CameraPreview.swift in Sources */,
 				D0E78B7B300545F500E5FE00 /* NetworkMonitor.swift in Sources */,
-				3C9020A22F3ABCE200EE30BF /* Detector.swift in Sources */,
+				3CEB2ED9302F6A89001A4A7C /* Detector.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -826,10 +819,10 @@
 			buildActionMask = 2147483647;
 			files = (
 				3C90209E2F3ABCD300EE30BF /* CameraPreview.swift in Sources */,
+				3CEB2EDA302F6A89001A4A7C /* Detector.swift in Sources */,
 				D0E78B7C300545F500E5FE00 /* NetworkMonitor.swift in Sources */,
 				D0E78B813005462600E5FE00 /* AutoUploadManager.swift in Sources */,
 				3C9020A72F3ABCE900EE30BF /* LocationManager.swift in Sources */,
-				3C9020A42F3ABCE200EE30BF /* Detector.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1060,7 +1053,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = ZLBPU9JP27;
+				DEVELOPMENT_TEAM = C66T6ZH83N;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
@@ -1078,7 +1071,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = looksee.angell.com;
+				PRODUCT_BUNDLE_IDENTIFIER = looksee.ian.com;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
