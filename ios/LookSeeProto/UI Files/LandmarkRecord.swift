@@ -13,12 +13,40 @@ struct LandmarkRecord: View {
     @EnvironmentObject var vm: AuthViewModel
     @Environment(\.dismiss) var dismiss
 
+    @Binding var isNavVisible: Bool
+    var isActive: Bool
+
     private let onAddMoreMedia: (String) -> Void
     var archivedMedia: ArchivedMedia?
+    
+    // Properties for the "Free Redo" logic
+    var existingLandmarkId: String?
+    var existingLabel: String?
+    var existingDescription: String?
 
-    init(archivedMedia: ArchivedMedia? = nil, onAddMoreMedia: @escaping (String) -> Void = { _ in }) {
+    init(
+        isNavVisible: Binding<Bool> = .constant(true),
+        isActive: Bool = true,
+        archivedMedia: ArchivedMedia? = nil,
+        existingLandmarkId: String? = nil,
+        existingLabel: String? = nil,
+        existingDescription: String? = nil,
+        onAddMoreMedia: @escaping (String) -> Void = { _ in }
+    ) {
+        self._isNavVisible = isNavVisible
+        self.isActive = isActive
         self.archivedMedia = archivedMedia
+        self.existingLandmarkId = existingLandmarkId
+        self.existingLabel = existingLabel
+        self.existingDescription = existingDescription
         self.onAddMoreMedia = onAddMoreMedia
+        
+        // 🚀 THE S3 FOLDER FIX:
+        // We inject the existing ID directly into the State upon initialization.
+        // This completely eliminates the race condition that was generating new UUID folders!
+        self._businessLandmarkId = State(initialValue: existingLandmarkId)
+        self._labelText = State(initialValue: existingLabel ?? "")
+        self._shortDescription = State(initialValue: existingDescription ?? "")
     }
 
     @State private var labelText = ""
@@ -28,8 +56,6 @@ struct LandmarkRecord: View {
     @State private var pickedVideoURLs: [URL] = []
     @State private var pickedImage: UIImage?
     @State private var clipDurations: [URL: Double] = [:]
-    
-    @State private var showVideoCamera = false
     
     @State private var extractedLatitude: Double? = nil
     @State private var extractedLongitude: Double? = nil
@@ -62,7 +88,6 @@ struct LandmarkRecord: View {
     
     @FocusState private var IsKeyboard: Bool
 
-
     private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00)
     
     private let minimumCombinedVideoDuration: Double = 30.0
@@ -70,10 +95,18 @@ struct LandmarkRecord: View {
     private var hasPositiveMedia: Bool { !pickedVideoURLs.isEmpty || pickedImage != nil }
     private var hasLabel: Bool { !labelText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     private var hasRequiredShortDescription: Bool { !shortDescription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-    private var hasRequiredNegativeVideo: Bool { capturedNegativeVideo != nil }
+    
+    // 🚀 THE NEGATIVE VIDEO FIX:
+    // If it's a Redo (existingLandmarkId exists), we bypass the negative video requirement!
+    private var hasRequiredNegativeVideo: Bool {
+        if existingLandmarkId != nil { return true }
+        return capturedNegativeVideo != nil
+    }
+    
     private var totalClipDuration: Double { pickedVideoURLs.reduce(0) { $0 + (clipDurations[$1] ?? 0) } }
     private var hasMinimumClipDuration: Bool { pickedImage != nil || totalClipDuration >= minimumCombinedVideoDuration }
     private var isSubmissionRunning: Bool { uploadService.isUploading || hardNegativeUploadService.isUploading || isStitchingVideos }
+    
     private var canUpload: Bool {
         guard !isSubmissionRunning, !isFullSubmissionComplete else { return false }
         if completedPositiveResult != nil { return hasRequiredNegativeVideo }
@@ -84,47 +117,58 @@ struct LandmarkRecord: View {
 
     var body: some View {
         ZStack {
-            Color(uiColor: .systemGroupedBackground).ignoresSafeArea()
-            
-            ScrollView {
-                VStack(spacing: 20) {
-                    if !hasPositiveMedia {
-                        positiveMediaInstructions
-                        positiveMediaButtons
+            if !hasPositiveMedia && !isFormVisible {
+                PositiveVideoCameraView(isActive: isActive, isNavVisible: $isNavVisible) { urls in
+                    withAnimation(.spring()) {
+                        pendingArchiveURLs = urls
+                        showArchivePrompt = true
                     }
-                    
-                    positiveMediaPreview
-                    
-                    if !statusText.isEmpty {
-                        Text(statusText)
-                            .font(.system(size: 13, weight: .semibold, design: .rounded))
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal)
-                    }
-                    
-                    locationSection
-                    
-                    if isFormVisible {
-                        landmarkForm
-                        uploadButtonRow
-                        positiveUploadStatusCard
-                        negativeUploadStatusCard
-                        overallCompletionCard
-                    }
-                    
-                    Spacer(minLength: 40)
+                } onCancel: {
+                    dismiss()
                 }
-                .padding(.top, 16)
+                .ignoresSafeArea()
+                .transition(.opacity)
+            } else {
+                Color(uiColor: .systemGroupedBackground).ignoresSafeArea()
+                
+                ScrollView {
+                    VStack(spacing: 20) {
+                        positiveMediaPreview
+                        
+                        if !statusText.isEmpty {
+                            Text(statusText)
+                                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal)
+                        }
+                        
+                        locationSection
+                        
+                        if isFormVisible {
+                            landmarkForm
+                            uploadButtonRow
+                            positiveUploadStatusCard
+                            negativeUploadStatusCard
+                            overallCompletionCard
+                        }
+                        
+                        Spacer(minLength: 40)
+                    }
+                    .padding(.top, 16)
+                }
+                .transition(.opacity)
+                .scrollDismissesKeyboard(.immediately)
+                .safeAreaInset(edge: .top) { Color.clear.frame(height: 50) }
+                .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 90) }
             }
-            .scrollDismissesKeyboard(.immediately)
-            .safeAreaInset(edge: .top) { Color.clear.frame(height: 50) }
             
             if showArchivePrompt { archivePromptOverlay }
             if isStitchingVideos { processingOverlay }
         }
+        .animation(.easeInOut(duration: 0.3), value: isFormVisible)
         .task {
             if let archive = archivedMedia {
-                isFormVisible = true
+                withAnimation { isFormVisible = true }
                 Task.detached {
                     let fileURL = OfflineMediaManager.shared.getFileURL(for: archive)
                     var videoURLs: [URL] = []
@@ -158,27 +202,15 @@ struct LandmarkRecord: View {
                 }
             }
         }
-        .fullScreenCover(isPresented: $showVideoCamera) {
-            PositiveVideoCameraView { urls in
-                withAnimation(.spring()) {
-                    pendingArchiveURLs = urls
-                    showArchivePrompt = true
-                }
-            }
-        }
         .sheet(isPresented: $showTextScanner) { ScannerSheet(scannedText: $shortDescription) }
         .fullScreenCover(isPresented: $showNegativeCamera) { NegativeVideoCameraView(onDone: { video in capturedNegativeVideo = video; if !hardNegativeUploadService.isUploading { hardNegativeUploadService.reset() } }) }
         .alert("Discard this upload?", isPresented: $showDiscardAlert) { Button("Discard", role: .destructive) { clearScreen() }; Button("Cancel", role: .cancel) { } } message: { Text("This will remove the media and clear the form.") }
-        
         .alert("Landmark Uploaded!", isPresented: $showCompletionPopup) {
-            if archivedMedia != nil {
+            if archivedMedia != nil || existingLandmarkId != nil {
                 Button("Done", role: .cancel) { dismiss() }
             } else {
                 Button("Record Another Landmark") {
                     resetForAnotherLandmark()
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                        showVideoCamera = true
-                    }
                 }
                 Button("Done", role: .cancel) {
                     resetForAnotherLandmark()
@@ -197,7 +229,6 @@ struct LandmarkRecord: View {
         }
     }
     
-
     var processingOverlay: some View {
         ZStack {
             Color.black.opacity(0.8).ignoresSafeArea(.all)
@@ -274,54 +305,6 @@ struct LandmarkRecord: View {
         }
     }
 
-    private var positiveMediaInstructions: some View {
-        HStack(alignment: .top, spacing: 16) {
-            Image(systemName: "camera.viewfinder")
-                .font(.system(size: 24, weight: .light))
-                .foregroundStyle(primaryColor)
-                .padding(.top, 4)
-            
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Capture Positive Media")
-                    .font(.system(size: 17, weight: .bold, design: .rounded))
-                    .foregroundStyle(.primary)
-                Text("Follow the on-screen steps to capture the different angles of the landmark. These videos should be from all typical places where a user may see the landmark. Each video should be at least 4 seconds and the total of all positive videos taken should be between 30 to 90 seconds.")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .lineSpacing(2)
-            }
-            Spacer()
-        }
-        .padding(20)
-        .background(Color(uiColor: .secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .padding(.horizontal)
-    }
-
-    private var positiveMediaButtons: some View {
-        HStack {
-            Button {
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                showVideoCamera = true
-                startrecording = true
-            } label: {
-                HStack(spacing: 10) {
-                    Image(systemName: "video.fill")
-                    Text("Start Recording Process")
-                }
-                .font(.system(size: 17, weight: .bold, design: .rounded))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
-            }
-            .foregroundStyle(.white)
-            .background(primaryColor)
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .disabled(arePositiveDetailsLocked)
-            .opacity(arePositiveDetailsLocked ? 0.6 : 1)
-        }
-        .padding(.horizontal)
-    }
-
     @ViewBuilder private var positiveMediaPreview: some View {
         if !pickedVideoURLs.isEmpty {
             VStack(spacing: 16) {
@@ -341,8 +324,6 @@ struct LandmarkRecord: View {
                             Button {
                                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                                 if pickedVideoURLs.count == 1 {
-                                    // Last remaining clip — clear the whole form instead of
-                                    // leaving an empty media state behind.
                                     clearScreen()
                                 } else {
                                     removeClip(url: url)
@@ -404,11 +385,10 @@ struct LandmarkRecord: View {
             if shouldDisableAutoLock {
                 if !UIApplication.shared.isIdleTimerDisabled {
                     UIApplication.shared.isIdleTimerDisabled = true
-                    print("disable auto lock screen timer", UIApplication.shared.isIdleTimerDisabled)}
+                }
             } else {
                 if UIApplication.shared.isIdleTimerDisabled {
                     UIApplication.shared.isIdleTimerDisabled = false
-                    print("restored auto lock timer",UIApplication.shared.isIdleTimerDisabled)
                 }
             }
         }
@@ -473,7 +453,7 @@ struct LandmarkRecord: View {
                     .padding(16)
                     .background(Color(uiColor: .secondarySystemGroupedBackground))
                     .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .disabled(arePositiveDetailsLocked)
+                    .disabled(arePositiveDetailsLocked || existingLandmarkId != nil)
                 
                 if let businessLandmarkId {
                     Text("ID: \(businessLandmarkId)")
@@ -499,7 +479,7 @@ struct LandmarkRecord: View {
                         .padding(.bottom, 30)
                         .background(Color(uiColor: .secondarySystemGroupedBackground))
                         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                        .disabled(arePositiveDetailsLocked)
+                        .disabled(arePositiveDetailsLocked || existingLandmarkId != nil)
                     
                     Button {
                         UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -513,15 +493,18 @@ struct LandmarkRecord: View {
                             .clipShape(Circle())
                     }
                     .padding(12)
-                    .disabled(arePositiveDetailsLocked)
-                    .opacity(arePositiveDetailsLocked ? 0.5 : 1)
+                    .disabled(arePositiveDetailsLocked || existingLandmarkId != nil)
+                    .opacity((arePositiveDetailsLocked || existingLandmarkId != nil) ? 0.5 : 1)
                 }
             }
             .padding(.horizontal)
 
             if completedPositiveResult != nil && !isFullSubmissionComplete { positiveAlreadySavedCard }
             
-            negativePhotoSection
+            // 🚀 THE FIX: Only show Negative Video section if this is a BRAND NEW upload!
+            if existingLandmarkId == nil {
+                negativePhotoSection
+            }
         }
         .contentShape(Rectangle())
         .onTapGesture {
@@ -529,7 +512,6 @@ struct LandmarkRecord: View {
         }
     }
     
-
     private var positiveAlreadySavedCard: some View {
         HStack(alignment: .top, spacing: 16) {
             Image(systemName: "checkmark.seal.fill")
@@ -647,7 +629,6 @@ struct LandmarkRecord: View {
                     HStack(spacing: 10) {
                         if isSubmissionRunning {
                             ProgressView().tint(.white)
-                            // 🚀 FIXED: Removed nested ternary inside the Text view
                             if hardNegativeUploadService.isUploading {
                                 Text("Uploading reference...")
                             } else if isStitchingVideos {
@@ -657,7 +638,7 @@ struct LandmarkRecord: View {
                             }
                         } else {
                             Image(systemName: isFullSubmissionComplete ? "checkmark.circle.fill" : "arrow.up.circle.fill")
-                            Text(isFullSubmissionComplete ? "Complete" : (completedPositiveResult != nil ? "Retry Negative" : "Upload Landmark"))
+                            Text(isFullSubmissionComplete ? "Complete" : (completedPositiveResult != nil ? "Retry Negative" : (existingLandmarkId != nil ? "Upload Additional Media" : "Upload Landmark")))
                         }
                     }
                     .font(.system(size: 17, weight: .bold, design: .rounded))
@@ -697,7 +678,7 @@ struct LandmarkRecord: View {
                 showLimitAlert = true
                 return
             }
-            if vm.tokenBalance <= 0 {
+            if existingLandmarkId == nil && vm.tokenBalance <= 0 {
                 limitAlertTitle = String(localized: "Out of Tokens")
                 limitAlertMessage = String(localized: "You need 1 token to upload a new landmark. Purchase a token pack in Settings.")
                 showLimitAlert = true
@@ -736,15 +717,18 @@ struct LandmarkRecord: View {
                     completedPositiveResult = positiveResult
                     statusText = String(localized: "Landmark media saved. Uploading reference video…")
                     
-                    await MainActor.run {
-                        vm.tokenBalance -= 1
-                        vm.activeLandmarksCount += 1
+                    if existingLandmarkId == nil {
+                        await MainActor.run {
+                            vm.tokenBalance -= 1
+                            vm.activeLandmarksCount += 1
+                        }
                     }
                 }
                 
                 let finalLandmarkId = positiveResult.landmarkId ?? generatedLandmarkId
                 
-                if let negativeVideo = capturedNegativeVideo {
+                // 🚀 THE FIX: Never uploads a negative video if it's a Redo!
+                if let negativeVideo = capturedNegativeVideo, existingLandmarkId == nil {
                     _ = try await hardNegativeUploadService.upload(landmarkId: finalLandmarkId, idToken: idToken, video: negativeVideo)
                 }
                 
@@ -756,7 +740,15 @@ struct LandmarkRecord: View {
                 if let media = archivedMedia { OfflineMediaManager.shared.deleteArchive(media: media) }
                 
             } catch {
-                print("Full landmark submission failed:", error.localizedDescription)
+                if error.localizedDescription.contains("ERR_SUBSCRIPTION_EXPIRED") {
+                    await MainActor.run {
+                        limitAlertTitle = String(localized: "Subscription Expired")
+                        limitAlertMessage = String(localized: "Your subscription period has ended. Please renew to continue uploading landmarks.")
+                        showLimitAlert = true
+                    }
+                } else {
+                    print("Full landmark submission failed:", error.localizedDescription)
+                }
             }
         }
     }
@@ -835,7 +827,6 @@ struct LandmarkRecord: View {
 
     private func processAndStitchPendingMedia() {
         guard !pendingArchiveURLs.isEmpty else { return }
-        isFormVisible = false
         isStitchingVideos = true
         let urlsToStitch = pendingArchiveURLs
         Task.detached {
@@ -854,7 +845,11 @@ struct LandmarkRecord: View {
                 if self.extractedLatitude == nil { self.extractedLatitude = self.locationManager.latitude }
                 if self.extractedLongitude == nil { self.extractedLongitude = self.locationManager.longitude }
                 if self.businessLandmarkId == nil { self.businessLandmarkId = self.makeBusinessLandmarkId() }
-                self.uploadService.reset(); self.pendingArchiveURLs = []; self.isStitchingVideos = false; self.isFormVisible = true
+                self.uploadService.reset(); self.pendingArchiveURLs = []; self.isStitchingVideos = false
+                
+                withAnimation(.easeInOut(duration: 0.4)) {
+                    self.isFormVisible = true
+                }
             }
         }
     }
@@ -908,9 +903,23 @@ struct LandmarkRecord: View {
 
     private func clearScreen() {
         deleteAllTemporaryVideos(pickedVideoURLs); capturedNegativeVideo?.deleteLocalFile(); pickedVideoURLs = []; clipDurations = [:]
-        pickedImage = nil; extractedLatitude = nil; extractedLongitude = nil; labelText = ""; shortDescription = ""
-        businessLandmarkId = nil; capturedNegativeVideo = nil; completedPositiveResult = nil; completedLandmarkId = nil
-        isFullSubmissionComplete = false; isFormVisible = false; statusText = String(localized: "No landmark media selected.")
+        pickedImage = nil; extractedLatitude = nil; extractedLongitude = nil;
+        
+        // 🚀 THE FIX: If they hit discard, safely restore the Redo IDs so it doesn't accidentally generate a new one!
+        if existingLandmarkId == nil {
+            businessLandmarkId = nil
+            labelText = ""
+            shortDescription = ""
+        } else {
+            businessLandmarkId = existingLandmarkId
+            labelText = existingLabel ?? ""
+            shortDescription = existingDescription ?? ""
+        }
+        
+        capturedNegativeVideo = nil; completedPositiveResult = nil; completedLandmarkId = nil
+        isFullSubmissionComplete = false
+        withAnimation(.easeInOut(duration: 0.3)) { isFormVisible = false }
+        statusText = String(localized: "No landmark media selected.")
         uploadService.reset(); hardNegativeUploadService.reset()
     }
     

@@ -1,0 +1,31 @@
+{
+  "auth": {
+    "plugins": {
+      "awsCognitoAuthPlugin": {
+        "UserAgent": "aws-amplify-cli/0.1.0",
+        "Version": "0.1.0",
+        "IdentityManager": { "Default": {} },
+        "CognitoUserPool": {
+          "Default": {
+            "PoolId": "us-east-1_jtRQYiVAa",
+            "AppClientId": "7i8636kju58c2d6dq3fgpoe13v",
+            "Region": "us-east-1"
+          }
+        },
+        "Auth": {
+          "Default": {
+            "authenticationFlowType": "USER_SRP_AUTH"
+          }
+        }
+      }
+    }
+  },
+  "storage": {
+    "plugins": {
+      "awsS3StoragePlugin": {
+        "bucket": "looksee-app-uploads",
+        "region": "us-east-1"
+      }
+    }
+  }
+}

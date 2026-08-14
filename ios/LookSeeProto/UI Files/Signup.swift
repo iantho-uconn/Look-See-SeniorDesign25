@@ -19,6 +19,8 @@ struct Signup: View {
     @State private var isLoading = false
     @State private var showVerification = false
     @State private var isBusinessAccount = false
+    
+    @EnvironmentObject var vm: AuthViewModel
 
     var onSignupSuccess: (String) -> Void
     var onGoToLogin: () -> Void
@@ -50,6 +52,18 @@ struct Signup: View {
                     VStack(spacing: 14) {
                         if !showVerification {
                             // MARK: - SIGNUP FORM
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Unique Username").font(.caption).foregroundStyle(Color.white.opacity(0.5))
+                                TextField("username", text: $username)
+                                    .textInputAutocapitalization(.never)
+                                    .autocorrectionDisabled(true)
+                                    .padding(14).background(Color(red: 0.18, green: 0.18, blue: 0.24)).foregroundStyle(.white).cornerRadius(12)
+                                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color(red: 0.22, green: 0.49, blue: 1.00).opacity(0.3), lineWidth: 0.5)).colorScheme(.dark)
+                                    .onChange(of: username) { _, newValue in
+                                        username = newValue.lowercased().filter { "abcdefghijklmnopqrstuvwxyz0123456789_".contains($0) }
+                                    }
+                            }
+                            
                             VStack(alignment: .leading, spacing: 6) {
                                 Text("Email").font(.caption).foregroundStyle(Color.white.opacity(0.5))
                                 TextField("you@example.com", text: $email)
@@ -109,9 +123,9 @@ struct Signup: View {
                                 }
                             }
                             .foregroundStyle(.white).frame(maxWidth: .infinity).padding(.vertical, 16).background(Color(red: 0.22, green: 0.49, blue: 1.00)).cornerRadius(14)
-                            .opacity(isLoading || (showVerification ? verificationCode.count < 6 : (email.isEmpty || !isValidPassword(password))) ? 0.5 : 1)
+                            .opacity(isLoading || (showVerification ? verificationCode.count < 6 : (email.isEmpty || username.isEmpty || !isValidPassword(password))) ? 0.5 : 1)
                         }
-                        .disabled(isLoading || (showVerification ? verificationCode.count < 6 : (email.isEmpty || !isValidPassword(password))))
+                        .disabled(isLoading || (showVerification ? verificationCode.count < 6 : (email.isEmpty || username.isEmpty || !isValidPassword(password))))
                         .padding(.top, 16)
 
                         if !showVerification {
@@ -141,6 +155,8 @@ struct Signup: View {
                 let result = try await AuthService.shared.signUp(username: email, password: password, email: email, group: group)
                 
                 if result.isSignUpComplete {
+                    // 🚀 FIXED: Memorize username to be processed AFTER login!
+                    await MainActor.run { vm.pendingUsernameToSave = username }
                     message = "Account created and verified! Routing to login..."
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
                         onSignupSuccess(email)
@@ -151,7 +167,6 @@ struct Signup: View {
                 }
             } catch {
                 message = error.localizedDescription
-                print("❌ Full signup error: \(error)")
             }
             isLoading = false
         }
@@ -164,6 +179,8 @@ struct Signup: View {
             do {
                 let result = try await Amplify.Auth.confirmSignUp(for: email, confirmationCode: verificationCode)
                 if result.isSignUpComplete {
+                    // 🚀 FIXED: Memorize username to be processed AFTER login!
+                    await MainActor.run { vm.pendingUsernameToSave = username }
                     message = "Verification successful! Routing to login..."
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                         onSignupSuccess(email)

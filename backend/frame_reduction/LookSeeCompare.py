@@ -6,6 +6,7 @@ import urllib.parse
 import json
 import decimal
 import uuid
+import math
 
 # to read decimals to prevent errors
 class DecimalEncoder(json.JSONEncoder):
@@ -71,6 +72,7 @@ def process_video(input_bucket, video_key, output_bucket, folder_path, file_pref
     s3_client.download_file(input_bucket, video_key, TEMP_VIDEO_PATH)
     cap = cv2.VideoCapture(TEMP_VIDEO_PATH)
     previous_frame, frame_index = None, 0
+    saved_count = 0 
 
     while True:
         ret, frame = cap.read()
@@ -89,11 +91,13 @@ def process_video(input_bucket, video_key, output_bucket, folder_path, file_pref
         if previous_frame is None or not are_frames_similar(previous_frame, frame, frame_index):
             save_and_upload(frame, output_bucket, folder_path, frame_index, file_prefix)
             previous_frame = frame
+            saved_count += 1 
             
         frame_index += 1
         
     cap.release()
     if os.path.exists(TEMP_VIDEO_PATH): os.remove(TEMP_VIDEO_PATH)
+    return saved_count
 
 
 def lambda_handler(event, context):
@@ -142,7 +146,7 @@ def lambda_handler(event, context):
         raw_label = item.get('landmarkId', 'Unknown')
         
     class_name = str(raw_label).replace(" ", "_")
-    prompt = item.get('aiPrompt')
+    prompt_list = item.get('prompts') 
 
     folder_name = f"{submission_id}_{class_name}"
     folder_path = f"clean-frames/{folder_name}"
@@ -150,61 +154,74 @@ def lambda_handler(event, context):
     upload_hash = uuid.uuid4().hex[:6]
     file_prefix = f"{class_name}_{upload_hash}"
     
+    new_saved_count = 0
+
     if "/images/" in video_key:
         original_filename = video_key.split('/')[-1]
         target_filename = f"{file_prefix}__{original_filename}" 
         s3_client.copy({'Bucket': input_bucket, 'Key': video_key}, output_bucket, f"{folder_path}/{target_filename}")
         reference_image_key = f"{folder_path}/{target_filename}"
+        new_saved_count = 1
     else:
-        process_video(input_bucket, video_key, output_bucket, folder_path, file_prefix)
+        new_saved_count = process_video(input_bucket, video_key, output_bucket, folder_path, file_prefix)
         reference_image_key = f"{folder_path}/{file_prefix}__frame_0.jpg" 
+        
+    print(f"Extracted {new_saved_count} frames from the latest upload.")
 
-    if not prompt:
+    if not prompt_list:
         try:
-            print(f"🤖 Invoking Bedrock Vision AI (Nova Lite) for reference image: {reference_image_key}")
+            print(f"🤖 Invoking Bedrock Vision AI (Nova Pro) for reference image: {reference_image_key}")
             image_obj = s3_client.get_object(Bucket=output_bucket, Key=reference_image_key)
             image_bytes = image_obj['Body'].read()
 
             bedrock_prompt = (
                 f"Identify the main target object ({class_name.replace('_', ' ')}) in this image. "
-                "Provide a short 5-to-8 word physical description of ONLY the object itself (color, material, shape). "
-                "STRICT RULE: Do NOT describe the background, floor, ground, grass, walls, or surroundings. "
-                "Do NOT use introductory text. Example output: 'brown wooden park bench with green metal frame'"
+                "Provide 3 distinct physical descriptions of ONLY the target object itself as a JSON array of strings:\n"
+                "1. A short 2-3 word noun (e.g. 'red tugboat')\n"
+                "2. A structural component description (e.g. 'red and black vessel hull')\n"
+                "3. A concise physical description (e.g. 'large red wooden tugboat')\n\n"
+                "STRICT RULES:\n"
+                "- Do NOT describe the background, floor, grass, sky, walls, or surroundings.\n"
+                "- Output ONLY a valid JSON array. Do not include markdown formatting like ```json."
             )
             
-            # Using the modern Bedrock Converse API format
             messages = [
                 {
                     "role": "user",
                     "content": [
-                        {
-                            "image": {
-                                "format": "jpeg",
-                                "source": {"bytes": image_bytes} # Converse API handles bytes natively
-                            }
-                        },
-                        {
-                            "text": bedrock_prompt
-                        }
+                        {"image": {"format": "jpeg", "source": {"bytes": image_bytes}}},
+                        {"text": bedrock_prompt}
                     ]
                 }
             ]
 
-            # Invoke Amazon Nova Lite
             response = bedrock_client.converse(
-                modelId="amazon.nova-lite-v1:0", # Cost-effective Nova Lite model
+                modelId="amazon.nova-pro-v1:0", 
                 messages=messages,
-                inferenceConfig={"maxTokens": 50} # Restricting tokens to force brevity
+                inferenceConfig={"maxTokens": 150} 
             )
             
-            # Extract response from the Converse API structure
             ai_prompt_text = response['output']['message']['content'][0]['text'].strip()
-            print(f"📝 Generated concise aiPrompt description: {ai_prompt_text}")
+            
+            if ai_prompt_text.startswith("```json"):
+                ai_prompt_text = ai_prompt_text.replace("```json", "").replace("```", "").strip()
+            elif ai_prompt_text.startswith("```"):
+                ai_prompt_text = ai_prompt_text.replace("```", "").strip()
+
+            try:
+                prompts_list = json.loads(ai_prompt_text)
+                if not isinstance(prompts_list, list):
+                    prompts_list = [ai_prompt_text]
+            except Exception as e:
+                print(f"⚠️ Failed to parse AI JSON, falling back to raw string: {e}")
+                prompts_list = [ai_prompt_text]
+
+            print(f"📝 Generated Multi-Prompts: {prompts_list}")
 
             table.update_item(
                 Key={'submissionId': submission_id},
-                UpdateExpression="SET aiPrompt = :p",
-                ExpressionAttributeValues={':p': ai_prompt_text}
+                UpdateExpression="SET prompts = :p",
+                ExpressionAttributeValues={':p': prompts_list}
             )
             
             landmark_id = item.get('landmarkId')
@@ -212,21 +229,22 @@ def lambda_handler(event, context):
                 landmarks_table = dynamodb.Table('LookSeeLandmarks')
                 landmarks_table.update_item(
                     Key={'landmarkId': landmark_id},
-                    UpdateExpression="SET aiPrompt = :p",
-                    ExpressionAttributeValues={':p': ai_prompt_text}
+                    UpdateExpression="SET prompts = :p",
+                    ExpressionAttributeValues={':p': prompts_list}
                 )
             
-            prompt = ai_prompt_text
+            prompt_data_to_save = prompts_list
 
         except Exception as e:
             print(f"⚠️ Bedrock/DynamoDB integration failed, skipping: {str(e)}")
-            prompt = class_name 
+            prompt_data_to_save = [class_name] 
     else:
-        print("⏭️ aiPrompt already exists in DynamoDB, skipping Bedrock.")
+        print("⏭️ Prompts already exist in DynamoDB, skipping Bedrock.")
+        prompt_data_to_save = prompt_list if isinstance(prompt_list, list) else [prompt_list]
 
     metadata_content = item.copy()
     metadata_content["class_name"] = class_name
-    metadata_content["prompt"] = prompt 
+    metadata_content["prompts"] = prompt_data_to_save 
     metadata_content["submissionId"] = submission_id
     
     s3_client.put_object(
@@ -236,16 +254,69 @@ def lambda_handler(event, context):
         ContentType='application/json'
     )
 
-    if QUEUE_URL:
-        try:
-            sqs_response = sqs_client.send_message(
-                QueueUrl=QUEUE_URL,
-                MessageBody=folder_name
-            )
-            print(f"✅ SUCCESS: Pushed {folder_name} to SQS queue. MessageId: {sqs_response['MessageId']}")
-        except Exception as e:
-            print(f"❌ ERROR: Failed to push to SQS: {str(e)}")
-    else:
-        print("⚠️ WARNING: QUEUE_URL environment variable is missing. Folder processed but NOT queued for ECS.")
+    # ---------------------------------------------------------------------------
+    # 🚀 REAL-TIME SHORTFALL CHECK & DYNAMODB STATUS UPDATE 
+    # ---------------------------------------------------------------------------
+    try:
+        print("\n🚀 Scanning S3 Folder to calculate Absolute Total Frame Count...")
+        
+        # 🚀 THE FIX: Actually scan the S3 folder to find the total ground truth of frames!
+        total_saved_frames = 0
+        paginator = s3_client.get_paginator('list_objects_v2')
+        for page in paginator.paginate(Bucket=output_bucket, Prefix=f"{folder_path}/"):
+            for obj in page.get('Contents', []):
+                # Only count actual image files, ignore metadata.json
+                if obj['Key'].lower().endswith(('.jpg', '.jpeg', '.png')):
+                    total_saved_frames += 1
 
-    return {"statusCode": 200, "body": f"Processing complete for {video_key}"}
+        print(f"✅ Absolute Total Frames in S3: {total_saved_frames}")
+
+        required_frames = int(item.get('minRequiredFrames', int(os.environ.get('MIN_IMAGES_PER_CLASS', 1800))))
+        landmark_id = item.get('landmarkId')
+        
+        if total_saved_frames < required_frames:
+            missing_frames = required_frames - total_saved_frames
+            seconds_needed = math.ceil(missing_frames / 30.0)
+            status = 'NEEDS_MORE_MEDIA'
+            
+            print(f"❌ SHORTFALL DETECTED: {total_saved_frames}/{required_frames} clean frames. User needs ~{seconds_needed}s more video.")
+            
+            update_expr = "SET #st = :s, cleanFrameCount = :c, requiredFrames = :r, secondsNeeded = :sec"
+            expr_vals = {
+                ':s': status,
+                ':c': total_saved_frames,
+                ':r': required_frames,
+                ':sec': seconds_needed
+            }
+        else:
+            status = 'READY_FOR_AUTOLABELING'
+            print(f"✅ MEDIA THRESHOLD MET: {total_saved_frames}/{required_frames} clean frames. Ready for autolabeling!")
+            
+            update_expr = "SET #st = :s, cleanFrameCount = :c, requiredFrames = :r"
+            expr_vals = {
+                ':s': status,
+                ':c': total_saved_frames,
+                ':r': required_frames
+            }
+
+        # Update Submission Table
+        table.update_item(
+            Key={'submissionId': submission_id},
+            UpdateExpression=update_expr,
+            ExpressionAttributeNames={'#st': 'status'},
+            ExpressionAttributeValues=expr_vals
+        )
+        
+        # Update Landmark Table
+        if landmark_id:
+            dynamodb.Table('LookSeeLandmarks').update_item(
+                Key={'landmarkId': landmark_id},
+                UpdateExpression=update_expr,
+                ExpressionAttributeNames={'#st': 'status'},
+                ExpressionAttributeValues=expr_vals
+            )
+        
+    except Exception as e:
+        print(f"⚠️ Critical error during DynamoDB status update: {e}")
+
+    return {"statusCode": 200, "body": f"Processing complete. Status: {status}"}

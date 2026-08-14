@@ -5,7 +5,6 @@
 //  Handles authenticated business landmark management APIs.
 //
 
-
 import Foundation
 import Amplify
 import AWSPluginsCore
@@ -46,6 +45,12 @@ struct BusinessLandmark: Codable, Identifiable, Hashable {
     let createdAt: String?
     let updatedAt: String?
     let ownershipUpdatedAt: String?
+    
+    // 🚀 NEW: Status and Media Requirement Fields
+    let status: String?
+    let cleanFrameCount: Int?
+    let requiredFrames: Int?
+    let secondsNeeded: Int?
 
     var id: String {
         landmarkId
@@ -57,10 +62,12 @@ struct BusinessLandmark: Codable, Identifiable, Hashable {
     }
 
     var displayStatus: String {
+        if status == "NEEDS_MORE_MEDIA" {
+            return "Action Needed"
+        }
         if isActive == false {
             return "Inactive"
         }
-
         return "Active"
     }
 
@@ -68,7 +75,6 @@ struct BusinessLandmark: Codable, Identifiable, Hashable {
         if promotionEnabled == true {
             return "Promotion enabled"
         }
-
         return "No active promotion"
     }
 }

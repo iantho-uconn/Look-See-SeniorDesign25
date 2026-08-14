@@ -13,6 +13,7 @@ struct GuestSignUpView: View {
     @EnvironmentObject var authState: AuthState
     @EnvironmentObject var vm: AuthViewModel
     
+    @State private var username = ""
     @State private var email = ""
     @State private var password = ""
     @State private var phoneNumber = ""
@@ -38,6 +39,7 @@ struct GuestSignUpView: View {
     }
     
     private var isFormValid: Bool {
+        !username.isEmpty &&
         !sanitizedEmail.isEmpty &&
         !phoneNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
         isValidPassword(password)
@@ -73,6 +75,19 @@ struct GuestSignUpView: View {
                         
                         if !showVerification {
                             VStack(spacing: 18) {
+                                
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text("Unique Username").font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary)
+                                    TextField("username", text: $username)
+                                        .focused($IsKeyboard)
+                                        .textInputAutocapitalization(.never)
+                                        .autocorrectionDisabled(true)
+                                        .padding().background(Color.white.opacity(0.05)).cornerRadius(12).foregroundStyle(.white)
+                                        .onChange(of: username) { _, newValue in
+                                            username = newValue.lowercased().filter { "abcdefghijklmnopqrstuvwxyz0123456789_".contains($0) }
+                                        }
+                                }
+                                
                                 VStack(alignment: .leading, spacing: 6) {
                                     Text("Email Address").font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary)
                                     TextField("name@example.com", text: $email)
@@ -112,14 +127,16 @@ struct GuestSignUpView: View {
                                 }
                             }
                         } else {
+                            // MARK: - VERIFICATION FORM
                             VStack(alignment: .leading, spacing: 6) {
-                                Text("Verification Code").font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary)
+                                Text("Enter 6-Digit Code").font(.caption).foregroundStyle(Color.white.opacity(0.5))
                                 TextField("123456", text: $verificationCode)
                                     .focused($IsKeyboard)
                                     .keyboardType(.numberPad)
                                     .font(.system(size: 24, weight: .bold, design: .monospaced))
                                     .multilineTextAlignment(.center)
                                     .padding().background(Color.white.opacity(0.05)).cornerRadius(12).foregroundStyle(.white)
+                                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color(red: 0.22, green: 0.49, blue: 1.00).opacity(0.3), lineWidth: 0.5)).colorScheme(.dark)
                             }
                         }
                         
@@ -155,7 +172,6 @@ struct GuestSignUpView: View {
                 .onTapGesture {
                     IsKeyboard = false
                 }
-                //.scrollDismissesKeyboard(.immediately)
             }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -165,7 +181,8 @@ struct GuestSignUpView: View {
         }
     }
     
-    private func signUp() {
+    // MARK: - AWS Logic
+    func signUp() {
         isProcessing = true
         errorMessage = ""
         Task {
@@ -177,7 +194,9 @@ struct GuestSignUpView: View {
                     let signInResult = try await AuthService.shared.signIn(username: sanitizedEmail, password: password)
                     if signInResult.isSignedIn {
                         await vm.fetchUserDetails()
-                        await vm.fetchUserUsageStats() // 🚀 FORCES DATA SYNC
+                        // 🚀 CLAIM USERNAME IMMEDIATELY AFTER LOGIN
+                        let _ = await vm.updateUserIdentity(newUsername: username)
+                        await vm.fetchUserUsageStats()
                         DispatchQueue.main.async {
                             vm.isSignedIn = true
                             dismiss()
@@ -197,7 +216,7 @@ struct GuestSignUpView: View {
         }
     }
     
-    private func verifyCodeAndSignIn() {
+    func verifyCodeAndSignIn() {
         isProcessing = true
         errorMessage = ""
         Task {
@@ -208,7 +227,9 @@ struct GuestSignUpView: View {
                     let signInResult = try await AuthService.shared.signIn(username: sanitizedEmail, password: password)
                     if signInResult.isSignedIn {
                         await vm.fetchUserDetails()
-                        await vm.fetchUserUsageStats() // 🚀 FORCES DATA SYNC
+                        // 🚀 CLAIM USERNAME ON FINAL SUCCESS
+                        let _ = await vm.updateUserIdentity(newUsername: username)
+                        await vm.fetchUserUsageStats()
                         DispatchQueue.main.async {
                             vm.isSignedIn = true
                             dismiss()

@@ -550,13 +550,22 @@ struct BusinessLandmarkDetailView: View {
                 }
             }
         }
+        // 🚀 FIXED: Added the required missing arguments to PositiveVideoCameraView
         .fullScreenCover(isPresented: $showPositiveCamera) {
-            PositiveVideoCameraView(completionButtonTitle: "Use Recorded Videos") { urls in
-                pendingPositiveVideoURLs = urls
-                Task {
-                    await uploadPendingPositiveRecording()
+            PositiveVideoCameraView(
+                isActive: true,
+                isNavVisible: .constant(false),
+                completionButtonTitle: "Use Recorded Videos",
+                onDone: { urls in
+                    pendingPositiveVideoURLs = urls
+                    Task {
+                        await uploadPendingPositiveRecording()
+                    }
+                },
+                onCancel: {
+                    showPositiveCamera = false
                 }
-            }
+            )
         }
         .fullScreenCover(isPresented: $showNegativeCamera) {
             NegativeVideoCameraView { video in
