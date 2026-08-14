@@ -203,7 +203,7 @@ final class UploadService: ObservableObject {
             defer { if !videoURLs.contains(mergedURL) { try? FileManager.default.removeItem(at: mergedURL) } }
 
             let mediaKind = MediaKind.video
-            let filename = "video.mov"
+            let filename = "\(label).mov"
             let contentType = "video/quicktime"
 
             // 🚀 THE FIX: Passing the landmarkId up to AWS so it uses the existing S3 folder!

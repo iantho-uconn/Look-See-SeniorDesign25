@@ -133,7 +133,7 @@ final class Detector: NSObject, ObservableObject {
     // MARK: Configuration
     var dynamicSafeZone: CGRect = .zero
     var manifest: ClusterLandmarkManifest?
-    var proximityThresholdMeters: Double = 150
+    var proximityThresholdMeters: Double = 15000000
 
     var userLocation: CLLocation?
 
@@ -410,7 +410,7 @@ final class Detector: NSObject, ObservableObject {
         modelIdentifier: String,
         expectedClassCount: Int
     ) -> [Detection] {
-        
+        let startTime = CACurrentMediaTime()
         let ptr = combinedArray.dataPointer.bindMemory(to: Float.self, capacity: combinedArray.count)
         let shape = combinedArray.shape.map { $0.intValue }
         
