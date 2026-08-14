@@ -61,7 +61,7 @@ class DetectionTracker {
     var lastDetection: Detection?
     private var framesSinceLastSeen = 0
     private let maxCoastFrames = 5       // Hold box for ~0.4s during motion blur/cutoffs
-    private let alpha: CGFloat = 0.80     // 0.1 = heavy lag/smooth, 0.9 = fast/jittery
+    private let alpha: CGFloat = 0.65     // 0.1 = heavy lag/smooth, 0.9 = fast/jittery
 
     func update(with newDetection: Detection?) -> Detection? {
         if let newDet = newDetection {
@@ -135,7 +135,7 @@ final class Detector: NSObject, ObservableObject {
     // MARK: Configuration
     var dynamicSafeZone: CGRect = .zero
     var manifest: ClusterLandmarkManifest?
-    var proximityThresholdMeters: Double = 15000000
+    var proximityThresholdMeters: Double = 150
 
     var userLocation: CLLocation?
 
@@ -643,24 +643,21 @@ final class Detector: NSObject, ObservableObject {
     // 🚀 NEW: Tracks and updates coasting frames universally
     private func finalizeTracking(rawDetections: [Detection]) -> [Detection] {
         let nearbyDetections = proximityFilter(rawDetections)
-        let currentLabels = Set(nearbyDetections.map { $0.label })
         
+        // 🚀 THE FIX: Filter out duplicate overlapping boxes before tracking!
+        var strongestByLabel: [String: Detection] = [:]
+        for det in nearbyDetections {
+            let currentBest = strongestByLabel[det.label]?.confidence ?? -Float.infinity
+            if det.confidence > currentBest {
+                strongestByLabel[det.label] = det
+            }
+        }
+        
+        let currentLabels = Set(strongestByLabel.keys)
         var finalResults: [Detection] = []
         
         // 1. Update trackers with active detections
-        for det in nearbyDetections {
-            let label = det.label
-           /* let currentCount = (frameCounters[label] ?? 0) + 1
-            frameCounters[label] = currentCount
-
-            if smoothers[label] == nil { smoothers[label] = BoundingBoxSmoother() }
-            let smoothedBox = smoothers[label]!.smooth(newBox: det.bbox)
-
-            if currentCount >= requiredFramesForDetection {
-                finalResults.append(
-                    Detection(clusterID: det.clusterID, modelVersion: det.modelVersion, modelIdentifier: det.modelIdentifier, classIndex: det.classIndex, classCount: det.classCount, confidence: det.confidence, bbox: smoothedBox, overrideLabel: det.overrideLabel)
-                )
-                */
+        for (label, det) in strongestByLabel {
             if trackers[label] == nil { trackers[label] = DetectionTracker() }
             if let smoothedDet = trackers[label]?.update(with: det) {
                 finalResults.append(smoothedDet)
