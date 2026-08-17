@@ -64,7 +64,6 @@ struct Settings: View {
                         }
                         .task { if !presenter.justPurchased { await vm.checkSession() } }
                     } else {
-                        // 🚀 RESTORED: Profile & Username Header Button
                         Button {
                             UIImpactFeedbackGenerator(style: .light).impactOccurred()
                             presenter.showUserProfileEditor = true
@@ -375,6 +374,7 @@ struct Settings: View {
 struct DeepSettingsView: View {
     @EnvironmentObject var vm: AuthViewModel
     @EnvironmentObject var authState: AuthState
+    @ObservedObject private var modelSelector = ModelSelector.shared
     
     var isFullyLoggedIn: Bool
     
@@ -412,6 +412,51 @@ struct DeepSettingsView: View {
                     .padding(.horizontal)
                 }
 
+                // MARK: Temporary model-testing entry point
+                if ModelTestingConfiguration.isEnabled {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Testing")
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .foregroundStyle(.secondary)
+                            .textCase(.uppercase)
+                            .padding(.horizontal, 20)
+
+                        NavigationLink {
+                            ModelSelectionView()
+                        } label: {
+                            HStack(spacing: 14) {
+                                Image(systemName: "cpu.fill")
+                                    .font(.system(size: 17, weight: .semibold))
+                                    .foregroundStyle(.white)
+                                    .frame(width: 36, height: 36)
+                                    .background(.indigo)
+                                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("Model Select")
+                                        .font(.system(size: 16, weight: .semibold))
+                                        .foregroundStyle(.primary)
+                                    Text(modelSelector.activeDisplayName)
+                                        .font(.system(size: 13))
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundStyle(.tertiary)
+                            }
+                            .padding(16)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color(uiColor: .secondarySystemGroupedBackground))
+                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2)
+                        }
+                        .padding(.horizontal)
+                    }
+                }
+
                 VStack(spacing: 6) {
                     Button {
                         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
@@ -447,6 +492,18 @@ struct DeepSettingsView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                     }
                     .disabled(isReloading)
+                    
+                    HStack(spacing: 6) {
+                        Image(systemName: "cpu")
+                        if modelSelector.activeRelease == nil {
+                            Text("No Model Loaded")
+                        } else {
+                            Text("Active Model: \(modelSelector.activeDisplayName)")
+                        }
+                    }
+                    .font(.system(size: 12, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 4)
                 }
                 .padding(.horizontal)
                 
@@ -466,10 +523,116 @@ struct DeepSettingsView: View {
     }
 }
 
+// MARK: - Temporary bundled-model testing
+struct ModelSelectionView: View {
+    @ObservedObject private var modelSelector = ModelSelector.shared
+
+    private var bundledModels: [BundledTestModel] {
+        modelSelector.availableTestModels
+    }
+
+    var body: some View {
+        List {
+            Section {
+                Button {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    modelSelector.useAutomaticModelSelection()
+                } label: {
+                    modelRow(
+                        title: "Automatic",
+                        detail: "Use the normal location-based model",
+                        systemImage: "location.fill",
+                        isSelected: modelSelector.selectedTestModelID == nil
+                    )
+                }
+                .buttonStyle(.plain)
+            } header: {
+                Text("Selection Mode")
+            }
+
+            Section {
+                if bundledModels.isEmpty {
+                    Label(
+                        "No bundled Core ML models found in this app target.",
+                        systemImage: "exclamationmark.triangle.fill"
+                    )
+                    .foregroundStyle(.orange)
+                } else {
+                    ForEach(bundledModels) { model in
+                        Button {
+                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                            modelSelector.selectTestModel(model)
+                        } label: {
+                            modelRow(
+                                title: model.displayName,
+                                detail: model.detail,
+                                systemImage: "cube.fill",
+                                isSelected: modelSelector.selectedTestModelID == model.id
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            } header: {
+                Text("Bundled Models")
+            } footer: {
+                Text("The selected model is applied immediately and remembered between launches.")
+            }
+
+            if bundledModels.count != 3 {
+                Section {
+                    Label(
+                        "Expected 3 bundled models; found \(bundledModels.count). Check each model's app-target membership in Xcode.",
+                        systemImage: "wrench.and.screwdriver.fill"
+                    )
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .navigationTitle("Model Select")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func modelRow(
+        title: String,
+        detail: String,
+        systemImage: String,
+        isSelected: Bool
+    ) -> some View {
+        HStack(spacing: 14) {
+            Image(systemName: systemImage)
+                .foregroundStyle(isSelected ? Color.indigo : Color.secondary)
+                .frame(width: 24)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.primary)
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer()
+
+            if isSelected {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.title3)
+                    .foregroundStyle(.indigo)
+                    .accessibilityLabel("Selected")
+            }
+        }
+        .contentShape(Rectangle())
+    }
+}
+
 // MARK: - BusinessProfileView
 struct BusinessProfileView: View {
     @EnvironmentObject var vm: AuthViewModel
     @State private var showEditSheet = false
+
 
     var body: some View {
         ScrollView {
