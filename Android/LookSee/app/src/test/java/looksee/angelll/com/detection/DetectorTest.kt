@@ -2,11 +2,13 @@ package looksee.angelll.com.detection
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.runBlocking
 import looksee.angelll.com.models.ActiveModelRelease
 import looksee.angelll.com.models.ClusterLandmarkManifest
 import looksee.angelll.com.models.LandmarkManifestEntry
 import looksee.angelll.com.models.LandmarkManifestStore
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -14,6 +16,45 @@ import org.junit.Test
 import java.io.File
 
 class DetectorTest {
+    @Test
+    fun syntheticPreviewProducesAProportionalBoxWithoutARelease(): Unit = runBlocking {
+        val detector = Detector(
+            activeReleases = MutableStateFlow(null),
+            dispatcher = Dispatchers.Unconfined,
+            observeActiveReleases = false,
+            allowSyntheticPreview = true,
+        )
+
+        try {
+            detector.setSyntheticPreviewEnabled(true)
+            detector.process(DetectorFrame(100, 200, IntArray(20_000)))
+
+            val detection = detector.detections.value.single()
+            assertEquals(DetectionBox(22f, 48f, 78f, 144f), detection.bbox)
+            assertEquals("Overlay test", detection.displayLabel())
+            assertTrue(detector.isSyntheticPreviewEnabled.value)
+            assertEquals(DetectionSize(100, 200), detector.bufferSize.value)
+        } finally {
+            detector.close()
+        }
+    }
+
+    @Test
+    fun productionDetectorCannotEnableSyntheticPreview() {
+        val detector = Detector(
+            activeReleases = MutableStateFlow(null),
+            dispatcher = Dispatchers.Unconfined,
+            observeActiveReleases = false,
+        )
+
+        try {
+            detector.setSyntheticPreviewEnabled(true)
+            assertFalse(detector.isSyntheticPreviewEnabled.value)
+        } finally {
+            detector.close()
+        }
+    }
+
     @Test
     fun endToEndParserMapsNormalizedCoordinatesAndRejectsInvalidRows() {
         detectorFixture(classCount = 1).use { fixture ->

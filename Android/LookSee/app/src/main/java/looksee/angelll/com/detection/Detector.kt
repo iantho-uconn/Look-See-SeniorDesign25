@@ -50,7 +50,7 @@ data class DetectionBox(
 
     fun intersects(other: DetectionBox): Boolean =
         left < other.right && other.left < right &&
-            top < other.bottom && other.top < bottom
+                top < other.bottom && other.top < bottom
 }
 
 data class Detection(
@@ -62,6 +62,7 @@ data class Detection(
     val confidence: Float,
     val bbox: DetectionBox,
     val id: String = UUID.randomUUID().toString(),
+    val displayLabelOverride: String? = null,
 ) {
     val releaseIdentifier: String get() = "$clusterId|$modelVersion"
     val label: String get() = classIndex.toString()
@@ -72,7 +73,7 @@ data class Detection(
 
     fun displayLabel(
         store: LandmarkManifestStore = LandmarkManifestStore.shared,
-    ): String = landmarkEntry(store)?.label ?: "Class $classIndex"
+    ): String = displayLabelOverride ?: landmarkEntry(store)?.label ?: "Class $classIndex"
 }
 
 class BoundingBoxSmoother(private val maxFrames: Int = 4) {
@@ -182,9 +183,14 @@ class Detector internal constructor(
     dispatcher: CoroutineDispatcher = Dispatchers.Default,
     private val nowMillis: () -> Long = { System.currentTimeMillis() },
     observeActiveReleases: Boolean = true,
+    private val allowSyntheticPreview: Boolean = false,
 ) : AutoCloseable {
-    constructor(modelSelector: ModelSelector) : this(
+    constructor(
+        modelSelector: ModelSelector,
+        allowSyntheticPreview: Boolean = false,
+    ) : this(
         activeReleases = modelSelector.activeRelease,
+        allowSyntheticPreview = allowSyntheticPreview,
     )
 
     private val detectorScope = CoroutineScope(SupervisorJob() + dispatcher)
@@ -227,6 +233,10 @@ class Detector internal constructor(
     )
     val loadState: StateFlow<DetectorLoadState> = _loadState.asStateFlow()
 
+    private val _isSyntheticPreviewEnabled = MutableStateFlow(false)
+    val isSyntheticPreviewEnabled: StateFlow<Boolean> =
+        _isSyntheticPreviewEnabled.asStateFlow()
+
     @Volatile
     var dynamicSafeZone: DetectionBox? = null
 
@@ -266,6 +276,20 @@ class Detector internal constructor(
         _hideBoundingBoxes.value = hidden
     }
 
+    /**
+     * Enables a debug-only overlay fixture without loading or executing a model.
+     *
+     * Production Detector instances ignore attempts to enable it. This gives the
+     * emulator a way to verify CameraX-to-preview coordinate mapping and overlay
+     * rendering while the real landmark model is unavailable.
+     */
+    fun setSyntheticPreviewEnabled(enabled: Boolean) {
+        val shouldEnable = allowSyntheticPreview && enabled
+        if (_isSyntheticPreviewEnabled.value == shouldEnable) return
+        _isSyntheticPreviewEnabled.value = shouldEnable
+        resetEngine()
+    }
+
     fun updateUserLocation(latitude: Double, longitude: Double, accuracyMeters: Double) {
         if (!latitude.isFinite() || latitude !in -90.0..90.0 ||
             !longitude.isFinite() || longitude !in -180.0..180.0 ||
@@ -302,9 +326,17 @@ class Detector internal constructor(
 
         try {
             withContext(inferenceDispatcher) {
+                _bufferSize.value = DetectionSize(frame.width, frame.height)
+
+                if (_isSyntheticPreviewEnabled.value) {
+                    _detections.value = syntheticPreviewDetections(frame.width, frame.height)
+                    _currentLabel.value = "Overlay test"
+                    _lastInferenceMs.value = 0.0
+                    return@withContext
+                }
+
                 val loaded = loadedRelease.get() ?: return@withContext
                 val startedAt = System.nanoTime()
-                _bufferSize.value = DetectionSize(frame.width, frame.height)
 
                 val prepared = letterbox(
                     frame = frame,
@@ -332,6 +364,24 @@ class Detector internal constructor(
         }
     }
 
+    private fun syntheticPreviewDetections(width: Int, height: Int): List<Detection> = listOf(
+        Detection(
+            clusterId = "debug",
+            modelVersion = "synthetic",
+            modelIdentifier = "overlay-test",
+            classIndex = 0,
+            classCount = 1,
+            confidence = 1f,
+            displayLabelOverride = "Overlay test",
+            bbox = DetectionBox(
+                left = width * 0.22f,
+                top = height * 0.24f,
+                right = width * 0.78f,
+                bottom = height * 0.72f,
+            ),
+        ),
+    )
+
     internal suspend fun activateRelease(release: ActiveModelRelease) {
         _loadState.value = DetectorLoadState.Loading(release.releaseIdentifier)
 
@@ -345,11 +395,11 @@ class Detector internal constructor(
             }
             require(manifest.trainingRunId == release.modelVersion) {
                 "Manifest version ${manifest.trainingRunId} does not match " +
-                    "${release.modelVersion}."
+                        "${release.modelVersion}."
             }
             require(manifest.classCount == release.classCount) {
                 "Manifest classCount ${manifest.classCount} does not match " +
-                    "${release.classCount}."
+                        "${release.classCount}."
             }
 
             val newModel = modelFactory.load(release)
@@ -368,7 +418,7 @@ class Detector internal constructor(
             )
             logger.severe(
                 "Detector model load failed for ${release.releaseIdentifier}: " +
-                    error.message,
+                        error.message,
             )
         }
     }
@@ -686,11 +736,11 @@ class Detector internal constructor(
             val toLatitude = Math.toRadians(to.latitude)
             val haversine =
                 sin(latitudeDelta / 2.0) * sin(latitudeDelta / 2.0) +
-                    cos(fromLatitude) * cos(toLatitude) *
-                    sin(longitudeDelta / 2.0) * sin(longitudeDelta / 2.0)
+                        cos(fromLatitude) * cos(toLatitude) *
+                        sin(longitudeDelta / 2.0) * sin(longitudeDelta / 2.0)
             val bounded = haversine.coerceIn(0.0, 1.0)
             return EARTH_RADIUS_METERS *
-                2.0 * atan2(sqrt(bounded), sqrt(1.0 - bounded))
+                    2.0 * atan2(sqrt(bounded), sqrt(1.0 - bounded))
         }
     }
 }
@@ -735,7 +785,7 @@ private class LiteRtDetectorModel(
     init {
         require((isNhwc && imageShape[3] == 3) || (!isNhwc && imageShape[1] == 3)) {
             "LiteRT detector image input must be NHWC or NCHW RGB; " +
-                "received ${imageShape.contentToString()}."
+                    "received ${imageShape.contentToString()}."
         }
         require(inputWidth == Detector.INPUT_WIDTH && inputHeight == Detector.INPUT_HEIGHT) {
             "LookSee detector expects 640x640 input; received ${inputWidth}x$inputHeight."
@@ -790,7 +840,7 @@ private class LiteRtDetectorModel(
             val combinedIndex = outputTensors.indexOfFirst { it.shape().lastOrNull() == 6 }
             require(combinedIndex >= 0) {
                 "Unknown LiteRT detector outputs: " +
-                    outputTensors.joinToString { "${it.name()}=${it.shape().contentToString()}" }
+                        outputTensors.joinToString { "${it.name()}=${it.shape().contentToString()}" }
             }
             DetectorModelOutput.EndToEnd(
                 values = values[combinedIndex],

@@ -23,6 +23,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -38,6 +39,7 @@ import com.amplifyframework.auth.cognito.AWSCognitoAuthPlugin
 import com.amplifyframework.core.Amplify
 import looksee.angelll.com.detection.CameraPreview
 import looksee.angelll.com.detection.Detector
+import looksee.angelll.com.detection.detectorHudState
 import looksee.angelll.com.models.ModelSelector
 import looksee.angelll.com.ui.theme.LookSeeTheme
 
@@ -107,8 +109,16 @@ fun LookSeeWelcomeScreen(onStartScanning: () -> Unit = {}) {
 private fun LookSeeScannerScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val detector = remember(context) {
-        Detector(ModelSelector.shared(context.applicationContext))
+        Detector(
+            modelSelector = ModelSelector.shared(context.applicationContext),
+            allowSyntheticPreview = BuildConfig.DEBUG,
+        )
     }
+
+    val detections by detector.detections.collectAsState()
+    val loadState by detector.loadState.collectAsState()
+    val lastInferenceMs by detector.lastInferenceMs.collectAsState()
+    val isSyntheticPreviewEnabled by detector.isSyntheticPreviewEnabled.collectAsState()
 
     var zoomLevel by rememberSaveable { mutableStateOf(1f) }
     var isAIPaused by rememberSaveable { mutableStateOf(false) }
@@ -124,6 +134,13 @@ private fun LookSeeScannerScreen(onBack: () -> Unit) {
         isAIPaused -> "Camera paused"
         else -> "Camera active"
     }
+    val detectionStatus = detectorHudState(
+        loadState = loadState,
+        detectionCount = detections.size,
+        lastInferenceMilliseconds = lastInferenceMs,
+        isPaused = isAIPaused,
+        isSyntheticPreviewEnabled = isSyntheticPreviewEnabled,
+    )
 
     BackHandler(onBack = onBack)
 
@@ -186,6 +203,45 @@ private fun LookSeeScannerScreen(onBack: () -> Unit) {
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(cameraStatus)
+                Text(
+                    text = detectionStatus.title,
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Text(
+                    text = detectionStatus.detail,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                ) {
+                    Text("Detections: ${detectionStatus.detectionCount}")
+                    Text(
+                        detectionStatus.inferenceMilliseconds?.let {
+                            String.format("Inference: %.1f ms", it)
+                        } ?: "Inference: —",
+                    )
+                }
+
+                if (BuildConfig.DEBUG) {
+                    Button(
+                        onClick = {
+                            detector.setSyntheticPreviewEnabled(!isSyntheticPreviewEnabled)
+                        },
+                        modifier = Modifier.padding(top = 8.dp),
+                    ) {
+                        Text(
+                            if (isSyntheticPreviewEnabled) {
+                                "Stop overlay test"
+                            } else {
+                                "Test overlay (no model)"
+                            },
+                        )
+                    }
+                }
 
                 Row(
                     modifier = Modifier.padding(top = 8.dp),
