@@ -23,6 +23,23 @@ class BusinessLandmarkServiceTest {
     }
 
     @Test
+    fun fetchDecodesMediaRequirementsAndActionNeededStatus(): Unit = runBlocking {
+        val http = RecordingBusinessHttpClient(
+            jsonResponse(
+                """{"items":[{"landmarkId":"l1","label":"Clock","status":"NEEDS_MORE_MEDIA","cleanFrameCount":12,"requiredFrames":30,"secondsNeeded":18}],"count":1}""",
+            ),
+        )
+        val service = BusinessLandmarkService(fixedToken(), http)
+
+        val landmark = service.fetchBusinessLandmarks().items.single()
+
+        assertEquals("Action Needed", landmark.displayStatus)
+        assertEquals(12, landmark.cleanFrameCount)
+        assertEquals(30, landmark.requiredFrames)
+        assertEquals(18, landmark.secondsNeeded)
+    }
+
+    @Test
     fun descriptionPatchOmitsUnchangedFields(): Unit = runBlocking {
         val http = RecordingBusinessHttpClient(
             jsonResponse(
@@ -66,5 +83,58 @@ class BusinessLandmarkServiceTest {
         assertEquals(listOf("POST", "PUT", "POST"), http.requests.map { it.method })
         assertEquals(null, http.requests[1].authorization)
         assertEquals("image/jpeg", http.requests[1].contentType)
+    }
+
+    @Test
+    fun hardNegativeUploadUsesBackendProcessedStatus(): Unit = runBlocking {
+        val http = RecordingBusinessHttpClient(
+            jsonResponse(
+                """{"batchId":"batch-1","landmarkId":"l1","uploads":[{"negativeId":"negative-1","uploadUrl":"https://s3.test/negative","sourceKey":"source/key.mov","contentType":"video/quicktime"}]}""",
+            ),
+            BusinessHttpResponse(200),
+            jsonResponse(
+                """{"landmarkId":"l1","batchId":"batch-1","processedCount":1,"failedCount":0,"processed":[{"negativeId":"negative-1","status":"READY"}]}""",
+            ),
+        )
+        val service = BusinessLandmarkService(fixedToken(), http)
+
+        val completed = service.uploadBusinessMedia(
+            landmarkId = "l1",
+            datasetRole = BusinessDatasetRole.HARD_NEGATIVE,
+            mediaKind = BusinessMediaKind.VIDEO,
+            filename = "negative.mov",
+            contentType = "video/quicktime",
+            data = byteArrayOf(4, 5),
+        )
+
+        assertTrue(completed.ok)
+        assertEquals("READY", completed.status)
+        assertEquals("negative-1", completed.submissionId)
+        assertEquals(listOf("POST", "PUT", "POST"), http.requests.map { it.method })
+    }
+
+    @Test
+    fun retryHardNegativeProcessingForcesBackendRetryWithoutUploading(): Unit = runBlocking {
+        val http = RecordingBusinessHttpClient(
+            jsonResponse(
+                """{"landmarkId":"l1","batchId":"batch-1","processedCount":1,"failedCount":0,"processed":[{"negativeId":"negative-1","status":"PROCESSING"}]}""",
+            ),
+        )
+        val service = BusinessLandmarkService(fixedToken(), http)
+
+        val response = service.retryHardNegativeProcessing(
+            landmarkId = "l1",
+            batchId = "batch-1",
+            negativeId = "negative-1",
+        )
+        val request = http.requests.single()
+        val body = request.body!!.toString(Charsets.UTF_8)
+
+        assertEquals(1, response.processedCount)
+        assertEquals("POST", request.method)
+        assertTrue(request.url.endsWith("/landmarks/l1/hard-negatives/complete"))
+        assertTrue(body.contains("\"batchId\":\"batch-1\""))
+        assertTrue(body.contains("\"negativeIds\":[\"negative-1\"]"))
+        assertTrue(body.contains("\"forceRetry\":true"))
     }
 }

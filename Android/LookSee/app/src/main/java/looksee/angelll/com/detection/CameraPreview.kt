@@ -6,6 +6,8 @@ import android.content.pm.PackageManager
 import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Typeface
+import android.util.Range
+import android.util.Size as AndroidSize
 import androidx.annotation.OptIn
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -14,6 +16,9 @@ import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
+import androidx.camera.core.resolutionselector.AspectRatioStrategy
+import androidx.camera.core.resolutionselector.ResolutionSelector
+import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.core.UseCaseGroup
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
@@ -71,6 +76,7 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.max
 import kotlin.math.min
 
@@ -91,6 +97,7 @@ internal class CameraSessionCoordinator(
     private val detectorScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val bindingGeneration = AtomicInteger(0)
     private val frameInFlight = AtomicBoolean(false)
+    private val analysisFrameRateGate = FrameRateGate(MAX_ANALYSIS_FPS)
 
     @Volatile
     private var cameraProvider: ProcessCameraProvider? = null
@@ -134,17 +141,33 @@ internal class CameraSessionCoordinator(
 
                     try {
                         val provider = providerFuture.get()
-                        val preview = Preview.Builder().build().also { useCase ->
-                            useCase.surfaceProvider = previewView.surfaceProvider
-                        }
+                        val resolutionSelector = ResolutionSelector.Builder()
+                            .setAspectRatioStrategy(
+                                AspectRatioStrategy.RATIO_16_9_FALLBACK_AUTO_STRATEGY,
+                            )
+                            .setResolutionStrategy(
+                                ResolutionStrategy(
+                                    AndroidSize(TARGET_WIDTH, TARGET_HEIGHT),
+                                    ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER,
+                                ),
+                            )
+                            .build()
+                        val preview = Preview.Builder()
+                            .setResolutionSelector(resolutionSelector)
+                            .setTargetFrameRate(Range(MAX_ANALYSIS_FPS, MAX_ANALYSIS_FPS))
+                            .build().also { useCase ->
+                                useCase.surfaceProvider = previewView.surfaceProvider
+                            }
                         val analysis = ImageAnalysis.Builder()
+                            .setResolutionSelector(resolutionSelector)
                             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                             .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
                             .setOutputImageRotationEnabled(true)
                             .build()
 
                         analysis.setAnalyzer(analysisExecutor) { image ->
-                            if (detector.isPaused.value ||
+                            if (!analysisFrameRateGate.shouldProcess(image.imageInfo.timestamp) ||
+                                detector.isPaused.value ||
                                 !frameInFlight.compareAndSet(false, true)
                             ) {
                                 image.close()
@@ -251,6 +274,29 @@ internal class CameraSessionCoordinator(
     private companion object {
         const val MIN_ZOOM = 1f
         const val MAX_ZOOM = 5f
+        const val TARGET_WIDTH = 1920
+        const val TARGET_HEIGHT = 1080
+        const val MAX_ANALYSIS_FPS = 30
+    }
+}
+
+/** Monotonic frame gate used to cap detector work even if a camera emits above 30 fps. */
+internal class FrameRateGate(maxFramesPerSecond: Int) {
+    private val minimumIntervalNanos = 1_000_000_000L / maxFramesPerSecond.also {
+        require(it > 0) { "maxFramesPerSecond must be positive." }
+    }
+    private val lastAcceptedTimestamp = AtomicLong(Long.MIN_VALUE)
+
+    fun shouldProcess(timestampNanos: Long): Boolean {
+        while (true) {
+            val previous = lastAcceptedTimestamp.get()
+            if (previous != Long.MIN_VALUE && timestampNanos > previous &&
+                timestampNanos - previous < minimumIntervalNanos
+            ) {
+                return false
+            }
+            if (lastAcceptedTimestamp.compareAndSet(previous, timestampNanos)) return true
+        }
     }
 }
 
@@ -659,10 +705,13 @@ private fun mapDisplayDetections(
         DisplayDetection(
             detection = detection,
             box = clamped,
-            label = detection.displayLabel(),
+            label = detectionOverlayLabel(detection),
         )
     }
 }
+
+internal fun detectionOverlayLabel(detection: Detection): String =
+    "${detection.displayLabel()} ${(detection.confidence * 100).toInt()}%"
 
 internal fun DetectionBox.intersectionOrNull(other: DetectionBox): DetectionBox? {
     val result = DetectionBox(

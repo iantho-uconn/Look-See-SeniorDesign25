@@ -50,7 +50,7 @@ data class DetectionBox(
 
     fun intersects(other: DetectionBox): Boolean =
         left < other.right && other.left < right &&
-                top < other.bottom && other.top < bottom
+            top < other.bottom && other.top < bottom
 }
 
 data class Detection(
@@ -76,29 +76,75 @@ data class Detection(
     ): String = displayLabelOverride ?: landmarkEntry(store)?.label ?: "Class $classIndex"
 }
 
-class BoundingBoxSmoother(private val maxFrames: Int = 4) {
-    private val history = ArrayDeque<DetectionBox>()
+/**
+ * Exponential moving-average tracker with short confidence-decaying coasting.
+ * It keeps an overlay stable during brief blur or frame-edge cutoffs without
+ * turning a stale box into a new recognition event.
+ */
+class DetectionTracker(
+    private val alpha: Float = Detector.TRACKING_SMOOTHING_ALPHA,
+    private val maxCoastFrames: Int = Detector.MAX_COAST_FRAMES,
+    private val coastConfidenceDecay: Float = Detector.COAST_CONFIDENCE_DECAY,
+) {
+    var lastDetection: Detection? = null
+        private set
+
+    private var framesSinceLastSeen = 0
 
     init {
-        require(maxFrames > 0) { "maxFrames must be positive." }
+        require(alpha in 0f..1f) { "alpha must be between zero and one." }
+        require(maxCoastFrames >= 0) { "maxCoastFrames must be non-negative." }
+        require(coastConfidenceDecay in 0f..1f) {
+            "coastConfidenceDecay must be between zero and one."
+        }
     }
 
     @Synchronized
-    fun smooth(newBox: DetectionBox): DetectionBox {
-        history.addLast(newBox)
-        if (history.size > maxFrames) history.removeFirst()
+    fun update(newDetection: Detection?): Detection? {
+        if (newDetection != null) {
+            framesSinceLastSeen = 0
+            val previous = lastDetection
+            val smoothed = if (previous == null || !sameTrack(previous, newDetection)) {
+                newDetection
+            } else {
+                newDetection.copy(
+                    confidence = ema(previous.confidence, newDetection.confidence),
+                    bbox = DetectionBox(
+                        left = ema(previous.bbox.left, newDetection.bbox.left),
+                        top = ema(previous.bbox.top, newDetection.bbox.top),
+                        right = ema(previous.bbox.right, newDetection.bbox.right),
+                        bottom = ema(previous.bbox.bottom, newDetection.bbox.bottom),
+                    ),
+                )
+            }
+            lastDetection = smoothed
+            return smoothed
+        }
 
-        val count = history.size.toFloat()
-        return DetectionBox(
-            left = history.sumOf { it.left.toDouble() }.toFloat() / count,
-            top = history.sumOf { it.top.toDouble() }.toFloat() / count,
-            right = history.sumOf { it.right.toDouble() }.toFloat() / count,
-            bottom = history.sumOf { it.bottom.toDouble() }.toFloat() / count,
-        )
+        framesSinceLastSeen += 1
+        val previous = lastDetection
+        return if (previous != null && framesSinceLastSeen < maxCoastFrames) {
+            previous.copy(confidence = previous.confidence * coastConfidenceDecay).also {
+                lastDetection = it
+            }
+        } else {
+            lastDetection = null
+            null
+        }
     }
 
     @Synchronized
-    fun reset() = history.clear()
+    fun reset() {
+        lastDetection = null
+        framesSinceLastSeen = 0
+    }
+
+    private fun ema(previous: Float, current: Float): Float =
+        previous + alpha * (current - previous)
+
+    private fun sameTrack(first: Detection, second: Detection): Boolean =
+        first.releaseIdentifier == second.releaseIdentifier &&
+            first.classIndex == second.classIndex
 }
 
 data class DetectorFrame(
@@ -147,6 +193,8 @@ sealed interface DetectorModelOutput {
 interface DetectorModel : Closeable {
     val inputWidth: Int
     val inputHeight: Int
+    val inferredClassCount: Int?
+        get() = null
     fun infer(normalizedRgb: FloatArray): DetectorModelOutput
 }
 
@@ -163,7 +211,7 @@ sealed interface DetectorLoadState {
 
 private data class LoadedDetectorRelease(
     val release: ActiveModelRelease,
-    val manifest: ClusterLandmarkManifest,
+    val manifest: ClusterLandmarkManifest?,
     val model: DetectorModel,
 )
 
@@ -171,10 +219,10 @@ private data class LoadedDetectorRelease(
  * Release-aware LookSee detector.
  *
  * CameraPreview supplies source ARGB frames. Detector performs the same
- * letterboxing, thresholding, three-frame confirmation, four-frame smoothing,
- * proximity filtering, and six-second notification cooldown as the Swift
- * implementation. Bounding boxes remain in source-image coordinates; Checkpoint
- * 7 maps them into CameraX PreviewView coordinates.
+ * letterboxing, threshold hysteresis, EMA box smoothing, short detection
+ * coasting, proximity filtering, and a six-second notification cooldown.
+ * Bounding boxes remain in source-image coordinates; CameraPreview maps them
+ * into CameraX PreviewView coordinates.
  */
 class Detector internal constructor(
     activeReleases: StateFlow<ActiveModelRelease?>,
@@ -199,8 +247,7 @@ class Detector internal constructor(
     private val loadedRelease = AtomicReference<LoadedDetectorRelease?>(null)
     private val engineLock = Any()
 
-    private val frameCounters = mutableMapOf<String, Int>()
-    private val smoothers = mutableMapOf<String, BoundingBoxSmoother>()
+    private val trackers = mutableMapOf<String, DetectionTracker>()
     private val notificationCooldowns = mutableMapOf<String, Long>()
 
     private val _detections = MutableStateFlow<List<Detection>>(emptyList())
@@ -250,6 +297,22 @@ class Detector internal constructor(
         }
 
     @Volatile
+    var confidenceThreshold: Float = DEFAULT_CONFIDENCE_THRESHOLD
+        set(value) {
+            require(value in 0f..1f) { "confidenceThreshold must be between zero and one." }
+            field = value
+        }
+
+    @Volatile
+    var trackingThresholdMultiplier: Float = DEFAULT_TRACKING_THRESHOLD_MULTIPLIER
+        set(value) {
+            require(value in 0f..1f) {
+                "trackingThresholdMultiplier must be between zero and one."
+            }
+            field = value
+        }
+
+    @Volatile
     private var userLocation: DetectorLocation? = null
 
     init {
@@ -257,9 +320,10 @@ class Detector internal constructor(
             detectorScope.launch {
                 var observedReleaseIdentifier: String? = null
                 activeReleases.collect { release ->
-                    if (release != null &&
-                        release.releaseIdentifier != observedReleaseIdentifier
-                    ) {
+                    if (release == null) {
+                        if (observedReleaseIdentifier != null) unloadModel()
+                        observedReleaseIdentifier = null
+                    } else if (release.releaseIdentifier != observedReleaseIdentifier) {
                         observedReleaseIdentifier = release.releaseIdentifier
                         activateRelease(release)
                     }
@@ -311,9 +375,8 @@ class Detector internal constructor(
 
     fun resetEngine() {
         synchronized(engineLock) {
-            frameCounters.clear()
-            smoothers.values.forEach(BoundingBoxSmoother::reset)
-            smoothers.clear()
+            trackers.values.forEach(DetectionTracker::reset)
+            trackers.clear()
         }
         _detections.value = emptyList()
         _currentLabel.value = null
@@ -384,43 +447,66 @@ class Detector internal constructor(
 
     internal suspend fun activateRelease(release: ActiveModelRelease) {
         _loadState.value = DetectorLoadState.Loading(release.releaseIdentifier)
+        var candidateModel: DetectorModel? = null
 
         try {
-            val numericClusterId = release.clusterId.toIntOrNull()
-                ?: error("Detector requires a numeric clusterId: ${release.clusterId}.")
-            val manifest = manifestStore.load(release.manifestFile)
+            val newModel = modelFactory.load(release).also { candidateModel = it }
+            val effectiveClassCount = release.classCount.takeIf { it > 0 }
+                ?: newModel.inferredClassCount?.takeIf { it > 0 }
+                ?: MAX_INFERRED_CLASS_COUNT
+            val effectiveRelease = release.copy(classCount = effectiveClassCount)
+            val manifest = release.manifestFile?.let { manifestFile ->
+                val numericClusterId = release.clusterId.toIntOrNull()
+                    ?: error("Detector requires a numeric clusterId with a manifest: ${release.clusterId}.")
+                manifestStore.load(manifestFile).also { loadedManifest ->
+                    require(loadedManifest.clusterId == numericClusterId) {
+                        "Manifest cluster ${loadedManifest.clusterId} does not match $numericClusterId."
+                    }
+                    require(loadedManifest.trainingRunId == release.modelVersion) {
+                        "Manifest version ${loadedManifest.trainingRunId} does not match " +
+                            "${release.modelVersion}."
+                    }
+                    require(loadedManifest.classCount == effectiveClassCount) {
+                        "Manifest classCount ${loadedManifest.classCount} does not match " +
+                            "$effectiveClassCount."
+                    }
+                }
+            }
 
-            require(manifest.clusterId == numericClusterId) {
-                "Manifest cluster ${manifest.clusterId} does not match $numericClusterId."
-            }
-            require(manifest.trainingRunId == release.modelVersion) {
-                "Manifest version ${manifest.trainingRunId} does not match " +
-                        "${release.modelVersion}."
-            }
-            require(manifest.classCount == release.classCount) {
-                "Manifest classCount ${manifest.classCount} does not match " +
-                        "${release.classCount}."
-            }
-
-            val newModel = modelFactory.load(release)
-            val newLoadedRelease = LoadedDetectorRelease(release, manifest, newModel)
+            val newLoadedRelease = LoadedDetectorRelease(
+                release = effectiveRelease,
+                manifest = manifest,
+                model = newModel,
+            )
             val previous = loadedRelease.getAndSet(newLoadedRelease)
+            candidateModel = null
             previous?.model?.close()
 
-            // Swift currently exposes classLabels without populating it. Keep
-            // that behavior for the first parity port; see README follow-ups.
+            _classLabels.value = release.classLabels
+            resetEngine()
             _loadState.value = DetectorLoadState.Ready(release.releaseIdentifier)
-            logger.info("Detector hot-swapped to ${release.releaseIdentifier}.")
+            logger.info(
+                "Detector hot-swapped to ${release.displayName} " +
+                    "($effectiveClassCount classes).",
+            )
         } catch (error: Exception) {
+            candidateModel?.close()
             _loadState.value = DetectorLoadState.Failed(
                 releaseIdentifier = release.releaseIdentifier,
                 message = error.message ?: "Unknown detector model-load error.",
             )
             logger.severe(
                 "Detector model load failed for ${release.releaseIdentifier}: " +
-                        error.message,
+                    error.message,
             )
         }
+    }
+
+    private fun unloadModel() {
+        loadedRelease.getAndSet(null)?.model?.close()
+        _classLabels.value = emptyList()
+        _loadState.value = DetectorLoadState.WaitingForRelease
+        resetEngine()
     }
 
     private fun publishOutput(
@@ -443,10 +529,10 @@ class Detector internal constructor(
             )
         }
         val nearby = proximityFilter(parsed, loaded.manifest)
-        val confirmed = confirmAndSmooth(nearby)
-        val strongest = confirmed.maxByOrNull(Detection::confidence)
+        val tracked = finalizeTracking(nearby)
+        val strongest = tracked.maxByOrNull(Detection::confidence)
 
-        _detections.value = if (_hideBoundingBoxes.value) emptyList() else confirmed
+        _detections.value = if (_hideBoundingBoxes.value) emptyList() else tracked
         _currentLabel.value = strongest?.displayLabel(manifestStore)
 
         if (strongest != null) {
@@ -481,7 +567,8 @@ class Detector internal constructor(
             val offset = boxIndex * boxSize
             val score = output.values[offset + 4]
             val classIndex = output.values[offset + 5].toInt()
-            if (score < CONFIDENCE_THRESHOLD || classIndex !in 0 until release.classCount) {
+            val requiredScore = thresholdFor(release, classIndex)
+            if (score < requiredScore || classIndex !in 0 until release.classCount) {
                 return@repeat
             }
 
@@ -532,7 +619,7 @@ class Detector internal constructor(
                     bestClass = classIndex
                 }
             }
-            if (bestScore < CONFIDENCE_THRESHOLD) return@repeat
+            if (bestScore < thresholdFor(release, bestClass)) return@repeat
 
             val offset = detectionIndex * COORDINATE_VALUE_COUNT
             var centerX = output.coordinates[offset]
@@ -597,14 +684,25 @@ class Detector internal constructor(
             classCount = release.classCount,
             confidence = score,
             bbox = box,
+            displayLabelOverride = release.classLabels.getOrNull(classIndex),
         )
     }
 
+    private fun thresholdFor(release: ActiveModelRelease, classIndex: Int): Float =
+        synchronized(engineLock) {
+            if (trackers[trackingKey(release, classIndex)]?.lastDetection != null) {
+                confidenceThreshold * trackingThresholdMultiplier
+            } else {
+                confidenceThreshold
+            }
+        }
+
     private fun proximityFilter(
         detections: List<Detection>,
-        manifest: ClusterLandmarkManifest,
+        manifest: ClusterLandmarkManifest?,
     ): List<Detection> {
         val location = userLocation ?: return detections
+        manifest ?: return detections
         return detections.filter { detection ->
             val landmark = manifest.landmark(detection.classIndex) ?: return@filter true
             distanceMeters(
@@ -614,35 +712,41 @@ class Detector internal constructor(
         }
     }
 
-    private fun confirmAndSmooth(detections: List<Detection>): List<Detection> =
+    private fun finalizeTracking(detections: List<Detection>): List<Detection> =
         synchronized(engineLock) {
-            val currentLabels = detections.mapTo(mutableSetOf(), Detection::label)
-            val lostLabels = smoothers.keys.filterNot(currentLabels::contains)
-            lostLabels.forEach { label ->
-                smoothers.remove(label)
-                frameCounters.remove(label)
-            }
-
-            detections.mapNotNull { detection ->
-                val label = detection.label
-                val frameCount = (frameCounters[label] ?: 0) + 1
-                frameCounters[label] = frameCount
-                val smoother = smoothers.getOrPut(label) { BoundingBoxSmoother() }
-                val smoothedBox = smoother.smooth(detection.bbox)
-
-                if (frameCount >= REQUIRED_FRAMES_FOR_DETECTION) {
-                    detection.copy(bbox = smoothedBox)
-                } else {
-                    null
+            val strongestByTrack = mutableMapOf<String, Detection>()
+            detections.forEach { detection ->
+                val key = trackingKey(detection)
+                val current = strongestByTrack[key]
+                if (current == null || detection.confidence > current.confidence) {
+                    strongestByTrack[key] = detection
                 }
             }
+
+            val activeKeys = strongestByTrack.keys
+            val results = strongestByTrack.mapNotNullTo(mutableListOf()) { (key, detection) ->
+                trackers.getOrPut(key) { DetectionTracker() }.update(detection)
+            }
+
+            val lostKeys = trackers.keys.filterNot(activeKeys::contains)
+            lostKeys.forEach { key ->
+                val coasted = trackers[key]?.update(null)
+                if (coasted != null) results += coasted else trackers.remove(key)
+            }
+            results
         }
+
+    private fun trackingKey(detection: Detection): String =
+        "${detection.releaseIdentifier}|${detection.classIndex}"
+
+    private fun trackingKey(release: ActiveModelRelease, classIndex: Int): String =
+        "${release.releaseIdentifier}|$classIndex"
 
     internal fun processOutputForTesting(
         output: DetectorModelOutput,
         metadata: LetterboxMetadata,
         release: ActiveModelRelease,
-        manifest: ClusterLandmarkManifest,
+        manifest: ClusterLandmarkManifest?,
         eventTimeMillis: Long,
     ) {
         publishOutput(
@@ -661,9 +765,15 @@ class Detector internal constructor(
     companion object {
         const val INPUT_WIDTH = 640
         const val INPUT_HEIGHT = 640
-        const val CONFIDENCE_THRESHOLD = 0.80f
+        const val DEFAULT_CONFIDENCE_THRESHOLD = 0.65f
+        const val DEFAULT_TRACKING_THRESHOLD_MULTIPLIER = 0.35f
+        const val TRACKING_SMOOTHING_ALPHA = 0.65f
+        const val MAX_COAST_FRAMES = 5
+        const val COAST_CONFIDENCE_DECAY = 0.92f
+        const val MODEL_OUTPUT_FLOOR = 0.05f
+        @Deprecated("Use DEFAULT_CONFIDENCE_THRESHOLD.")
+        const val CONFIDENCE_THRESHOLD = DEFAULT_CONFIDENCE_THRESHOLD
         const val IOU_THRESHOLD = 0.45f
-        const val REQUIRED_FRAMES_FOR_DETECTION = 3
         const val DEFAULT_PROXIMITY_THRESHOLD_METERS = 150.0
         const val MAX_LOCATION_ACCURACY_METERS = 100.0
         const val NOTIFICATION_COOLDOWN_MILLIS = 6_000L
@@ -673,6 +783,7 @@ class Detector internal constructor(
         private const val POST_INFERENCE_THROTTLE_MILLIS = 30L
         private const val NANOS_PER_MILLISECOND = 1_000_000.0
         private const val EARTH_RADIUS_METERS = 6_371_008.8
+        private const val MAX_INFERRED_CLASS_COUNT = 10_000
         private val logger = Logger.getLogger(Detector::class.java.name)
 
         @Volatile
@@ -736,11 +847,11 @@ class Detector internal constructor(
             val toLatitude = Math.toRadians(to.latitude)
             val haversine =
                 sin(latitudeDelta / 2.0) * sin(latitudeDelta / 2.0) +
-                        cos(fromLatitude) * cos(toLatitude) *
-                        sin(longitudeDelta / 2.0) * sin(longitudeDelta / 2.0)
+                    cos(fromLatitude) * cos(toLatitude) *
+                    sin(longitudeDelta / 2.0) * sin(longitudeDelta / 2.0)
             val bounded = haversine.coerceIn(0.0, 1.0)
             return EARTH_RADIUS_METERS *
-                    2.0 * atan2(sqrt(bounded), sqrt(1.0 - bounded))
+                2.0 * atan2(sqrt(bounded), sqrt(1.0 - bounded))
         }
     }
 }
@@ -781,11 +892,27 @@ private class LiteRtDetectorModel(
 
     override val inputHeight: Int = if (isNhwc) imageShape[1] else imageShape[2]
     override val inputWidth: Int = if (isNhwc) imageShape[2] else imageShape[3]
+    override val inferredClassCount: Int? by lazy {
+        val outputShapes = (0 until interpreter.outputTensorCount)
+            .map { interpreter.getOutputTensor(it).shape() }
+        val confidenceShape = (0 until interpreter.outputTensorCount)
+            .firstOrNull { index ->
+                interpreter.getOutputTensor(index).name().contains("confidence", ignoreCase = true)
+            }
+            ?.let { outputShapes[it] }
+        confidenceShape?.lastOrNull()?.takeIf { it > 0 }
+            ?: outputShapes.firstNotNullOfOrNull { shape ->
+                shape.drop(1)
+                    .firstOrNull { it in MIN_CLASS_CHANNELS..MAX_CLASS_CHANNELS }
+                    ?.takeUnless { it == END_TO_END_OUTPUT_VALUES }
+                    ?.minus(COORDINATE_OUTPUT_VALUES)
+            }
+    }
 
     init {
         require((isNhwc && imageShape[3] == 3) || (!isNhwc && imageShape[1] == 3)) {
             "LiteRT detector image input must be NHWC or NCHW RGB; " +
-                    "received ${imageShape.contentToString()}."
+                "received ${imageShape.contentToString()}."
         }
         require(inputWidth == Detector.INPUT_WIDTH && inputHeight == Detector.INPUT_HEIGHT) {
             "LookSee detector expects 640x640 input; received ${inputWidth}x$inputHeight."
@@ -840,7 +967,7 @@ private class LiteRtDetectorModel(
             val combinedIndex = outputTensors.indexOfFirst { it.shape().lastOrNull() == 6 }
             require(combinedIndex >= 0) {
                 "Unknown LiteRT detector outputs: " +
-                        outputTensors.joinToString { "${it.name()}=${it.shape().contentToString()}" }
+                    outputTensors.joinToString { "${it.name()}=${it.shape().contentToString()}" }
             }
             DetectorModelOutput.EndToEnd(
                 values = values[combinedIndex],
@@ -872,7 +999,7 @@ private class LiteRtDetectorModel(
         val value = when {
             inputName.contains("iou", ignoreCase = true) -> Detector.IOU_THRESHOLD
             inputName.contains("confidence", ignoreCase = true) ->
-                Detector.CONFIDENCE_THRESHOLD
+                Detector.MODEL_OUTPUT_FLOOR
             else -> error("Unsupported LiteRT detector input: $inputName.")
         }
         return ByteBuffer.allocateDirect(Float.SIZE_BYTES)
@@ -882,4 +1009,11 @@ private class LiteRtDetectorModel(
     }
 
     override fun close() = interpreter.close()
+
+    private companion object {
+        const val END_TO_END_OUTPUT_VALUES = 6
+        const val COORDINATE_OUTPUT_VALUES = 4
+        const val MIN_CLASS_CHANNELS = 5
+        const val MAX_CLASS_CHANNELS = 512
+    }
 }

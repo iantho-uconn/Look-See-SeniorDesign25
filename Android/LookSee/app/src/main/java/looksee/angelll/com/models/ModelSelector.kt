@@ -1,6 +1,7 @@
 package looksee.angelll.com.models
 
 import android.content.Context
+import looksee.angelll.com.BuildConfig
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -29,16 +30,40 @@ data class ActiveModelRelease(
     val clusterId: String,
     val modelVersion: String,
     val modelFile: File,
-    val manifestFile: File,
+    val manifestFile: File?,
     val classCount: Int,
     val modelKey: String?,
     val manifestKey: String?,
+    val displayName: String = "Cluster $clusterId",
+    val classLabels: List<String> = emptyList(),
 ) {
     val id: String
         get() = releaseIdentifier
 
     val releaseIdentifier: String
         get() = "$clusterId|$modelVersion"
+}
+
+data class BundledTestModel(
+    val modelFile: File,
+    val displayName: String = modelFile.nameWithoutExtension.replace('_', ' '),
+    val classLabels: List<String> = emptyList(),
+) {
+    val id: String
+        get() = modelFile.name
+
+    val isInstalled: Boolean
+        get() = modelFile.isFile
+}
+
+internal interface TestModelSelectionStore {
+    fun readSelectedId(): String?
+    fun writeSelectedId(value: String?)
+}
+
+private object EmptyTestModelSelectionStore : TestModelSelectionStore {
+    override fun readSelectedId(): String? = null
+    override fun writeSelectedId(value: String?) = Unit
 }
 
 /**
@@ -52,6 +77,10 @@ class ModelSelector internal constructor(
     modelState: StateFlow<ModelState>,
     private val activationRadiusMeters: Double = DEFAULT_ACTIVATION_RADIUS_METERS,
     dispatcher: CoroutineDispatcher = Dispatchers.Default,
+    private val testingEnabled: Boolean = false,
+    bundledTestModels: List<BundledTestModel> = emptyList(),
+    private val testSelectionStore: TestModelSelectionStore =
+        EmptyTestModelSelectionStore,
 ) : AutoCloseable {
     constructor(modelService: ModelService) : this(modelState = modelService.state)
 
@@ -71,6 +100,20 @@ class ModelSelector internal constructor(
     val activeClassCount: Int?
         get() = activeRelease.value?.classCount
 
+    private val _selectedTestModelId = MutableStateFlow<String?>(null)
+    val selectedTestModelId: StateFlow<String?> = _selectedTestModelId.asStateFlow()
+
+    val availableTestModels: List<BundledTestModel> = if (testingEnabled) {
+        bundledTestModels
+            .filter(BundledTestModel::isInstalled)
+            .sortedBy(BundledTestModel::displayName)
+    } else {
+        emptyList()
+    }
+
+    val activeDisplayName: String
+        get() = activeRelease.value?.displayName ?: "No model loaded"
+
     private var models: List<ModelInfo> = emptyList()
     private var latestUserLocation: Coordinate? = null
 
@@ -78,6 +121,8 @@ class ModelSelector internal constructor(
         require(activationRadiusMeters.isFinite() && activationRadiusMeters >= 0.0) {
             "activationRadiusMeters must be finite and non-negative."
         }
+
+        restoreTestSelection()
 
         selectorScope.launch(start = CoroutineStart.UNDISPATCHED) {
             modelState.collect(::handleModelState)
@@ -96,8 +141,25 @@ class ModelSelector internal constructor(
 
         synchronized(selectionLock) {
             latestUserLocation = location
+            if (reactivateSelectedTestModelIfNeeded()) return
             chooseBestRelease(location)
         }
+    }
+
+    fun selectTestModel(testModel: BundledTestModel): Boolean = synchronized(selectionLock) {
+        if (!testingEnabled || testModel !in availableTestModels || !testModel.isInstalled) {
+            return@synchronized false
+        }
+        _selectedTestModelId.value = testModel.id
+        testSelectionStore.writeSelectedId(testModel.id)
+        activate(testModel)
+    }
+
+    fun useAutomaticModelSelection() = synchronized(selectionLock) {
+        if (_selectedTestModelId.value == null) return@synchronized
+        _selectedTestModelId.value = null
+        testSelectionStore.writeSelectedId(null)
+        latestUserLocation?.let(::chooseBestRelease) ?: chooseDefaultRelease()
     }
 
     private fun handleModelState(state: ModelState) {
@@ -108,16 +170,20 @@ class ModelSelector internal constructor(
                     val completeCount = models.count(::isCompleteRelease)
                     logger.info(
                         "ModelSelector received ${models.size} loaded model records " +
-                            "($completeCount complete releases).",
+                                "($completeCount complete releases).",
                     )
 
-                    latestUserLocation?.let(::chooseBestRelease)
-                        ?: chooseDefaultRelease()
+                    if (!reactivateSelectedTestModelIfNeeded()) {
+                        latestUserLocation?.let(::chooseBestRelease)
+                            ?: chooseDefaultRelease()
+                    }
                 }
 
                 ModelState.NotLoaded -> {
                     models = emptyList()
-                    clearActiveRelease("ModelService is not loaded")
+                    if (!reactivateSelectedTestModelIfNeeded()) {
+                        clearActiveRelease("ModelService is not loaded")
+                    }
                 }
 
                 ModelState.Loading -> {
@@ -171,13 +237,13 @@ class ModelSelector internal constructor(
         val current = activeRelease.value
         if (current != null && models.any { model ->
                 model.clusterId == current.clusterId &&
-                    model.modelVersion == current.modelVersion &&
-                    isCompleteRelease(model)
+                        model.modelVersion == current.modelVersion &&
+                        isCompleteRelease(model)
             }
         ) {
             logger.info(
                 "No objects within ${"%.1f".format(activationRadiusMeters)}m; " +
-                    "keeping release ${current.releaseIdentifier} active.",
+                        "keeping release ${current.releaseIdentifier} active.",
             )
             return
         }
@@ -203,7 +269,7 @@ class ModelSelector internal constructor(
         if (candidate == null) {
             logger.warning(
                 "Refusing to activate incomplete release " +
-                    "cluster=${model.clusterId}, version=${model.modelVersion}.",
+                        "cluster=${model.clusterId}, version=${model.modelVersion}.",
             )
             return
         }
@@ -216,11 +282,47 @@ class ModelSelector internal constructor(
 
         logger.info(
             "Active model release changed: previous=$previous, " +
-                "current=${candidate.releaseIdentifier}, " +
-                "classCount=${candidate.classCount}, " +
-                "model=${candidate.modelFile.name}, " +
-                "manifest=${candidate.manifestFile.name}, reason=$reason.",
+                    "current=${candidate.releaseIdentifier}, " +
+                    "classCount=${candidate.classCount}, " +
+                    "model=${candidate.modelFile.name}, " +
+                    "manifest=${candidate.manifestFile?.name ?: "none"}, reason=$reason.",
         )
+    }
+
+    private fun restoreTestSelection() {
+        if (!testingEnabled) return
+        val savedId = testSelectionStore.readSelectedId() ?: return
+        val selected = availableTestModels.firstOrNull { it.id == savedId } ?: return
+        _selectedTestModelId.value = selected.id
+        activate(selected)
+    }
+
+    private fun reactivateSelectedTestModelIfNeeded(): Boolean {
+        if (!testingEnabled) return false
+        val selectedId = _selectedTestModelId.value ?: return false
+        val selected = availableTestModels.firstOrNull { it.id == selectedId } ?: return false
+        return activate(selected)
+    }
+
+    private fun activate(testModel: BundledTestModel): Boolean {
+        if (!testModel.isInstalled) return false
+        val candidate = ActiveModelRelease(
+            clusterId = "bundled-test",
+            modelVersion = "bundled-${testModel.modelFile.nameWithoutExtension}",
+            modelFile = testModel.modelFile,
+            manifestFile = null,
+            classCount = testModel.classLabels.size,
+            modelKey = testModel.modelFile.name,
+            manifestKey = null,
+            displayName = testModel.displayName,
+            classLabels = testModel.classLabels,
+        )
+        if (candidate != _activeRelease.value) {
+            _activeRelease.value = candidate
+            _activeClusterId.value = candidate.clusterId
+            logger.info("Bundled test model selected: ${candidate.displayName}.")
+        }
+        return true
     }
 
     private fun clearActiveRelease(reason: String) {
@@ -248,6 +350,7 @@ class ModelSelector internal constructor(
             classCount = model.classCount,
             modelKey = model.modelKey,
             manifestKey = model.manifestKey,
+            displayName = "Cluster ${model.clusterId}",
         )
     }
 
@@ -262,7 +365,7 @@ class ModelSelector internal constructor(
     ) {
         fun isValid(): Boolean =
             latitude.isFinite() && latitude in -90.0..90.0 &&
-                longitude.isFinite() && longitude in -180.0..180.0
+                    longitude.isFinite() && longitude in -180.0..180.0
     }
 
     companion object {
@@ -276,9 +379,39 @@ class ModelSelector internal constructor(
         /** Android's app-context-initialized equivalent of Swift's `shared`. */
         fun shared(context: Context): ModelSelector =
             sharedInstance ?: synchronized(this) {
-                sharedInstance ?: ModelSelector(ModelService.shared(context))
+                sharedInstance ?: ModelSelector(
+                    modelState = ModelService.shared(context).state,
+                    testingEnabled = BuildConfig.DEBUG,
+                    bundledTestModels = discoverBundledTestModels(context),
+                    testSelectionStore = AndroidTestModelSelectionStore(context),
+                )
                     .also { sharedInstance = it }
             }
+
+        private fun discoverBundledTestModels(context: Context): List<BundledTestModel> {
+            val assetNames = runCatching { context.assets.list(TEST_MODEL_ASSET_DIRECTORY) }
+                .getOrNull()
+                .orEmpty()
+                .filter { it.endsWith(".tflite", ignoreCase = true) }
+            val destination = File(context.codeCacheDir, TEST_MODEL_ASSET_DIRECTORY).apply {
+                mkdirs()
+            }
+            return assetNames.mapNotNull { assetName ->
+                runCatching {
+                    val output = File(destination, assetName)
+                    context.assets.open("$TEST_MODEL_ASSET_DIRECTORY/$assetName").use { input ->
+                        output.outputStream().use { destinationStream ->
+                            input.copyTo(destinationStream)
+                        }
+                    }
+                    BundledTestModel(output)
+                }.onFailure { error ->
+                    logger.warning("Could not prepare bundled test model $assetName: ${error.message}")
+                }.getOrNull()
+            }
+        }
+
+        private const val TEST_MODEL_ASSET_DIRECTORY = "models"
 
         /** Pure Kotlin haversine distance keeps selector tests local/JVM-only. */
         private fun distanceMeters(from: Coordinate, to: Coordinate): Double {
@@ -289,11 +422,30 @@ class ModelSelector internal constructor(
 
             val haversine =
                 sin(latitudeDelta / 2.0) * sin(latitudeDelta / 2.0) +
-                    cos(fromLatitude) * cos(toLatitude) *
-                    sin(longitudeDelta / 2.0) * sin(longitudeDelta / 2.0)
+                        cos(fromLatitude) * cos(toLatitude) *
+                        sin(longitudeDelta / 2.0) * sin(longitudeDelta / 2.0)
             val bounded = haversine.coerceIn(0.0, 1.0)
             val angularDistance = 2.0 * atan2(sqrt(bounded), sqrt(1.0 - bounded))
             return EARTH_RADIUS_METERS * angularDistance
         }
+    }
+}
+
+private class AndroidTestModelSelectionStore(context: Context) : TestModelSelectionStore {
+    private val preferences = context.getSharedPreferences(
+        "looksee_model_testing",
+        Context.MODE_PRIVATE,
+    )
+
+    override fun readSelectedId(): String? = preferences.getString(SELECTED_ID_KEY, null)
+
+    override fun writeSelectedId(value: String?) {
+        preferences.edit().apply {
+            if (value == null) remove(SELECTED_ID_KEY) else putString(SELECTED_ID_KEY, value)
+        }.apply()
+    }
+
+    private companion object {
+        const val SELECTED_ID_KEY = "selectedBundledTestModel"
     }
 }
