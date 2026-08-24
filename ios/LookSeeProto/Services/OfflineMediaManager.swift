@@ -45,6 +45,16 @@ class OfflineMediaManager: ObservableObject {
         return getDocumentsDirectory().appendingPathComponent(negName)
     }
     
+    // 🚀 THE FIX: Bumps an item to the absolute front of the queue by spoofing an old date
+    func prioritizeAndRetry(media: ArchivedMedia) {
+        if let index = archivedItems.firstIndex(where: { $0.id == media.id }) {
+            // Date(timeIntervalSince1970: 0) makes it the oldest possible item, forcing it to the front!
+            archivedItems[index].dateSaved = Date(timeIntervalSince1970: 0)
+            archivedItems.sort { $0.dateSaved < $1.dateSaved }
+            saveArchive()
+        }
+    }
+    
     // MARK: - Archive Video (Queue) - Background Optimized
     func archiveVideo(
         tempURL: URL,
@@ -122,6 +132,7 @@ class OfflineMediaManager: ObservableObject {
         // Back on Main Thread: Update UI immediately
         if let entry = newEntry {
             self.archivedItems.append(entry)
+            self.archivedItems.sort { $0.dateSaved < $1.dateSaved } // 🚀 Keep chronological
             self.saveArchive()
         }
         
@@ -194,6 +205,7 @@ class OfflineMediaManager: ObservableObject {
         
         if let entry = newEntry {
             self.archivedItems.append(entry)
+            self.archivedItems.sort { $0.dateSaved < $1.dateSaved } // 🚀 Keep chronological
             self.saveArchive()
         }
         
@@ -256,7 +268,8 @@ class OfflineMediaManager: ObservableObject {
     private func loadArchive() {
         if let savedData = UserDefaults.standard.data(forKey: ledgerKey),
            let decoded = try? JSONDecoder().decode([ArchivedMedia].self, from: savedData) {
-            archivedItems = decoded
+            // 🚀 THE FIX: Ensure it is sorted oldest-first on load
+            archivedItems = decoded.sorted { $0.dateSaved < $1.dateSaved }
         }
     }
 }

@@ -5,7 +5,6 @@
 //  Created by Angel Pineda on 6/29/26.
 //
 
-
 import AVFoundation
 import UIKit
 import Combine
@@ -22,7 +21,6 @@ final class NegativeVideoCameraService: NSObject, ObservableObject {
     private var activeFileURL: URL?
     private var isConfigured = false
 
-    // 🚀 NEW: Dedicated queue for hardware operations prevents Main Thread freezing
     private let sessionQueue = DispatchQueue(label: "com.looksee.camera.sessionQueue")
 
     private var segmentURLs: [URL] = []
@@ -30,8 +28,6 @@ final class NegativeVideoCameraService: NSObject, ObservableObject {
     private var wasRecordingBeforeInterruption = false
 
     var onVideoRecorded: ((URL) -> Void)?
-
-    // ... init/deinit unchanged ...
 
     func start() {
         checkPermissionsAndStart()
@@ -90,7 +86,6 @@ final class NegativeVideoCameraService: NSObject, ObservableObject {
             return
         }
 
-        // 🚀 NEW: Pushes hardware configuration off the UI thread
         sessionQueue.async { [weak self] in
             guard let self = self else { return }
             
@@ -175,9 +170,7 @@ final class NegativeVideoCameraService: NSObject, ObservableObject {
 
     private func handleInterruptionEnded() {
         isInterrupted = false
-
         resumeRunningIfNeeded()
-
         guard wasRecordingBeforeInterruption else { return }
         wasRecordingBeforeInterruption = false
 
@@ -202,35 +195,14 @@ final class NegativeVideoCameraService: NSObject, ObservableObject {
             onVideoRecorded?(first)
             return
         }
-        if let merged = await mergeSegments(urls) {
+        
+        // 🚀 THE FIX: Removed the rogue internal merger and routed safely through the fixed VideoMerger!
+        if let merged = try? await VideoMerger.mergeAndValidate(clipURLs: urls, minimumDuration: 1.0) {
             for url in urls { try? FileManager.default.removeItem(at: url) }
             onVideoRecorded?(merged)
         } else {
             onVideoRecorded?(first)
         }
-    }
-
-    private func mergeSegments(_ urls: [URL]) async -> URL? {
-        let composition = AVMutableComposition()
-        guard let videoTrack = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) else { return nil }
-        var currentTime = CMTime.zero
-        for url in urls {
-            let asset = AVURLAsset(url: url)
-            do {
-                guard let assetVideoTrack = try await asset.loadTracks(withMediaType: .video).first else { continue }
-                let duration = try await asset.load(.duration)
-                let timeRange = CMTimeRange(start: .zero, duration: duration)
-                try videoTrack.insertTimeRange(timeRange, of: assetVideoTrack, at: currentTime)
-                videoTrack.preferredTransform = try await assetVideoTrack.load(.preferredTransform)
-                currentTime = CMTimeAdd(currentTime, duration)
-            } catch { return nil }
-        }
-        let outputURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + "_resumed_stitched.mov")
-        guard let exporter = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetHighestQuality) else { return nil }
-        exporter.outputURL = outputURL
-        exporter.outputFileType = .mov
-        await exporter.export()
-        return exporter.status == .completed ? outputURL : nil
     }
 }
 

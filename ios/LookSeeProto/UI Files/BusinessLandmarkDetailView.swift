@@ -46,6 +46,8 @@ struct BusinessLandmarkDetailView: View {
     @State private var showNegativeCamera = false
     @State private var selectedPositiveMediaItems: [PhotosPickerItem] = []
     @State private var selectedNegativeMediaItems: [PhotosPickerItem] = []
+    
+    // 🚀 Holds the single merged video passed back from the cameras
     @State private var pendingPositiveVideoURLs: [URL] = []
     @State private var pendingNegativeVideo: CapturedNegativeVideo?
 
@@ -550,30 +552,30 @@ struct BusinessLandmarkDetailView: View {
                 }
             }
         }
-        // 🚀 FIXED: Added the required missing arguments to PositiveVideoCameraView
+        // 🚀 THIS CALLS THE BRAND NEW ISOLATED BUSINESS CAMERA
         .fullScreenCover(isPresented: $showPositiveCamera) {
-            PositiveVideoCameraView(
-                isActive: true,
-                isNavVisible: .constant(false),
-                completionButtonTitle: "Use Recorded Videos",
-                onDone: { urls in
-                    pendingPositiveVideoURLs = urls
+            BusinessPositiveVideoCameraView(
+                completionButtonTitle: "Finish Submission",
+                onDone: { singleMergedURL in
+                    showPositiveCamera = false // 🚀 Immediate dismiss
+                    pendingPositiveVideoURLs = [singleMergedURL]
                     Task {
                         await uploadPendingPositiveRecording()
                     }
-                },
-                onCancel: {
-                    showPositiveCamera = false
                 }
             )
         }
+        // 🚀 THIS CALLS THE BRAND NEW ISOLATED BUSINESS CAMERA
         .fullScreenCover(isPresented: $showNegativeCamera) {
-            NegativeVideoCameraView { video in
-                pendingNegativeVideo = video
-                Task {
-                    await uploadPendingNegativeRecording()
+            BusinessNegativeVideoCameraView(
+                onDone: { video in
+                    showNegativeCamera = false // 🚀 Immediate dismiss
+                    pendingNegativeVideo = video
+                    Task {
+                        await uploadPendingNegativeRecording()
+                    }
                 }
-            }
+            )
         }
         .alert("Delete Promotion?", isPresented: deletePromotionAlertBinding) {
             Button("Cancel", role: .cancel) {
@@ -1164,30 +1166,17 @@ struct BusinessLandmarkDetailView: View {
 
     // MARK: - Recorded Camera Uploads
 
+    // 🚀 NEW: Removed VideoMerger entirely. Just receives single URL from native business camera view
     private func uploadPendingPositiveRecording() async {
         guard !isUploadingMedia else { return }
-        let sourceURLs = pendingPositiveVideoURLs
-        guard !sourceURLs.isEmpty else { return }
+        guard let uploadURL = pendingPositiveVideoURLs.first else { return }
 
         await beginRecordedVideoUpload(
             datasetRole: .positive,
-            progressText: sourceURLs.count == 1
-                ? "Preparing recorded video..."
-                : "Combining \(sourceURLs.count) recorded clips..."
+            progressText: "Preparing recorded video..."
         )
 
-        var generatedMergedURL: URL?
-
         do {
-            let uploadURL = try await VideoMerger.mergeAndValidate(
-                clipURLs: sourceURLs,
-                minimumDuration: 30
-            )
-
-            if !sourceURLs.contains(uploadURL) {
-                generatedMergedURL = uploadURL
-            }
-
             await MainActor.run {
                 uploadProgressText = "Uploading positive recording..."
             }
@@ -1202,11 +1191,7 @@ struct BusinessLandmarkDetailView: View {
                 data: mediaData
             )
 
-            var filesToDelete = sourceURLs
-            if let generatedMergedURL {
-                filesToDelete.append(generatedMergedURL)
-            }
-            deleteLocalFiles(filesToDelete)
+            deleteLocalFiles([uploadURL])
 
             await MainActor.run {
                 pendingPositiveVideoURLs.removeAll()
@@ -1215,16 +1200,14 @@ struct BusinessLandmarkDetailView: View {
                 )
             }
         } catch {
-            if let generatedMergedURL {
-                deleteLocalFiles([generatedMergedURL])
-            }
-
+            deleteLocalFiles([uploadURL])
             await MainActor.run {
                 failRecordedVideoUpload(error)
             }
         }
     }
 
+    // 🚀 NEW: Just receives single video object from native business camera view
     private func uploadPendingNegativeRecording() async {
         guard !isUploadingMedia else { return }
         guard let video = pendingNegativeVideo else { return }
@@ -1513,7 +1496,6 @@ struct BusinessLandmarkDetailView: View {
     }
 }
 
-// Moved outside the View struct but kept private to the file
 private enum MediaSelectionError: LocalizedError {
     case couldNotLoadMedia
 

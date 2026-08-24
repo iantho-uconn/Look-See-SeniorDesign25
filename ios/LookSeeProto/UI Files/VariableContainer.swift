@@ -39,10 +39,12 @@ final class VariableContainer: ObservableObject {
     @Published var promoDescription: String = ""
     @Published var promoImageUrl: String = ""
     
-    // 🚀 NEW: Enterprise Merchant Profile Fields (Address/Site removed)
+    // 🚀 NEW: Enterprise Merchant Profile Fields
     @Published var merchantName: String = ""
     @Published var merchantBio: String = ""
     @Published var merchantPhone: String = ""
+    @Published var merchantWebsite: String = ""
+    @Published var merchantAddress: String = ""
     @Published var merchantLogoUrl: String = ""
 
     private init() {
@@ -101,11 +103,15 @@ final class VariableContainer: ObservableObject {
             merchantName = cachedData["merchantName"] as? String ?? ""
             merchantBio = cachedData["merchantBio"] as? String ?? ""
             merchantPhone = cachedData["merchantPhone"] as? String ?? ""
+            merchantWebsite = cachedData["merchantWebsite"] as? String ?? ""
+            merchantAddress = cachedData["merchantAddress"] as? String ?? ""
             merchantLogoUrl = cachedData["merchantLogoUrl"] as? String ?? ""
         } else {
             merchantName = ""
             merchantBio = ""
             merchantPhone = ""
+            merchantWebsite = ""
+            merchantAddress = ""
             merchantLogoUrl = ""
         }
 
@@ -155,6 +161,8 @@ final class VariableContainer: ObservableObject {
         merchantName = ""
         merchantBio = ""
         merchantPhone = ""
+        merchantWebsite = ""
+        merchantAddress = ""
         merchantLogoUrl = ""
     }
 

@@ -2,54 +2,70 @@ package looksee.angelll.com.viewmodels
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.amplifyframework.kotlin.core.Amplify
+import com.amplifyframework.auth.options.AuthFetchSessionOptions
+import com.amplifyframework.core.Amplify
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 enum class UserTier {
     GUEST, AUTHENTICATED, BUSINESS
 }
 
 class AuthState : ViewModel() {
-    val tier = MutableStateFlow(UserTier.GUEST)
-    val isReady = MutableStateFlow(false)
-    val didSignOut = MutableStateFlow(false)
+
+    private val _tier = MutableStateFlow(UserTier.GUEST)
+    val tier: StateFlow<UserTier> = _tier.asStateFlow()
+
+    private val _isReady = MutableStateFlow(false)
+    val isReady: StateFlow<Boolean> = _isReady.asStateFlow()
+
+    private val _didSignOut = MutableStateFlow(false)
+    val didSignOut: StateFlow<Boolean> = _didSignOut.asStateFlow()
 
     fun resolveTier() {
-        // Launch a coroutine to handle async background networking (Replaces Task { @MainActor })
         viewModelScope.launch {
             try {
-                val session = Amplify.Auth.fetchAuthSession()
+                // Wrapper to convert Java callbacks to Kotlin Coroutines
+                val session = suspendCancellableCoroutine<com.amplifyframework.auth.AuthSession> { cont ->
+                    Amplify.Auth.fetchAuthSession({ cont.resume(it) }, { cont.resumeWithException(it) })
+                }
 
                 if (!session.isSignedIn) {
-                    tier.value = UserTier.GUEST
-                    isReady.value = true
+                    _tier.value = UserTier.GUEST
+                    _isReady.value = true
                     return@launch
                 }
 
-                // Force fetching attributes (AWS SDK Kotlin handles caching logic inherently)
-                val attributes = Amplify.Auth.fetchUserAttributes()
-                println("🔍 All attributes: $attributes")
-
-                val groupAttr = attributes.find { it.key.keyString == "custom:group" }
-
-                if (groupAttr != null) {
-                    println("🔍 Found group attribute: ${groupAttr.value}")
-                    tier.value = if (groupAttr.value == "business-users") {
-                        UserTier.BUSINESS
-                    } else {
-                        UserTier.AUTHENTICATED
-                    }
-                } else {
-                    println("⚠️ No group attribute found")
-                    tier.value = UserTier.AUTHENTICATED
+                // Force refresh tokens
+                val options = AuthFetchSessionOptions.builder().forceRefresh(true).build()
+                suspendCancellableCoroutine<com.amplifyframework.auth.AuthSession> { cont ->
+                    Amplify.Auth.fetchAuthSession(options, { cont.resume(it) }, { cont.resumeWithException(it) })
                 }
 
+                val attributes = suspendCancellableCoroutine<List<com.amplifyframework.auth.AuthUserAttribute>> { cont ->
+                    Amplify.Auth.fetchUserAttributes({ cont.resume(it) }, { cont.resumeWithException(it) })
+                }
+
+                println("🔍 All attributes: $attributes")
+
+                val groupAttr = attributes.firstOrNull { it.key.keyString == "custom:group" }
+                if (groupAttr != null) {
+                    println("🔍 Found group attribute: ${groupAttr.value}")
+                    _tier.value = if (groupAttr.value == "business-users") UserTier.BUSINESS else UserTier.AUTHENTICATED
+                } else {
+                    println("⚠️ No group attribute found")
+                    _tier.value = UserTier.AUTHENTICATED
+                }
             } catch (e: Exception) {
-                println("❌ resolveTier failed: ${e.message}")
-                tier.value = UserTier.AUTHENTICATED
+                println("❌ resolveTier failed: $e")
+                _tier.value = UserTier.AUTHENTICATED
             } finally {
-                isReady.value = true
+                _isReady.value = true
             }
         }
     }
@@ -57,12 +73,15 @@ class AuthState : ViewModel() {
     fun signOut() {
         viewModelScope.launch {
             try {
-                Amplify.Auth.signOut()
-                tier.value = UserTier.GUEST
-                isReady.value = true
-                didSignOut.value = true
+                suspendCancellableCoroutine<com.amplifyframework.auth.result.AuthSignOutResult> { cont ->
+                    Amplify.Auth.signOut { cont.resume(it) }
+                }
             } catch (e: Exception) {
-                println("❌ Sign out failed: ${e.message}")
+                println("❌ AuthState signOut failed: $e")
+            } finally {
+                _tier.value = UserTier.GUEST
+                _isReady.value = true
+                _didSignOut.value = true
             }
         }
     }

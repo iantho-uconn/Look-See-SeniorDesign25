@@ -18,7 +18,7 @@ class DecimalEncoder(json.JSONEncoder):
 s3_client = boto3.client("s3")
 dynamodb = boto3.resource("dynamodb")
 sqs_client = boto3.client("sqs")
-bedrock_client = boto3.client("bedrock-runtime", region_name="us-east-1")
+bedrock_client = boto3.client("bedrock-runtime", region_name=os.environ.get("AWS_REGION", "us-east-1"))
 
 QUEUE_URL = os.environ.get('QUEUE_URL')
 
@@ -68,7 +68,8 @@ def save_and_upload(frame, output_bucket, folder_path, frame_index, file_prefix)
     os.remove(local_path)
 
 def process_video(input_bucket, video_key, output_bucket, folder_path, file_prefix):
-    if not os.path.exists(TEMP_FRAME_DIR): os.makedirs(TEMP_FRAME_DIR)
+    if not os.path.exists(TEMP_FRAME_DIR): 
+        os.makedirs(TEMP_FRAME_DIR)
     s3_client.download_file(input_bucket, video_key, TEMP_VIDEO_PATH)
     cap = cv2.VideoCapture(TEMP_VIDEO_PATH)
     previous_frame, frame_index = None, 0
@@ -76,7 +77,8 @@ def process_video(input_bucket, video_key, output_bucket, folder_path, file_pref
 
     while True:
         ret, frame = cap.read()
-        if not ret: break
+        if not ret: 
+            break
         if frame_index % FRAME_SKIP != 0:
             frame_index += 1
             continue
@@ -96,7 +98,8 @@ def process_video(input_bucket, video_key, output_bucket, folder_path, file_pref
         frame_index += 1
         
     cap.release()
-    if os.path.exists(TEMP_VIDEO_PATH): os.remove(TEMP_VIDEO_PATH)
+    if os.path.exists(TEMP_VIDEO_PATH): 
+        os.remove(TEMP_VIDEO_PATH)
     return saved_count
 
 
@@ -142,13 +145,17 @@ def lambda_handler(event, context):
     item = db_response.get('Item', {})
 
     raw_label = item.get('label')
+    landmark_id = item.get('landmarkId')
+    
     if not raw_label:
-        raw_label = item.get('landmarkId', 'Unknown')
+        raw_label = landmark_id if landmark_id else 'Unknown'
         
     class_name = str(raw_label).replace(" ", "_")
     prompt_list = item.get('prompts') 
 
-    folder_name = f"{submission_id}_{class_name}"
+    # 🚀 UNIFIED S3 FOLDER PATH: Group by landmarkId so all uploads merge!
+    folder_identifier = landmark_id if landmark_id else submission_id
+    folder_name = f"{folder_identifier}_{class_name}"
     folder_path = f"clean-frames/{folder_name}"
 
     upload_hash = uuid.uuid4().hex[:6]
@@ -224,7 +231,6 @@ def lambda_handler(event, context):
                 ExpressionAttributeValues={':p': prompts_list}
             )
             
-            landmark_id = item.get('landmarkId')
             if landmark_id:
                 landmarks_table = dynamodb.Table('LookSeeLandmarks')
                 landmarks_table.update_item(
@@ -246,6 +252,8 @@ def lambda_handler(event, context):
     metadata_content["class_name"] = class_name
     metadata_content["prompts"] = prompt_data_to_save 
     metadata_content["submissionId"] = submission_id
+    if landmark_id:
+        metadata_content["landmarkId"] = landmark_id
     
     s3_client.put_object(
         Bucket=output_bucket,
@@ -260,7 +268,6 @@ def lambda_handler(event, context):
     try:
         print("\n🚀 Scanning S3 Folder to calculate Absolute Total Frame Count...")
         
-        # 🚀 THE FIX: Actually scan the S3 folder to find the total ground truth of frames!
         total_saved_frames = 0
         paginator = s3_client.get_paginator('list_objects_v2')
         for page in paginator.paginate(Bucket=output_bucket, Prefix=f"{folder_path}/"):
@@ -269,10 +276,9 @@ def lambda_handler(event, context):
                 if obj['Key'].lower().endswith(('.jpg', '.jpeg', '.png')):
                     total_saved_frames += 1
 
-        print(f"✅ Absolute Total Frames in S3: {total_saved_frames}")
+        print(f"✅ Absolute Total Frames in S3 for {folder_name}: {total_saved_frames}")
 
         required_frames = int(item.get('minRequiredFrames', int(os.environ.get('MIN_IMAGES_PER_CLASS', 1800))))
-        landmark_id = item.get('landmarkId')
         
         if total_saved_frames < required_frames:
             missing_frames = required_frames - total_saved_frames
@@ -298,6 +304,17 @@ def lambda_handler(event, context):
                 ':c': total_saved_frames,
                 ':r': required_frames
             }
+
+            # 🚀 WAKE UP AUTO-LABELING WORKER VIA SQS
+            if QUEUE_URL:
+                try:
+                    sqs_client.send_message(
+                        QueueUrl=QUEUE_URL,
+                        MessageBody=json.dumps({"folder_name": folder_name})
+                    )
+                    print(f"📨 Sent SQS task for {folder_name} to Auto-Labeler.")
+                except Exception as sqs_err:
+                    print(f"⚠️ Failed to send SQS trigger: {sqs_err}")
 
         # Update Submission Table
         table.update_item(

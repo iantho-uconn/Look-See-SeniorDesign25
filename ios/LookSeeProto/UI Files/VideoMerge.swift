@@ -1,5 +1,5 @@
 //
-//  VideoMerger.swift
+//  VideoMerge.swift
 //  LookSeeProto
 //
 //  Concatenates multiple recorded clips into a single video file before
@@ -34,98 +34,87 @@ enum VideoMergeError: LocalizedError {
 
 enum VideoMerger {
 
-    /// Concatenates `clipURLs` in order into a single .mov file in a temp
-    /// directory, then verifies the combined duration meets `minimumDuration`.
     static func mergeAndValidate(
-        clipURLs: [URL],
-        minimumDuration: Double = 30
+        clipURLs urls: [URL],
+        minimumDuration: Double = 1.0
     ) async throws -> URL {
 
-        guard !clipURLs.isEmpty else {
+        guard !urls.isEmpty else {
             throw VideoMergeError.noClips
         }
 
-        // Single clip: skip composition entirely, just validate duration.
-        if clipURLs.count == 1 {
-            let asset = AVURLAsset(url: clipURLs[0])
+        if urls.count == 1 {
+            let asset = AVURLAsset(url: urls[0])
             let duration = try await asset.load(.duration)
             let seconds = CMTimeGetSeconds(duration)
-
+            
             guard seconds.isFinite, seconds >= minimumDuration else {
                 throw VideoMergeError.tooShort(actual: seconds, minimum: minimumDuration)
             }
-            return clipURLs[0]
+            return urls[0]
         }
 
+        // 🚀 EXACT REPLICA OF YOUR ORIGINAL WORKING LOGIC
         let composition = AVMutableComposition()
-
-        guard
-            let videoTrack = composition.addMutableTrack(
-                withMediaType: .video,
-                preferredTrackID: kCMPersistentTrackID_Invalid
-            ),
-            let audioTrack = composition.addMutableTrack(
-                withMediaType: .audio,
-                preferredTrackID: kCMPersistentTrackID_Invalid
-            )
-        else {
+        guard let videoTrack = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) else {
             throw VideoMergeError.trackCreationFailed
         }
-
-        var cursor = CMTime.zero
-        var referenceTransform: CGAffineTransform?
-
-        for clipURL in clipURLs {
-            let asset = AVURLAsset(url: clipURL)
-            let duration = try await asset.load(.duration)
-            let range = CMTimeRange(start: .zero, duration: duration)
-
-            if let sourceVideoTrack = try await asset.loadTracks(withMediaType: .video).first {
-                try videoTrack.insertTimeRange(range, of: sourceVideoTrack, at: cursor)
-
-                if referenceTransform == nil {
-                    referenceTransform = try await sourceVideoTrack.load(.preferredTransform)
+        
+        var currentTime = CMTime.zero
+        var renderSize = CGSize(width: 1080, height: 1920)
+        
+        for url in urls {
+            let asset = AVURLAsset(url: url)
+            do {
+                guard let assetVideoTrack = try await asset.loadTracks(withMediaType: .video).first else { continue }
+                let duration = try await asset.load(.duration)
+                let timeRange = CMTimeRange(start: .zero, duration: duration)
+                
+                try videoTrack.insertTimeRange(timeRange, of: assetVideoTrack, at: currentTime)
+                
+                let transform = try await assetVideoTrack.load(.preferredTransform)
+                videoTrack.preferredTransform = transform
+                
+                let naturalSize = try await assetVideoTrack.load(.naturalSize)
+                if transform.a == 0 && transform.d == 0 && (transform.b == 1.0 || transform.b == -1.0) {
+                    renderSize = CGSize(width: naturalSize.height, height: naturalSize.width)
+                } else {
+                    renderSize = naturalSize
                 }
+                
+                currentTime = CMTimeAdd(currentTime, duration)
+            } catch {
+                print("Could not merge clip: \(error)")
             }
-
-            if let sourceAudioTrack = try await asset.loadTracks(withMediaType: .audio).first {
-                try audioTrack.insertTimeRange(range, of: sourceAudioTrack, at: cursor)
-            }
-
-            cursor = CMTimeAdd(cursor, duration)
         }
-
-        if let referenceTransform {
-            videoTrack.preferredTransform = referenceTransform
-        }
-
-        let totalSeconds = CMTimeGetSeconds(cursor)
+        
+        let totalSeconds = CMTimeGetSeconds(currentTime)
         guard totalSeconds.isFinite, totalSeconds >= minimumDuration else {
             throw VideoMergeError.tooShort(actual: totalSeconds, minimum: minimumDuration)
         }
 
-        let outputURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString)
-            .appendingPathExtension("mov")
-
-        guard let exportSession = AVAssetExportSession(
-            asset: composition,
-            presetName: AVAssetExportPresetHighestQuality
-        ) else {
+        composition.naturalSize = renderSize
+        
+        let outputURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + "_merged.mov")
+        if FileManager.default.fileExists(atPath: outputURL.path) {
+            try? FileManager.default.removeItem(at: outputURL)
+        }
+        
+        guard let exporter = AVAssetExportSession(asset: composition, presetName: AVAssetExportPreset1920x1080) else {
             throw VideoMergeError.exportSessionCreationFailed
         }
-
-        exportSession.outputURL = outputURL
-        exportSession.outputFileType = .mov
-        exportSession.shouldOptimizeForNetworkUse = true
-
-        await exportSession.export()
-
-        guard exportSession.status == .completed else {
-            let reason = exportSession.error?.localizedDescription ?? "Unknown export error."
+        
+        exporter.outputURL = outputURL
+        exporter.outputFileType = .mov
+        exporter.shouldOptimizeForNetworkUse = true
+        
+        await exporter.export()
+        
+        if exporter.status == .completed {
+            return outputURL
+        } else {
+            let reason = exporter.error?.localizedDescription ?? "Unknown error"
             throw VideoMergeError.exportFailed(reason)
         }
-
-        return outputURL
     }
 }

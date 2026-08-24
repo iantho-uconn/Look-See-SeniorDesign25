@@ -1,27 +1,21 @@
 package looksee.angelll.com.uifiles
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -30,17 +24,23 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.amplifyframework.kotlin.core.Amplify
 import kotlinx.coroutines.launch
+import java.util.Locale
 
+// Notice we use the Kotlin core for suspend/await support instead of Java callbacks!
+import com.amplifyframework.kotlin.core.Amplify
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun GuestSignUpScreen(
-    viewModel: AuthViewModel, // Pass your translated ViewModel here
+fun GuestSignUpView(
+    authState: AuthState,
+    vm: AuthViewModel,
     onDismiss: () -> Unit
 ) {
     val focusManager = LocalFocusManager.current
     val coroutineScope = rememberCoroutineScope()
 
+    var username by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var phoneNumber by remember { mutableStateOf("") }
@@ -50,311 +50,355 @@ fun GuestSignUpScreen(
     var isProcessing by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf("") }
 
-    // Computed/Sanitized Properties
-    val sanitizedEmail = email.trim().lowercase()
+    val sanitizedEmail = email.trim().lowercase(Locale.getDefault())
     val sanitizedCode = verificationCode.trim()
 
-    // Fixed Regex warning using triple quotes
-    val passwordRegex = Regex("""^(?=.*[A-Z])(?=.*[a-z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,}$""")
-    val isValidPassword = passwordRegex.matches(password)
+    fun isValidPassword(pass: String): Boolean {
+        // FIXED: Using Kotlin Raw String (""") to prevent escape character warnings
+        val passwordRegex = """^(?=.*[A-Z])(?=.*[a-z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,}$""".toRegex()
+        return passwordRegex.matches(pass)
+    }
 
-    val isFormValid = sanitizedEmail.isNotEmpty() &&
+    val isFormValid = username.isNotEmpty() &&
+            sanitizedEmail.isNotEmpty() &&
             phoneNumber.trim().isNotEmpty() &&
-            isValidPassword
+            isValidPassword(password)
 
     val isVerificationValid = sanitizedCode.length >= 6
 
-    // Dark Background Color matching iOS: Color(red: 0.06, green: 0.06, blue: 0.10)
-    val backgroundColor = Color(0xFF0F0F1A)
-    val buttonActiveColor = Color(0xFF387DFF) // ~ Color(red: 0.22, green: 0.49, blue: 1.00)
-    val buttonDisabledColor = Color.Gray.copy(alpha = 0.3f)
+    // MARK: - AWS Logic
+    fun signUp() {
+        isProcessing = true
+        errorMessage = ""
+        coroutineScope.launch {
+            try {
+                val result = AuthService.shared.signUp(
+                    username = sanitizedEmail,
+                    password = password,
+                    email = sanitizedEmail,
+                    group = "business-users"
+                )
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(backgroundColor)
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null
-            ) {
-                focusManager.clearFocus()
-            }
-    ) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            // Top Bar (Toolbar leading icon)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.Start
-            ) {
-                IconButton(onClick = onDismiss) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "Dismiss",
-                        tint = Color.Gray.copy(alpha = 0.8f),
-                        modifier = Modifier.size(28.dp)
-                    )
-                }
-            }
-
-            // Scrollable Content
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(24.dp)
-            ) {
-                // Header
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(
-                        text = if (showVerification) "Verify Email" else "Create Account",
-                        fontSize = 28.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
-                    Text(
-                        text = if (showVerification) "Enter the 6-digit code we sent to $sanitizedEmail."
-                        else "Set up your LookSee identity to proceed to secure checkout.",
-                        fontSize = 14.sp,
-                        color = Color.Gray
-                    )
-                }
-
-                // Form Fields
-                AnimatedVisibility(
-                    visible = !showVerification,
-                    enter = fadeIn(animationSpec = tween(300)),
-                    exit = fadeOut(animationSpec = tween(300))
-                ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
-
-                        // Email Field
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text("Email Address", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Color.Gray)
-                            LookSeeTextField(
-                                value = email,
-                                onValueChange = { email = it },
-                                placeholder = "name@example.com",
-                                keyboardOptions = KeyboardOptions(
-                                    keyboardType = KeyboardType.Email,
-                                    capitalization = KeyboardCapitalization.None,
-                                    autoCorrectEnabled = false // Fixed deprecation warning
-                                )
-                            )
-                        }
-
-                        // Password Field
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text("Password", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Color.Gray)
-                            LookSeeTextField(
-                                value = password,
-                                onValueChange = { password = it },
-                                placeholder = "Create a strong password",
-                                isPassword = true
-                            )
-                            if (password.isNotEmpty() && !isValidPassword) {
-                                Text(
-                                    text = "Requires 8+ chars, 1 uppercase, 1 lowercase, 1 number, and 1 special char.",
-                                    fontSize = 11.sp,
-                                    color = Color.Red,
-                                    modifier = Modifier.padding(start = 4.dp)
-                                )
-                            }
-                        }
-
-                        // Phone Number Field
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text("Phone Number", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Color.Gray)
-                            LookSeeTextField(
-                                value = phoneNumber,
-                                onValueChange = { newValue ->
-                                    val filtered = newValue.filter { it.isDigit() }
-                                    if (filtered.length <= 10) {
-                                        phoneNumber = filtered
-                                    }
-                                },
-                                placeholder = "123-456-7890",
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone)
-                            )
-                        }
+                if (result.isSignUpComplete) {
+                    Amplify.Auth.signOut()
+                    val signInResult = AuthService.shared.signIn(username = sanitizedEmail, password = password)
+                    if (signInResult.isSignedIn) {
+                        vm.fetchUserDetails()
+                        // 🚀 CLAIM USERNAME IMMEDIATELY AFTER LOGIN
+                        vm.updateUserIdentity(newUsername = username)
+                        vm.fetchUserUsageStats()
+                        vm.isSignedIn = true
+                        onDismiss()
+                    } else {
+                        errorMessage = "Account created successfully! Please log in."
                     }
+                } else {
+                    showVerification = true
                 }
+            } catch (e: Exception) {
+                // In iOS this maps AuthError, mapped natively to Exception message here
+                errorMessage = e.localizedMessage ?: "An error occurred."
+            } finally {
+                isProcessing = false
+            }
+        }
+    }
 
-                // Verification Code Field
-                AnimatedVisibility(
-                    visible = showVerification,
-                    enter = fadeIn(animationSpec = tween(300)),
-                    exit = fadeOut(animationSpec = tween(300))
-                ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("Verification Code", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Color.Gray)
-                        LookSeeTextField(
-                            value = verificationCode,
-                            onValueChange = { verificationCode = it },
-                            placeholder = "123456",
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            isMonospaced = true,
-                            centerText = true
+    fun verifyCodeAndSignIn() {
+        isProcessing = true
+        errorMessage = ""
+        coroutineScope.launch {
+            try {
+                val result = Amplify.Auth.confirmSignUp(sanitizedEmail, sanitizedCode)
+                if (result.isSignUpComplete) {
+                    Amplify.Auth.signOut()
+                    val signInResult = AuthService.shared.signIn(username = sanitizedEmail, password = password)
+                    if (signInResult.isSignedIn) {
+                        vm.fetchUserDetails()
+                        // 🚀 CLAIM USERNAME ON FINAL SUCCESS
+                        vm.updateUserIdentity(newUsername = username)
+                        vm.fetchUserUsageStats()
+                        vm.isSignedIn = true
+                        onDismiss()
+                    } else {
+                        errorMessage = "Verified successfully, but please log in manually from the main menu."
+                    }
+                } else {
+                    errorMessage = "Verification incomplete. Please check the code."
+                }
+            } catch (e: Exception) {
+                errorMessage = e.localizedMessage ?: "An error occurred."
+            } finally {
+                isProcessing = false
+            }
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { },
+                navigationIcon = {
+                    IconButton(onClick = onDismiss) {
+                        Icon(
+                            imageVector = Icons.Filled.Close, // FIXED: Using standard Close icon
+                            contentDescription = "Close",
+                            tint = Color.Gray.copy(alpha = 0.8f),
+                            modifier = Modifier.size(24.dp)
                         )
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
+            )
+        },
+        containerColor = Color(0xFF0F0F1A),
+        modifier = Modifier
+            .fillMaxSize()
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                focusManager.clearFocus()
+            }
+    ) { paddingValues ->
+        ScrollViewContent(
+            paddingValues = paddingValues,
+            showVerification = showVerification,
+            isFormValid = isFormValid,
+            isVerificationValid = isVerificationValid,
+            isProcessing = isProcessing,
+            errorMessage = errorMessage,
+            username = username,
+            onUsernameChange = { newValue ->
+                username = newValue.lowercase(Locale.getDefault()).filter { "abcdefghijklmnopqrstuvwxyz0123456789_".contains(it) }
+            },
+            email = email,
+            onEmailChange = { email = it },
+            password = password,
+            onPasswordChange = { password = it },
+            isValidPassword = { isValidPassword(it) },
+            phoneNumber = phoneNumber,
+            onPhoneNumberChange = { newValue ->
+                val filtered = newValue.filter { it.isDigit() }
+                phoneNumber = if (filtered.length > 10) filtered.take(10) else filtered
+            },
+            verificationCode = verificationCode,
+            onVerificationCodeChange = { verificationCode = it },
+            onPrimaryAction = {
+                if (showVerification) verifyCodeAndSignIn() else signUp()
+            }
+        )
+    }
+}
 
-                // Error Message
-                if (errorMessage.isNotEmpty()) {
-                    Text(
-                        text = errorMessage,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = Color.Red,
+@Composable
+private fun ScrollViewContent(
+    paddingValues: PaddingValues,
+    showVerification: Boolean,
+    isFormValid: Boolean,
+    isVerificationValid: Boolean,
+    isProcessing: Boolean,
+    errorMessage: String,
+    username: String,
+    onUsernameChange: (String) -> Unit,
+    email: String,
+    onEmailChange: (String) -> Unit,
+    password: String,
+    onPasswordChange: (String) -> Unit,
+    isValidPassword: (String) -> Boolean,
+    phoneNumber: String,
+    onPhoneNumberChange: (String) -> Unit,
+    verificationCode: String,
+    onVerificationCodeChange: (String) -> Unit,
+    onPrimaryAction: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(paddingValues)
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(24.dp)
+    ) {
+        // Header
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 16.dp)) {
+            Text(
+                text = if (showVerification) "Verify Email" else "Create Account",
+                fontSize = 28.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White
+            )
+            Text(
+                text = if (showVerification) "Enter the 6-digit code we sent to $email." else "Set up your LookSee identity to proceed to secure checkout.",
+                fontSize = 14.sp,
+                color = Color.Gray
+            )
+        }
+
+        if (!showVerification) {
+            // MARK: - SIGN UP FORM
+            Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
+
+                // Username Field
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Unique Username", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Color.Gray)
+                    TextField(
+                        value = username,
+                        onValueChange = onUsernameChange,
+                        placeholder = { Text("username", color = Color.Gray) },
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None),
+                        singleLine = true,
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = Color.White.copy(alpha = 0.05f),
+                            unfocusedContainerColor = Color.White.copy(alpha = 0.05f),
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedIndicatorColor = Color.Transparent,
+                            unfocusedIndicatorColor = Color.Transparent
+                        ),
+                        shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
 
-                Spacer(modifier = Modifier.height(8.dp)) // Extra padding before button
+                // Email Field
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Email Address", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Color.Gray)
+                    TextField(
+                        value = email,
+                        onValueChange = onEmailChange,
+                        placeholder = { Text("name@example.com", color = Color.Gray) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, capitalization = KeyboardCapitalization.None),
+                        singleLine = true,
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = Color.White.copy(alpha = 0.05f),
+                            unfocusedContainerColor = Color.White.copy(alpha = 0.05f),
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedIndicatorColor = Color.Transparent,
+                            unfocusedIndicatorColor = Color.Transparent
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
 
-                // Submit Button
-                val isButtonEnabled = (if (showVerification) isVerificationValid else isFormValid) && !isProcessing
-
-                Button(
-                    onClick = {
-                        focusManager.clearFocus()
-                        if (showVerification) {
-                            // verifyCodeAndSignIn()
-                            isProcessing = true
-                            errorMessage = ""
-                            coroutineScope.launch {
-                                try {
-                                    val result = Amplify.Auth.confirmSignUp(sanitizedEmail, sanitizedCode)
-                                    if (result.isSignUpComplete) {
-                                        Amplify.Auth.signOut()
-                                        val signInResult = AuthService.shared.signIn(sanitizedEmail, password)
-                                        if (signInResult.isSignedIn) {
-                                            viewModel.fetchUserDetails()
-                                            viewModel.fetchUserUsageStats()
-                                            viewModel.isSignedIn = true
-                                            onDismiss()
-                                        } else {
-                                            errorMessage = "Verified successfully, but please log in manually from the main menu."
-                                        }
-                                    } else {
-                                        errorMessage = "Verification incomplete. Please check the code."
-                                    }
-                                } catch (e: Exception) {
-                                    errorMessage = e.localizedMessage ?: "An error occurred"
-                                } finally {
-                                    isProcessing = false
-                                }
-                            }
-                        } else {
-                            // signUp()
-                            isProcessing = true
-                            errorMessage = ""
-                            coroutineScope.launch {
-                                try {
-                                    // NOTE: Ensure AuthService in Kotlin matches this parameter signature
-                                    val result = AuthService.shared.signUp(sanitizedEmail, password, sanitizedEmail, "business-users")
-                                    if (result.isSignUpComplete) {
-                                        Amplify.Auth.signOut()
-                                        val signInResult = AuthService.shared.signIn(sanitizedEmail, password)
-                                        if (signInResult.isSignedIn) {
-                                            viewModel.fetchUserDetails()
-                                            viewModel.fetchUserUsageStats()
-                                            viewModel.isSignedIn = true
-                                            onDismiss()
-                                        } else {
-                                            errorMessage = "Account created successfully! Please log in."
-                                        }
-                                    } else {
-                                        showVerification = true
-                                    }
-                                } catch (e: Exception) {
-                                    errorMessage = e.localizedMessage ?: "An error occurred"
-                                } finally {
-                                    isProcessing = false
-                                }
-                            }
-                        }
-                    },
-                    enabled = isButtonEnabled,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = buttonActiveColor,
-                        disabledContainerColor = buttonDisabledColor,
-                        contentColor = Color.White,
-                        disabledContentColor = Color.White
-                    ),
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp) // matches SwiftUI vertical padding size
-                ) {
-                    if (isProcessing) {
-                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
-                    } else {
+                // Password Field
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Password", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Color.Gray)
+                    TextField(
+                        value = password,
+                        onValueChange = onPasswordChange,
+                        placeholder = { Text("Create a strong password", color = Color.Gray) },
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, capitalization = KeyboardCapitalization.None),
+                        singleLine = true,
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = Color.White.copy(alpha = 0.05f),
+                            unfocusedContainerColor = Color.White.copy(alpha = 0.05f),
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedIndicatorColor = Color.Transparent,
+                            unfocusedIndicatorColor = Color.Transparent
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    if (password.isNotEmpty() && !isValidPassword(password)) {
                         Text(
-                            text = if (showVerification) "Verify & Continue" else "Create Account",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold
+                            "Requires 8+ chars, 1 uppercase, 1 lowercase, 1 number, and 1 special char.",
+                            fontSize = 11.sp, color = Color.Red, modifier = Modifier.padding(start = 4.dp)
                         )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(32.dp))
+                // Phone Field
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Phone Number", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Color.Gray)
+                    TextField(
+                        value = phoneNumber,
+                        onValueChange = onPhoneNumberChange,
+                        placeholder = { Text("123-456-7890", color = Color.Gray) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                        singleLine = true,
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = Color.White.copy(alpha = 0.05f),
+                            unfocusedContainerColor = Color.White.copy(alpha = 0.05f),
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedIndicatorColor = Color.Transparent,
+                            unfocusedIndicatorColor = Color.Transparent
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+        } else {
+            // MARK: - VERIFICATION FORM
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Enter 6-Digit Code", fontSize = 12.sp, color = Color.White.copy(alpha = 0.5f))
+                TextField(
+                    value = verificationCode,
+                    onValueChange = onVerificationCodeChange,
+                    placeholder = { Text("123456", color = Color.Gray) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                    singleLine = true,
+                    textStyle = LocalTextStyle.current.copy(
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace,
+                        textAlign = TextAlign.Center,
+                        color = Color.White
+                    ),
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Color.White.copy(alpha = 0.05f),
+                        unfocusedContainerColor = Color.White.copy(alpha = 0.05f),
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(0.5.dp, Color(0xFF387DFF).copy(alpha = 0.3f), RoundedCornerShape(12.dp))
+                        .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
+                )
+            }
+        }
+
+        // Error Message
+        if (errorMessage.isNotEmpty()) {
+            Text(
+                text = errorMessage,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                color = Color.Red,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+
+        Spacer(modifier = Modifier.height(32.dp))
+
+        // Action Button
+        val primaryBlue = Color(0xFF387DFF)
+        val buttonEnabled = if (showVerification) isVerificationValid else isFormValid
+
+        Button(
+            onClick = onPrimaryAction,
+            enabled = buttonEnabled && !isProcessing,
+            modifier = Modifier.fillMaxWidth().height(54.dp),
+            shape = RoundedCornerShape(14.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = primaryBlue,
+                disabledContainerColor = Color.Gray.copy(alpha = 0.3f)
+            )
+        ) {
+            if (isProcessing) {
+                CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.White, strokeWidth = 2.dp)
+            } else {
+                Text(
+                    text = if (showVerification) "Verify & Continue" else "Create Account",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
             }
         }
     }
-}
-
-// Reusable TextField matching the custom LookSee Swift Modifier
-@Composable
-fun LookSeeTextField(
-    value: String,
-    onValueChange: (String) -> Unit,
-    placeholder: String,
-    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
-    isPassword: Boolean = false,
-    isMonospaced: Boolean = false,
-    centerText: Boolean = false
-) {
-    BasicTextField(
-        value = value,
-        onValueChange = onValueChange,
-        keyboardOptions = keyboardOptions,
-        visualTransformation = if (isPassword) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
-        textStyle = TextStyle(
-            color = Color.White,
-            fontSize = if (isMonospaced) 24.sp else 16.sp,
-            fontWeight = if (isMonospaced) FontWeight.Bold else FontWeight.Normal,
-            fontFamily = if (isMonospaced) FontFamily.Monospace else FontFamily.Default,
-            textAlign = if (centerText) TextAlign.Center else TextAlign.Start
-        ),
-        cursorBrush = androidx.compose.ui.graphics.SolidColor(Color.White),
-        decorationBox = { innerTextField ->
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
-                    .padding(16.dp),
-                contentAlignment = if (centerText) Alignment.Center else Alignment.CenterStart
-            ) {
-                if (value.isEmpty()) {
-                    Text(
-                        text = placeholder,
-                        color = Color.Gray,
-                        fontSize = if (isMonospaced) 24.sp else 16.sp,
-                        fontWeight = if (isMonospaced) FontWeight.Bold else FontWeight.Normal,
-                        fontFamily = if (isMonospaced) FontFamily.Monospace else FontFamily.Default,
-                        textAlign = if (centerText) TextAlign.Center else TextAlign.Start
-                    )
-                }
-                innerTextField()
-            }
-        }
-    )
 }

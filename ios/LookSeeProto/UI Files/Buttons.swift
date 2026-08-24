@@ -27,6 +27,7 @@ struct Buttons: View {
     @State private var redoLandmarkId: String?
     @State private var redoLandmarkLabel: String?
     @State private var redoLandmarkDesc: String?
+    @State private var redoSecondsNeeded: Double? // 🚀 THE FIX: State variable added to hold the incoming value!
     
     @State private var keepScanCameraAlive = false
     @State private var isRecordSheetAnimating = false
@@ -235,6 +236,7 @@ struct Buttons: View {
                     existingLandmarkId: redoLandmarkId,
                     existingLabel: redoLandmarkLabel,
                     existingDescription: redoLandmarkDesc,
+                    existingSecondsNeeded: redoSecondsNeeded, // 🚀 THE FIX: Parameter passed to the sheet!
                     onAddMoreMedia: { landmarkId in
                         pendingUploadLandmarkId = landmarkId
                         showRecordSheet = false
@@ -249,6 +251,7 @@ struct Buttons: View {
                         redoLandmarkId = nil
                         redoLandmarkLabel = nil
                         redoLandmarkDesc = nil
+                        redoSecondsNeeded = nil // 🚀 Cleanup
                     }
                 }
             }
@@ -283,13 +286,18 @@ struct Buttons: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("TriggerRedoRecord"))) { notif in
-            if let userInfo = notif.userInfo as? [String: String],
-               let id = userInfo["id"],
-               let label = userInfo["label"],
-               let desc = userInfo["description"] {
+            if let userInfo = notif.userInfo,
+               let id = userInfo["id"] as? String,
+               let label = userInfo["label"] as? String,
+               let desc = userInfo["description"] as? String {
                 self.redoLandmarkId = id
                 self.redoLandmarkLabel = label
                 self.redoLandmarkDesc = desc
+                
+                // 🚀 THE FIX: Extracts the passed seconds!
+                if let needed = userInfo["secondsNeeded"] as? Double {
+                    self.redoSecondsNeeded = needed
+                }
                 
                 // Gives iOS 0.6 seconds to release the camera lenses before opening Record
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {

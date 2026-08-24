@@ -6,15 +6,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Phone
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.Storefront
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -26,11 +20,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.SubcomposeAsyncImage
 
-// Modern state-driven card for the AR popup view
 @Composable
-fun MerchantCardView() {
-    // Unresolved reference: VariableContainer
-    val vm = VariableContainer.shared
+fun MerchantCardView(vm: VariableContainer) {
+    // FIX: Extracting values from StateFlow using collectAsState()
+    val merchantName by vm.merchantName.collectAsState()
+    val merchantLogoUrl by vm.merchantLogoUrl.collectAsState()
+    val merchantBio by vm.merchantBio.collectAsState()
+    val merchantPhone by vm.merchantPhone.collectAsState()
 
     val cardBackground = Color.White.copy(alpha = 0.08f)
     val cardBorder = Color.White.copy(alpha = 0.10f)
@@ -38,7 +34,7 @@ fun MerchantCardView() {
     val secondaryText = Color.White.copy(alpha = 0.78f)
     val tertiaryText = Color.White.copy(alpha = 0.62f)
 
-    if (vm.merchantName.isNotEmpty()) {
+    if (merchantName.isNotEmpty()) {
         Column(
             modifier = Modifier
                 .background(cardBackground, RoundedCornerShape(14.dp))
@@ -53,13 +49,13 @@ fun MerchantCardView() {
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Icon(Icons.Default.Star, contentDescription = null, tint = Color.Yellow, modifier = Modifier.size(10.dp))
+                    Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = Color.Yellow, modifier = Modifier.size(12.dp))
                     Text(
-                        text = "LANDMARK SPONSORED BY",
+                        text = "LANDMARK OWNER",
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
-                        color = tertiaryText,
-                        letterSpacing = 1.sp
+                        letterSpacing = 1.sp,
+                        color = tertiaryText
                     )
                 }
 
@@ -70,7 +66,7 @@ fun MerchantCardView() {
                         .background(Color.Blue.copy(alpha = 0.15f), RoundedCornerShape(6.dp))
                         .padding(horizontal = 8.dp, vertical = 3.dp)
                 ) {
-                    Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color.Blue, modifier = Modifier.size(10.dp))
+                    Icon(Icons.Default.Verified, contentDescription = null, tint = Color.Blue, modifier = Modifier.size(12.dp))
                     Text(
                         text = "Verified",
                         fontSize = 10.sp,
@@ -82,41 +78,35 @@ fun MerchantCardView() {
 
             // Logo & Business Info
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                SubcomposeAsyncImage(
-                    model = vm.merchantLogoUrl,
-                    contentDescription = "Merchant Logo",
+                Box(
                     modifier = Modifier
                         .size(52.dp)
                         .clip(CircleShape)
-                        .border(1.dp, Color.White.copy(alpha = 0.18f), CircleShape),
-                    contentScale = ContentScale.Crop,
-                    loading = {
-                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                            CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
-                        }
-                    },
-                    error = {
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(Color.White.copy(alpha = 0.10f), CircleShape)
-                        ) {
-                            Icon(Icons.Default.Storefront, contentDescription = null, tint = Color.White, modifier = Modifier.size(24.dp))
-                        }
-                    }
-                )
+                        .border(1.dp, Color.White.copy(alpha = 0.18f), CircleShape)
+                        .background(Color.White.copy(alpha = 0.10f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    SubcomposeAsyncImage(
+                        model = merchantLogoUrl,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                        loading = { CircularProgressIndicator(color = Color.White, modifier = Modifier.padding(14.dp)) },
+                        error = { Icon(Icons.Default.Storefront, contentDescription = null, tint = Color.White, modifier = Modifier.size(24.dp)) }
+                    )
+                }
 
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.weight(1f)) {
                     Text(
-                        text = vm.merchantName,
+                        text = merchantName,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = titleText
                     )
-                    if (vm.merchantBio.isNotEmpty()) {
+
+                    if (merchantBio.isNotEmpty()) {
                         Text(
-                            text = vm.merchantBio,
+                            text = merchantBio,
                             fontSize = 14.sp,
                             color = secondaryText,
                             maxLines = 2,
@@ -126,15 +116,16 @@ fun MerchantCardView() {
                 }
             }
 
-            // Phone Number Row (Optional)
-            if (vm.merchantPhone.isNotEmpty()) {
+            // Phone Number Row
+            if (merchantPhone.isNotEmpty()) {
                 HorizontalDivider(color = Color.White.copy(alpha = 0.12f))
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Icon(Icons.Default.Phone, contentDescription = null, tint = Color.Green, modifier = Modifier.size(14.dp))
                     Text(
-                        text = vm.merchantPhone,
+                        text = merchantPhone,
                         fontSize = 14.sp,
-                        color = secondaryText
+                        color = secondaryText,
+                        modifier = Modifier.weight(1f)
                     )
                 }
             }
@@ -142,7 +133,6 @@ fun MerchantCardView() {
     }
 }
 
-// Legacy Parameterized Merchant Card (Required by Settings)
 @Composable
 fun MerchantCard(
     storeName: String,
@@ -152,42 +142,36 @@ fun MerchantCard(
 ) {
     Column(
         modifier = Modifier
-            .background(Color(0xFF1C1C1E), RoundedCornerShape(14.dp)) // secondarySystemGroupedBackground equivalent
+            .fillMaxWidth()
+            .background(Color(0xFFF2F2F7), RoundedCornerShape(14.dp))
             .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            SubcomposeAsyncImage(
-                model = logoUrl,
-                contentDescription = "Merchant Logo",
+            Box(
                 modifier = Modifier
                     .size(50.dp)
-                    .clip(CircleShape),
-                contentScale = ContentScale.Crop,
-                loading = {
-                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
-                    }
-                },
-                error = {
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color.Gray.copy(alpha = 0.3f), CircleShape)
-                    ) {
-                        Icon(Icons.Default.Storefront, contentDescription = null, tint = Color.White, modifier = Modifier.size(24.dp))
-                    }
-                }
-            )
+                    .clip(CircleShape)
+                    .background(Color.Gray.copy(alpha = 0.3f)),
+                contentAlignment = Alignment.Center
+            ) {
+                SubcomposeAsyncImage(
+                    model = logoUrl,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                    loading = { CircularProgressIndicator(modifier = Modifier.padding(12.dp)) },
+                    error = { Icon(Icons.Default.Storefront, contentDescription = null, tint = Color.White, modifier = Modifier.size(24.dp)) }
+                )
+            }
 
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.weight(1f)) {
                 Text(
                     text = storeName,
                     fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color.White
+                    fontWeight = FontWeight.SemiBold
                 )
+
                 if (bio.isNotEmpty()) {
                     Text(
                         text = bio,
@@ -206,7 +190,8 @@ fun MerchantCard(
                 Text(
                     text = phone,
                     fontSize = 14.sp,
-                    color = Color.Gray
+                    color = Color.Gray,
+                    modifier = Modifier.weight(1f)
                 )
             }
         }

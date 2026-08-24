@@ -4,110 +4,108 @@ import android.content.Context
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.FileProvider
+import java.io.File
+import java.util.UUID
+
+// Placeholder data class to map to CLLocationCoordinate2D
+data class LocationCoordinate2D(val latitude: Double, val longitude: Double)
 
 @Composable
 fun VideoPicker(
     useCamera: Boolean = true,
-    onPicked: (Uri, LocationData?) -> Unit,
+    onPicked: (Uri, LocationCoordinate2D?) -> Unit,
     onInvalidDuration: (String) -> Unit
 ) {
     val context = LocalContext.current
-    val maxDuration = 60.0
+    val maxDuration = 90.0
 
-    if (useCamera) {
-        Box(modifier = Modifier.fillMaxSize()) {
-            CameraXVideoRecordingView(
-                maxDurationSeconds = maxDuration,
-                onVideoRecorded = { uri: Uri ->
-                    val durationSeconds = getVideoDurationSeconds(context, uri)
-                    if (durationSeconds > maxDuration) {
-                        onInvalidDuration("Each clip must be 60 seconds or less.")
-                    } else {
-                        onPicked(uri, extractLocation(context, uri))
-                    }
-                }
-            )
+    // Temporary URI to store the camera's captured video
+    var cameraUri by remember { mutableStateOf<Uri?>(null) }
 
-            GuidedCaptureOverlay(isNegative = false, isRecording = true)
+    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        if (uri != null) {
+            processPickedVideo(context, uri, maxDuration, onPicked, onInvalidDuration)
         }
-    } else {
-        val galleryLauncher = rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.PickVisualMedia()
-        ) { uri ->
-            if (uri != null) {
-                val durationSeconds = getVideoDurationSeconds(context, uri)
+    }
 
-                if (durationSeconds <= 0) {
-                    onInvalidDuration("Could not read video duration.")
-                } else if (durationSeconds > maxDuration) {
-                    onInvalidDuration("Each clip must be 60 seconds or less.")
-                } else {
-                    onPicked(uri, extractLocation(context, uri))
+    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CaptureVideo()) { success ->
+        if (success && cameraUri != null) {
+            processPickedVideo(context, cameraUri!!, maxDuration, onPicked, onInvalidDuration)
+        }
+    }
+
+    LaunchedEffect(useCamera) {
+        if (useCamera) {
+            // Set up a temporary file for the Android Camera Intent to write to
+            val tmpFile = File(context.cacheDir, "LookSee_${UUID.randomUUID()}.mp4")
+            val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", tmpFile)
+            cameraUri = uri
+            cameraLauncher.launch(uri)
+        } else {
+            galleryLauncher.launch("video/*")
+        }
+    }
+
+    // In Compose, if useCamera is true and you wanted a custom overlay (like GuidedCaptureOverlay),
+    // you would typically build a custom CameraX implementation here instead of an Intent launcher.
+    Box(modifier = Modifier.fillMaxSize()) {
+        // If useCamera is true, you would render your custom overlay here:
+        // if (useCamera) { GuidedCaptureOverlay(isNegative = false, isRecording = true) }
+    }
+}
+
+private fun processPickedVideo(
+    context: Context,
+    uri: Uri,
+    maxDuration: Double,
+    onPicked: (Uri, LocationCoordinate2D?) -> Unit,
+    onInvalidDuration: (String) -> Unit
+) {
+    val retriever = MediaMetadataRetriever()
+    try {
+        retriever.setDataSource(context, uri)
+        val durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+        val durationMs = durationStr?.toLongOrNull() ?: 0L
+        val durationSeconds = durationMs / 1000.0
+
+        if (durationSeconds <= 0.0) {
+            onInvalidDuration("Could not read video duration.")
+            return
+        }
+
+        // No per-clip minimum anymore — clips are combined and the
+        // combined total is validated against the 15s minimum elsewhere.
+        if (durationSeconds > maxDuration) {
+            onInvalidDuration("Each clip must be 90 seconds or less.")
+            return
+        }
+
+        // Extract original GPS location directly from the asset metadata
+        var extractedLocation: LocationCoordinate2D? = null
+        val locationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_LOCATION)
+        if (locationStr != null) {
+            // ISO-6709 format usually looks like: "+37.7749-122.4194/"
+            val match = Regex("([+-][0-9.]+)([+-][0-9.]+)").find(locationStr)
+            if (match != null) {
+                val lat = match.groupValues[1].toDoubleOrNull()
+                val lon = match.groupValues[2].toDoubleOrNull()
+                if (lat != null && lon != null) {
+                    extractedLocation = LocationCoordinate2D(lat, lon)
                 }
             }
         }
 
-        LaunchedEffect(Unit) {
-            galleryLauncher.launch(
-                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
-            )
-        }
-    }
-}
-
-// MARK: - Helper Metadata Functions
-
-private fun getVideoDurationSeconds(context: Context, uri: Uri): Double {
-    val retriever = MediaMetadataRetriever()
-    return try {
-        retriever.setDataSource(context, uri)
-        val durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
-        val durationMs = durationStr?.toLongOrNull() ?: 0L
-        durationMs / 1000.0
-    } catch (_: Exception) {
-        0.0
+        onPicked(uri, extractedLocation)
+    } catch (e: Exception) {
+        onInvalidDuration("Could not read video data: ${e.localizedMessage}")
     } finally {
         retriever.release()
-    }
-}
-
-private fun extractLocation(context: Context, uri: Uri): LocationData? {
-    val retriever = MediaMetadataRetriever()
-    return try {
-        retriever.setDataSource(context, uri)
-        val locationString = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_LOCATION)
-
-        if (locationString != null) {
-            parseIso6709Location(locationString)
-        } else {
-            null
-        }
-    } catch (_: Exception) {
-        null
-    } finally {
-        retriever.release()
-    }
-}
-
-private fun parseIso6709Location(locationStr: String): LocationData? {
-    val regex = Regex("""([+-][0-9.]+)([+-][0-9.]+)""")
-    val match = regex.find(locationStr)
-
-    return if (match != null && match.groupValues.size >= 3) {
-        val lat = match.groupValues[1].toDoubleOrNull()
-        val lon = match.groupValues[2].toDoubleOrNull()
-        if (lat != null && lon != null) {
-            LocationData(latitude = lat, longitude = lon)
-        } else null
-    } else {
-        null
     }
 }

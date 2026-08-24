@@ -27,15 +27,18 @@ class AuthViewModel: ObservableObject {
     @Published var activePlanCents: Int = 0
     @Published var activePlanYears: Int = 0
     
-    // 🚀 NEW: Personal User Identity
+    // Personal User Identity
     @Published var username: String = ""
     @Published var profileImageUrl: String = ""
     
-    // 🚀 FIXED: Memory variable to carry the username from Signup to Login
+    // Memory variable to carry the username from Signup to Login
     @Published var pendingUsernameToSave: String = ""
     
+    // 🚀 NEW: Added Website and Address properties!
     @Published var storeName: String = ""
     @Published var phoneNumber: String = ""
+    @Published var storeWebsite: String = ""
+    @Published var storeAddress: String = ""
     @Published var storeBio: String = ""
     @Published var storeLogoUrl: String = ""
     
@@ -65,7 +68,6 @@ class AuthViewModel: ObservableObject {
                     errorMessage = ""
                     await fetchUserDetails()
                     
-                    // 🚀 FIXED: The exact moment we get the real userId, we save the pending username!
                     if !pendingUsernameToSave.isEmpty {
                         let _ = await updateUserIdentity(newUsername: pendingUsernameToSave)
                         pendingUsernameToSave = "" // Clear memory
@@ -135,6 +137,8 @@ class AuthViewModel: ObservableObject {
                 self.profileImageUrl = ""
                 self.storeName = ""
                 self.phoneNumber = ""
+                self.storeWebsite = ""
+                self.storeAddress = ""
                 self.storeBio = ""
                 self.storeLogoUrl = ""
                 self.userId = ""
@@ -230,6 +234,11 @@ class AuthViewModel: ObservableObject {
                         
                         if let fetchedStore = json["storeName"] as? String, !fetchedStore.isEmpty { self.storeName = fetchedStore }
                         if let fetchedPhone = json["phoneNumber"] as? String, !fetchedPhone.isEmpty { self.phoneNumber = fetchedPhone }
+                        
+                        // 🚀 NEW: Load website and address from the backend
+                        if let fetchedWebsite = json["storeWebsite"] as? String, !fetchedWebsite.isEmpty { self.storeWebsite = fetchedWebsite }
+                        if let fetchedAddress = json["storeAddress"] as? String, !fetchedAddress.isEmpty { self.storeAddress = fetchedAddress }
+                        
                         if let fetchedBio = json["storeBio"] as? String, !fetchedBio.isEmpty { self.storeBio = fetchedBio }
                         if let fetchedLogo = json["storeLogoUrl"] as? String, !fetchedLogo.isEmpty { self.storeLogoUrl = fetchedLogo }
                     }
@@ -324,7 +333,8 @@ class AuthViewModel: ObservableObject {
         return (false, "Network error")
     }
 
-    func updateBusinessProfile(storeName: String, phoneNumber: String, storeBio: String, storeLogoUrl: String, storeLogoBase64: String? = nil) async -> Bool {
+    // 🚀 NEW: Updated to accept storeWebsite and storeAddress
+    func updateBusinessProfile(storeName: String, phoneNumber: String, storeWebsite: String, storeAddress: String, storeBio: String, storeLogoUrl: String, storeLogoBase64: String? = nil) async -> Bool {
         guard !userId.isEmpty else { return false }
         guard let url = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/checkout") else { return false }
         
@@ -332,11 +342,14 @@ class AuthViewModel: ObservableObject {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
+        // 🚀 NEW: Pass the new fields to the AWS backend
         var body: [String: Any] = [
             "purchaseType": "update_profile",
             "userId": userId,
             "storeName": storeName,
             "phoneNumber": phoneNumber,
+            "storeWebsite": storeWebsite,
+            "storeAddress": storeAddress,
             "storeBio": storeBio,
             "storeLogoUrl": storeLogoUrl
         ]
@@ -356,6 +369,8 @@ class AuthViewModel: ObservableObject {
                         await MainActor.run {
                             self.storeName = storeName
                             self.phoneNumber = phoneNumber
+                            self.storeWebsite = storeWebsite
+                            self.storeAddress = storeAddress
                             self.storeBio = storeBio
                             self.storeLogoUrl = newLogoUrl
                         }
@@ -363,6 +378,8 @@ class AuthViewModel: ObservableObject {
                         await MainActor.run {
                             self.storeName = storeName
                             self.phoneNumber = phoneNumber
+                            self.storeWebsite = storeWebsite
+                            self.storeAddress = storeAddress
                             self.storeBio = storeBio
                             self.storeLogoUrl = storeLogoUrl
                         }

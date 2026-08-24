@@ -13,6 +13,8 @@ struct BusinessLandmarksView: View {
     @ObservedObject private var uploadManager = AutoUploadManager.shared
     @ObservedObject private var networkMonitor = NetworkMonitor.shared
     
+    @EnvironmentObject var vm: AuthViewModel
+    
     @State private var draftToEdit: ArchivedMedia?
     @State private var searchText = ""
     @State private var promotionTitlesByLandmarkId: [String: [String]] = [:]
@@ -34,6 +36,50 @@ struct BusinessLandmarksView: View {
         ScrollView {
             VStack(spacing: 24) {
                 
+                // MARK: - Pending Uploads
+                if !offlineManager.archivedItems.isEmpty {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Pending Uploads")
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .foregroundStyle(.secondary)
+                            .textCase(.uppercase)
+                            .padding(.horizontal, 20)
+                        
+                        VStack(spacing: 0) {
+                            syncBannerRow
+                            Divider()
+                            
+                            ForEach(offlineManager.archivedItems) { item in
+                                pendingRow(for: item)
+                                if item.id != offlineManager.archivedItems.last?.id {
+                                    Divider().padding(.leading, 64)
+                                }
+                            }
+                        }
+                        .background(Color(uiColor: .secondarySystemGroupedBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2)
+                        .padding(.horizontal)
+                    }
+                } else if !viewModel.landmarks.isEmpty {
+                    emptyQueueCard
+                }
+
+                if !actionNeededLandmarks.isEmpty {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Needs Attention")
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .foregroundStyle(.red)
+                            .textCase(.uppercase)
+                            .padding(.horizontal, 20)
+                        
+                        ForEach(actionNeededLandmarks) { landmark in
+                            landmarkRowLink(for: landmark)
+                                .padding(.horizontal)
+                        }
+                    }
+                }
+
                 // MARK: - Active Landmarks
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
@@ -43,7 +89,7 @@ struct BusinessLandmarksView: View {
                             .textCase(.uppercase)
 
                         if !viewModel.landmarks.isEmpty {
-                            Text(landmarkCountText)
+                            Text(healthyLandmarkCountText(healthyCount: healthyLandmarks.count))
                                 .font(.system(size: 14, weight: .bold, design: .rounded))
                                 .foregroundStyle(.secondary)
                         }
@@ -78,75 +124,14 @@ struct BusinessLandmarksView: View {
                             .padding(.horizontal, 20)
                     } else if displayedLandmarks.isEmpty {
                         noSearchResultsView
+                    } else if healthyLandmarks.isEmpty && !actionNeededLandmarks.isEmpty {
+                        EmptyView()
                     } else {
-                        let actionNeeded = displayedLandmarks.filter { $0.status == "NEEDS_MORE_MEDIA" }
-                        let healthy = displayedLandmarks.filter { $0.status != "NEEDS_MORE_MEDIA" }
-                        
-                        VStack(spacing: 24) {
-                            
-                            // --- SECTION 1: NEEDS ATTENTION ---
-                            if !actionNeeded.isEmpty {
-                                VStack(alignment: .leading, spacing: 12) {
-                                    Text("Needs Attention")
-                                        .font(.system(size: 14, weight: .bold, design: .rounded))
-                                        .foregroundStyle(.red)
-                                        .textCase(.uppercase)
-                                        .padding(.horizontal, 20)
-                                    
-                                    ForEach(actionNeeded) { landmark in
-                                        landmarkRowLink(for: landmark)
-                                    }
-                                }
-                            }
-                            
-                            // --- SECTION 2: HEALTHY LANDMARKS ---
-                            if !healthy.isEmpty {
-                                VStack(alignment: .leading, spacing: 12) {
-                                    if !actionNeeded.isEmpty {
-                                        Text("Active Landmarks")
-                                            .font(.system(size: 14, weight: .bold, design: .rounded))
-                                            .foregroundStyle(.secondary)
-                                            .textCase(.uppercase)
-                                            .padding(.horizontal, 20)
-                                    }
-                                    
-                                    ForEach(healthy) { landmark in
-                                        landmarkRowLink(for: landmark)
-                                    }
-                                }
-                            }
+                        ForEach(healthyLandmarks) { landmark in
+                            landmarkRowLink(for: landmark)
+                                .padding(.horizontal)
                         }
-                        .padding(.horizontal)
                     }
-                }
-
-                // MARK: - Pending Uploads
-                if !offlineManager.archivedItems.isEmpty {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Pending Uploads")
-                            .font(.system(size: 14, weight: .bold, design: .rounded))
-                            .foregroundStyle(.secondary)
-                            .textCase(.uppercase)
-                            .padding(.horizontal, 20)
-                        
-                        VStack(spacing: 0) {
-                            syncBannerRow
-                            Divider()
-                            
-                            ForEach(offlineManager.archivedItems) { item in
-                                pendingRow(for: item)
-                                if item.id != offlineManager.archivedItems.last?.id {
-                                    Divider().padding(.leading, 64)
-                                }
-                            }
-                        }
-                        .background(Color(uiColor: .secondarySystemGroupedBackground))
-                        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                        .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2)
-                        .padding(.horizontal)
-                    }
-                } else {
-                    emptyQueueCard
                 }
 
                 Spacer(minLength: 40)
@@ -170,11 +155,11 @@ struct BusinessLandmarksView: View {
                 hasLoadedOnce = true
                 await viewModel.loadLandmarks()
                 await loadPromotionSearchIndex()
-                // 🚀 Send signal to check if a notification needs to pop up instantly!
                 NotificationCenter.default.post(name: Notification.Name("CheckGlobalNotifications"), object: nil)
             }
         }
         .onAppear {
+            uploadManager.attachAuthVM(vm)
             guard hasLoadedOnce else { return }
             Task { await refreshLandmarksAndSearchIndex() }
         }
@@ -231,7 +216,6 @@ struct BusinessLandmarksView: View {
                 landmark: landmark,
                 onAddMedia: {
                     landmarkNeedingMedia = nil
-                    // Give the sheet time to dismiss before sending the broadcast signal
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                         NotificationCenter.default.post(
                             name: Notification.Name("TriggerRedoRecord"),
@@ -239,13 +223,13 @@ struct BusinessLandmarksView: View {
                             userInfo: [
                                 "id": landmark.landmarkId,
                                 "label": landmark.label,
-                                "description": landmark.shortDescription ?? ""
+                                "description": landmark.shortDescription ?? "",
+                                "secondsNeeded": Double(landmark.secondsNeeded ?? 30)
                             ]
                         )
                     }
                 }
             )
-            // 🚀 THE FIX: Detent permanently moved to .fraction(0.55) so the icon isn't cut off!
             .presentationDetents([.fraction(0.55)])
             .presentationDragIndicator(.visible)
         }
@@ -307,10 +291,19 @@ struct BusinessLandmarksView: View {
 
     // MARK: - Internal UI Components (Selection, Search, etc.)
     
+    private var actionNeededLandmarks: [BusinessLandmark] {
+        displayedLandmarks.filter { $0.status == "NEEDS_MORE_MEDIA" }
+    }
+    
+    private var healthyLandmarks: [BusinessLandmark] {
+        displayedLandmarks.filter { $0.status != "NEEDS_MORE_MEDIA" }
+    }
+    
     private var cleanedSearchText: String { searchText.trimmingCharacters(in: .whitespacesAndNewlines) }
-    private var landmarkCountText: String {
-        guard !cleanedSearchText.isEmpty else { return "(\(viewModel.landmarks.count))" }
-        return "(\(displayedLandmarks.count) of \(viewModel.landmarks.count))"
+    
+    private func healthyLandmarkCountText(healthyCount: Int) -> String {
+        guard !cleanedSearchText.isEmpty else { return "(\(healthyCount))" }
+        return "(\(healthyCount) of \(viewModel.landmarks.filter { $0.status != "NEEDS_MORE_MEDIA" }.count))"
     }
 
     private var displayedLandmarks: [BusinessLandmark] {
@@ -485,7 +478,11 @@ struct BusinessLandmarksView: View {
                             ProgressView(value: uploadManager.currentUploadProgress).progressViewStyle(.linear).tint(primaryColor)
                         }
                     } else {
-                        HStack(spacing: 4) { Image(systemName: "clock.fill").font(.system(size: 10)); Text("Queued").font(.system(size: 12, weight: .bold, design: .rounded)) }.foregroundColor(.orange)
+                        HStack(spacing: 4) {
+                            Image(systemName: "clock.fill").font(.system(size: 10))
+                            Text("Queued").font(.system(size: 12, weight: .bold, design: .rounded))
+                        }
+                        .foregroundColor(.orange)
                     }
                 }
                 Spacer()
@@ -642,54 +639,73 @@ struct NeedsMoreMediaSheet: View {
     var onAddMedia: () -> Void
     
     var body: some View {
-        VStack(spacing: 24) {
-            
-            ZStack {
-                Circle().fill(Color.red.opacity(0.15)).frame(width: 80, height: 80)
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 36))
-                    .foregroundStyle(.red)
-            }
-            .padding(.top, 32) // 🚀 Top icon now perfectly centered in new 0.55 sheet
-            
-            VStack(spacing: 8) {
-                Text("More Media Required")
-                    .font(.system(size: 24, weight: .bold, design: .rounded))
-                
-                Text("We couldn't extract enough unique frames of \(landmark.label) to train a reliable model.")
-                    .font(.system(size: 15))
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .lineLimit(nil)
-                    .padding(.horizontal, 24)
-            }
-            
-            VStack(spacing: 16) {
-                let processed = landmark.cleanFrameCount ?? 0
-                let required = landmark.requiredFrames ?? 1800
-                let seconds = landmark.secondsNeeded ?? 30
-                
-                HStack {
-                    VStack(alignment: .leading) {
-                        Text("Frames Extracted").font(.caption).foregroundStyle(.secondary)
-                        Text("\(processed) / \(required)").font(.system(size: 18, weight: .bold, design: .monospaced)).foregroundStyle(.primary)
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(spacing: 24) {
+                    ZStack {
+                        Circle().fill(Color.red.opacity(0.15)).frame(width: 80, height: 80)
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 36))
+                            .foregroundStyle(.red)
                     }
-                    Spacer()
-                    VStack(alignment: .trailing) {
-                        Text("Target Video Needed").font(.caption).foregroundStyle(.secondary)
-                        Text("~\(seconds) Seconds").font(.system(size: 18, weight: .bold, design: .rounded)).foregroundStyle(.red)
+                    .padding(.top, 32)
+                    
+                    VStack(spacing: 8) {
+                        Text("More Media Required")
+                            .font(.system(size: 24, weight: .bold, design: .rounded))
+                        
+                        Text("We couldn't extract enough unique frames of \(landmark.label) to train a reliable model.")
+                            .font(.system(size: 15))
+                            .multilineTextAlignment(.center)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .lineLimit(nil)
+                            .padding(.horizontal, 24)
                     }
+                    
+                    VStack(spacing: 16) {
+                        let processed = landmark.cleanFrameCount ?? 0
+                        let required = landmark.requiredFrames ?? 1800
+                        let seconds = landmark.secondsNeeded ?? 30
+                        
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text("Frames Extracted").font(.caption).foregroundStyle(.secondary)
+                                Text("\(processed) / \(required)")
+                                    .font(.system(size: 18, weight: .bold, design: .monospaced))
+                                    .foregroundStyle(.primary)
+                                    .minimumScaleFactor(0.5)
+                                    .lineLimit(1)
+                            }
+                            Spacer(minLength: 8)
+                            VStack(alignment: .trailing) {
+                                Text("Target Video").font(.caption).foregroundStyle(.secondary)
+                                Text("~\(seconds) Secs")
+                                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                                    .foregroundStyle(.red)
+                                    .minimumScaleFactor(0.5)
+                                    .lineLimit(1)
+                            }
+                        }
+                        
+                        Divider()
+                        
+                        Text("Capture about **\(seconds) more seconds** of video capturing your landmark. Once uploaded, training will resume automatically. This will not cost a token.")
+                            .font(.system(size: 14))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .lineLimit(nil)
+                    }
+                    .padding(20)
+                    .background(Color(uiColor: .secondarySystemGroupedBackground))
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .padding(.horizontal, 20)
+                    
+                    Spacer(minLength: 20)
                 }
-                
-                Divider()
-                
-                Text("Capture about **\(seconds) more seconds** of video capturing your landmark. Once uploaded, training will resume automatically. This will not cost a token")
-                    .font(.system(size: 14))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .lineLimit(nil)
-                
+            }
+            
+            VStack {
                 Button {
                     UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
                     dismiss()
@@ -702,17 +718,13 @@ struct NeedsMoreMediaSheet: View {
                         .padding(.vertical, 16)
                         .background(Color.red)
                         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                        .padding(.top, 8)
                 }
             }
-            .padding(20)
-            .background(Color(uiColor: .secondarySystemGroupedBackground))
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .padding(.horizontal, 20)
-            
-            Spacer(minLength: 0)
+            .padding(.top, 12)
+            .padding(.bottom, 20)
+            .background(Color(uiColor: .systemGroupedBackground))
         }
-        .frame(maxHeight: .infinity, alignment: .top)
         .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea(edges: .bottom))
     }
 }

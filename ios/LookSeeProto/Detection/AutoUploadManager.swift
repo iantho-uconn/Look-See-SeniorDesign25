@@ -7,14 +7,18 @@ import Foundation
 import SwiftUI
 import Combine
 import UserNotifications
+import UIKit
 
 @MainActor
 class AutoUploadManager: ObservableObject {
     static let shared = AutoUploadManager()
     
     private var cancellables = Set<AnyCancellable>()
+    private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
     
-    // Published properties so the UI updates live
+    // 🚀 THE FIX: Attach a weak reference to the active global AuthViewModel
+    weak var globalAuthVM: AuthViewModel?
+    
     @Published var isUploading = false
     @Published var currentlyUploadingId: UUID? = nil
     @Published var currentUploadProgress: Double = 0.0
@@ -27,7 +31,6 @@ class AutoUploadManager: ObservableObject {
     private init() {
         requestNotificationPermission()
         
-        // Tie the upload service's progress to our manager's progress
         uploadService.$progress
             .receive(on: RunLoop.main)
             .sink { [weak self] p in
@@ -35,7 +38,6 @@ class AutoUploadManager: ObservableObject {
             }
             .store(in: &cancellables)
         
-        // Listen for network changes to auto-start if connected
         NetworkMonitor.shared.$isConnected
             .dropFirst()
             .sink { [weak self] isConnected in
@@ -46,52 +48,77 @@ class AutoUploadManager: ObservableObject {
             .store(in: &cancellables)
     }
     
+    // 🚀 Called from BusinessLandmarksView to tie it to your session!
+    func attachAuthVM(_ vm: AuthViewModel) {
+        self.globalAuthVM = vm
+    }
+    
     private func requestNotificationPermission() {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
             if granted { print("✅ Notifications authorized for Auto-Uploads") }
         }
     }
     
-    // Pause the queue
+    func forceRetry() {
+        isPaused = false
+        Task { await autoStartIfPossible() }
+    }
+    
     func stopProcessing() {
         isPaused = true
         isUploading = false
-        // Note: The *current* active upload file will finish to prevent corruption,
-        // but it will pause before moving to the next item in the array.
+        endBackgroundTask()
     }
     
-    // Manually start the queue
     func startProcessing(authViewModel: AuthViewModel) async {
         isPaused = false
+        attachAuthVM(authViewModel)
         await processOfflineQueue(authVM: authViewModel)
     }
     
-    // Auto-start via Network Monitor
     private func autoStartIfPossible() async {
         guard !isPaused else { return }
         
-        // Create a temporary AuthVM and fetch the latest token/capacity data from the cloud
-        let authVM = AuthViewModel()
-        await authVM.fetchUserEmail()
-        await authVM.fetchUserUsageStats()
+        // 🚀 THE FIX: Prevent it from creating a blank profile that crashes S3!
+        guard let authVM = globalAuthVM else {
+            print("⚠️ AutoUploadManager has no AuthViewModel attached. Cannot auto-start.")
+            return
+        }
         
+        await authVM.fetchUserUsageStats()
         await processOfflineQueue(authVM: authVM)
     }
     
-    // Core Engine Loop
+    private func beginBackgroundTask() {
+        if backgroundTaskID == .invalid {
+            backgroundTaskID = UIApplication.shared.beginBackgroundTask { [weak self] in
+                self?.endBackgroundTask()
+            }
+        }
+    }
+
+    private func endBackgroundTask() {
+        if backgroundTaskID != .invalid {
+            UIApplication.shared.endBackgroundTask(backgroundTaskID)
+            backgroundTaskID = .invalid
+        }
+    }
+    
     private func processOfflineQueue(authVM: AuthViewModel) async {
         guard !isUploading else { return }
         guard !isPaused else { return }
         
-        let pendingMedia = OfflineMediaManager.shared.archivedItems
+        let pendingMedia = OfflineMediaManager.shared.archivedItems.sorted { $0.dateSaved < $1.dateSaved }
         guard !pendingMedia.isEmpty else { return }
         
         isUploading = true
+        beginBackgroundTask()
         
         let idToken = await authVM.fetchIdToken()
         guard !idToken.isEmpty else {
             print("⚠️ Cannot auto-upload: User is not fully authenticated.")
             isUploading = false
+            endBackgroundTask()
             return
         }
         
@@ -100,13 +127,11 @@ class AutoUploadManager: ObservableObject {
         for media in pendingMedia {
             if isPaused { break }
             
-            // MARK: - NEW LIMIT CHECKS
-            
-            // 1. Check if they have an active subscription
             if !authVM.hasActiveSubscription {
                 print("🛑 NO ACTIVE SUBSCRIPTION: Stopping auto-upload queue.")
                 isPaused = true
                 isUploading = false
+                endBackgroundTask()
                 sendLimitNotification(
                     title: "Subscription Required",
                     body: "You need an active subscription or Free Trial to upload landmarks."
@@ -114,19 +139,17 @@ class AutoUploadManager: ObservableObject {
                 return
             }
             
-            // 2. Check if they have at least 1 Token to spend
             if authVM.tokenBalance <= 0 {
                 print("🛑 OUT OF TOKENS: Stopping auto-upload queue.")
                 isPaused = true
                 isUploading = false
+                endBackgroundTask()
                 sendLimitNotification(
                     title: "Out of Tokens",
                     body: "You need 1 token to upload a new landmark. Purchase a token pack in Settings."
                 )
                 return
             }
-            
-            // MARK: - Begin Upload
             
             currentlyUploadingId = media.id
             currentUploadProgress = 0.0
@@ -135,13 +158,11 @@ class AutoUploadManager: ObservableObject {
                 let fileURL = OfflineMediaManager.shared.getFileURL(for: media)
                 let isVideo = media.isVideo
                 
-                // Fallbacks
                 let landmarkId = media.landmarkId ?? "landmark_\(UUID().uuidString.prefix(8))"
                 let label = media.savedLabel ?? media.title
                 
                 print("📤 Auto-uploading: \(label)")
                 
-                // 1. Upload Positive Media
                 let positiveResult = try await uploadService.upload(
                     userEmail: authVM.userEmail,
                     idToken: idToken,
@@ -159,7 +180,6 @@ class AutoUploadManager: ObservableObject {
                 
                 let finalLandmarkId = positiveResult.landmarkId ?? landmarkId
                 
-                // 2. Upload Negative Reference Video
                 if let negativeURL = OfflineMediaManager.shared.getNegativeVideoURL(for: media),
                    FileManager.default.fileExists(atPath: negativeURL.path) {
                     
@@ -173,10 +193,8 @@ class AutoUploadManager: ObservableObject {
                     )
                 }
                 
-                // 3. Success! Update Token Balance and Delete from Outbox
                 print("✅ Auto-upload complete for: \(label)")
                 
-                // DEDUCT THE TOKEN AND ADD TO CAPACITY
                 authVM.tokenBalance -= 1
                 authVM.activeLandmarksCount += 1
                 
@@ -185,18 +203,17 @@ class AutoUploadManager: ObservableObject {
                 
             } catch {
                 print("❌ Background upload failed for \(media.id): \(error.localizedDescription)")
-                // Stop the entire queue on a failure (like losing connection)
                 isUploading = false
                 currentlyUploadingId = nil
+                endBackgroundTask()
                 return
             }
         }
         
         isUploading = false
         currentlyUploadingId = nil
+        endBackgroundTask()
     }
-    
-    // MARK: - Notifications
     
     private func sendSuccessNotification(landmarkName: String) {
         let content = UNMutableNotificationContent()

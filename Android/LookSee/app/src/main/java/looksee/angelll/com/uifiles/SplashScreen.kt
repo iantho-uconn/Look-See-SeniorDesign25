@@ -1,13 +1,7 @@
 package looksee.angelll.com.uifiles
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Visibility
@@ -24,17 +18,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-@Suppress("UNUSED")
 @Composable
 fun SplashScreen(onGetStarted: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(
-                Brush.verticalGradient(
+                brush = Brush.verticalGradient(
                     colors = listOf(
-                        Color(0xFF387DFF), // ~ Color(red: 0.22, green: 0.49, blue: 1.00)
-                        Color(0xFFF2359E)  // ~ Color(red: 0.95, green: 0.21, blue: 0.62)
+                        Color(0xFF387DFF), // RGB: 0.22, 0.49, 1.00
+                        Color(0xFFF2359E)  // RGB: 0.95, 0.21, 0.62
                     )
                 )
             )
@@ -44,22 +37,25 @@ fun SplashScreen(onGetStarted: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Column(
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
+                // 🚀 The real Material Visibility (Eye) Icon!
                 Icon(
-                    imageVector = Icons.Default.Visibility,
-                    contentDescription = "LookSee Logo",
+                    imageVector = Icons.Filled.Visibility,
+                    contentDescription = "LookSee Icon",
+                    tint = Color.White,
                     modifier = Modifier
                         .size(150.dp)
-                        .padding(16.dp),
-                    tint = Color.White
+                        .padding(16.dp)
                 )
                 Text(
                     text = "LookSee",
-                    fontSize = 32.sp,
                     fontWeight = FontWeight.Bold,
+                    fontSize = 32.sp,
                     color = Color.White
                 )
                 Text(
@@ -71,16 +67,17 @@ fun SplashScreen(onGetStarted: () -> Unit) {
 
             Button(
                 onClick = onGetStarted,
+                colors = ButtonDefaults.buttonColors(containerColor = Color.White),
+                shape = RoundedCornerShape(8.dp),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(32.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color.White),
-                shape = RoundedCornerShape(8.dp)
+                    .padding(horizontal = 32.dp, vertical = 20.dp)
+                    .height(60.dp)
             ) {
                 Text(
                     text = "Get Started",
-                    color = Color(0xFF9910FA), // ~ Color(red: 0.60, green: 0.06, blue: 0.98)
-                    modifier = Modifier.padding(vertical = 12.dp),
+                    color = Color(0xFF990FFA), // RGB: 0.60, 0.06, 0.98
+                    fontSize = 18.sp,
                     fontWeight = FontWeight.Bold
                 )
             }

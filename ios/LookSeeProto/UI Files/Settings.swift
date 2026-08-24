@@ -72,11 +72,17 @@ struct Settings: View {
                                 ZStack {
                                     Circle().fill(primaryColor.opacity(0.15))
                                     if let url = URL(string: vm.profileImageUrl), !vm.profileImageUrl.isEmpty {
+                                        // 🚀 THE FIX: Handles the network dropping gracefully!
                                         AsyncImage(url: url) { phase in
-                                            if let image = phase.image {
-                                                image.resizable().scaledToFill().clipShape(Circle())
-                                            } else {
+                                            switch phase {
+                                            case .empty:
                                                 ProgressView()
+                                            case .success(let image):
+                                                image.resizable().scaledToFill().clipShape(Circle())
+                                            case .failure:
+                                                Image(systemName: "person.crop.circle.fill").font(.system(size: 48, weight: .light)).foregroundStyle(primaryColor)
+                                            @unknown default:
+                                                Image(systemName: "person.crop.circle.fill").font(.system(size: 48, weight: .light)).foregroundStyle(primaryColor)
                                             }
                                         }
                                     } else {
@@ -633,7 +639,6 @@ struct BusinessProfileView: View {
     @EnvironmentObject var vm: AuthViewModel
     @State private var showEditSheet = false
 
-
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
@@ -660,7 +665,9 @@ struct BusinessProfileView: View {
                     storeName: mStoreName,
                     logoUrl: vm.storeLogoUrl,
                     bio: mBio,
-                    phone: mPhone
+                    phone: mPhone,
+                    website: vm.storeWebsite,
+                    address: vm.storeAddress
                 )
                 .padding(.horizontal)
                 
@@ -699,6 +706,10 @@ struct BusinessProfileEditSheet: View {
     @State private var draftPhone: String = ""
     @State private var draftBio: String = ""
     @State private var draftLogoUrl: String = ""
+    
+    @State private var draftWebsite: String = ""
+    @State private var draftAddress: String = ""
+    
     @State private var isSaving = false
     @FocusState private var IsKeyboard: Bool
 
@@ -784,6 +795,16 @@ struct BusinessProfileEditSheet: View {
                             if filtered.count > 10 { draftPhone = String(filtered.prefix(10)) }
                             else if draftPhone != filtered { draftPhone = filtered }
                         }
+                    
+                    TextField("Website (Optional)", text: $draftWebsite)
+                        .focused($IsKeyboard)
+                        .keyboardType(.URL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled(true)
+                    
+                    TextField("Business Address (Optional)", text: $draftAddress)
+                        .focused($IsKeyboard)
+                        .textContentType(.fullStreetAddress)
                 }
             }
             .contentShape(Rectangle())
@@ -805,6 +826,8 @@ struct BusinessProfileEditSheet: View {
                             let success = await vm.updateBusinessProfile(
                                 storeName: draftName,
                                 phoneNumber: draftPhone,
+                                storeWebsite: draftWebsite,
+                                storeAddress: draftAddress,
                                 storeBio: draftBio,
                                 storeLogoUrl: draftLogoUrl,
                                 storeLogoBase64: base64String
@@ -824,6 +847,9 @@ struct BusinessProfileEditSheet: View {
                 draftPhone = vm.phoneNumber
                 draftBio = vm.storeBio
                 draftLogoUrl = vm.storeLogoUrl
+                
+                draftWebsite = vm.storeWebsite
+                draftAddress = vm.storeAddress
             }
             .onChange(of: selectedPhotoItem) { _, newItem in
                 Task {

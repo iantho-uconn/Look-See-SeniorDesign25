@@ -1,8 +1,8 @@
 //
-//  NegativeVideoCameraView.swift
+//  BusinessPositiveVideoCameraView.swift
 //  LookSeeProto
 //
-//  Created by Angel Pineda on 6/29/26.
+//  Created by Angel Pineda on 8/21/26.
 //
 
 import AVFoundation
@@ -10,7 +10,7 @@ import SwiftUI
 import UIKit
 import AVKit
 
-enum NegativeCameraPhase: Equatable {
+enum BusinessPositiveCameraPhase: Equatable {
     case mandatory(Int)
     case optional(Int)
     
@@ -22,8 +22,10 @@ enum NegativeCameraPhase: Equatable {
     var title: String {
         switch self {
         case .mandatory(let idx):
-            if idx == 1 { return "Capture Negative Background" }
-            return "Step \(idx): Additional Pan"
+            if idx == 1 { return "Capture Video of The Landmark" }
+            if idx == 2 { return "Step 2: Second Angle" }
+            if idx == 3 { return "Step 3: Third Angle" }
+            return "Step \(idx): Fourth Angle"
         case .optional:
             return "Additional Coverage"
         }
@@ -31,10 +33,11 @@ enum NegativeCameraPhase: Equatable {
     
     var instruction: String {
         switch self {
-        case .mandatory:
-            return "Pan the area. Do NOT include the landmark in the video."
+        case .mandatory(let idx):
+            if idx == 1 { return "These videos should be taken from ALL typical places where users may see the landmark" }
+            return "Move to a different side or angle and pan across the landmark."
         case .optional:
-            return "Record extra background footage around the area."
+            return "Pan across to capture missing details.\n\nTip: Have you tried standing farther back to get the whole object?"
         }
     }
     
@@ -46,21 +49,21 @@ enum NegativeCameraPhase: Equatable {
     }
 }
 
-struct NegativeRecordedClip: Identifiable, Equatable {
+struct BusinessPositiveRecordedClip: Identifiable, Equatable {
     var id: String { url.absoluteString }
-    let phase: NegativeCameraPhase
+    let phase: BusinessPositiveCameraPhase
     let url: URL
     let duration: Int
 }
 
-enum NegativeCameraFlowState: Equatable {
+enum BusinessPositiveCameraFlowState: Equatable {
     case instruction
     case recording
     case reviewingRecent(URL, Int)
     case gallery
 }
 
-struct NegativeVideoCameraView: View {
+struct BusinessPositiveVideoCameraView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var cameraService = NegativeVideoCameraService()
     @Environment(\.scenePhase) private var scenePhase
@@ -68,15 +71,15 @@ struct NegativeVideoCameraView: View {
     @State private var wasRecordingBeforeBackground = false
     @State private var suppressNextError = false
 
-    @State private var currentPhase: NegativeCameraPhase = .mandatory(1)
-    @State private var flowState: NegativeCameraFlowState = .instruction
+    @State private var currentPhase: BusinessPositiveCameraPhase = .mandatory(1)
+    @State private var flowState: BusinessPositiveCameraFlowState = .instruction
 
     private let expectedAngles: Int = 1
     
     @State private var recordingTimer: Timer?
     @State private var timeElapsed: Int = 0
     
-    @State private var recordedClips: [NegativeRecordedClip] = []
+    @State private var recordedClips: [BusinessPositiveRecordedClip] = []
     @State private var gallerySelection: String = ""
     @State private var isCancelled = false
     
@@ -92,19 +95,18 @@ struct NegativeVideoCameraView: View {
 
     @State private var isCameraWarmedUp = false
 
-    private let onDone: (CapturedNegativeVideo) -> Void
+    private let completionButtonTitle: String
+    private let onDone: (URL) -> Void
     
-    private let maxTotalTimeLimit: Int = 30
-    private let uiTargetDuration: Int
-    private let minTotalTimeLimit: Int
+    // 🚀 STRICT BUSINESS TIMERS: 1 to 90 seconds
+    private let maxTotalTimeLimit: Int = 90
+    private let minTotalTimeLimit: Int = 1
 
     init(
-        uiTargetDuration: Int = 10,
-        minTotalTimeLimit: Int = 10,
-        onDone: @escaping (CapturedNegativeVideo) -> Void
+        completionButtonTitle: String = "Finish Submission",
+        onDone: @escaping (URL) -> Void
     ) {
-        self.uiTargetDuration = uiTargetDuration
-        self.minTotalTimeLimit = minTotalTimeLimit
+        self.completionButtonTitle = completionButtonTitle
         self.onDone = onDone
     }
 
@@ -113,19 +115,12 @@ struct NegativeVideoCameraView: View {
     }
 
     private var minPhaseTimeLimit: Int {
-        if currentPhase.isMandatory {
-            return 1
-        } else {
-            return 1
-        }
+        if currentPhase.isMandatory { return minTotalTimeLimit } else { return 1 }
     }
 
     private var maxPhaseTimeLimit: Int {
-        if currentPhase.isMandatory {
-            return maxTotalTimeLimit / expectedAngles
-        } else {
-            return maxTotalTimeLimit - totalDurationElapsedInt
-        }
+        if currentPhase.isMandatory { return maxTotalTimeLimit / expectedAngles }
+        else { return maxTotalTimeLimit - totalDurationElapsedInt }
     }
 
     private var isReviewingRecent: Bool {
@@ -151,7 +146,6 @@ struct NegativeVideoCameraView: View {
         let total = totalDurationElapsedInt + currentLiveDuration
         let capturedMandatoryCount = recordedClips.filter { $0.phase.isMandatory }.count
         let effectiveMandatoryCount = capturedMandatoryCount + (isCurrentClipValidMandatory ? 1 : 0)
-        
         let isReady = (total >= minTotalTimeLimit) && (effectiveMandatoryCount >= expectedAngles)
         
         return (total, isReady)
@@ -161,7 +155,7 @@ struct NegativeVideoCameraView: View {
         ZStack {
             Color(uiColor: .systemGroupedBackground).ignoresSafeArea()
 
-            NegativeVideoCameraPreview(session: cameraService.session, zoomLevel: $zoomLevel) {
+            BusinessPositiveVideoCameraPreview(session: cameraService.session, zoomLevel: $zoomLevel) {
                 showZoomIndicatorThenFade()
             }
             .ignoresSafeArea()
@@ -170,15 +164,15 @@ struct NegativeVideoCameraView: View {
             .zIndex(0)
             
             if case .reviewingRecent(let url, _) = flowState {
-                NegativeSafeVideoPlayer(url: url)
+                BusinessPositiveSafeVideoPlayer(url: url)
                     .equatable()
                     .ignoresSafeArea()
                     .zIndex(1)
             }
-            
+
             if flowState == .recording && showZoomInstruction {
                 VStack {
-                    Text("Slowly pan the area and background while pinching to zoom in and out")
+                    Text("Slowly pan across the landmark while pinching to zoom in and out")
                         .font(.system(size: 14, weight: .bold, design: .rounded))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 14)
@@ -255,7 +249,7 @@ struct NegativeVideoCameraView: View {
         .interactiveDismissDisabled()
         .onAppear {
             cameraService.onVideoRecorded = { url in
-                let uniqueURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".mov")
+                let uniqueURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + "_positive.mov")
                 try? FileManager.default.moveItem(at: url, to: uniqueURL)
                 
                 if isCancelled {
@@ -371,7 +365,7 @@ struct NegativeVideoCameraView: View {
                 HStack(spacing: 6) {
                     Image(systemName: progress.isReady ? "checkmark.circle.fill" : "clock.fill")
                         .foregroundStyle(progress.isReady ? .green : .orange)
-                    // 🚀 THE FIX: Restored UI label to show the TRUE 30s max limit to the user
+                    // 🚀 THE FIX: Restored UI label to show the TRUE 90s max limit to the user
                     Text("\(progress.totalDuration)s / \(maxTotalTimeLimit)")
                         .font(.system(size: 14, weight: .bold, design: .monospaced))
                         .foregroundStyle(.white)
@@ -387,16 +381,16 @@ struct NegativeVideoCameraView: View {
     
     private var instructionTopPrompt: some View {
         HStack(alignment: .top, spacing: 16) {
-            Image(systemName: "video.slash.fill")
+            Image(systemName: "camera.viewfinder")
                 .font(.system(size: 24, weight: .light))
                 .foregroundStyle(Color(red: 0.22, green: 0.49, blue: 1.00))
                 .padding(.top, 4)
             
             VStack(alignment: .leading, spacing: 6) {
-                Text("Capture Negative Media")
+                Text("Capture Positive Media")
                     .font(.system(size: 17, weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
-                Text("Pan the area and background environment. Do not include the main landmark in this video.")
+                Text("Follow the on-screen steps to capture the different angles of the landmark. This video should be from a typical place where a user may see the landmark.")
                     .font(.system(size: 14, weight: .regular))
                     .foregroundStyle(.white.opacity(0.8))
                     .lineSpacing(2)
@@ -536,7 +530,7 @@ struct NegativeVideoCameraView: View {
             
             Button {
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                let newClip = NegativeRecordedClip(phase: currentPhase, url: url, duration: recordedDuration)
+                let newClip = BusinessPositiveRecordedClip(phase: currentPhase, url: url, duration: recordedDuration)
                 recordedClips.append(newClip)
                 gallerySelection = newClip.id
                 
@@ -567,7 +561,7 @@ struct NegativeVideoCameraView: View {
             TabView(selection: $gallerySelection) {
                 ForEach(recordedClips) { clip in
                     ZStack {
-                        NegativeSafeVideoPlayer(url: clip.url)
+                        BusinessPositiveSafeVideoPlayer(url: clip.url)
                             .ignoresSafeArea()
                         
                         VStack {
@@ -635,7 +629,7 @@ struct NegativeVideoCameraView: View {
             let timeRemaining = maxTotalTimeLimit - totalDurationElapsedInt
             
             HStack {
-                // 🚀 THE FIX: Restored UI label to show the TRUE 30s max limit to the user
+                // 🚀 THE FIX: Restored UI label to show the TRUE 90s max limit to the user
                 Text("Total: \(totalDurationElapsedInt)s / \(maxTotalTimeLimit)s")
                     .font(.system(size: 14, weight: .bold, design: .monospaced))
                     .foregroundStyle(.secondary)
@@ -689,7 +683,7 @@ struct NegativeVideoCameraView: View {
                     } label: {
                         HStack(spacing: 8) {
                             if isFinishing { ProgressView().tint(.primary) }
-                            Text(isFinishing ? "Preparing..." : "Finish Submission")
+                            Text(isFinishing ? "Preparing..." : completionButtonTitle)
                                 .font(.system(size: 17, weight: .bold, design: .rounded))
                         }
                         .foregroundStyle(.primary)
@@ -716,7 +710,7 @@ struct NegativeVideoCameraView: View {
         .padding(.bottom, 100)
     }
 
-    private func nextRequiredPhase() -> NegativeCameraPhase? {
+    private func nextRequiredPhase() -> BusinessPositiveCameraPhase? {
         for i in 0..<expectedAngles {
             if !recordedClips.contains(where: { $0.phase.indexPos == i && $0.phase.isMandatory }) {
                 return .mandatory(i + 1)
@@ -725,7 +719,7 @@ struct NegativeVideoCameraView: View {
         return nil
     }
 
-    private func deleteClip(_ clip: NegativeRecordedClip) {
+    private func deleteClip(_ clip: BusinessPositiveRecordedClip) {
         if let idx = recordedClips.firstIndex(of: clip) {
             recordedClips.remove(at: idx)
             try? FileManager.default.removeItem(at: clip.url)
@@ -757,32 +751,26 @@ struct NegativeVideoCameraView: View {
 
     private func finishAndStitch(urls: [URL]) {
         guard !isFinishing else { return }
-        guard !urls.isEmpty else {
-            finishingErrorMessage = "No recorded video was available."
-            return
-        }
-
+        guard !urls.isEmpty else { return }
+        
         isFinishing = true
         finishingErrorMessage = nil
 
         if urls.count == 1 {
-            let video = CapturedNegativeVideo(fileURL: urls[0])
-            onDone(video)
+            onDone(urls[0])
             dismiss()
         } else {
             Task {
                 do {
                     let stitchedURL = try await VideoMerger.mergeAndValidate(clipURLs: urls, minimumDuration: 1.0)
                     await MainActor.run {
-                        let video = CapturedNegativeVideo(fileURL: stitchedURL)
-                        onDone(video)
-                        isFinishing = false
+                        onDone(stitchedURL)
                         dismiss()
                     }
                 } catch {
                     await MainActor.run {
                         isFinishing = false
-                        finishingErrorMessage = "Failed to stitch video clips: \(error.localizedDescription)"
+                        finishingErrorMessage = "Failed to stitch video clips."
                     }
                 }
             }
@@ -828,13 +816,13 @@ struct NegativeVideoCameraView: View {
     }
 }
 
-private struct NegativeVideoCameraPreview: UIViewRepresentable {
+private struct BusinessPositiveVideoCameraPreview: UIViewRepresentable {
     let session: AVCaptureSession
     @Binding var zoomLevel: CGFloat
     var onZoomChanged: () -> Void
 
-    func makeUIView(context: Context) -> NegativeCameraPreviewUIView {
-        let view = NegativeCameraPreviewUIView()
+    func makeUIView(context: Context) -> BusinessPositiveCameraPreviewUIView {
+        let view = BusinessPositiveCameraPreviewUIView()
         view.previewLayer.session = session
         view.previewLayer.videoGravity = .resizeAspectFill
         view.onZoom = { newZoom in
@@ -845,12 +833,12 @@ private struct NegativeVideoCameraPreview: UIViewRepresentable {
         }
         return view
     }
-    func updateUIView(_ uiView: NegativeCameraPreviewUIView, context: Context) {
+    func updateUIView(_ uiView: BusinessPositiveCameraPreviewUIView, context: Context) {
         if uiView.previewLayer.session !== session { uiView.previewLayer.session = session }
     }
 }
 
-private final class NegativeCameraPreviewUIView: UIView {
+private final class BusinessPositiveCameraPreviewUIView: UIView {
     override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }
     var previewLayer: AVCaptureVideoPreviewLayer { layer as! AVCaptureVideoPreviewLayer }
     
@@ -858,7 +846,7 @@ private final class NegativeCameraPreviewUIView: UIView {
     private var baseZoomFactor: CGFloat = 1.0
     private var isCameraConfigured = false
     var onZoom: ((CGFloat) -> Void)?
-
+    
     override init(frame: CGRect) { super.init(frame: frame); setupGestures() }
     required init?(coder: NSCoder) { super.init(coder: coder); setupGestures() }
     
@@ -866,7 +854,7 @@ private final class NegativeCameraPreviewUIView: UIView {
         addGestureRecognizer(UIPinchGestureRecognizer(target: self, action: #selector(handlePinch(_:))))
         addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(handleTap(_:))))
     }
-    
+
     private func configureCameraIfNeeded() {
         guard !isCameraConfigured,
               let device = previewLayer.session?.inputs.compactMap({ $0 as? AVCaptureDeviceInput }).first?.device else { return }
@@ -896,13 +884,20 @@ private final class NegativeCameraPreviewUIView: UIView {
     
     @objc private func handlePinch(_ pinch: UIPinchGestureRecognizer) {
         guard let device = previewLayer.session?.inputs.compactMap({ $0 as? AVCaptureDeviceInput }).first?.device else { return }
-        if pinch.state == .began { initialZoom = device.videoZoomFactor }
+        
+        if pinch.state == .began {
+            initialZoom = device.videoZoomFactor
+        }
+        
         if pinch.state == .changed || pinch.state == .began {
             let maxAllowedZoom = min(5.0 * baseZoomFactor, device.activeFormat.videoMaxZoomFactor)
+            
             let zoomFactor = min(max(initialZoom * pinch.scale, device.minAvailableVideoZoomFactor), maxAllowedZoom)
+            
             try? device.lockForConfiguration()
             device.videoZoomFactor = zoomFactor
             device.unlockForConfiguration()
+            
             let displayZoom = zoomFactor / baseZoomFactor
             onZoom?(displayZoom)
         }
@@ -925,9 +920,9 @@ private final class NegativeCameraPreviewUIView: UIView {
     }
 }
 
-private struct NegativeSafeVideoPlayer: UIViewControllerRepresentable, Equatable {
+private struct BusinessPositiveSafeVideoPlayer: UIViewControllerRepresentable, Equatable {
     let url: URL
-    static func == (lhs: NegativeSafeVideoPlayer, rhs: NegativeSafeVideoPlayer) -> Bool { return lhs.url == rhs.url }
+    static func == (lhs: BusinessPositiveSafeVideoPlayer, rhs: BusinessPositiveSafeVideoPlayer) -> Bool { return lhs.url == rhs.url }
     func makeUIViewController(context: Context) -> AVPlayerViewController {
         let controller = AVPlayerViewController()
         controller.player = AVPlayer(url: url)

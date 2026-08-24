@@ -8,7 +8,6 @@ import SwiftUI
 import UIKit
 import AVKit
 
-
 enum CameraPhase: Equatable {
     case mandatory(Int)
     case optional(Int)
@@ -81,6 +80,8 @@ struct PositiveVideoCameraView: View {
     @State private var gallerySelection: String = ""
     @State private var isCancelled = false
     
+    @State private var isFinishing = false
+    
     @State private var zoomLevel: CGFloat = 1.0
     @State private var showZoomIndicator = false
     @State private var zoomFadeTask: Task<Void, Never>?
@@ -88,29 +89,32 @@ struct PositiveVideoCameraView: View {
     @State private var showZoomInstruction = false
     @State private var zoomInstructionTask: Task<Void, Never>?
 
-    // 🚀 NEW: Functionality ONLY - Tracks camera warmup to fade in smoothly
     @State private var isCameraWarmedUp = false
 
     var isActive: Bool
     @Binding var isNavVisible: Bool
     
-    // 🚀 FIXED: Cleaned up the merged variables and reconstructed the single init block
     private let completionButtonTitle: String
     private let onDone: ([URL]) -> Void
     private let onCancel: () -> Void
     
     private let maxTotalTimeLimit: Int = 90
-    private let minTotalTimeLimit: Int = 30
+    private let uiTargetDuration: Int
+    private let minTotalTimeLimit: Int
 
     init(
         isActive: Bool,
         isNavVisible: Binding<Bool>,
+        uiTargetDuration: Int = 30,
+        minTotalTimeLimit: Int? = nil,
         completionButtonTitle: String = "Finish Submission",
         onDone: @escaping ([URL]) -> Void,
         onCancel: @escaping () -> Void
     ) {
         self.isActive = isActive
         self._isNavVisible = isNavVisible
+        self.uiTargetDuration = uiTargetDuration
+        self.minTotalTimeLimit = minTotalTimeLimit ?? uiTargetDuration
         self.completionButtonTitle = completionButtonTitle
         self.onDone = onDone
         self.onCancel = onCancel
@@ -122,10 +126,22 @@ struct PositiveVideoCameraView: View {
 
     private var minPhaseTimeLimit: Int {
         if currentPhase.isMandatory {
-            return 4
+            if minTotalTimeLimit == 30 {
+                return 4
+            } else if minTotalTimeLimit == 1 {
+                return 1
+            } else {
+                return minTotalTimeLimit
+            }
         } else {
             let deficit = minTotalTimeLimit - totalDurationElapsedInt
-            return min(4, deficit)
+            if minTotalTimeLimit == 30 {
+                return deficit > 0 ? min(4, deficit) : 1
+            } else if minTotalTimeLimit == 1 {
+                return 1
+            } else {
+                return deficit > 0 ? deficit : 1
+            }
         }
     }
 
@@ -168,14 +184,12 @@ struct PositiveVideoCameraView: View {
 
     var body: some View {
         ZStack {
-            // 🚀 NEW: Functionality ONLY - Uses standard gray instead of black to mask the camera flash
             Color(uiColor: .systemGroupedBackground).ignoresSafeArea()
 
             PositiveVideoCameraPreview(session: cameraService.session, zoomLevel: $zoomLevel) {
                 showZoomIndicatorThenFade()
             }
             .ignoresSafeArea()
-            // 🚀 Fades in gracefully
             .opacity((flowState == .gallery || isReviewingRecent) ? 0 : (isCameraWarmedUp ? 1 : 0.001))
             .animation(.easeInOut(duration: 0.4), value: isCameraWarmedUp)
             .zIndex(0)
@@ -199,6 +213,7 @@ struct PositiveVideoCameraView: View {
                         .padding(.top, 110)
                     Spacer()
                 }
+                .ignoresSafeArea(.container, edges: .top)
                 .zIndex(4)
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
@@ -221,7 +236,7 @@ struct PositiveVideoCameraView: View {
 
             VStack(spacing: 0) {
                 topControls
-                    .padding(.top, 60)
+                    .padding(.top, 58)
                 
                 if flowState == .instruction {
                     instructionTopPrompt
@@ -247,6 +262,7 @@ struct PositiveVideoCameraView: View {
                     EmptyView()
                 }
             }
+            .ignoresSafeArea(.container, edges: .top)
             .zIndex(2)
             
             if flowState == .gallery {
@@ -265,19 +281,26 @@ struct PositiveVideoCameraView: View {
         .onAppear {
             isNavVisible = (flowState == .instruction)
             cameraService.onVideoRecorded = { url in
+                let uniqueURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + "_positive.mov")
+                try? FileManager.default.moveItem(at: url, to: uniqueURL)
+                
                 if isCancelled {
-                    try? FileManager.default.removeItem(at: url)
+                    try? FileManager.default.removeItem(at: uniqueURL)
                     onCancel()
                 } else if suppressNextError {
                     suppressNextError = false
-                    try? FileManager.default.removeItem(at: url)
-                    withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                        flowState = .instruction
+                    try? FileManager.default.removeItem(at: uniqueURL)
+                    DispatchQueue.main.async {
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                            flowState = .instruction
+                        }
                     }
                 } else {
                     let recordedDuration = timeElapsed
-                    withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                        flowState = .reviewingRecent(url, recordedDuration)
+                    DispatchQueue.main.async {
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                            flowState = .reviewingRecent(uniqueURL, recordedDuration)
+                        }
                     }
                 }
             }
@@ -609,7 +632,7 @@ struct PositiveVideoCameraView: View {
                                         .clipShape(Circle())
                                 }
                             }
-                            .padding(.horizontal, 20).padding(.top, 16)
+                            .padding(.horizontal, 20).padding(.top, 58)
                             Spacer()
                         }
                     }
@@ -640,9 +663,10 @@ struct PositiveVideoCameraView: View {
                     }
                     Spacer()
                 }
-                .padding(.horizontal, 20).padding(.top, 60)
+                .padding(.horizontal, 20).padding(.top, 58)
                 Spacer()
             }
+            .ignoresSafeArea(.container, edges: .top)
             
             VStack {
                 Spacer()
@@ -685,27 +709,6 @@ struct PositiveVideoCameraView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }
             } else {
-                if totalDurationElapsedInt >= minTotalTimeLimit {
-                    Button {
-                        UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
-                        onDone(recordedClips.map { $0.url })
-                    } label: {
-                        Text(completionButtonTitle)
-                            .font(.system(size: 17, weight: .bold, design: .rounded))
-                            .foregroundStyle(.primary)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
-                            .background(Color(.systemBackground))
-                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    }
-                } else {
-                    Text("Total video from all angels must be between \(minTotalTimeLimit) to \(maxTotalTimeLimit) seconds")
-                        .font(.system(size: 15, weight: .bold, design: .rounded))
-                        .foregroundStyle(.primary)
-                        .multilineTextAlignment(.center)
-                        .padding(.vertical, 5)
-                }
-                
                 if timeRemaining > 0 {
                     Button {
                         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
@@ -722,6 +725,31 @@ struct PositiveVideoCameraView: View {
                     }
                 }
                 
+                if totalDurationElapsedInt >= minTotalTimeLimit {
+                    Button {
+                        UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+                        isFinishing = true
+                        onDone(recordedClips.map { $0.url })
+                    } label: {
+                        HStack(spacing: 8) {
+                            if isFinishing { ProgressView().tint(.primary) }
+                            Text(isFinishing ? "Preparing..." : completionButtonTitle)
+                                .font(.system(size: 17, weight: .bold, design: .rounded))
+                        }
+                        .foregroundStyle(.primary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                        .background(Color(.systemBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    }
+                    .disabled(isFinishing)
+                } else {
+                    Text("Total video must be at least \(minTotalTimeLimit) seconds")
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .foregroundStyle(.primary)
+                        .multilineTextAlignment(.center)
+                        .padding(.vertical, 5)
+                }
             }
         }
         .padding(24)
@@ -793,7 +821,7 @@ struct PositiveVideoCameraView: View {
     private func handleAppBackgrounding() {
         guard flowState == .recording else { return }
         wasRecordingBeforeBackground = true
-        suppressNextError = true   // the stop we're about to trigger isn't a real error
+        suppressNextError = true
         stopTimer()
         cameraService.stopRecording()
     }

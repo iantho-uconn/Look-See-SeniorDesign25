@@ -55,7 +55,9 @@ final class UploadService: ObservableObject {
     private let baseURL = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev")!
     private let apiTimeout: TimeInterval = 60
     private let mediaUploadTimeout: TimeInterval = 300
-    private let minimumCombinedVideoDuration: Double = 30
+    
+    // 🚀 THE FIX: Changed from 30 to 1.0 to prevent server/timer blocking on Business or 'Needs More' submissions
+    private let minimumCombinedVideoDuration: Double = 1.0
 
     // MARK: Errors
     enum UploadError: LocalizedError {
@@ -149,7 +151,6 @@ final class UploadService: ObservableObject {
                 let filename = "photo.jpg"
                 let contentType = "image/jpeg"
 
-                // 🚀 THE FIX: Passing the landmarkId up to AWS so it uses the existing S3 folder!
                 let initRequest = InitSubmissionRequest(userEmail: trimmedUserEmail, label: trimmedLabel, landmarkId: landmarkId, mediaKind: mediaKind, filename: filename, contentType: contentType)
 
                 updateStage(
@@ -206,7 +207,6 @@ final class UploadService: ObservableObject {
             let filename = "\(label).mov"
             let contentType = "video/quicktime"
 
-            // 🚀 THE FIX: Passing the landmarkId up to AWS so it uses the existing S3 folder!
             let initRequest = InitSubmissionRequest(userEmail: trimmedUserEmail, label: trimmedLabel, landmarkId: landmarkId, mediaKind: mediaKind, filename: filename, contentType: contentType)
 
             updateStage(

@@ -22,6 +22,11 @@ struct LiveLandmarkInfoResponse: Decodable {
     let merchantName: String?
     let merchantBio: String?
     let merchantPhone: String?
+    
+    // 🚀 THE FIX: Catch the new website and address fields!
+    let merchantWebsite: String?
+    let merchantAddress: String?
+    
     let merchantLogoUrl: String?
 }
 
@@ -97,7 +102,11 @@ final class LiveLandmarkInfoService {
             "merchantName": decoded.merchantName ?? "",
             "merchantBio": decoded.merchantBio ?? "",
             "merchantPhone": decoded.merchantPhone ?? "",
-            "merchantLogoUrl": decoded.merchantLogoUrl ?? ""
+            "merchantLogoUrl": decoded.merchantLogoUrl ?? "",
+            
+            // 🚀 THE FIX: Cache the new fields so they load instantly next time
+            "merchantWebsite": decoded.merchantWebsite ?? "",
+            "merchantAddress": decoded.merchantAddress ?? ""
         ]
         UserDefaults.standard.set(merchantDict, forKey: cacheKey)
 
@@ -107,6 +116,10 @@ final class LiveLandmarkInfoService {
             VariableContainer.shared.merchantBio = decoded.merchantBio ?? ""
             VariableContainer.shared.merchantPhone = decoded.merchantPhone ?? ""
             VariableContainer.shared.merchantLogoUrl = decoded.merchantLogoUrl ?? ""
+            
+            // 🚀 THE FIX: Send the new fields right to your AR pop-up UI
+            VariableContainer.shared.merchantWebsite = decoded.merchantWebsite ?? ""
+            VariableContainer.shared.merchantAddress = decoded.merchantAddress ?? ""
         }
 
         print("""

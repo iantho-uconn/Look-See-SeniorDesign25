@@ -1,8 +1,8 @@
 //
-//  NegativeVideoCameraView.swift
+//  BusinessNegativeVideoCameraView.swift
 //  LookSeeProto
 //
-//  Created by Angel Pineda on 6/29/26.
+//  Created by Angel Pineda on 8/21/26.
 //
 
 import AVFoundation
@@ -10,7 +10,7 @@ import SwiftUI
 import UIKit
 import AVKit
 
-enum NegativeCameraPhase: Equatable {
+enum BusinessNegativeCameraPhase: Equatable {
     case mandatory(Int)
     case optional(Int)
     
@@ -46,21 +46,21 @@ enum NegativeCameraPhase: Equatable {
     }
 }
 
-struct NegativeRecordedClip: Identifiable, Equatable {
+struct BusinessNegativeRecordedClip: Identifiable, Equatable {
     var id: String { url.absoluteString }
-    let phase: NegativeCameraPhase
+    let phase: BusinessNegativeCameraPhase
     let url: URL
     let duration: Int
 }
 
-enum NegativeCameraFlowState: Equatable {
+enum BusinessNegativeCameraFlowState: Equatable {
     case instruction
     case recording
     case reviewingRecent(URL, Int)
     case gallery
 }
 
-struct NegativeVideoCameraView: View {
+struct BusinessNegativeVideoCameraView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var cameraService = NegativeVideoCameraService()
     @Environment(\.scenePhase) private var scenePhase
@@ -68,15 +68,15 @@ struct NegativeVideoCameraView: View {
     @State private var wasRecordingBeforeBackground = false
     @State private var suppressNextError = false
 
-    @State private var currentPhase: NegativeCameraPhase = .mandatory(1)
-    @State private var flowState: NegativeCameraFlowState = .instruction
+    @State private var currentPhase: BusinessNegativeCameraPhase = .mandatory(1)
+    @State private var flowState: BusinessNegativeCameraFlowState = .instruction
 
     private let expectedAngles: Int = 1
     
     @State private var recordingTimer: Timer?
     @State private var timeElapsed: Int = 0
     
-    @State private var recordedClips: [NegativeRecordedClip] = []
+    @State private var recordedClips: [BusinessNegativeRecordedClip] = []
     @State private var gallerySelection: String = ""
     @State private var isCancelled = false
     
@@ -94,17 +94,13 @@ struct NegativeVideoCameraView: View {
 
     private let onDone: (CapturedNegativeVideo) -> Void
     
+    // 🚀 STRICT NEGATIVE TIMERS: 1 to 30 seconds
     private let maxTotalTimeLimit: Int = 30
-    private let uiTargetDuration: Int
-    private let minTotalTimeLimit: Int
+    private let minTotalTimeLimit: Int = 1
 
     init(
-        uiTargetDuration: Int = 10,
-        minTotalTimeLimit: Int = 10,
         onDone: @escaping (CapturedNegativeVideo) -> Void
     ) {
-        self.uiTargetDuration = uiTargetDuration
-        self.minTotalTimeLimit = minTotalTimeLimit
         self.onDone = onDone
     }
 
@@ -113,19 +109,12 @@ struct NegativeVideoCameraView: View {
     }
 
     private var minPhaseTimeLimit: Int {
-        if currentPhase.isMandatory {
-            return 1
-        } else {
-            return 1
-        }
+        if currentPhase.isMandatory { return minTotalTimeLimit } else { return 1 }
     }
 
     private var maxPhaseTimeLimit: Int {
-        if currentPhase.isMandatory {
-            return maxTotalTimeLimit / expectedAngles
-        } else {
-            return maxTotalTimeLimit - totalDurationElapsedInt
-        }
+        if currentPhase.isMandatory { return maxTotalTimeLimit / expectedAngles }
+        else { return maxTotalTimeLimit - totalDurationElapsedInt }
     }
 
     private var isReviewingRecent: Bool {
@@ -151,7 +140,6 @@ struct NegativeVideoCameraView: View {
         let total = totalDurationElapsedInt + currentLiveDuration
         let capturedMandatoryCount = recordedClips.filter { $0.phase.isMandatory }.count
         let effectiveMandatoryCount = capturedMandatoryCount + (isCurrentClipValidMandatory ? 1 : 0)
-        
         let isReady = (total >= minTotalTimeLimit) && (effectiveMandatoryCount >= expectedAngles)
         
         return (total, isReady)
@@ -161,7 +149,7 @@ struct NegativeVideoCameraView: View {
         ZStack {
             Color(uiColor: .systemGroupedBackground).ignoresSafeArea()
 
-            NegativeVideoCameraPreview(session: cameraService.session, zoomLevel: $zoomLevel) {
+            BusinessNegativeVideoCameraPreview(session: cameraService.session, zoomLevel: $zoomLevel) {
                 showZoomIndicatorThenFade()
             }
             .ignoresSafeArea()
@@ -170,7 +158,7 @@ struct NegativeVideoCameraView: View {
             .zIndex(0)
             
             if case .reviewingRecent(let url, _) = flowState {
-                NegativeSafeVideoPlayer(url: url)
+                BusinessNegativeSafeVideoPlayer(url: url)
                     .equatable()
                     .ignoresSafeArea()
                     .zIndex(1)
@@ -255,7 +243,7 @@ struct NegativeVideoCameraView: View {
         .interactiveDismissDisabled()
         .onAppear {
             cameraService.onVideoRecorded = { url in
-                let uniqueURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".mov")
+                let uniqueURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + "_negative.mov")
                 try? FileManager.default.moveItem(at: url, to: uniqueURL)
                 
                 if isCancelled {
@@ -332,7 +320,7 @@ struct NegativeVideoCameraView: View {
             }
         }
     }
-    
+
     private var topControls: some View {
         HStack {
             if flowState != .gallery {
@@ -536,7 +524,7 @@ struct NegativeVideoCameraView: View {
             
             Button {
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                let newClip = NegativeRecordedClip(phase: currentPhase, url: url, duration: recordedDuration)
+                let newClip = BusinessNegativeRecordedClip(phase: currentPhase, url: url, duration: recordedDuration)
                 recordedClips.append(newClip)
                 gallerySelection = newClip.id
                 
@@ -567,7 +555,7 @@ struct NegativeVideoCameraView: View {
             TabView(selection: $gallerySelection) {
                 ForEach(recordedClips) { clip in
                     ZStack {
-                        NegativeSafeVideoPlayer(url: clip.url)
+                        BusinessNegativeSafeVideoPlayer(url: clip.url)
                             .ignoresSafeArea()
                         
                         VStack {
@@ -716,7 +704,7 @@ struct NegativeVideoCameraView: View {
         .padding(.bottom, 100)
     }
 
-    private func nextRequiredPhase() -> NegativeCameraPhase? {
+    private func nextRequiredPhase() -> BusinessNegativeCameraPhase? {
         for i in 0..<expectedAngles {
             if !recordedClips.contains(where: { $0.phase.indexPos == i && $0.phase.isMandatory }) {
                 return .mandatory(i + 1)
@@ -725,7 +713,7 @@ struct NegativeVideoCameraView: View {
         return nil
     }
 
-    private func deleteClip(_ clip: NegativeRecordedClip) {
+    private func deleteClip(_ clip: BusinessNegativeRecordedClip) {
         if let idx = recordedClips.firstIndex(of: clip) {
             recordedClips.remove(at: idx)
             try? FileManager.default.removeItem(at: clip.url)
@@ -757,11 +745,8 @@ struct NegativeVideoCameraView: View {
 
     private func finishAndStitch(urls: [URL]) {
         guard !isFinishing else { return }
-        guard !urls.isEmpty else {
-            finishingErrorMessage = "No recorded video was available."
-            return
-        }
-
+        guard !urls.isEmpty else { return }
+        
         isFinishing = true
         finishingErrorMessage = nil
 
@@ -782,7 +767,7 @@ struct NegativeVideoCameraView: View {
                 } catch {
                     await MainActor.run {
                         isFinishing = false
-                        finishingErrorMessage = "Failed to stitch video clips: \(error.localizedDescription)"
+                        finishingErrorMessage = "Failed to stitch video clips."
                     }
                 }
             }
@@ -828,13 +813,13 @@ struct NegativeVideoCameraView: View {
     }
 }
 
-private struct NegativeVideoCameraPreview: UIViewRepresentable {
+private struct BusinessNegativeVideoCameraPreview: UIViewRepresentable {
     let session: AVCaptureSession
     @Binding var zoomLevel: CGFloat
     var onZoomChanged: () -> Void
 
-    func makeUIView(context: Context) -> NegativeCameraPreviewUIView {
-        let view = NegativeCameraPreviewUIView()
+    func makeUIView(context: Context) -> BusinessNegativeCameraPreviewUIView {
+        let view = BusinessNegativeCameraPreviewUIView()
         view.previewLayer.session = session
         view.previewLayer.videoGravity = .resizeAspectFill
         view.onZoom = { newZoom in
@@ -845,12 +830,12 @@ private struct NegativeVideoCameraPreview: UIViewRepresentable {
         }
         return view
     }
-    func updateUIView(_ uiView: NegativeCameraPreviewUIView, context: Context) {
+    func updateUIView(_ uiView: BusinessNegativeCameraPreviewUIView, context: Context) {
         if uiView.previewLayer.session !== session { uiView.previewLayer.session = session }
     }
 }
 
-private final class NegativeCameraPreviewUIView: UIView {
+private final class BusinessNegativeCameraPreviewUIView: UIView {
     override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }
     var previewLayer: AVCaptureVideoPreviewLayer { layer as! AVCaptureVideoPreviewLayer }
     
@@ -925,9 +910,9 @@ private final class NegativeCameraPreviewUIView: UIView {
     }
 }
 
-private struct NegativeSafeVideoPlayer: UIViewControllerRepresentable, Equatable {
+private struct BusinessNegativeSafeVideoPlayer: UIViewControllerRepresentable, Equatable {
     let url: URL
-    static func == (lhs: NegativeSafeVideoPlayer, rhs: NegativeSafeVideoPlayer) -> Bool { return lhs.url == rhs.url }
+    static func == (lhs: BusinessNegativeSafeVideoPlayer, rhs: BusinessNegativeSafeVideoPlayer) -> Bool { return lhs.url == rhs.url }
     func makeUIViewController(context: Context) -> AVPlayerViewController {
         let controller = AVPlayerViewController()
         controller.player = AVPlayer(url: url)

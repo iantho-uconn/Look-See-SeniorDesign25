@@ -1,6 +1,7 @@
 package looksee.angelll.com.uifiles
 
 import android.net.Uri
+import android.widget.VideoView
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -22,12 +23,14 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import coil.compose.AsyncImage
 import kotlinx.coroutines.launch
-import looksee.angelll.com.models.NearbyLandmark
-import looksee.angelll.com.services.UploadService
-import looksee.angelll.com.services.UploadStage // Assuming this enum exists in your service
-import looksee.angelll.com.viewmodels.AuthViewModel
+import java.io.File
+
+enum class ActivePicker {
+    Camera, Library
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -37,17 +40,10 @@ fun QuickUploadView(
     onDismiss: () -> Unit
 ) {
     val coroutineScope = rememberCoroutineScope()
+    // Red until UploadService.kt is added!
     val uploadService = remember { UploadService() }
 
-    // 🚀 FIXED: Collect the StateFlows here!
-    val isUploading by uploadService.isUploading.collectAsState()
-    val uploadStage by uploadService.stage.collectAsState()
-    val uploadProgress by uploadService.progress.collectAsState()
-    val uploadStatus by uploadService.status.collectAsState()
-
-    val hasActiveSubscription by vm.hasActiveSubscription.collectAsState()
-    val tokenBalance by vm.tokenBalance.collectAsState()
-
+    var activePicker by remember { mutableStateOf<ActivePicker?>(null) }
     var selectedMediaUri by remember { mutableStateOf<Uri?>(null) }
     var isVideo by remember { mutableStateOf(false) }
 
@@ -55,62 +51,137 @@ fun QuickUploadView(
     var limitAlertTitle by remember { mutableStateOf("") }
     var limitAlertMessage by remember { mutableStateOf("") }
 
-    var showCaptureBottomSheet by remember { mutableStateOf(false) }
-    val sheetState = rememberModalBottomSheetState()
+    // Tech UI Colors
+    val bgDark = Color(0xFF0A0A0F)
+    val panelBg = Color(0xFF141414)
+    val accentCyan = Color(0xFF00CCFF)
+    val primaryBlue = Color(0xFF1C388C)
 
-    val bgDark = Color(0.04f, 0.04f, 0.06f)
-    val panelBg = Color(0.08f, 0.08f, 0.08f)
-    val accentCyan = Color(0.0f, 0.8f, 1.0f)
-    val primaryBlue = Color(0.11f, 0.22f, 0.55f)
+    suspend fun triggerRealUpload() {
+        val uri = selectedMediaUri ?: return
 
-    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri != null) {
-            selectedMediaUri = uri
-            isVideo = uri.toString().contains("video") || uri.toString().endsWith(".mp4")
+        vm.fetchUserDetails()
+        val idToken = vm.fetchIdToken()
+
+        val uploadImage = if (isVideo) null else File(uri.path ?: "") // Simplified for Android mapping
+        val uploadVideoUri = if (isVideo) uri else null
+
+        try {
+            uploadService.upload(
+                userEmail = vm.userEmail,
+                idToken = idToken,
+                label = landmark.label,
+                landmarkId = landmark.landmarkId,
+                landmarkLabel = landmark.label,
+                shortDescription = landmark.shortDescription,
+                userDescription = null,
+                latitude = landmark.latitude,
+                longitude = landmark.longitude,
+                horizontalAccuracy = 10.0,
+                videoURLs = uploadVideoUri?.let { listOf(it) } ?: emptyList(),
+                image = uploadImage
+            )
+            println("✅ QuickUpload Completed Successfully")
+
+            // 🚀 DEDUCT 1 TOKEN ON THE FRONTEND UI
+            vm.tokenBalance -= 1
+            vm.activeLandmarksCount += 1
+        } catch (e: Exception) {
+            println("❌ QuickUpload Failed: ${e.localizedMessage}")
         }
     }
 
-    val cameraPhotoLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()) { bitmap ->
-        // Handle bitmap save logic
-    }
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { },
+                navigationIcon = {
+                    TextButton(
+                        onClick = onDismiss,
+                        enabled = !(uploadService.isUploading && uploadService.stage != UploadStage.Complete)
+                    ) {
+                        Text(
+                            "Abort",
+                            fontFamily = FontFamily.Monospace,
+                            color = Color.Red,
+                            fontSize = 14.sp
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
+            )
+        },
+        containerColor = bgDark
+    ) { paddingValues ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .padding(horizontal = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(24.dp)
+        ) {
 
-    Box(modifier = Modifier.fillMaxSize().background(bgDark)) {
-        Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(24.dp)) {
-
+            // Header
             Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                TextButton(
-                    onClick = onDismiss,
-                    enabled = !(isUploading && uploadStage != UploadStage.COMPLETE)
-                ) {
-                    Text("Abort", fontFamily = FontFamily.Monospace, color = Color.Red, fontSize = 16.sp)
-                }
-            }
-
-            Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp)) {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("TARGETING LANDMARK", fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = accentCyan, fontSize = 12.sp)
-                    Text(landmark.label, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, color = Color.White)
+                    Text(
+                        "TARGETING LANDMARK",
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        color = accentCyan
+                    )
+                    Text(
+                        landmark.label,
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 22.sp,
+                        color = Color.White
+                    )
                 }
                 Spacer(modifier = Modifier.weight(1f))
-                Icon(Icons.Default.FilterCenterFocus, contentDescription = null, tint = accentCyan, modifier = Modifier.size(32.dp))
+                Icon(
+                    imageVector = Icons.Filled.FilterCenterFocus,
+                    contentDescription = null,
+                    tint = accentCyan,
+                    modifier = Modifier.size(32.dp)
+                )
             }
 
+            // Media Panel
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp)
                     .height(420.dp)
-                    .shadow(if (selectedMediaUri == null) 0.dp else 10.dp, RoundedCornerShape(24.dp), spotColor = accentCyan.copy(alpha = 0.3f))
                     .background(panelBg, RoundedCornerShape(24.dp))
-                    .border(if (selectedMediaUri == null) 1.dp else 2.dp, if (selectedMediaUri == null) Color.Gray.copy(alpha = 0.3f) else accentCyan.copy(alpha = 0.6f), RoundedCornerShape(24.dp))
+                    .border(
+                        width = if (selectedMediaUri == null) 1.dp else 2.dp,
+                        color = if (selectedMediaUri == null) Color.Gray.copy(alpha = 0.3f) else accentCyan.copy(alpha = 0.6f),
+                        shape = RoundedCornerShape(24.dp)
+                    )
+                    .shadow(
+                        elevation = if (selectedMediaUri == null) 0.dp else 10.dp,
+                        shape = RoundedCornerShape(24.dp),
+                        spotColor = accentCyan.copy(alpha = 0.3f)
+                    ),
+                contentAlignment = Alignment.Center
             ) {
                 if (selectedMediaUri != null) {
                     if (isVideo) {
-                        PositiveSafeVideoPlayer(uri = selectedMediaUri!!)
+                        AndroidView(
+                            factory = { ctx ->
+                                VideoView(ctx).apply {
+                                    setVideoURI(selectedMediaUri)
+                                    setOnPreparedListener { mp ->
+                                        mp.isLooping = true
+                                        start()
+                                    }
+                                }
+                            },
+                            modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(24.dp))
+                        )
                     } else {
                         AsyncImage(
                             model = selectedMediaUri,
@@ -120,87 +191,108 @@ fun QuickUploadView(
                         )
                     }
 
+                    // Close Button
                     Box(modifier = Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.TopEnd) {
                         IconButton(
                             onClick = {
                                 selectedMediaUri = null
                                 uploadService.reset()
                             },
-                            enabled = !isUploading,
-                            modifier = Modifier.background(Color.Red.copy(alpha = 0.8f), CircleShape)
+                            enabled = !uploadService.isUploading,
+                            modifier = Modifier.size(36.dp).background(Color.Red.copy(alpha = 0.8f), CircleShape)
                         ) {
-                            Icon(Icons.Default.Close, contentDescription = "Clear", tint = Color.White)
+                            Icon(Icons.Filled.Close, contentDescription = "Remove", tint = Color.White, modifier = Modifier.size(16.dp))
                         }
                     }
                 } else {
                     Column(
-                        modifier = Modifier.fillMaxSize(),
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
+                        verticalArrangement = Arrangement.spacedBy(20.dp)
                     ) {
-                        Icon(Icons.Default.ContentPaste, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(40.dp))
-                        Spacer(modifier = Modifier.height(20.dp))
-                        Text("AWAITING TRAINING DATA", fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold, color = Color.Gray, fontSize = 14.sp)
+                        Icon(
+                            imageVector = Icons.Filled.ContentPasteGo,
+                            contentDescription = null,
+                            modifier = Modifier.size(40.dp),
+                            tint = Color.Gray
+                        )
 
-                        Spacer(modifier = Modifier.height(20.dp))
+                        Text(
+                            "AWAITING TRAINING DATA",
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 14.sp,
+                            color = Color.Gray
+                        )
 
-                        Row(modifier = Modifier.padding(horizontal = 24.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            modifier = Modifier.padding(horizontal = 24.dp).padding(top = 10.dp)
+                        ) {
+                            // Camera Button
                             Button(
-                                onClick = { showCaptureBottomSheet = true },
+                                onClick = { activePicker = ActivePicker.Camera },
                                 modifier = Modifier.weight(1f).height(80.dp),
-                                shape = RoundedCornerShape(16.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.05f), contentColor = accentCyan)
+                                colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.05f)),
+                                shape = RoundedCornerShape(16.dp)
                             ) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Icon(Icons.Default.CameraAlt, contentDescription = null)
-                                    Spacer(Modifier.height(8.dp))
-                                    Text("CAPTURE", fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Icon(Icons.Filled.CameraEnhance, contentDescription = null, tint = accentCyan, modifier = Modifier.size(24.dp))
+                                    Text("CAPTURE", fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = accentCyan)
                                 }
                             }
 
+                            // Library Button
                             Button(
-                                onClick = { galleryLauncher.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)) },
+                                onClick = { activePicker = ActivePicker.Library },
                                 modifier = Modifier.weight(1f).height(80.dp),
-                                shape = RoundedCornerShape(16.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.05f), contentColor = Color.White)
+                                colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.05f)),
+                                shape = RoundedCornerShape(16.dp)
                             ) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Icon(Icons.Default.Folder, contentDescription = null)
-                                    Spacer(Modifier.height(8.dp))
-                                    Text("BROWSE", fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Icon(Icons.Filled.Folder, contentDescription = null, tint = Color.White, modifier = Modifier.size(24.dp))
+                                    Text("BROWSE", fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color.White)
                                 }
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(20.dp))
-                        Text("Videos must be 15 - 60 seconds.", fontFamily = FontFamily.Monospace, color = Color.Gray, fontSize = 10.sp)
+                        Text(
+                            "Videos must be 30 - 90 seconds.",
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 10.sp,
+                            color = Color.Gray
+                        )
                     }
                 }
             }
 
             Spacer(modifier = Modifier.weight(1f))
 
-            if (isUploading || uploadStage == UploadStage.COMPLETE) {
+            // Bottom Action Area
+            if (uploadService.isUploading || uploadService.stage == UploadStage.Complete) {
                 Column(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 20.dp),
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 20.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    when (uploadStage) {
-                        UploadStage.COMPLETE -> Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color.Green, modifier = Modifier.size(32.dp))
-                        UploadStage.FAILED -> Icon(Icons.Default.Warning, contentDescription = null, tint = Color.Red, modifier = Modifier.size(32.dp))
-                        else -> CircularProgressIndicator(color = accentCyan, progress = uploadProgress)
+                    when (uploadService.stage) {
+                        UploadStage.Complete -> Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = Color.Green, modifier = Modifier.size(28.dp))
+                        UploadStage.Failed -> Icon(Icons.Filled.Warning, contentDescription = null, tint = Color.Red, modifier = Modifier.size(28.dp))
+                        else -> LinearProgressIndicator(
+                            progress = { uploadService.progress },
+                            modifier = Modifier.fillMaxWidth().height(4.dp),
+                            color = accentCyan,
+                            trackColor = accentCyan.copy(alpha = 0.2f)
+                        )
                     }
 
-                    val statusColor = when (uploadStage) {
-                        UploadStage.COMPLETE -> Color.Green
-                        UploadStage.FAILED -> Color.Red
-                        else -> accentCyan
-                    }
+                    Text(
+                        uploadService.status,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp,
+                        color = if (uploadService.stage == UploadStage.Complete) Color.Green else if (uploadService.stage == UploadStage.Failed) Color.Red else accentCyan
+                    )
 
-                    Text(uploadStatus, fontFamily = FontFamily.Monospace, color = statusColor, fontSize = 12.sp)
-
-                    if (uploadStage == UploadStage.COMPLETE) {
+                    if (uploadService.stage == UploadStage.Complete) {
                         TextButton(onClick = onDismiss, modifier = Modifier.padding(top = 8.dp)) {
                             Text("DONE", fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = Color.White)
                         }
@@ -209,80 +301,88 @@ fun QuickUploadView(
             } else {
                 Button(
                     onClick = {
-                        if (!hasActiveSubscription) {
+                        if (!vm.hasActiveSubscription) {
                             limitAlertTitle = "Subscription Required"
                             limitAlertMessage = "You need an active subscription or Free Trial to upload landmarks."
                             showLimitAlert = true
-                        } else if (tokenBalance <= 0) {
+                        } else if (vm.tokenBalance <= 0) {
                             limitAlertTitle = "Out of Tokens"
                             limitAlertMessage = "You need 1 token to upload a new landmark. Purchase a token pack in Settings."
                             showLimitAlert = true
                         } else {
-                            coroutineScope.launch {
-                                vm.fetchUserDetails()
-                                val idToken = vm.fetchIdToken()
-                                val uploadVideoUrl = if (isVideo) selectedMediaUri else null
-
-                                try {
-                                    uploadService.upload(
-                                        userEmail = vm.userEmail.value, // Collect values for upload params
-                                        idToken = idToken,
-                                        label = landmark.label,
-                                        landmarkId = landmark.landmarkId,
-                                        landmarkLabel = landmark.label,
-                                        shortDescription = landmark.shortDescription,
-                                        userDescription = null,
-                                        latitude = landmark.latitude,
-                                        longitude = landmark.longitude,
-                                        horizontalAccuracy = 10.0,
-                                        videoURLs = uploadVideoUrl?.let { listOf(it.toString()) } ?: emptyList(),
-                                        imageUri = if (!isVideo) selectedMediaUri else null
-                                    )
-
-                                    vm.tokenBalance.value -= 1
-                                    vm.activeLandmarksCount.value += 1
-                                } catch (e: Exception) {
-                                    e.printStackTrace()
-                                }
-                            }
+                            coroutineScope.launch { triggerRealUpload() }
                         }
                     },
-                    enabled = selectedMediaUri != null && !isUploading,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 20.dp).height(56.dp).shadow(if (selectedMediaUri == null) 0.dp else 8.dp, RoundedCornerShape(16.dp), spotColor = primaryBlue.copy(alpha = 0.5f)),
-                    shape = RoundedCornerShape(16.dp),
+                    enabled = selectedMediaUri != null && !uploadService.isUploading,
+                    modifier = Modifier.fillMaxWidth().height(60.dp).padding(bottom = 20.dp).shadow(if (selectedMediaUri == null) 0.dp else 8.dp, RoundedCornerShape(16.dp), spotColor = primaryBlue.copy(alpha = 0.5f)),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = if (selectedMediaUri == null) Color.White.copy(alpha = 0.05f) else primaryBlue,
-                        disabledContainerColor = Color.White.copy(alpha = 0.05f),
-                        contentColor = Color.White,
-                        disabledContentColor = Color.Gray
-                    )
+                        disabledContainerColor = Color.White.copy(alpha = 0.05f)
+                    ),
+                    shape = RoundedCornerShape(16.dp)
                 ) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.CloudUpload, contentDescription = null)
-                        Text("INITIATE UPLOAD", fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        Icon(Icons.Filled.Public, contentDescription = null, tint = if (selectedMediaUri == null) Color.Gray else Color.White)
+                        Text(
+                            "INITIATE UPLOAD",
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            color = if (selectedMediaUri == null) Color.Gray else Color.White
+                        )
                     }
                 }
             }
         }
     }
 
-    if (showCaptureBottomSheet) {
-        ModalBottomSheet(onDismissRequest = { showCaptureBottomSheet = false }, sheetState = sheetState) {
-            Column(modifier = Modifier.fillMaxWidth().padding(bottom = 40.dp, top = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("Select Media Type", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 20.dp))
-
-                Button(onClick = { showCaptureBottomSheet = false; cameraPhotoLauncher.launch(null) }, modifier = Modifier.fillMaxWidth(0.8f).padding(bottom = 12.dp)) { Text("Take a Photo") }
-                Button(onClick = { showCaptureBottomSheet = false }, modifier = Modifier.fillMaxWidth(0.8f)) { Text("Record a Video") }
-            }
-        }
+    // Media Picker Logic
+    if (activePicker != null) {
+        MediaPicker(
+            sourceType = activePicker!!,
+            onMediaPicked = { uri, isVid ->
+                selectedMediaUri = uri
+                isVideo = isVid
+                activePicker = null
+            },
+            onDismiss = { activePicker = null }
+        )
     }
 
+    // Alert
     if (showLimitAlert) {
         AlertDialog(
             onDismissRequest = { showLimitAlert = false },
             title = { Text(limitAlertTitle) },
             text = { Text(limitAlertMessage) },
-            confirmButton = { TextButton(onClick = { showLimitAlert = false }) { Text("OK") } }
+            confirmButton = {
+                TextButton(onClick = { showLimitAlert = false }) { Text("OK") }
+            }
         )
+    }
+}
+
+@Composable
+fun MediaPicker(
+    sourceType: ActivePicker,
+    onMediaPicked: (Uri, Boolean) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        if (uri != null) {
+            val isVid = uri.toString().contains("video") || uri.toString().endsWith(".mp4")
+            onMediaPicked(uri, isVid)
+        } else {
+            onDismiss()
+        }
+    }
+
+    LaunchedEffect(sourceType) {
+        if (sourceType == ActivePicker.Library) {
+            galleryLauncher.launch("*/*") // Allows both image and video
+        } else {
+            // Stub for camera launch, as Android separates Image and Video capture intents.
+            onDismiss()
+        }
     }
 }

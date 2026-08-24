@@ -1,102 +1,112 @@
 package looksee.angelll.com.services
 
-import android.annotation.SuppressLint
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
+import android.net.Uri
 import androidx.camera.core.CameraSelector
 import androidx.camera.lifecycle.ProcessCameraProvider
-import androidx.camera.video.FileOutputOptions
-import androidx.camera.video.Quality
-import androidx.camera.video.QualitySelector
-import androidx.camera.video.Recorder
-import androidx.camera.video.Recording
-import androidx.camera.video.VideoCapture
-import androidx.camera.video.VideoRecordEvent
+import androidx.camera.video.*
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import java.io.File
 import java.util.UUID
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
-enum class AVAuthorizationStatus { NOT_DETERMINED, AUTHORIZED, DENIED }
+class NegativeVideoCameraService(private val context: Context) {
 
-class NegativeVideoCameraService {
-    val isRecording = MutableStateFlow(false)
-    val errorMessage = MutableStateFlow<String?>(null)
-    val authorizationStatus = MutableStateFlow(AVAuthorizationStatus.NOT_DETERMINED)
+    // Published State Equivalents
+    private val _isRecording = MutableStateFlow(false)
+    val isRecording: StateFlow<Boolean> = _isRecording.asStateFlow()
 
-    var onVideoRecorded: ((File) -> Unit)? = null
+    private val _errorMessage = MutableStateFlow<String?>(null)
+    val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
+
+    private val _authorizationStatus = MutableStateFlow(false)
+    val authorizationStatus: StateFlow<Boolean> = _authorizationStatus.asStateFlow()
 
     private var videoCapture: VideoCapture<Recorder>? = null
-    private var recording: Recording? = null
+    private var activeRecording: Recording? = null
 
-    // Android needs a Context and LifecycleOwner to bind the camera securely
-    @SuppressLint("MissingPermission")
-    fun start(context: Context, lifecycleOwner: LifecycleOwner) {
-        val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
+    // Dedicated queue for hardware operations prevents Main Thread freezing
+    private val cameraExecutor: ExecutorService = Executors.newSingleThreadExecutor()
 
-        cameraProviderFuture.addListener({
-            try {
-                val cameraProvider = cameraProviderFuture.get()
+    var onVideoRecorded: ((Uri) -> Unit)? = null
 
-                // 🚀 THE FIX: Force maximum explicit resolution (UHD/4K falling back to HD)
-                val qualitySelector = QualitySelector.fromOrderedList(
-                    listOf(Quality.UHD, Quality.FHD, Quality.HD)
-                )
-
-                val recorder = Recorder.Builder()
-                    .setQualitySelector(qualitySelector)
-                    .build()
-
-                videoCapture = VideoCapture.withOutput(recorder)
-
-                // Smart Camera Selector for virtual multi-lens arrays handled natively by DEFAULT_BACK_CAMERA
-                val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
-
-                cameraProvider.unbindAll()
-                cameraProvider.bindToLifecycle(
-                    lifecycleOwner,
-                    cameraSelector,
-                    videoCapture
-                )
-
-                authorizationStatus.value = AVAuthorizationStatus.AUTHORIZED
-
-            } catch (e: Exception) {
-                errorMessage.value = "Unable to access the back camera."
-                authorizationStatus.value = AVAuthorizationStatus.DENIED
-            }
-        }, ContextCompat.getMainExecutor(context))
+    fun start(lifecycleOwner: LifecycleOwner, provider: ProcessCameraProvider) {
+        checkPermissionsAndStart(lifecycleOwner, provider)
     }
 
     fun stop() {
-        // Unbinding is handled automatically by the lifecycle, but we stop active recordings
+        cameraExecutor.shutdown()
         stopRecording()
     }
 
-    @SuppressLint("MissingPermission")
-    fun startRecording(context: Context) {
-        if (isRecording.value) return
+    private fun checkPermissionsAndStart(lifecycleOwner: LifecycleOwner, provider: ProcessCameraProvider) {
+        val hasPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED &&
+                ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
 
-        val videoCapture = this.videoCapture ?: return
+        _authorizationStatus.value = hasPermission
+
+        if (hasPermission) {
+            setupSession(lifecycleOwner, provider)
+        } else {
+            _errorMessage.value = "Camera access is denied. Please enable it in Settings."
+        }
+    }
+
+    private fun setupSession(lifecycleOwner: LifecycleOwner, provider: ProcessCameraProvider) {
+        try {
+            // Hardware configuration pushed off the UI thread via cameraExecutor
+            val qualitySelector = QualitySelector.from(Quality.FHD, FallbackStrategy.higherQualityOrLowerThan(Quality.FHD))
+            val recorder = Recorder.Builder()
+                .setQualitySelector(qualitySelector)
+                .setExecutor(cameraExecutor)
+                .build()
+
+            videoCapture = VideoCapture.withOutput(recorder)
+
+            // Select back camera
+            val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+
+            provider.unbindAll()
+            provider.bindToLifecycle(lifecycleOwner, cameraSelector, videoCapture)
+        } catch (e: Exception) {
+            _errorMessage.value = "Unable to access the back camera: ${e.localizedMessage}"
+        }
+    }
+
+    fun startRecording() {
+        if (_isRecording.value) return
+        val capture = videoCapture ?: return
+
         val tempDir = context.cacheDir
-        val filename = "${UUID.randomUUID()}.mp4"
+        val filename = UUID.randomUUID().toString() + ".mp4"
         val file = File(tempDir, filename)
 
         val outputOptions = FileOutputOptions.Builder(file).build()
 
-        recording = videoCapture.output
+        // Missing audio permission gracefully handled by CameraX if omitted,
+        // but we explicitly suppress the check here since we handled it in checkPermissions
+        @Suppress("MissingPermission")
+        activeRecording = capture.output
             .prepareRecording(context, outputOptions)
+            .withAudioEnabled()
             .start(ContextCompat.getMainExecutor(context)) { recordEvent ->
                 when (recordEvent) {
                     is VideoRecordEvent.Start -> {
-                        isRecording.value = true
+                        _isRecording.value = true
                     }
                     is VideoRecordEvent.Finalize -> {
-                        isRecording.value = false
+                        _isRecording.value = false
                         if (!recordEvent.hasError()) {
-                            onVideoRecorded?.invoke(file)
+                            onVideoRecorded?.invoke(recordEvent.outputResults.outputUri)
                         } else {
-                            errorMessage.value = "Failed to record video: ${recordEvent.error}"
+                            _errorMessage.value = "Failed to record video: ${recordEvent.cause?.message}"
                         }
                     }
                 }
@@ -104,9 +114,8 @@ class NegativeVideoCameraService {
     }
 
     fun stopRecording() {
-        if (!isRecording.value) return
-        recording?.stop()
-        recording = null
-        isRecording.value = false
+        if (!_isRecording.value) return
+        activeRecording?.stop()
+        activeRecording = null
     }
 }
