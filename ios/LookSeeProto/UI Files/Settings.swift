@@ -1035,7 +1035,8 @@ struct UserProfileEditSheet: View {
                                     base64String = compressedImage.jpegData(compressionQuality: 0.6)?.base64EncodedString()
                                 }
                                 
-                                let result = await vm.updateUserIdentity(newUsername: draftUsername, profileBase64: base64String)
+                                // 🚀 THE FIX IS RIGHT HERE 🚀
+                                let result = await vm.updateUserIdentity(newUsername: draftUsername, emailToSave: vm.userEmail, profileBase64: base64String)
                                 isSaving = false
                                 if result.success {
                                     dismiss()

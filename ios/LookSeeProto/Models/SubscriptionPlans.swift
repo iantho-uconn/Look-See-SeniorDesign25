@@ -141,7 +141,8 @@ struct SubscriptionPlans: View {
                     } else if action == "trial" {
                         selectedTab = 2
                         isProcessing = true
-                        Task { await activateFreeTrialDirectly() }
+                        // 🚀 Reroute to Stripe instead of the old direct bypass
+                        Task { await preparePaymentSheet(purchaseType: "yearly_subscription", isFreeTrial: true) }
                     } else if action == "tokens" {
                         selectedTab = 1
                         isProcessing = true
@@ -172,7 +173,7 @@ struct SubscriptionPlans: View {
                     Color.black.opacity(0.4).ignoresSafeArea()
                     VStack(spacing: 16) {
                         ProgressView().tint(.white).scaleEffect(1.5)
-                        Text(selectedTab == 2 ? "Activating Trial..." : "Connecting to Stripe...").font(.headline).foregroundStyle(.white)
+                        Text(selectedTab == 2 ? "Preparing Trial..." : "Connecting to Stripe...").font(.headline).foregroundStyle(.white)
                     }.padding(32).background(.ultraThinMaterial).clipShape(RoundedRectangle(cornerRadius: 16))
                 }
             }
@@ -299,11 +300,6 @@ struct SubscriptionPlans: View {
 
     private var freeTrialView: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Spacer()
-                Text("NO CREDIT CARD REQUIRED").font(.system(size: 10, weight: .black)).foregroundStyle(.white).padding(.horizontal, 12).padding(.vertical, 4).background(Color.orange).clipShape(RoundedRectangle(cornerRadius: 8))
-                Spacer()
-            }.padding(.top, -10).padding(.bottom, 6)
             
             Text("14-Day Free Trial").font(.system(size: 20, weight: .bold)).foregroundStyle(.white)
             
@@ -317,12 +313,19 @@ struct SubscriptionPlans: View {
             Divider().background(Color.white.opacity(0.12)).padding(.vertical, 14)
             
             VStack(alignment: .leading, spacing: 10) {
-                featureRow("Includes exactly 5 Tokens")
+                // 🚀 Changed token count and updated feature descriptions
+                featureRow("Includes exactly 2 Tokens")
                 featureRow("Full access to business tools")
-                featureRow("No payment info required")
+                featureRow("Auto-renews to 1-Year Plan ($10)")
             }
             
             Spacer()
+            
+            // 🚀 Clear payment disclaimer before they trigger Apple Pay
+            Text("Payment information is required to start your trial. You will not be charged today. If you do not cancel before your 14 days are up, you will be billed $10 for the 1-Year Business Plan. Cancel anytime.")
+                .font(.system(size: 11))
+                .foregroundStyle(secondaryTextColor)
+                .padding(.bottom, 16)
             
             Button {
                 if !isEligibleForTrial { return }
@@ -333,7 +336,8 @@ struct SubscriptionPlans: View {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { presenter.showSignUpSheet = true }
                 } else {
                     isProcessing = true
-                    Task { await activateFreeTrialDirectly() }
+                    // 🚀 Requests payment sheet for the Trial via Stripe Subscription payload
+                    Task { await preparePaymentSheet(purchaseType: "yearly_subscription", isFreeTrial: true) }
                 }
             } label: {
                 Group {
@@ -453,61 +457,8 @@ struct SubscriptionPlans: View {
         .disabled(isProcessing)
     }
 
-    private func activateFreeTrialDirectly() async {
-        await vm.fetchUserDetails()
-        
-        guard let url = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/checkout") else {
-            await MainActor.run {
-                isProcessing = false
-                paymentStatusMessage = String(localized: "Invalid API URL.")
-            }
-            return
-        }
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        
-        let body: [String: Any] = [
-            "purchaseType": "free_trial_direct",
-            "userId": vm.userId,
-            "userEmail": vm.userEmail,
-            "addTokens": 5,
-            "isBusiness": true
-        ]
-        
-        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        
-        do {
-            let (_, response) = try await URLSession.shared.data(for: request)
-            await MainActor.run {
-                if let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) {
-                    presenter.justPurchased = true
-                    vm.tokenBalance += 5
-                    vm.hasActiveSubscription = true
-                    UserDefaults.standard.set(true, forKey: "isFreeTrial_\(vm.userEmail)")
-                    
-                    paymentStatusMessage = String(localized: "Trial Activated!")
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                        presenter.resumeCheckoutAction = nil
-                        isProcessing = false
-                        dismiss()
-                    }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { presenter.justPurchased = false }
-                } else {
-                    isProcessing = false
-                    paymentStatusMessage = String(localized: "Trial activation failed. Please try again.")
-                }
-            }
-        } catch {
-            await MainActor.run {
-                isProcessing = false
-                paymentStatusMessage = String(localized: "Network Error: \(error.localizedDescription)")
-            }
-        }
-    }
-
-    private func preparePaymentSheet(purchaseType: String, amountCents: Int = 0, tokenCount: Int = 0) async {
+    // 🚀 THE FIX: preparePaymentSheet now handles isFreeTrial safely
+    private func preparePaymentSheet(purchaseType: String, amountCents: Int = 0, tokenCount: Int = 0, isFreeTrial: Bool = false) async {
         await vm.fetchUserDetails()
         
         guard let url = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/checkout") else {
@@ -519,7 +470,11 @@ struct SubscriptionPlans: View {
         if purchaseType == "token_pack" {
             pendingTokenReward = tokenCount
         } else if purchaseType == "yearly_subscription" {
-            pendingTokenReward = selectedPlan.baseTokens + addOns[selectedAddOnIndex].tokens
+            if isFreeTrial {
+                pendingTokenReward = 2 // 🚀 Local reference updated to 2
+            } else {
+                pendingTokenReward = selectedPlan.baseTokens + addOns[selectedAddOnIndex].tokens
+            }
         }
         
         var request = URLRequest(url: url)
@@ -532,10 +487,18 @@ struct SubscriptionPlans: View {
             body["amountCents"] = amountCents
             body["tokenCount"] = tokenCount
         } else if purchaseType == "yearly_subscription" {
-            body["planYears"] = selectedPlan.years
-            body["planCents"] = selectedPlan.priceCents
-            body["addOnCents"] = addOns[selectedAddOnIndex].cents
-            body["addOnTokens"] = addOns[selectedAddOnIndex].tokens
+            if isFreeTrial {
+                body["planYears"] = 1
+                body["planCents"] = 1000
+                body["addOnCents"] = 0
+                body["tokenCount"] = 2
+                body["isFreeTrial"] = true
+            } else {
+                body["planYears"] = selectedPlan.years
+                body["planCents"] = selectedPlan.priceCents
+                body["addOnCents"] = addOns[selectedAddOnIndex].cents
+                body["tokenCount"] = selectedPlan.baseTokens + addOns[selectedAddOnIndex].tokens
+            }
         }
         
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
@@ -600,6 +563,10 @@ struct SubscriptionPlans: View {
             let selectedPlan = plans[selectedPlanIndex]
             body["planCents"] = selectedPlan.priceCents
             body["planYears"] = selectedPlan.years
+        } else if selectedTab == 2 {
+            // 🚀 Ensure Tier 1 plan details are passed on free trial success
+            body["planCents"] = 1000
+            body["planYears"] = 1
         }
         
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
@@ -626,6 +593,7 @@ struct SubscriptionPlans: View {
                 await MainActor.run {
                     if dbSuccess {
                         presenter.justPurchased = true
+                        // Note: This updates the local UI immediately. The webhook will permanently secure this in DynamoDB.
                         vm.tokenBalance += pendingTokenReward
                         
                         if selectedTab != 1 {
@@ -635,9 +603,12 @@ struct SubscriptionPlans: View {
                                 let selectedPlan = plans[selectedPlanIndex]
                                 vm.activePlanCents = selectedPlan.priceCents
                                 vm.activePlanYears = selectedPlan.years
+                                UserDefaults.standard.set(false, forKey: "isFreeTrial_\(vm.userEmail)")
+                            } else if selectedTab == 2 {
+                                vm.activePlanCents = 1000
+                                vm.activePlanYears = 1
+                                UserDefaults.standard.set(true, forKey: "isFreeTrial_\(vm.userEmail)")
                             }
-                            
-                            UserDefaults.standard.set(false, forKey: "isFreeTrial_\(vm.userEmail)")
                         }
                         
                         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {

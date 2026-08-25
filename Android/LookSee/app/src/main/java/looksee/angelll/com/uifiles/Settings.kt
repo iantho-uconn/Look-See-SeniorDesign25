@@ -1,17 +1,20 @@
 package looksee.angelll.com.uifiles
 
-import android.content.Intent
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.ImageDecoder
 import android.net.Uri
-import android.provider.Settings
+import android.util.Base64
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -19,488 +22,592 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Help
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewmodel.compose.viewModel
-import coil.compose.AsyncImage
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlin.time.Duration.Companion.milliseconds
+import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
+import java.net.URL
+import java.util.Locale
 
-// Primary color config
+// Custom Colors matching your iOS theme
 val PrimaryBlue = Color(0xFF387DFF)
+val DarkBackground = Color(0xFF0F0F1A)
+val SecondaryGrouped = Color(0xFF1C1C1E)
 
-class SettingsPresenter : ViewModel() {
+class SettingsPresenter {
     var showSubscriptionFlow by mutableStateOf(false)
     var subscriptionStartingTab by mutableIntStateOf(0)
     var showLoginSheet by mutableStateOf(false)
     var showSignUpSheet by mutableStateOf(false)
     var showUserProfileEditor by mutableStateOf(false)
-
-    var resumeCheckoutAction by mutableStateOf<String?>(null)
-    var savedAddOnIndex by mutableIntStateOf(0)
-    var savedTokenCount by mutableIntStateOf(0)
-    var savedTokenCents by mutableIntStateOf(0)
-
     var justPurchased by mutableStateOf(false)
 }
 
 @Composable
 fun SettingsScreen(
     vm: AuthViewModel,
-    authState: AuthState,
     onDismiss: () -> Unit,
-    onNavigateToBusinessLandmarks: () -> Unit,
-    onNavigateToBusinessProfile: () -> Unit,
-    onNavigateToAccountSecurity: () -> Unit,
-    onNavigateToHelpAndSupport: () -> Unit,
-    onNavigateToPrivacyPolicy: () -> Unit,
-    onNavigateToTermsOfService: () -> Unit,
-    onNavigateToDeepSettings: () -> Unit
+    onNavigate: (String) -> Unit
 ) {
-    val presenter: SettingsPresenter = viewModel()
-    val scope = rememberCoroutineScope()
+    val presenter = remember { SettingsPresenter() }
+    val haptic = LocalHapticFeedback.current
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+
     var showCancelAlert by remember { mutableStateOf(false) }
     var isCancelling by remember { mutableStateOf(false) }
-    val view = LocalView.current
 
     val isFullyLoggedIn = vm.isSignedIn && vm.userEmail.isNotEmpty()
-    val isFreeTrial = false
-    val dynamicPlanTitle = when {
-        !vm.hasActiveSubscription -> "Free Account"
-        isFreeTrial -> "14-Day Free Trial"
-        else -> "Verified Subscriber"
+
+    val isFreeTrial = remember(vm.userEmail) {
+        context.getSharedPreferences("LookSeePrefs", Context.MODE_PRIVATE)
+            .getBoolean("isFreeTrial_${vm.userEmail}", false)
     }
 
-    LaunchedEffect(authState.didSignOut) {
-        if (authState.didSignOut) onDismiss()
-    }
+    val dynamicPlanTitle = if (!vm.hasActiveSubscription) "Free Account"
+    else if (isFreeTrial) "14-Day Free Trial"
+    else "Verified Subscriber"
 
-    LaunchedEffect(isFullyLoggedIn, presenter.resumeCheckoutAction) {
-        if (isFullyLoggedIn && presenter.resumeCheckoutAction != null) {
-            presenter.showLoginSheet = false
-            presenter.showSignUpSheet = false
-            delay(800.milliseconds)
-            presenter.showSubscriptionFlow = true
+    LaunchedEffect(isFullyLoggedIn) {
+        if (!presenter.justPurchased) {
+            vm.checkSession()
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize().background(Color(0xFFF2F2F7))) {
+    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(top = 16.dp, bottom = 40.dp)
+                .padding(top = 16.dp, bottom = 40.dp),
+            verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
             // 1. PROFILE HEADER
             Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-                    .shadow(4.dp, RoundedCornerShape(20.dp)),
+                modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth(),
+                color = SecondaryGrouped,
                 shape = RoundedCornerShape(20.dp),
-                color = MaterialTheme.colorScheme.surface
+                shadowElevation = 4.dp
             ) {
-                Column(modifier = Modifier.padding(20.dp)) {
-                    if (!isFullyLoggedIn) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(16.dp)
+                if (!isFullyLoggedIn) {
+                    Row(
+                        modifier = Modifier.padding(20.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Icon(Icons.Default.AccountCircle, contentDescription = null, modifier = Modifier.size(48.dp), tint = Color.Gray)
+                        Column {
+                            Text("Guest User", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            Text("Browsing anonymously", fontSize = 14.sp, color = Color.Gray)
+                        }
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier
+                            .clickable {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                presenter.showUserProfileEditor = true
+                            }
+                            .padding(20.dp)
+                            .fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier.size(52.dp).clip(CircleShape).background(PrimaryBlue.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.HelpCenter,
-                                contentDescription = "Guest",
-                                modifier = Modifier.size(48.dp),
-                                tint = Color.Gray
-                            )
-                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text("Guest User", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                                Text("Browsing anonymously", fontSize = 14.sp, color = Color.Gray)
+                            if (vm.profileImageUrl.isNotEmpty()) {
+                                RemoteImage(
+                                    url = vm.profileImageUrl,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            } else {
+                                Icon(Icons.Default.Person, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(32.dp))
                             }
                         }
-                        LaunchedEffect(Unit) {
-                            if (!presenter.justPurchased) {
-                                vm.checkSession()
-                            }
-                        }
-                    } else {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    view.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP)
-                                    presenter.showUserProfileEditor = true
-                                },
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(52.dp)
-                                    .clip(CircleShape)
-                                    .background(PrimaryBlue.copy(alpha = 0.15f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                if (vm.profileImageUrl.isNotEmpty()) {
-                                    AsyncImage(
-                                        model = vm.profileImageUrl,
-                                        contentDescription = "Profile",
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentScale = ContentScale.Crop
-                                    )
-                                } else {
-                                    Icon(
-                                        imageVector = Icons.Default.Person,
-                                        contentDescription = "Profile",
-                                        modifier = Modifier.size(32.dp),
-                                        tint = PrimaryBlue
-                                    )
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(
+                                    text = if (vm.username.isEmpty()) "Set Username" else "@${vm.username}",
+                                    fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White
+                                )
+                                if (vm.hasActiveSubscription) {
+                                    Icon(Icons.Default.CheckCircle, contentDescription = "Verified", tint = PrimaryBlue, modifier = Modifier.size(16.dp))
                                 }
                             }
-                            Spacer(modifier = Modifier.width(16.dp))
-                            Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.weight(1f)) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        text = if (vm.username.isEmpty()) "Set Username" else "@${vm.username}",
-                                        fontSize = 20.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    if (vm.hasActiveSubscription) {
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Icon(Icons.Default.Verified, contentDescription = "Verified", tint = PrimaryBlue, modifier = Modifier.size(14.dp))
-                                    }
-                                }
-                                Text(dynamicPlanTitle, fontSize = 14.sp, color = Color.Gray, fontWeight = FontWeight.Medium)
-                            }
-                            Icon(Icons.Default.ChevronRight, contentDescription = "Edit", tint = Color.LightGray)
+                            Text(dynamicPlanTitle, fontSize = 14.sp, color = Color.Gray)
                         }
-                        LaunchedEffect(Unit) {
-                            if (!presenter.justPurchased) {
-                                vm.fetchUserDetails()
-                                vm.fetchUserUsageStats()
-                            }
-                        }
+                        Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color.DarkGray)
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
-
             // 2. BUSINESS MANAGEMENT
-            Text(
-                "BUSINESS MANAGEMENT",
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.Gray,
-                modifier = Modifier.padding(horizontal = 36.dp)
-            )
-            Spacer(modifier = Modifier.height(8.dp))
+            Column(modifier = Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("BUSINESS MANAGEMENT", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray, modifier = Modifier.padding(horizontal = 4.dp))
 
-            if (isFullyLoggedIn && vm.hasActiveSubscription) {
-                if (isFreeTrial) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(Color(0xFFFFA500).copy(alpha = 0.1f))
-                            .padding(16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Icon(Icons.Default.Warning, contentDescription = "Warning", tint = Color(0xFFFFA500))
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text("Free Trial Active", fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                            Text("Please subscribe before your 14-day trial ends to prevent your landmarks from being deactivated.", fontSize = 13.sp, color = Color.Gray)
+                if (isFullyLoggedIn && vm.hasActiveSubscription) {
+                    if (isFreeTrial) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Color(0xFF332000)).padding(16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFFFA500))
+                            Column {
+                                Text("Free Trial Active", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                Text("Please subscribe before your 14-day trial ends to prevent your landmarks from being deactivated.", fontSize = 13.sp, color = Color.LightGray)
+                            }
                         }
                     }
-                }
 
-                Surface(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).shadow(2.dp, RoundedCornerShape(20.dp)),
-                    shape = RoundedCornerShape(20.dp),
-                    color = MaterialTheme.colorScheme.surface
-                ) {
-                    Column {
-                        SettingsRow(icon = Icons.Default.Business, iconBg = PrimaryBlue, title = "Manage My Landmarks", subtitle = "View the landmarks assigned to your account.") {
-                            onNavigateToBusinessLandmarks()
+                    Surface(color = SecondaryGrouped, shape = RoundedCornerShape(20.dp)) {
+                        Column {
+                            SettingsRow(icon = Icons.Default.Business, iconBg = PrimaryBlue, title = "Manage My Landmarks", subtitle = "View the landmarks assigned to your account.") {
+                                onNavigate("BusinessLandmarksView")
+                            }
+                            HorizontalDivider(modifier = Modifier.padding(start = 68.dp), color = Color.DarkGray)
+                            SettingsRow(icon = Icons.Default.GeneratingTokens, iconBg = Color(0xFFFFA500), title = "Tokens (${vm.tokenBalance})", subtitle = "Buy tokens to update your inventory.") {
+                                presenter.subscriptionStartingTab = 1
+                                presenter.showSubscriptionFlow = true
+                            }
                         }
-                        HorizontalDivider(modifier = Modifier.padding(start = 68.dp))
-                        SettingsRow(icon = Icons.Default.GeneratingTokens, iconBg = Color(0xFFFFA500), title = "Tokens (${vm.tokenBalance})", subtitle = "Buy tokens to update your inventory.", showDivider = false) {
-                            presenter.subscriptionStartingTab = 1
+                    }
+                } else {
+                    Surface(color = SecondaryGrouped, shape = RoundedCornerShape(20.dp)) {
+                        SettingsRow(icon = Icons.Default.Lock, iconBg = Color.Gray, title = "Business Tools Locked", subtitle = "Subscribe to a plan to unlock landmarks and tokens.") {
+                            presenter.subscriptionStartingTab = 0
                             presenter.showSubscriptionFlow = true
                         }
                     }
                 }
-            } else {
-                Surface(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).shadow(2.dp, RoundedCornerShape(20.dp)),
-                    shape = RoundedCornerShape(20.dp),
-                    color = MaterialTheme.colorScheme.surface
-                ) {
-                    SettingsRow(icon = Icons.Default.Lock, iconBg = Color.Gray, title = "Business Tools Locked", subtitle = "Subscribe to a plan to unlock landmarks and tokens.", showDivider = false) {
-                        presenter.subscriptionStartingTab = 0
-                        presenter.showSubscriptionFlow = true
-                    }
-                }
             }
-
-            Spacer(modifier = Modifier.height(24.dp))
 
             // 3. ACCOUNT
             if (isFullyLoggedIn) {
-                Text(
-                    "ACCOUNT",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.Gray,
-                    modifier = Modifier.padding(horizontal = 36.dp)
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Surface(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).shadow(2.dp, RoundedCornerShape(20.dp)),
-                    shape = RoundedCornerShape(20.dp),
-                    color = MaterialTheme.colorScheme.surface
-                ) {
-                    Column {
-                        if (vm.hasActiveSubscription) {
-                            SettingsRow(icon = Icons.Default.Storefront, iconBg = Color(0xFF007AFF), title = "Business Profile", subtitle = vm.storeName.ifEmpty { "Update store name and phone number." }) {
-                                onNavigateToBusinessProfile()
+                Column(modifier = Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("ACCOUNT", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray, modifier = Modifier.padding(horizontal = 4.dp))
+
+                    Surface(color = SecondaryGrouped, shape = RoundedCornerShape(20.dp)) {
+                        Column {
+                            if (vm.hasActiveSubscription) {
+                                val businessSubtitle = if (vm.storeName.isEmpty()) "Update store name and phone number." else vm.storeName
+                                SettingsRow(icon = Icons.Default.Storefront, iconBg = PrimaryBlue, title = "Business Profile", subtitle = businessSubtitle) {
+                                    onNavigate("BusinessProfileView")
+                                }
+                            } else {
+                                SettingsRow(icon = Icons.Default.Lock, iconBg = Color.Gray, title = "Business Profile Locked", subtitle = "Subscribe to edit your public store info.") {
+                                    presenter.subscriptionStartingTab = 0
+                                    presenter.showSubscriptionFlow = true
+                                }
                             }
-                        } else {
-                            SettingsRow(icon = Icons.Default.Lock, iconBg = Color.Gray, title = "Business Profile Locked", subtitle = "Subscribe to edit your public store info.") {
-                                presenter.subscriptionStartingTab = 0
-                                presenter.showSubscriptionFlow = true
+                            HorizontalDivider(modifier = Modifier.padding(start = 68.dp), color = Color.DarkGray)
+                            SettingsRow(icon = Icons.Default.VpnKey, iconBg = Color.Gray, title = "Account & Security", subtitle = "Change your email or password.") {
+                                onNavigate("AccountSecurityView")
                             }
-                        }
-                        HorizontalDivider(modifier = Modifier.padding(start = 68.dp))
-                        SettingsRow(icon = Icons.Default.VpnKey, iconBg = Color.Gray, title = "Account & Security", subtitle = "Change your email or password.", showDivider = false) {
-                            onNavigateToAccountSecurity()
                         }
                     }
                 }
-                Spacer(modifier = Modifier.height(24.dp))
             }
 
-            // 4. SUBSCRIPTION / MEMBERSHIP
+            // 4. MEMBERSHIP / PROMO
             if (!vm.hasActiveSubscription || !isFullyLoggedIn) {
-                GuestPromoCard(
-                    onSignUp = { presenter.showSubscriptionFlow = true },
-                    onLogIn = { presenter.showLoginSheet = true },
-                    isFullyLoggedIn = isFullyLoggedIn
-                )
+                GuestPromoCard(presenter, isFullyLoggedIn)
             } else {
-                Text(
-                    "MEMBERSHIP",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.Gray,
-                    modifier = Modifier.padding(horizontal = 36.dp)
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Surface(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).shadow(2.dp, RoundedCornerShape(20.dp)),
-                    shape = RoundedCornerShape(20.dp),
-                    color = MaterialTheme.colorScheme.surface
-                ) {
-                    Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("Current Plan", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                            Text(dynamicPlanTitle, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = PrimaryBlue)
-                        }
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("Status", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                            Text("Active", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color(0xFF34C759))
-                        }
-                        HorizontalDivider()
-                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Button(
-                                onClick = { presenter.subscriptionStartingTab = 0; presenter.showSubscriptionFlow = true },
-                                modifier = Modifier.weight(1f).height(48.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue.copy(alpha = 0.1f), contentColor = PrimaryBlue),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Text("Manage Plan", fontWeight = FontWeight.Bold)
+                Column(modifier = Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("MEMBERSHIP", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray, modifier = Modifier.padding(horizontal = 4.dp))
+                    Surface(color = SecondaryGrouped, shape = RoundedCornerShape(20.dp)) {
+                        Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Current Plan", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                                Text(dynamicPlanTitle, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = PrimaryBlue)
                             }
-                            OutlinedButton(
-                                onClick = { showCancelAlert = true },
-                                modifier = Modifier.weight(1f).height(48.dp),
-                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Red),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Text("Cancel", fontWeight = FontWeight.Bold)
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Status", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                                Text("Active", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color(0xFF4CAF50))
+                            }
+                            HorizontalDivider(color = Color.DarkGray)
+                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Button(
+                                    onClick = { presenter.subscriptionStartingTab = 0; presenter.showSubscriptionFlow = true },
+                                    modifier = Modifier.weight(1f),
+                                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue.copy(alpha = 0.1f)),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Text("Manage Plan", color = PrimaryBlue, fontWeight = FontWeight.Bold)
+                                }
+                                OutlinedButton(
+                                    onClick = { showCancelAlert = true },
+                                    modifier = Modifier.weight(1f),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Red),
+                                    border = androidx.compose.foundation.BorderStroke(2.dp, Color.Red.copy(alpha = 0.8f)),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Text("Cancel", fontWeight = FontWeight.Bold)
+                                }
                             }
                         }
                     }
                 }
             }
-            Spacer(modifier = Modifier.height(24.dp))
 
             // 5. OTHER SETTINGS
-            Surface(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).shadow(2.dp, RoundedCornerShape(20.dp)),
-                shape = RoundedCornerShape(20.dp),
-                color = MaterialTheme.colorScheme.surface
-            ) {
+            Surface(modifier = Modifier.padding(horizontal = 16.dp), color = SecondaryGrouped, shape = RoundedCornerShape(20.dp)) {
                 Column {
-                    SettingsRow(icon = Icons.Default.Help, iconBg = Color(0xFFFFA500), title = "Help & Support", showDivider = true) { onNavigateToHelpAndSupport() }
-                    SettingsRow(icon = Icons.Default.PrivacyTip, iconBg = Color(0xFFA259FF), title = "Privacy Policy", showDivider = true) { onNavigateToPrivacyPolicy() }
-                    SettingsRow(icon = Icons.Default.Description, iconBg = Color(0xFF34C759), title = "Terms of Service", showDivider = true) { onNavigateToTermsOfService() }
-                    SettingsRow(icon = Icons.Default.Settings, iconBg = Color.Gray, title = "Settings & Preferences", showDivider = false) { onNavigateToDeepSettings() }
+                    SettingsRow(icon = Icons.AutoMirrored.Filled.Help, iconBg = Color(0xFFFFA500), title = "Help & Support") {}
+                    HorizontalDivider(modifier = Modifier.padding(start = 68.dp), color = Color.DarkGray)
+                    SettingsRow(icon = Icons.Default.PrivacyTip, iconBg = Color(0xFF9C27B0), title = "Privacy Policy") {}
+                    HorizontalDivider(modifier = Modifier.padding(start = 68.dp), color = Color.DarkGray)
+                    SettingsRow(icon = Icons.Default.Description, iconBg = Color(0xFF4CAF50), title = "Terms of Service") {}
+                    HorizontalDivider(modifier = Modifier.padding(start = 68.dp), color = Color.DarkGray)
+                    SettingsRow(icon = Icons.Default.Settings, iconBg = Color.Gray, title = "Settings & Preferences") {
+                        onNavigate("DeepSettingsView")
+                    }
                 }
             }
         }
 
-        if (showCancelAlert) {
-            AlertDialog(
-                onDismissRequest = { showCancelAlert = false },
-                title = { Text("Cancel Subscription?") },
-                text = { Text("Your business features will be disabled immediately.") },
-                confirmButton = {
-                    TextButton(onClick = {
-                        showCancelAlert = false
-                        isCancelling = true
-                        scope.launch {
-                            vm.cancelSubscription()
-                            isCancelling = false
-                        }
-                    }) { Text("Cancel Plan", color = Color.Red) }
-                },
-                dismissButton = { TextButton(onClick = { showCancelAlert = false }) { Text("Keep Plan") } }
-            )
-        }
-
+        // Full Screen Loading Overlay
         if (isCancelling) {
             Box(
-                modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.4f)),
+                modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f)),
                 contentAlignment = Alignment.Center
             ) {
-                Column(
-                    modifier = Modifier.background(Color(0xAA000000), RoundedCornerShape(16.dp)).padding(32.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     CircularProgressIndicator(color = Color.White)
+                    Spacer(Modifier.height(16.dp))
                     Text("Canceling Plan...", color = Color.White, fontWeight = FontWeight.Bold)
                 }
             }
         }
+    }
 
-        // Sheet Triggers
-        if (presenter.showUserProfileEditor) {
-            Dialog(onDismissRequest = { presenter.showUserProfileEditor = false }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-                UserProfileEditSheet(vm) { presenter.showUserProfileEditor = false }
-            }
-        }
+    if (showCancelAlert) {
+        AlertDialog(
+            onDismissRequest = { showCancelAlert = false },
+            title = { Text("Cancel Subscription?") },
+            text = { Text("Your business features will be disabled immediately.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showCancelAlert = false
+                    isCancelling = true
+                    coroutineScope.launch {
+                        vm.cancelSubscription()
+                        isCancelling = false
+                    }
+                }) { Text("Cancel Plan", color = Color.Red) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCancelAlert = false }) { Text("Keep Plan", color = Color.White) }
+            },
+            containerColor = SecondaryGrouped,
+            titleContentColor = Color.White,
+            textContentColor = Color.LightGray
+        )
+    }
+
+    if (presenter.showUserProfileEditor) {
+        UserProfileEditSheet(vm) { presenter.showUserProfileEditor = false }
     }
 }
 
 @Composable
-fun SettingsRow(icon: ImageVector, iconBg: Color, title: String, subtitle: String? = null, showDivider: Boolean = true, onClick: () -> Unit) {
-    Column(modifier = Modifier.clickable { onClick() }) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(modifier = Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).background(iconBg), contentAlignment = Alignment.Center) {
-                Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
-            }
-            Spacer(modifier = Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                if (subtitle != null) Text(subtitle, fontSize = 13.sp, color = Color.Gray)
-            }
-            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color.LightGray)
+fun SettingsRow(icon: ImageVector, iconBg: Color, title: String, subtitle: String? = null, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().clickable { onClick() }.padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Box(modifier = Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).background(iconBg), contentAlignment = Alignment.Center) {
+            Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
         }
-        if (showDivider) HorizontalDivider(modifier = Modifier.padding(start = 68.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+            if (subtitle != null) {
+                Text(subtitle, fontSize = 13.sp, color = Color.Gray)
+            }
+        }
+        Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color.DarkGray)
     }
 }
 
 @Composable
-fun GuestPromoCard(onSignUp: () -> Unit, onLogIn: () -> Unit, isFullyLoggedIn: Boolean) {
+fun GuestPromoCard(presenter: SettingsPresenter, isFullyLoggedIn: Boolean) {
     Box(
         modifier = Modifier
-            .fillMaxWidth()
             .padding(horizontal = 16.dp)
-            .shadow(10.dp, RoundedCornerShape(24.dp))
+            .fillMaxWidth()
             .clip(RoundedCornerShape(24.dp))
             .background(Brush.linearGradient(listOf(Color(0xFF142659), Color(0xFF0D0D1F))))
             .border(1.dp, Brush.linearGradient(listOf(PrimaryBlue.copy(alpha = 0.5f), Color.Transparent)), RoundedCornerShape(24.dp))
     ) {
         Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Box(
-                    modifier = Modifier.size(48.dp).shadow(8.dp, CircleShape).clip(CircleShape).background(PrimaryBlue),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Default.MilitaryTech, contentDescription = "Premium", tint = Color.White, modifier = Modifier.size(24.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(modifier = Modifier.size(48.dp).clip(CircleShape).background(PrimaryBlue), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Default.Star, contentDescription = null, tint = Color.White)
                 }
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Column {
                     Text("Join LookSee", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
                     Text("Upload landmarks and manage data. Free trial available.", fontSize = 14.sp, color = Color.White.copy(alpha = 0.7f))
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Button(
-                    onClick = onSignUp,
-                    modifier = Modifier.weight(1f).height(50.dp),
+                    onClick = { presenter.showSubscriptionFlow = true },
+                    modifier = Modifier.weight(1f).height(48.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
                     shape = RoundedCornerShape(14.dp)
-                ) { Text("Sign up", fontWeight = FontWeight.Bold) }
-
+                ) {
+                    Text("Sign up", fontWeight = FontWeight.Bold)
+                }
                 if (!isFullyLoggedIn) {
                     Button(
-                        onClick = onLogIn,
-                        modifier = Modifier.weight(1f).height(50.dp),
+                        onClick = { presenter.showLoginSheet = true },
+                        modifier = Modifier.weight(1f).height(48.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.15f)),
                         shape = RoundedCornerShape(14.dp)
-                    ) { Text("Log In", fontWeight = FontWeight.Bold) }
+                    ) {
+                        Text("Log In", fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }
     }
 }
 
+// MARK: - UserProfileEditSheet (Username & Avatar)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DeepSettingsScreen(
-    vm: AuthViewModel,
-    authState: AuthState,
-    onNavigateToModelSelect: () -> Unit,
-    onSignOutSuccess: () -> Unit
-) {
-    var showAlertSignOut by remember { mutableStateOf(false) }
-    var isReloading by remember { mutableStateOf(false) }
-    var showReloadSuccess by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
+fun UserProfileEditSheet(vm: AuthViewModel, onDismiss: () -> Unit) {
+    val haptic = LocalHapticFeedback.current
+    val coroutineScope = rememberCoroutineScope()
+    val focusManager = LocalFocusManager.current
     val context = LocalContext.current
-    val view = LocalView.current
 
-    val isFullyLoggedIn = vm.isSignedIn && vm.userEmail.isNotEmpty()
+    var draftUsername by remember { mutableStateOf(vm.username) }
+    var errorMessage by remember { mutableStateOf("") }
+    var isSaving by remember { mutableStateOf(false) }
 
-    Box(modifier = Modifier.fillMaxSize().background(Color(0xFFF2F2F7))) {
-        Column(modifier = Modifier.verticalScroll(rememberScrollState()).padding(top = 16.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
+    var showPhotoActionSheet by remember { mutableStateOf(false) }
+    var logoBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var logoRemoved by remember { mutableStateOf(false) }
 
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("APP LANGUAGE", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray, modifier = Modifier.padding(horizontal = 36.dp))
-                Surface(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).clickable {
-                        view.performHapticFeedback(android.view.Haptic
+    // Photo Pickers
+    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) { logoBitmap = loadBitmapFromUri(context, uri); logoRemoved = false }
+    }
+
+    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()) { bitmap ->
+        if (bitmap != null) { logoBitmap = bitmap; logoRemoved = false }
+    }
+
+    Dialog(onDismissRequest = { if (!isSaving) onDismiss() }) {
+        Box(modifier = Modifier.fillMaxSize().background(DarkBackground).clickable { focusManager.clearFocus() }) {
+            Column(
+                modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(28.dp)
+            ) {
+                Spacer(Modifier.height(20.dp))
+
+                // Avatar Section
+                Box(contentAlignment = Alignment.BottomEnd, modifier = Modifier.clickable { showPhotoActionSheet = true }) {
+                    Box(
+                        modifier = Modifier.size(114.dp).clip(CircleShape).border(2.dp, Brush.linearGradient(listOf(PrimaryBlue, Color.Magenta)), CircleShape).background(Color.DarkGray),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (logoBitmap != null) {
+                            Image(bitmap = logoBitmap!!.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                        } else if (vm.profileImageUrl.isNotEmpty() && !logoRemoved) {
+                            RemoteImage(url = vm.profileImageUrl, modifier = Modifier.fillMaxSize())
+                        } else {
+                            Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.size(48.dp), tint = Color.White.copy(0.7f))
+                        }
+                    }
+                    Box(
+                        modifier = Modifier.size(36.dp).offset(x = 2.dp, y = 2.dp).clip(CircleShape).background(PrimaryBlue).border(3.dp, DarkBackground, CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.CameraAlt, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                    }
+                }
+
+                // Username Input
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("USERNAME", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                    OutlinedTextField(
+                        value = draftUsername,
+                        onValueChange = { draftUsername = it.lowercase(Locale.ROOT).filter { char -> char.isLetterOrDigit() || char == '_' } },
+                        leadingIcon = { Text("@", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = PrimaryBlue) },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = Color.White.copy(0.05f),
+                            unfocusedContainerColor = Color.White.copy(0.05f),
+                            focusedBorderColor = PrimaryBlue,
+                            unfocusedBorderColor = Color.Transparent,
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White
+                        ),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii, capitalization = KeyboardCapitalization.None),
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Text("Usernames must be letters, numbers, and underscores only.", fontSize = 12.sp, color = Color.Gray)
+                }
+
+                if (errorMessage.isNotEmpty()) {
+                    Text(errorMessage, color = Color.Red, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                }
+
+                Button(
+                    onClick = {
+                        focusManager.clearFocus()
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        isSaving = true
+                        errorMessage = ""
+
+                        coroutineScope.launch {
+                            val base64String = logoBitmap?.let { resizeAndConvertToBase64(it) } ?: if(logoRemoved) "REMOVE" else null
+
+                            val result = vm.updateUserIdentity(
+                                newUsername = draftUsername,
+                                emailToSave = vm.userEmail,
+                                profileBase64 = if(base64String == "REMOVE") null else base64String
+                            )
+
+                            isSaving = false
+                            if (result.first) onDismiss() else errorMessage = result.second ?: "Failed to update profile."
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue, disabledContainerColor = Color.DarkGray),
+                    shape = RoundedCornerShape(16.dp),
+                    enabled = draftUsername.isNotEmpty() && !isSaving
+                ) {
+                    if (isSaving) CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
+                    else Text("Save Changes", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                }
+            }
+
+            // Photo Action Sheet (Bottom)
+            AnimatedVisibility(
+                visible = showPhotoActionSheet,
+                enter = slideInVertically(initialOffsetY = { it }),
+                exit = slideOutVertically(targetOffsetY = { it }),
+                modifier = Modifier.align(Alignment.BottomCenter)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp).padding(bottom = 30.dp)
+                        .clip(RoundedCornerShape(24.dp))
+                        .background(Color(0xFF1C1C24))
+                ) {
+                    Text("Change Profile Picture", color = Color.Gray, fontWeight = FontWeight.Bold, modifier = Modifier.padding(16.dp).align(Alignment.CenterHorizontally))
+                    HorizontalDivider(color = Color.White.copy(0.1f))
+                    TextButton(onClick = { showPhotoActionSheet = false; cameraLauncher.launch() }, modifier = Modifier.fillMaxWidth().padding(8.dp)) {
+                        Text("Take Photo", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                    HorizontalDivider(color = Color.White.copy(0.1f))
+                    TextButton(onClick = { showPhotoActionSheet = false; galleryLauncher.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, modifier = Modifier.fillMaxWidth().padding(8.dp)) {
+                        Text("Choose from Library", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                    if (logoBitmap != null || vm.profileImageUrl.isNotEmpty()) {
+                        HorizontalDivider(color = Color.White.copy(0.1f))
+                        TextButton(onClick = { showPhotoActionSheet = false; logoBitmap = null; logoRemoved = true }, modifier = Modifier.fillMaxWidth().padding(8.dp)) {
+                            Text("Remove Photo", color = Color.Red, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Native Dependencies & Helpers
+
+// 1. Dependency-Free Native Image Loader (Replaces Coil)
+@Composable
+fun RemoteImage(url: String, modifier: Modifier = Modifier, contentScale: ContentScale = ContentScale.Crop) {
+    var bitmap by remember { mutableStateOf<Bitmap?>(null) }
+
+    LaunchedEffect(url) {
+        withContext(Dispatchers.IO) {
+            try {
+                val stream = URL(url).openStream()
+                bitmap = BitmapFactory.decodeStream(stream)
+            } catch (e: Exception) { e.printStackTrace() }
+        }
+    }
+
+    if (bitmap != null) {
+        Image(bitmap = bitmap!!.asImageBitmap(), contentDescription = null, modifier = modifier, contentScale = contentScale)
+    } else {
+        Box(modifier = modifier.background(Color.DarkGray), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.White, strokeWidth = 2.dp)
+        }
+    }
+}
+
+// 2. Safe Bitmap Loader
+fun loadBitmapFromUri(context: Context, uri: Uri): Bitmap? {
+    return try {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+            ImageDecoder.decodeBitmap(ImageDecoder.createSource(context.contentResolver, uri))
+        } else {
+            @Suppress("DEPRECATION")
+            android.provider.MediaStore.Images.Media.getBitmap(context.contentResolver, uri)
+        }
+    } catch (e: Exception) {
+        null
+    }
+}
+
+// 3. Image Resizer & Base64 Encoder
+fun resizeAndConvertToBase64(image: Bitmap): String {
+    val maxDimension = 400f
+    val ratio = minOf(maxDimension / image.width, maxDimension / image.height)
+    val width = (image.width * ratio).toInt()
+    val height = (image.height * ratio).toInt()
+
+    val resizedBitmap = Bitmap.createScaledBitmap(image, width, height, true)
+    val outputStream = ByteArrayOutputStream()
+    // Compression quality matching Swift's 0.6 (60%)
+    resizedBitmap.compress(Bitmap.CompressFormat.JPEG, 60, outputStream)
+    return Base64.encodeToString(outputStream.toByteArray(), Base64.DEFAULT)
+}
+
+
+// MARK: - External Dependencies Stubs (To prevent Unresolved Reference errors)
+// You should replace or connect these to your actual Kotlin files later.
+@Composable
+fun DeepSettingsView(isFullyLoggedIn: Boolean, vm: AuthViewModel) { /* Stub */ }
+@Composable
+fun BusinessProfileView(vm: AuthViewModel) { /* Stub */ }
+@Composable
+fun AccountSecurityView(vm: AuthViewModel) { /* Stub */ }
+@Composable
+fun BusinessLandmarksView() { /* Stub */ }

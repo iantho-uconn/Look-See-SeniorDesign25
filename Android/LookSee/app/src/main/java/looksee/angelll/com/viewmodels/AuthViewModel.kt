@@ -2,107 +2,74 @@ package looksee.angelll.com.viewmodels
 
 import android.app.Application
 import android.content.Context
-import androidx.core.content.edit
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.amplifyframework.auth.AuthException
 import com.amplifyframework.auth.cognito.AWSCognitoAuthSession
 import com.amplifyframework.auth.result.step.AuthSignInStep
-import com.amplifyframework.core.Amplify
+import com.amplifyframework.kotlin.core.Amplify // 🚀 THE MAGIC FIX: Using the Kotlin Facade
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
-import kotlin.math.max
 
 class AuthViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val context: Context
-        get() = getApplication<Application>().applicationContext
+    // MARK: - State Properties
+    var isSignedIn by mutableStateOf(false)
+    var errorMessage by mutableStateOf("")
+    var userEmail by mutableStateOf("")
+    var userId by mutableStateOf("")
 
-    // MARK: Published state mapped to StateFlow
-    private val _isSignedIn = MutableStateFlow(false)
-    val isSignedIn: StateFlow<Boolean> = _isSignedIn.asStateFlow()
-
-    private val _errorMessage = MutableStateFlow("")
-    val errorMessage: StateFlow<String> = _errorMessage.asStateFlow()
-
-    private val _userEmail = MutableStateFlow("")
-    val userEmail: StateFlow<String> = _userEmail.asStateFlow()
-
-    private val _userId = MutableStateFlow("")
-    val userId: StateFlow<String> = _userId.asStateFlow()
-
-    private val _requiresNewPassword = MutableStateFlow(false)
-    val requiresNewPassword: StateFlow<Boolean> = _requiresNewPassword.asStateFlow()
+    var requiresNewPassword by mutableStateOf(false)
 
     // TOKEN / SUB / PROFILE TRACKERS
-    private val _tokenBalance = MutableStateFlow(0)
-    val tokenBalance: StateFlow<Int> = _tokenBalance.asStateFlow()
+    var tokenBalance by mutableIntStateOf(0)
+    var activeLandmarksCount by mutableIntStateOf(0)
+    var hasActiveSubscription by mutableStateOf(false)
+    var stripeSubscriptionId by mutableStateOf("")
 
-    private val _activeLandmarksCount = MutableStateFlow(0)
-    val activeLandmarksCount: StateFlow<Int> = _activeLandmarksCount.asStateFlow()
+    var activePlanCents by mutableIntStateOf(0)
+    var activePlanYears by mutableIntStateOf(0)
 
-    private val _hasActiveSubscription = MutableStateFlow(false)
-    val hasActiveSubscription: StateFlow<Boolean> = _hasActiveSubscription.asStateFlow()
+    // Personal User Identity
+    var username by mutableStateOf("")
+    var profileImageUrl by mutableStateOf("")
 
-    private val _stripeSubscriptionId = MutableStateFlow("")
-    val stripeSubscriptionId: StateFlow<String> = _stripeSubscriptionId.asStateFlow()
+    // Memory variable to carry the username from Signup to Login
+    var pendingUsernameToSave by mutableStateOf("")
 
-    private val _activePlanCents = MutableStateFlow(0)
-    val activePlanCents: StateFlow<Int> = _activePlanCents.asStateFlow()
+    // Website and Address properties
+    var storeName by mutableStateOf("")
+    var phoneNumber by mutableStateOf("")
+    var storeWebsite by mutableStateOf("")
+    var storeAddress by mutableStateOf("")
+    var storeBio by mutableStateOf("")
+    var storeLogoUrl by mutableStateOf("")
 
-    private val _activePlanYears = MutableStateFlow(0)
-    val activePlanYears: StateFlow<Int> = _activePlanYears.asStateFlow()
-
-    // 🚀 NEW: Personal User Identity
-    private val _username = MutableStateFlow("")
-    val username: StateFlow<String> = _username.asStateFlow()
-
-    private val _profileImageUrl = MutableStateFlow("")
-    val profileImageUrl: StateFlow<String> = _profileImageUrl.asStateFlow()
-
-    // 🚀 FIXED: Memory variable to carry the username from Signup to Login
-    var pendingUsernameToSave: String = ""
-
-    private val _storeName = MutableStateFlow("")
-    val storeName: StateFlow<String> = _storeName.asStateFlow()
-
-    private val _phoneNumber = MutableStateFlow("")
-    val phoneNumber: StateFlow<String> = _phoneNumber.asStateFlow()
-
-    private val _storeBio = MutableStateFlow("")
-    val storeBio: StateFlow<String> = _storeBio.asStateFlow()
-
-    private val _storeLogoUrl = MutableStateFlow("")
-    val storeLogoUrl: StateFlow<String> = _storeLogoUrl.asStateFlow()
+    // MARK: - Core Methods
 
     fun checkSession() {
         viewModelScope.launch {
             try {
-                // Wrapper to convert Java callbacks to Kotlin Coroutines
-                val session = suspendCancellableCoroutine<com.amplifyframework.auth.AuthSession> { cont ->
-                    Amplify.Auth.fetchAuthSession({ cont.resume(it) }, { cont.resumeWithException(it) })
-                }
+                val session = Amplify.Auth.fetchAuthSession()
+                isSignedIn = session.isSignedIn
 
-                _isSignedIn.value = session.isSignedIn
-
-                if (session.isSignedIn) {
+                if (isSignedIn) {
                     fetchUserDetails()
-                    if (_isSignedIn.value) {
+                    if (isSignedIn) {
                         fetchUserUsageStats()
                     }
                 }
-            } catch (e: Exception) {
-                _isSignedIn.value = false
+            } catch (_: Exception) {
+                isSignedIn = false
             }
         }
     }
@@ -110,123 +77,149 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     fun signIn(usernameInput: String, passwordInput: String) {
         viewModelScope.launch {
             try {
-                // Expected ghost error until AuthService is brought over
-                val result = AuthService.shared.signIn(usernameInput, passwordInput)
+                val result = Amplify.Auth.signIn(usernameInput, passwordInput)
                 if (result.isSignInComplete) {
-                    _isSignedIn.value = true
-                    _requiresNewPassword.value = false
-                    _errorMessage.value = ""
-                    fetchUserDetails()
+                    isSignedIn = true
+                    requiresNewPassword = false
+                    errorMessage = ""
 
-                    // 🚀 FIXED: The exact moment we get the real userId, we save the pending username!
+                    // 🚀 Capture the typed email instantly to bypass state delays
+                    val guaranteedEmail = usernameInput
+                    userEmail = guaranteedEmail
+
+                    try {
+                        val user = Amplify.Auth.getCurrentUser()
+                        userId = user.userId
+                    } catch (_: Exception) { /* User might not be fully cached yet */ }
+
+                    // 🚀 Force-feed the guaranteed email directly into the network payloads
+                    initDatabaseRow(emailToSave = guaranteedEmail)
+
                     if (pendingUsernameToSave.isNotEmpty()) {
-                        updateUserIdentity(newUsername = pendingUsernameToSave)
+                        updateUserIdentity(newUsername = pendingUsernameToSave, emailToSave = guaranteedEmail)
                         pendingUsernameToSave = "" // Clear memory
                     }
 
+                    fetchUserDetails()
                     fetchUserUsageStats()
                 } else {
                     when (result.nextStep.signInStep) {
                         AuthSignInStep.CONFIRM_SIGN_IN_WITH_NEW_PASSWORD -> {
-                            _requiresNewPassword.value = true
-                            _errorMessage.value = "Please enter a new permanent password."
+                            requiresNewPassword = true
+                            errorMessage = "Please enter a new permanent password."
                         }
                         AuthSignInStep.CONFIRM_SIGN_UP -> {
-                            _errorMessage.value = "Account not verified. Please check your email for a confirmation code."
+                            errorMessage = "Account not verified. Please check your email for a confirmation code."
                         }
                         AuthSignInStep.RESET_PASSWORD -> {
-                            _errorMessage.value = "Password reset required."
+                            errorMessage = "Password reset required."
                         }
                         else -> {
-                            _errorMessage.value = "Additional verification required."
+                            errorMessage = "Additional verification required."
                         }
                     }
-                    _isSignedIn.value = false
+                    isSignedIn = false
                 }
-            } catch (error: Exception) {
-                _errorMessage.value = friendlyMessage(error)
-                _isSignedIn.value = false
+            } catch (error: AuthException) {
+                errorMessage = friendlyMessage(error)
+                isSignedIn = false
+            } catch (_: Exception) {
+                errorMessage = "Something went wrong. Please try again."
+                isSignedIn = false
             }
         }
     }
 
-    fun confirmNewPassword(newPasswordInput: String) {
+    fun confirmNewPassword(newPassword: String) {
         viewModelScope.launch {
             try {
-                val result = suspendCancellableCoroutine<com.amplifyframework.auth.result.AuthSignInResult> { cont ->
-                    Amplify.Auth.confirmSignIn(newPasswordInput, { cont.resume(it) }, { cont.resumeWithException(it) })
-                }
-
+                val result = Amplify.Auth.confirmSignIn(newPassword)
                 if (result.isSignInComplete) {
-                    _isSignedIn.value = true
-                    _requiresNewPassword.value = false
-                    _errorMessage.value = ""
+                    isSignedIn = true
+                    requiresNewPassword = false
+                    errorMessage = ""
+
+                    try {
+                        val user = Amplify.Auth.getCurrentUser()
+                        userId = user.userId
+                    } catch (_: Exception) { /* Ignored */ }
+
+                    initDatabaseRow(emailToSave = userEmail)
                     fetchUserDetails()
                     fetchUserUsageStats()
                 } else {
-                    _errorMessage.value = "Additional steps required to sign in."
+                    errorMessage = "Additional steps required to sign in."
                 }
-            } catch (error: Exception) {
-                _errorMessage.value = friendlyMessage(error)
+            } catch (error: AuthException) {
+                errorMessage = friendlyMessage(error)
+            } catch (_: Exception) {
+                errorMessage = "Failed to update password. Please try again."
             }
         }
     }
 
-    fun signOut(authState: AuthState) {
+    fun signOut() {
         viewModelScope.launch {
-            // Expected ghost error until AuthService is brought over
-            AuthService.shared.signOut()
-            authState.signOut()
+            try {
+                Amplify.Auth.signOut()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
 
-            _isSignedIn.value = false
-            _requiresNewPassword.value = false
-            _tokenBalance.value = 0
-            _activeLandmarksCount.value = 0
-            _hasActiveSubscription.value = false
-            _stripeSubscriptionId.value = ""
-            _activePlanCents.value = 0
-            _activePlanYears.value = 0
-            _username.value = ""
-            _profileImageUrl.value = ""
-            _storeName.value = ""
-            _phoneNumber.value = ""
-            _storeBio.value = ""
-            _storeLogoUrl.value = ""
-            _userId.value = ""
-            _userEmail.value = ""
+            withContext(Dispatchers.Main) {
+                isSignedIn = false
+                requiresNewPassword = false
+                tokenBalance = 0
+                activeLandmarksCount = 0
+                hasActiveSubscription = false
+                stripeSubscriptionId = ""
+                activePlanCents = 0
+                activePlanYears = 0
+                username = ""
+                profileImageUrl = ""
+                storeName = ""
+                phoneNumber = ""
+                storeWebsite = ""
+                storeAddress = ""
+                storeBio = ""
+                storeLogoUrl = ""
+                userId = ""
+                userEmail = ""
+            }
         }
     }
 
     suspend fun fetchUserDetails() {
         try {
             val user = Amplify.Auth.getCurrentUser()
-            _userId.value = user.userId
+            userId = user.userId
 
-            val attributes = suspendCancellableCoroutine<List<com.amplifyframework.auth.AuthUserAttribute>> { cont ->
-                Amplify.Auth.fetchUserAttributes({ cont.resume(it) }, { cont.resumeWithException(it) })
-            }
-
-            val emailAttr = attributes.firstOrNull { it.key.keyString == "email" }
+            val attributes = Amplify.Auth.fetchUserAttributes()
+            val emailAttr = attributes.find { it.key.keyString == "email" }
             if (emailAttr != null) {
-                _userEmail.value = emailAttr.value
+                userEmail = emailAttr.value
             }
         } catch (error: Exception) {
             println("❌ Failed to fetch user details: $error")
-            val errString = error.toString()
-            if (errString.contains("userNotFound") || errString.contains("NotAuthorizedException") || errString.contains("deleted")) {
-                suspendCancellableCoroutine<com.amplifyframework.auth.result.AuthSignOutResult> { cont ->
-                    Amplify.Auth.signOut { cont.resume(it) }
+            val errString = error.toString().lowercase()
+            if (errString.contains("usernotfound") ||
+                errString.contains("notauthorizedexception") ||
+                errString.contains("deleted")) {
+
+                try { Amplify.Auth.signOut() } catch (_: Exception) { }
+
+                withContext(Dispatchers.Main) {
+                    isSignedIn = false
+                    userId = ""
+                    userEmail = ""
+                    username = ""
+                    profileImageUrl = ""
+                    hasActiveSubscription = false
+                    tokenBalance = 0
+                    activePlanCents = 0
+                    activePlanYears = 0
+                    stripeSubscriptionId = ""
                 }
-                _isSignedIn.value = false
-                _userId.value = ""
-                _userEmail.value = ""
-                _username.value = ""
-                _profileImageUrl.value = ""
-                _hasActiveSubscription.value = false
-                _tokenBalance.value = 0
-                _activePlanCents.value = 0
-                _activePlanYears.value = 0
-                _stripeSubscriptionId.value = ""
             }
         }
     }
@@ -238,219 +231,213 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     suspend fun fetchIdToken(): String {
-        return try {
-            val session = suspendCancellableCoroutine<com.amplifyframework.auth.AuthSession> { cont ->
-                Amplify.Auth.fetchAuthSession({ cont.resume(it) }, { cont.resumeWithException(it) })
-            }
-            val tokenProvider = session as? AWSCognitoAuthSession
-            val idToken = tokenProvider?.userPoolTokensResult?.value?.idToken
-            idToken ?: ""
-        } catch (error: Exception) {
-            println("❌ Failed to fetch session token: $error")
-            ""
+        try {
+            val session = Amplify.Auth.fetchAuthSession() as? AWSCognitoAuthSession
+            return session?.userPoolTokensResult?.value?.idToken ?: ""
+        } catch (e: Exception) {
+            println("❌ Failed to fetch session token: $e")
         }
+        return ""
     }
 
+    // MARK: - Networking & API Calls
+
     suspend fun fetchUserUsageStats() {
-        if (_userId.value.isEmpty()) return
-        val urlString = "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/LookSeeGetUserStats"
+        if (userId.isEmpty()) return
 
-        withContext(Dispatchers.IO) {
-            try {
-                val url = URL(urlString)
-                val connection = url.openConnection() as HttpURLConnection
-                connection.requestMethod = "POST"
-                connection.setRequestProperty("Content-Type", "application/json")
-                connection.doOutput = true
+        val url = "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/LookSeeGetUserStats"
+        val body = JSONObject().apply { put("userId", userId) }
 
-                val body = JSONObject().apply {
-                    put("userId", _userId.value)
+        val (code, data) = makePostRequest(url, body)
+        if (code == 200 && data != null) {
+            val json = JSONObject(data)
+            withContext(Dispatchers.Main) {
+                val fetchedBalance = json.optInt("tokenBalance", 0)
+                val fetchedLandmarks = json.optInt("activeLandmarksCount", 0)
+                val fetchedSub = json.optBoolean("hasActiveSubscription", false)
+                val fetchedTier = json.optString("tier", "")
+                val fetchedStripeId = json.optString("stripeSubscriptionId", "")
+
+                val fetchedPlanCents = json.optInt("activePlanCents", 0)
+                val fetchedPlanYears = json.optInt("activePlanYears", 0)
+
+                tokenBalance = maxOf(tokenBalance, fetchedBalance)
+                activeLandmarksCount = fetchedLandmarks
+
+                val isSubscribedOnBackend = fetchedSub || fetchedTier == "business" || fetchedStripeId.isNotEmpty()
+                hasActiveSubscription = hasActiveSubscription || isSubscribedOnBackend
+
+                activePlanCents = fetchedPlanCents
+                activePlanYears = fetchedPlanYears
+
+                if (fetchedStripeId.isNotEmpty()) {
+                    stripeSubscriptionId = fetchedStripeId
                 }
 
-                OutputStreamWriter(connection.outputStream).use { it.write(body.toString()) }
+                json.optString("username", "").takeIf { it.isNotEmpty() }?.let { username = it }
+                json.optString("profileImageUrl", "").takeIf { it.isNotEmpty() }?.let { profileImageUrl = it }
 
-                if (connection.responseCode == 200) {
-                    val responseStr = connection.inputStream.bufferedReader().use { it.readText() }
-                    val json = JSONObject(responseStr)
-
-                    withContext(Dispatchers.Main) {
-                        val fetchedBalance = json.optInt("tokenBalance", 0)
-                        val fetchedLandmarks = json.optInt("activeLandmarksCount", 0)
-                        val fetchedSub = json.optBoolean("hasActiveSubscription", false)
-                        val fetchedTier = json.optString("tier", "")
-                        val fetchedStripeId = json.optString("stripeSubscriptionId", "")
-                        val fetchedPlanCents = json.optInt("activePlanCents", 0)
-                        val fetchedPlanYears = json.optInt("activePlanYears", 0)
-
-                        _tokenBalance.value = max(_tokenBalance.value, fetchedBalance)
-                        _activeLandmarksCount.value = fetchedLandmarks
-
-                        val isSubscribedOnBackend = fetchedSub || fetchedTier == "business" || fetchedStripeId.isNotEmpty()
-                        _hasActiveSubscription.value = _hasActiveSubscription.value || isSubscribedOnBackend
-
-                        _activePlanCents.value = fetchedPlanCents
-                        _activePlanYears.value = fetchedPlanYears
-
-                        if (fetchedStripeId.isNotEmpty()) {
-                            _stripeSubscriptionId.value = fetchedStripeId
-                        }
-
-                        json.optString("username", "").takeIf { it.isNotEmpty() }?.let { _username.value = it }
-                        json.optString("profileImageUrl", "").takeIf { it.isNotEmpty() }?.let { _profileImageUrl.value = it }
-                        json.optString("storeName", "").takeIf { it.isNotEmpty() }?.let { _storeName.value = it }
-                        json.optString("phoneNumber", "").takeIf { it.isNotEmpty() }?.let { _phoneNumber.value = it }
-                        json.optString("storeBio", "").takeIf { it.isNotEmpty() }?.let { _storeBio.value = it }
-                        json.optString("storeLogoUrl", "").takeIf { it.isNotEmpty() }?.let { _storeLogoUrl.value = it }
-                    }
-                }
-            } catch (error: Exception) {
-                println("❌ Failed to fetch stats: ${error.localizedMessage}")
+                json.optString("storeName", "").takeIf { it.isNotEmpty() }?.let { storeName = it }
+                json.optString("phoneNumber", "").takeIf { it.isNotEmpty() }?.let { phoneNumber = it }
+                json.optString("storeWebsite", "").takeIf { it.isNotEmpty() }?.let { storeWebsite = it }
+                json.optString("storeAddress", "").takeIf { it.isNotEmpty() }?.let { storeAddress = it }
+                json.optString("storeBio", "").takeIf { it.isNotEmpty() }?.let { storeBio = it }
+                json.optString("storeLogoUrl", "").takeIf { it.isNotEmpty() }?.let { storeLogoUrl = it }
             }
+        } else {
+            println("❌ Failed to fetch stats. Code: $code")
         }
     }
 
     suspend fun cancelSubscription(): Boolean {
-        if (_userId.value.isEmpty()) return false
-        val urlString = "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/checkout"
+        if (userId.isEmpty()) return false
+        val url = "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/checkout"
 
-        return withContext(Dispatchers.IO) {
-            try {
-                val url = URL(urlString)
-                val connection = url.openConnection() as HttpURLConnection
-                connection.requestMethod = "POST"
-                connection.setRequestProperty("Content-Type", "application/json")
-                connection.doOutput = true
+        val body = JSONObject().apply {
+            put("purchaseType", "cancel_subscription")
+            put("userId", userId)
+            put("subscriptionId", stripeSubscriptionId)
+        }
 
-                val body = JSONObject().apply {
-                    put("purchaseType", "cancel_subscription")
-                    put("userId", _userId.value)
-                    put("subscriptionId", _stripeSubscriptionId.value)
-                }
+        val (code, _) = makePostRequest(url, body)
+        return if (code == 200) {
+            withContext(Dispatchers.Main) {
+                hasActiveSubscription = false
+                stripeSubscriptionId = ""
+                activePlanCents = 0
+                activePlanYears = 0
 
-                OutputStreamWriter(connection.outputStream).use { it.write(body.toString()) }
+                val prefs = getApplication<Application>().getSharedPreferences("LookSeePrefs", Context.MODE_PRIVATE)
+                prefs.edit().putBoolean("isFreeTrial_$userEmail", false).apply()
+            }
+            true
+        } else {
+            println("❌ Failed to cancel subscription")
+            false
+        }
+    }
 
-                if (connection.responseCode == 200) {
-                    withContext(Dispatchers.Main) {
-                        _hasActiveSubscription.value = false
-                        _stripeSubscriptionId.value = ""
-                        _activePlanCents.value = 0
-                        _activePlanYears.value = 0
+    suspend fun updateUserIdentity(newUsername: String, emailToSave: String, profileBase64: String? = null): Pair<Boolean, String?> {
+        if (userId.isEmpty()) return Pair(false, "User not found")
+        val url = "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/checkout"
 
-                        val sharedPrefs = context.getSharedPreferences("LookSeePrefs", Context.MODE_PRIVATE)
-                        sharedPrefs.edit { putBoolean("isFreeTrial_${_userEmail.value}", false) }
-                    }
-                    true
-                } else false
-            } catch (error: Exception) {
-                println("❌ Failed to cancel subscription: $error")
-                false
+        val body = JSONObject().apply {
+            put("purchaseType", "update_user_identity")
+            put("userId", userId)
+            put("userEmail", emailToSave) // 🚀 Forced parameter injection
+            put("username", newUsername)
+            put("currentUsername", username)
+            put("profileImageUrl", profileImageUrl)
+            profileBase64?.let { put("profileBase64", it) }
+        }
+
+        val (code, data) = makePostRequest(url, body)
+        return if (code == 200 && data != null) {
+            val json = JSONObject(data)
+            withContext(Dispatchers.Main) {
+                json.optString("username", "").takeIf { it.isNotEmpty() }?.let { username = it }
+                json.optString("profileImageUrl", "").takeIf { it.isNotEmpty() }?.let { profileImageUrl = it }
+            }
+            Pair(true, null)
+        } else {
+            val errStr = data ?: "Unknown Error"
+            if (errStr.contains("ERR_USERNAME_TAKEN")) {
+                Pair(false, "That username is already taken.")
+            } else {
+                Pair(false, "Server Error: $errStr")
             }
         }
     }
 
-    suspend fun updateUserIdentity(newUsername: String, profileBase64: String? = null): Pair<Boolean, String?> {
-        if (_userId.value.isEmpty()) return Pair(false, "User not found")
-        val urlString = "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/checkout"
+    suspend fun updateBusinessProfile(
+        storeNameInput: String,
+        phoneNumberInput: String,
+        storeWebsiteInput: String,
+        storeAddressInput: String,
+        storeBioInput: String,
+        storeLogoUrlInput: String,
+        storeLogoBase64Input: String? = null
+    ): Boolean {
+        if (userId.isEmpty()) return false
+        val url = "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/checkout"
 
-        return withContext(Dispatchers.IO) {
-            try {
-                val url = URL(urlString)
-                val connection = url.openConnection() as HttpURLConnection
-                connection.requestMethod = "POST"
-                connection.setRequestProperty("Content-Type", "application/json")
-                connection.doOutput = true
+        val body = JSONObject().apply {
+            put("purchaseType", "update_profile")
+            put("userId", userId)
+            put("storeName", storeNameInput)
+            put("phoneNumber", phoneNumberInput)
+            put("storeWebsite", storeWebsiteInput)
+            put("storeAddress", storeAddressInput)
+            put("storeBio", storeBioInput)
+            put("storeLogoUrl", storeLogoUrlInput)
+            storeLogoBase64Input?.let { put("storeLogoBase64", it) }
+        }
 
-                val body = JSONObject().apply {
-                    put("purchaseType", "update_user_identity")
-                    put("userId", _userId.value)
-                    put("username", newUsername)
-                    put("currentUsername", _username.value)
-                    put("profileImageUrl", _profileImageUrl.value)
-                    if (profileBase64 != null) put("profileBase64", profileBase64)
-                }
+        val (code, data) = makePostRequest(url, body)
+        return if (code == 200) {
+            val json = data?.let { JSONObject(it) }
+            val newLogoUrl = json?.optString("logoUrl", "")
 
-                OutputStreamWriter(connection.outputStream).use { it.write(body.toString()) }
-
-                if (connection.responseCode == 200) {
-                    val responseStr = connection.inputStream.bufferedReader().use { it.readText() }
-                    val json = JSONObject(responseStr)
-                    withContext(Dispatchers.Main) {
-                        json.optString("username", "").takeIf { it.isNotEmpty() }?.let { _username.value = it }
-                        json.optString("profileImageUrl", "").takeIf { it.isNotEmpty() }?.let { _profileImageUrl.value = it }
-                    }
-                    Pair(true, null)
-                } else {
-                    val errorStr = connection.errorStream?.bufferedReader()?.use { it.readText() } ?: "Unknown Error"
-                    if (errorStr.contains("ERR_USERNAME_TAKEN")) {
-                        Pair(false, "That username is already taken.")
-                    } else {
-                        Pair(false, "Server Error: $errorStr")
-                    }
-                }
-            } catch (error: Exception) {
-                Pair(false, error.localizedMessage)
+            withContext(Dispatchers.Main) {
+                storeName = storeNameInput
+                phoneNumber = phoneNumberInput
+                storeWebsite = storeWebsiteInput
+                storeAddress = storeAddressInput
+                storeBio = storeBioInput
+                storeLogoUrl = newLogoUrl?.takeIf { it.isNotEmpty() } ?: storeLogoUrlInput
             }
+            true
+        } else {
+            println("❌ Backend Rejected Upload ($code): $data")
+            false
         }
     }
 
-    suspend fun updateBusinessProfile(newStoreName: String, newPhoneNumber: String, newStoreBio: String, newStoreLogoUrl: String, storeLogoBase64: String? = null): Boolean {
-        if (_userId.value.isEmpty()) return false
-        val urlString = "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/checkout"
+    // 🚀 NEW: Signature forces an email string to be passed in
+    suspend fun initDatabaseRow(emailToSave: String) {
+        if (userId.isEmpty()) return
+        val url = "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/checkout"
 
-        return withContext(Dispatchers.IO) {
-            try {
-                val url = URL(urlString)
-                val connection = url.openConnection() as HttpURLConnection
-                connection.requestMethod = "POST"
-                connection.setRequestProperty("Content-Type", "application/json")
-                connection.doOutput = true
+        val body = JSONObject().apply {
+            put("purchaseType", "init_user")
+            put("userId", userId)
+            put("userEmail", emailToSave) // 🚀 Forced parameter injection
+        }
+        makePostRequest(url, body)
+    }
 
-                val body = JSONObject().apply {
-                    put("purchaseType", "update_profile")
-                    put("userId", _userId.value)
-                    put("storeName", newStoreName)
-                    put("phoneNumber", newPhoneNumber)
-                    put("storeBio", newStoreBio)
-                    put("storeLogoUrl", newStoreLogoUrl)
-                    if (storeLogoBase64 != null) put("storeLogoBase64", storeLogoBase64)
-                }
+    private fun friendlyMessage(error: AuthException): String {
+        val fullMessage = "${error.message} ${error.recoverySuggestion}".lowercase()
 
-                OutputStreamWriter(connection.outputStream).use { it.write(body.toString()) }
-
-                if (connection.responseCode == 200) {
-                    val responseStr = connection.inputStream.bufferedReader().use { it.readText() }
-                    val json = try { JSONObject(responseStr) } catch (e: Exception) { null }
-
-                    withContext(Dispatchers.Main) {
-                        _storeName.value = newStoreName
-                        _phoneNumber.value = newPhoneNumber
-                        _storeBio.value = newStoreBio
-                        _storeLogoUrl.value = json?.optString("logoUrl")?.takeIf { it.isNotEmpty() } ?: newStoreLogoUrl
-                    }
-                    true
-                } else {
-                    val errorStr = connection.errorStream?.bufferedReader()?.use { it.readText() }
-                    println("❌ Backend Rejected Upload (${connection.responseCode}): $errorStr")
-                    false
-                }
-            } catch (error: Exception) {
-                println("❌ Failed to update business profile: $error")
-                false
-            }
+        return when {
+            fullMessage.contains("incorrect username or password") -> "Incorrect email or password. Please try again."
+            fullMessage.contains("usernotfound") -> "No account found with that email."
+            fullMessage.contains("usernotconfirmed") -> "Please verify your email."
+            else -> "Something went wrong. Please try again."
         }
     }
 
-    private fun friendlyMessage(error: Exception): String {
-        val description = error.message ?: error.cause?.toString() ?: ""
-        if (description.contains("NotAuthorizedException") || description.contains("Incorrect username or password")) {
-            return "Incorrect email or password. Please try again."
+    // MARK: - Native Android Network Helper (No Retrofit Required)
+    private suspend fun makePostRequest(urlStr: String, body: JSONObject): Pair<Int, String?> = withContext(Dispatchers.IO) {
+        try {
+            val url = URL(urlStr)
+            val conn = url.openConnection() as HttpURLConnection
+            conn.requestMethod = "POST"
+            conn.setRequestProperty("Content-Type", "application/json")
+            conn.doOutput = true
+
+            OutputStreamWriter(conn.outputStream).use { it.write(body.toString()) }
+
+            val responseCode = conn.responseCode
+            val responseData = if (responseCode in 200..299) {
+                conn.inputStream.bufferedReader().use { it.readText() }
+            } else {
+                conn.errorStream?.bufferedReader()?.use { it.readText() }
+            }
+            Pair(responseCode, responseData)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Pair(500, e.localizedMessage)
         }
-        if (description.contains("UserNotFound")) {
-            return "No account found with that email."
-        }
-        if (description.contains("UserNotConfirmed")) {
-            return "Please verify your email."
-        }
-        return "Something went wrong. Please try again."
     }
 }

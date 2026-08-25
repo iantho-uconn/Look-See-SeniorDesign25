@@ -195,7 +195,7 @@ struct GuestSignUpView: View {
                     if signInResult.isSignedIn {
                         await vm.fetchUserDetails()
                         // 🚀 CLAIM USERNAME IMMEDIATELY AFTER LOGIN
-                        let _ = await vm.updateUserIdentity(newUsername: username)
+                        let _ = await vm.updateUserIdentity(newUsername: username, emailToSave: sanitizedEmail)
                         await vm.fetchUserUsageStats()
                         DispatchQueue.main.async {
                             vm.isSignedIn = true
@@ -228,7 +228,7 @@ struct GuestSignUpView: View {
                     if signInResult.isSignedIn {
                         await vm.fetchUserDetails()
                         // 🚀 CLAIM USERNAME ON FINAL SUCCESS
-                        let _ = await vm.updateUserIdentity(newUsername: username)
+                        let _ = await vm.updateUserIdentity(newUsername: username, emailToSave: sanitizedEmail)
                         await vm.fetchUserUsageStats()
                         DispatchQueue.main.async {
                             vm.isSignedIn = true

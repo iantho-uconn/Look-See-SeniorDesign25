@@ -34,7 +34,7 @@ class AuthViewModel: ObservableObject {
     // Memory variable to carry the username from Signup to Login
     @Published var pendingUsernameToSave: String = ""
     
-    // 🚀 NEW: Added Website and Address properties!
+    // Website and Address properties
     @Published var storeName: String = ""
     @Published var phoneNumber: String = ""
     @Published var storeWebsite: String = ""
@@ -66,13 +66,24 @@ class AuthViewModel: ObservableObject {
                     isSignedIn = true
                     requiresNewPassword = false
                     errorMessage = ""
-                    await fetchUserDetails()
+                    
+                    // 🚀 THE FIX: Capture the typed email instantly to bypass Swift state delays
+                    let guaranteedEmail = username
+                    self.userEmail = guaranteedEmail
+                    
+                    if let user = try? await Amplify.Auth.getCurrentUser() {
+                        self.userId = user.userId
+                    }
+                    
+                    // 🚀 Force-feed the guaranteed email directly into the network payloads
+                    await initDatabaseRow(emailToSave: guaranteedEmail)
                     
                     if !pendingUsernameToSave.isEmpty {
-                        let _ = await updateUserIdentity(newUsername: pendingUsernameToSave)
+                        let _ = await updateUserIdentity(newUsername: pendingUsernameToSave, emailToSave: guaranteedEmail)
                         pendingUsernameToSave = "" // Clear memory
                     }
                     
+                    await fetchUserDetails()
                     await fetchUserUsageStats()
                 } else {
                     switch result.nextStep {
@@ -106,6 +117,12 @@ class AuthViewModel: ObservableObject {
                     isSignedIn = true
                     requiresNewPassword = false
                     errorMessage = ""
+                    
+                    if let user = try? await Amplify.Auth.getCurrentUser() {
+                        self.userId = user.userId
+                    }
+                    
+                    await initDatabaseRow(emailToSave: self.userEmail)
                     await fetchUserDetails()
                     await fetchUserUsageStats()
                 } else {
@@ -235,7 +252,6 @@ class AuthViewModel: ObservableObject {
                         if let fetchedStore = json["storeName"] as? String, !fetchedStore.isEmpty { self.storeName = fetchedStore }
                         if let fetchedPhone = json["phoneNumber"] as? String, !fetchedPhone.isEmpty { self.phoneNumber = fetchedPhone }
                         
-                        // 🚀 NEW: Load website and address from the backend
                         if let fetchedWebsite = json["storeWebsite"] as? String, !fetchedWebsite.isEmpty { self.storeWebsite = fetchedWebsite }
                         if let fetchedAddress = json["storeAddress"] as? String, !fetchedAddress.isEmpty { self.storeAddress = fetchedAddress }
                         
@@ -282,7 +298,7 @@ class AuthViewModel: ObservableObject {
         return false
     }
 
-    func updateUserIdentity(newUsername: String, profileBase64: String? = nil) async -> (success: Bool, error: String?) {
+    func updateUserIdentity(newUsername: String, emailToSave: String, profileBase64: String? = nil) async -> (success: Bool, error: String?) {
         guard !userId.isEmpty else { return (false, "User not found") }
         guard let url = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/checkout") else { return (false, "Invalid URL") }
         
@@ -293,6 +309,7 @@ class AuthViewModel: ObservableObject {
         var body: [String: Any] = [
             "purchaseType": "update_user_identity",
             "userId": userId,
+            "userEmail": emailToSave, // 🚀 Forced parameter injection
             "username": newUsername,
             "currentUsername": self.username,
             "profileImageUrl": self.profileImageUrl
@@ -333,7 +350,6 @@ class AuthViewModel: ObservableObject {
         return (false, "Network error")
     }
 
-    // 🚀 NEW: Updated to accept storeWebsite and storeAddress
     func updateBusinessProfile(storeName: String, phoneNumber: String, storeWebsite: String, storeAddress: String, storeBio: String, storeLogoUrl: String, storeLogoBase64: String? = nil) async -> Bool {
         guard !userId.isEmpty else { return false }
         guard let url = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/checkout") else { return false }
@@ -342,7 +358,6 @@ class AuthViewModel: ObservableObject {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
-        // 🚀 NEW: Pass the new fields to the AWS backend
         var body: [String: Any] = [
             "purchaseType": "update_profile",
             "userId": userId,
@@ -395,6 +410,25 @@ class AuthViewModel: ObservableObject {
             print("❌ Failed to update business profile: \(error)")
         }
         return false
+    }
+    
+    // 🚀 NEW: Signature forces an email string to be passed in
+    func initDatabaseRow(emailToSave: String) async {
+        guard !userId.isEmpty else { return }
+        guard let url = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/checkout") else { return }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let body: [String: Any] = [
+            "purchaseType": "init_user",
+            "userId": userId,
+            "userEmail": emailToSave // 🚀 Forced parameter injection
+        ]
+        
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        _ = try? await URLSession.shared.data(for: request)
     }
 
     private func friendlyMessage(for error: AuthError) -> String {
