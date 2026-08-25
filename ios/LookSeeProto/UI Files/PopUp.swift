@@ -25,14 +25,22 @@ struct PopUp: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let availableHeight = max(proxy.size.height - 32, 280)
-            let maximumPopupHeight = min(availableHeight, 780)
+            let popupWidth = min(
+                max(proxy.size.width - 56, 1),
+                620
+            )
+            let maximumPopupHeight = min(
+                max(proxy.size.height - 32, 1),
+                780
+            )
 
             ViewThatFits(in: .vertical) {
-                intrinsicPopup
-                scrollingPopup(height: maximumPopupHeight)
+                intrinsicPopup(width: popupWidth)
+                scrollingPopup(
+                    width: popupWidth,
+                    height: maximumPopupHeight
+                )
             }
-            .padding(.horizontal, 28)
             .frame(
                 maxWidth: .infinity,
                 maxHeight: .infinity,
@@ -53,8 +61,10 @@ struct PopUp: View {
 
     // MARK: - Adaptive Popup Layouts
 
-    private var intrinsicPopup: some View {
-        popupShell {
+    private func intrinsicPopup(
+        width: CGFloat
+    ) -> some View {
+        popupShell(width: width) {
             VStack(spacing: 0) {
                 popupContent
                     .fixedSize(horizontal: false, vertical: true)
@@ -67,8 +77,11 @@ struct PopUp: View {
         }
     }
 
-    private func scrollingPopup(height: CGFloat) -> some View {
-        popupShell {
+    private func scrollingPopup(
+        width: CGFloat,
+        height: CGFloat
+    ) -> some View {
+        popupShell(width: width) {
             VStack(spacing: 0) {
                 ScrollView(
                     .vertical,
@@ -87,10 +100,13 @@ struct PopUp: View {
     }
 
     private func popupShell<Content: View>(
+        width: CGFloat,
         @ViewBuilder content: () -> Content
     ) -> some View {
         content()
-            .frame(maxWidth: 620)
+            // A concrete width keeps oversized remote images and long URLs
+            // from contributing an off-screen ideal width during measurement.
+            .frame(width: width)
             .background(.ultraThickMaterial)
             .clipShape(
                 RoundedRectangle(
@@ -365,7 +381,14 @@ struct PopUp: View {
                         case .success(let image):
                             image
                                 .resizable()
-                                .scaledToFill()
+                                // Show the complete promotion image instead of
+                                // cropping it to fill the preview wrapper.
+                                .scaledToFit()
+                                .frame(
+                                    maxWidth: .infinity,
+                                    maxHeight: .infinity
+                                )
+                                .clipped()
 
                         case .failure:
                             promotionImageFailureView
@@ -374,8 +397,12 @@ struct PopUp: View {
                             promotionImageFailureView
                         }
                     }
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 160)
+                    .frame(
+                        maxWidth: .infinity,
+                        minHeight: 160,
+                        maxHeight: 160
+                    )
+                    .background(Color.black.opacity(0.22))
                     .clipShape(
                         RoundedRectangle(
                             cornerRadius: 14,
