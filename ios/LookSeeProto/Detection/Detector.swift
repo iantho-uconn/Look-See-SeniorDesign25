@@ -17,7 +17,7 @@ import CoreLocation
 // MARK: - Data Models
 
 struct Detection: Identifiable, Equatable {
-    let id = UUID()
+     let id = UUID()
     let clusterID: String
     let modelVersion: String
     let modelIdentifier: String

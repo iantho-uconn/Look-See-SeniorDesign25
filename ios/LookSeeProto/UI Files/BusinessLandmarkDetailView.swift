@@ -8,6 +8,7 @@
 import SwiftUI
 import PhotosUI
 import UniformTypeIdentifiers
+import AVFoundation
 
 struct BusinessLandmarkDetailView: View {
     let landmark: BusinessLandmark
@@ -66,6 +67,7 @@ struct BusinessLandmarkDetailView: View {
     private let service = BusinessLandmarkService()
     private let promotionService = BusinessPromotionService()
     private let maxSelectionCount = 10
+    private let maximumGalleryVideoDuration: TimeInterval = 90
     
     private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00)
 
@@ -435,7 +437,7 @@ struct BusinessLandmarkDetailView: View {
                     .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2)
                     .padding(.horizontal)
 
-                    Text("Record new video with the camera or choose existing photos and videos from your library.")
+                    Text("Record new video with the camera or choose existing photos and videos from your library. Gallery videos must be 90 seconds or shorter.")
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 20)
@@ -1339,19 +1341,44 @@ struct BusinessLandmarkDetailView: View {
             isUploadingMedia = true; activeUploadRole = datasetRole; uploadStatusMessage = nil; uploadErrorMessage = nil
             uploadProgressText = "Preparing \(items.count) item\(items.count == 1 ? "" : "s")..."
         }
-        var completedCount = 0; var failedCount = 0; var lastSubmissionId: String?
+        var completedCount = 0
+        var failedCount = 0
+        var overLimitVideoCount = 0
+        var lastSubmissionId: String?
+
         for index in items.indices {
             let item = items[index]
             await MainActor.run { uploadProgressText = "Uploading item \(index + 1) of \(items.count)..." }
             do {
                 guard let mediaData = try await item.loadTransferable(type: Data.self) else { throw MediaSelectionError.couldNotLoadMedia }
-                let contentType = item.supportedContentTypes.first ?? .data
+                let contentType = preferredContentType(for: item)
                 let mediaKind = inferMediaKind(from: contentType)
+
+                if mediaKind == .video {
+                    await MainActor.run {
+                        uploadProgressText = "Checking video \(index + 1) of \(items.count)..."
+                    }
+                    try await validateGalleryVideoDuration(
+                        data: mediaData,
+                        contentType: contentType
+                    )
+                }
+
+                await MainActor.run {
+                    uploadProgressText = "Uploading item \(index + 1) of \(items.count)..."
+                }
                 let mimeType = contentType.preferredMIMEType ?? "application/octet-stream"
                 let filename = makeUploadFilename(datasetRole: datasetRole, mediaKind: mediaKind, contentType: contentType, index: index + 1)
                 let response = try await service.uploadBusinessMedia(landmarkId: landmark.landmarkId, datasetRole: datasetRole, mediaKind: mediaKind, filename: filename, contentType: mimeType, data: mediaData)
                 completedCount += 1; lastSubmissionId = response.submissionId
-            } catch { failedCount += 1 }
+            } catch let error as MediaSelectionError {
+                failedCount += 1
+                if case .videoExceedsMaximumDuration = error {
+                    overLimitVideoCount += 1
+                }
+            } catch {
+                failedCount += 1
+            }
         }
         await MainActor.run {
             isUploadingMedia = false; activeUploadRole = nil; uploadProgressText = nil
@@ -1361,7 +1388,33 @@ struct BusinessLandmarkDetailView: View {
                 switch datasetRole { case .positive: selectedPositiveMediaItems.removeAll(); case .hardNegative: selectedNegativeMediaItems.removeAll() }
             } else {
                 uploadStatusMessage = completedCount > 0 ? "\(completedCount) item\(completedCount == 1 ? "" : "s") uploaded successfully." : nil
-                uploadErrorMessage = "\(failedCount) item\(failedCount == 1 ? "" : "s") failed to upload. Please try again."
+                let otherFailureCount = failedCount - overLimitVideoCount
+                var errorMessages: [String] = []
+
+                if overLimitVideoCount > 0 {
+                    errorMessages.append(
+                        "\(overLimitVideoCount) video\(overLimitVideoCount == 1 ? " was" : "s were") not uploaded. Gallery videos must be 90 seconds or shorter."
+                    )
+                }
+
+                if otherFailureCount > 0 {
+                    errorMessages.append(
+                        "\(otherFailureCount) other item\(otherFailureCount == 1 ? "" : "s") failed to upload. Please try again."
+                    )
+                }
+
+                uploadErrorMessage = errorMessages.joined(separator: " ")
+
+                // Avoid re-uploading successful items when a mixed batch also
+                // contains an over-limit or otherwise failed video.
+                if completedCount > 0 || overLimitVideoCount > 0 {
+                    switch datasetRole {
+                    case .positive:
+                        selectedPositiveMediaItems.removeAll()
+                    case .hardNegative:
+                        selectedNegativeMediaItems.removeAll()
+                    }
+                }
             }
         }
     }
@@ -1381,6 +1434,58 @@ struct BusinessLandmarkDetailView: View {
     private func inferMediaKind(from contentType: UTType) -> BusinessMediaKind {
         if contentType.conforms(to: .movie) || contentType.conforms(to: .video) { return .video }
         return .photo
+    }
+
+    private func preferredContentType(for item: PhotosPickerItem) -> UTType {
+        if let videoType = item.supportedContentTypes.first(where: {
+            $0.conforms(to: .movie) || $0.conforms(to: .video)
+        }) {
+            return videoType
+        }
+
+        if let imageType = item.supportedContentTypes.first(where: {
+            $0.conforms(to: .image)
+        }) {
+            return imageType
+        }
+
+        return item.supportedContentTypes.first ?? .data
+    }
+
+    private func validateGalleryVideoDuration(
+        data: Data,
+        contentType: UTType
+    ) async throws {
+        let fileExtension = contentType.preferredFilenameExtension ?? "mov"
+        let temporaryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("gallery-video-\(UUID().uuidString)")
+            .appendingPathExtension(fileExtension)
+
+        defer {
+            try? FileManager.default.removeItem(at: temporaryURL)
+        }
+
+        do {
+            try data.write(to: temporaryURL, options: .atomic)
+
+            let asset = AVURLAsset(url: temporaryURL)
+            let duration = try await asset.load(.duration)
+            let durationSeconds = duration.seconds
+
+            guard durationSeconds.isFinite, durationSeconds >= 0 else {
+                throw MediaSelectionError.couldNotReadVideoDuration
+            }
+
+            guard durationSeconds <= maximumGalleryVideoDuration else {
+                throw MediaSelectionError.videoExceedsMaximumDuration(
+                    actualDuration: durationSeconds
+                )
+            }
+        } catch let error as MediaSelectionError {
+            throw error
+        } catch {
+            throw MediaSelectionError.couldNotReadVideoDuration
+        }
     }
 
     private func makeUploadFilename(datasetRole: BusinessDatasetRole, mediaKind: BusinessMediaKind, contentType: UTType, index: Int) -> String {
@@ -1516,11 +1621,17 @@ struct BusinessLandmarkDetailView: View {
 // Moved outside the View struct but kept private to the file
 private enum MediaSelectionError: LocalizedError {
     case couldNotLoadMedia
+    case couldNotReadVideoDuration
+    case videoExceedsMaximumDuration(actualDuration: TimeInterval)
 
     var errorDescription: String? {
         switch self {
         case .couldNotLoadMedia:
             return "Could not load the selected media."
+        case .couldNotReadVideoDuration:
+            return "Could not verify the selected video's duration."
+        case .videoExceedsMaximumDuration(let actualDuration):
+            return "Gallery videos must be 90 seconds or shorter. This video is approximately \(Int(ceil(actualDuration))) seconds."
         }
     }
 }
