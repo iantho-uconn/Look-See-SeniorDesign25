@@ -7,7 +7,7 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.camera.view.PreviewView
 import androidx.compose.animation.*
-import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -28,6 +28,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -49,9 +50,9 @@ import java.io.File
 
 // MARK: - Models & Enums
 
-sealed class NegativeCameraPhase {
-    data class Mandatory(val idx: Int) : NegativeCameraPhase()
-    data class Optional(val idx: Int) : NegativeCameraPhase()
+sealed class BusinessNegativeCameraPhase {
+    data class Mandatory(val idx: Int) : BusinessNegativeCameraPhase()
+    data class Optional(val idx: Int) : BusinessNegativeCameraPhase()
 
     val isMandatory: Boolean
         get() = this is Mandatory
@@ -75,15 +76,15 @@ sealed class NegativeCameraPhase {
         }
 }
 
-data class NegativeRecordedClip(
-    val phase: NegativeCameraPhase,
+data class BusinessNegativeRecordedClip(
+    val phase: BusinessNegativeCameraPhase,
     val uri: Uri,
     val duration: Int
 ) {
     val id: String get() = uri.toString()
 }
 
-enum class NegativeCameraFlowState {
+enum class BusinessNegativeCameraFlowState {
     INSTRUCTION, RECORDING, REVIEWING_RECENT, GALLERY
 }
 
@@ -91,9 +92,7 @@ enum class NegativeCameraFlowState {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun NegativeVideoCameraView(
-    uiTargetDuration: Int = 10,
-    minTotalTimeLimit: Int = 10,
+fun BusinessNegativeVideoCameraView(
     onDone: (CapturedNegativeVideo) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -104,18 +103,18 @@ fun NegativeVideoCameraView(
 
     val cameraService = remember { NegativeVideoCameraService(context) }
 
-    var currentPhase by remember { mutableStateOf<NegativeCameraPhase>(NegativeCameraPhase.Mandatory(1)) }
-    var flowState by remember { mutableStateOf(NegativeCameraFlowState.INSTRUCTION) }
+    var currentPhase by remember { mutableStateOf<BusinessNegativeCameraPhase>(BusinessNegativeCameraPhase.Mandatory(1)) }
+    var flowState by remember { mutableStateOf(BusinessNegativeCameraFlowState.INSTRUCTION) }
 
     var reviewingUri by remember { mutableStateOf<Uri?>(null) }
     var reviewingDuration by remember { mutableStateOf(0) }
 
     val expectedAngles = 1
-    val maxTotalTimeLimit = 30 // Hardcoded max in Swift file
+    val maxTotalTimeLimit = 30
+    val minTotalTimeLimit = 1
 
     var timeElapsed by remember { mutableStateOf(0) }
-    var recordedClips by remember { mutableStateOf<List<NegativeRecordedClip>>(emptyList()) }
-    var gallerySelection by remember { mutableStateOf("") }
+    var recordedClips by remember { mutableStateOf<List<BusinessNegativeRecordedClip>>(emptyList()) }
 
     var isFinishing by remember { mutableStateOf(false) }
     var finishingErrorMessage by remember { mutableStateOf<String?>(null) }
@@ -126,14 +125,14 @@ fun NegativeVideoCameraView(
 
     val totalDurationElapsedInt = recordedClips.sumOf { it.duration }
 
-    val minPhaseTimeLimit = if (currentPhase.isMandatory) 1 else 1
+    val minPhaseTimeLimit = if (currentPhase.isMandatory) minTotalTimeLimit else 1
     val maxPhaseTimeLimit = if (currentPhase.isMandatory) maxTotalTimeLimit / expectedAngles else maxTotalTimeLimit - totalDurationElapsedInt
 
-    val isReviewingRecent = flowState == NegativeCameraFlowState.REVIEWING_RECENT
+    val isReviewingRecent = flowState == BusinessNegativeCameraFlowState.REVIEWING_RECENT
 
     val currentLiveDuration = when (flowState) {
-        NegativeCameraFlowState.RECORDING -> timeElapsed
-        NegativeCameraFlowState.REVIEWING_RECENT -> reviewingDuration
+        BusinessNegativeCameraFlowState.RECORDING -> timeElapsed
+        BusinessNegativeCameraFlowState.REVIEWING_RECENT -> reviewingDuration
         else -> 0
     }
 
@@ -152,9 +151,9 @@ fun NegativeVideoCameraView(
                 cameraService.handleInterruptionBegan()
             } else if (event == Lifecycle.Event.ON_RESUME) {
                 cameraService.handleInterruptionEnded()
-                if (flowState == NegativeCameraFlowState.RECORDING) {
+                if (flowState == BusinessNegativeCameraFlowState.RECORDING) {
                     timeElapsed = 0
-                    flowState = NegativeCameraFlowState.INSTRUCTION
+                    flowState = BusinessNegativeCameraFlowState.INSTRUCTION
                 }
             }
         }
@@ -167,7 +166,7 @@ fun NegativeVideoCameraView(
         cameraService.onVideoRecorded = { uri ->
             reviewingUri = uri
             reviewingDuration = timeElapsed
-            flowState = NegativeCameraFlowState.REVIEWING_RECENT
+            flowState = BusinessNegativeCameraFlowState.REVIEWING_RECENT
         }
         onDispose {
             cameraService.stop()
@@ -176,7 +175,7 @@ fun NegativeVideoCameraView(
 
     // Timer
     LaunchedEffect(flowState, cameraService.isRecording) {
-        if (flowState == NegativeCameraFlowState.RECORDING && cameraService.isRecording) {
+        if (flowState == BusinessNegativeCameraFlowState.RECORDING && cameraService.isRecording) {
             timeElapsed = 0
             showZoomInstruction = true
             coroutineScope.launch { delay(4000); showZoomInstruction = false }
@@ -189,20 +188,20 @@ fun NegativeVideoCameraView(
         }
     }
 
-    fun deleteClip(clip: NegativeRecordedClip) {
+    fun deleteClip(clip: BusinessNegativeRecordedClip) {
         recordedClips = recordedClips.filter { it.id != clip.id }
         try { clip.uri.path?.let { File(it).delete() } } catch (e: Exception) {}
 
         if (recordedClips.isEmpty()) {
-            currentPhase = NegativeCameraPhase.Mandatory(1)
-            flowState = NegativeCameraFlowState.INSTRUCTION
+            currentPhase = BusinessNegativeCameraPhase.Mandatory(1)
+            flowState = BusinessNegativeCameraFlowState.INSTRUCTION
         }
     }
 
     Box(modifier = Modifier.fillMaxSize().background(Color(0xFF0F0F1A))) {
 
         // 1. Camera Preview
-        if (flowState == NegativeCameraFlowState.INSTRUCTION || flowState == NegativeCameraFlowState.RECORDING) {
+        if (flowState == BusinessNegativeCameraFlowState.INSTRUCTION || flowState == BusinessNegativeCameraFlowState.RECORDING) {
             AndroidView(
                 factory = { ctx ->
                     val previewView = PreviewView(ctx).apply {
@@ -243,7 +242,7 @@ fun NegativeVideoCameraView(
 
         // 2. Video Player for Reviewing
         if (isReviewingRecent && reviewingUri != null) {
-            NegativeSafeVideoPlayer(uri = reviewingUri!!, modifier = Modifier.fillMaxSize())
+            BusinessNegativeSafeVideoPlayer(uri = reviewingUri!!, modifier = Modifier.fillMaxSize())
         }
 
         // 3. Zoom Overlay Text
@@ -268,7 +267,7 @@ fun NegativeVideoCameraView(
 
             // Top Bar
             Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 58.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                if (flowState != NegativeCameraFlowState.GALLERY) {
+                if (flowState != BusinessNegativeCameraFlowState.GALLERY) {
                     Box(modifier = Modifier.size(44.dp).clip(CircleShape).background(Color.White.copy(0.2f)).border(0.5.dp, Color.White.copy(0.2f), CircleShape).clickable {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         if (cameraService.isRecording) cameraService.stopRecording()
@@ -287,7 +286,7 @@ fun NegativeVideoCameraView(
                 }
             }
 
-            if (flowState == NegativeCameraFlowState.INSTRUCTION) {
+            if (flowState == BusinessNegativeCameraFlowState.INSTRUCTION) {
                 Row(modifier = Modifier.padding(horizontal = 20.dp).fillMaxWidth().background(Color.Black.copy(0.4f), RoundedCornerShape(16.dp)).border(0.5.dp, Color.White.copy(0.2f), RoundedCornerShape(16.dp)).padding(20.dp), verticalAlignment = Alignment.Top) {
                     Icon(Icons.Default.VideocamOff, contentDescription = null, tint = Color(0xFF387DFF), modifier = Modifier.size(24.dp))
                     Spacer(Modifier.width(16.dp))
@@ -306,7 +305,7 @@ fun NegativeVideoCameraView(
                 Box(modifier = Modifier.padding(horizontal = 20.dp, bottom = 100.dp).fillMaxWidth().background(Color.Black.copy(0.6f), RoundedCornerShape(32.dp)).border(0.5.dp, Color.White.copy(0.2f), RoundedCornerShape(32.dp)).padding(24.dp)) {
 
                     when (flowState) {
-                        NegativeCameraFlowState.INSTRUCTION -> {
+                        BusinessNegativeCameraFlowState.INSTRUCTION -> {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Text(currentPhase.title, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
                                 Spacer(Modifier.height(16.dp))
@@ -316,7 +315,7 @@ fun NegativeVideoCameraView(
                                 Button(
                                     onClick = {
                                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        flowState = NegativeCameraFlowState.RECORDING
+                                        flowState = BusinessNegativeCameraFlowState.RECORDING
                                         cameraService.startRecording()
                                     },
                                     modifier = Modifier.fillMaxWidth().height(56.dp),
@@ -328,7 +327,7 @@ fun NegativeVideoCameraView(
                                     Spacer(Modifier.height(12.dp))
                                     Button(
                                         onClick = {
-                                            flowState = NegativeCameraFlowState.GALLERY
+                                            flowState = BusinessNegativeCameraFlowState.GALLERY
                                         },
                                         modifier = Modifier.fillMaxWidth().height(56.dp),
                                         colors = ButtonDefaults.buttonColors(containerColor = Color.White),
@@ -338,7 +337,7 @@ fun NegativeVideoCameraView(
                             }
                         }
 
-                        NegativeCameraFlowState.RECORDING -> {
+                        BusinessNegativeCameraFlowState.RECORDING -> {
                             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
                                 if (timeElapsed < minPhaseTimeLimit) {
                                     Text("Keep recording for ${minPhaseTimeLimit - timeElapsed}s...", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.background(Color.Black.copy(0.6f), CircleShape).padding(horizontal = 16.dp, vertical = 8.dp))
@@ -358,13 +357,13 @@ fun NegativeVideoCameraView(
                             }
                         }
 
-                        NegativeCameraFlowState.REVIEWING_RECENT -> {
+                        BusinessNegativeCameraFlowState.REVIEWING_RECENT -> {
                             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                                 Button(
                                     onClick = {
                                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                         reviewingUri?.path?.let { File(it).delete() }
-                                        flowState = NegativeCameraFlowState.INSTRUCTION
+                                        flowState = BusinessNegativeCameraFlowState.INSTRUCTION
                                     },
                                     modifier = Modifier.weight(1f).height(56.dp),
                                     colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(0.8f)),
@@ -374,11 +373,11 @@ fun NegativeVideoCameraView(
                                 Button(
                                     onClick = {
                                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        val newClip = NegativeRecordedClip(currentPhase, reviewingUri!!, reviewingDuration)
+                                        val newClip = BusinessNegativeRecordedClip(currentPhase, reviewingUri!!, reviewingDuration)
                                         recordedClips = recordedClips + newClip
 
                                         coroutineScope.launch {
-                                            flowState = NegativeCameraFlowState.GALLERY
+                                            flowState = BusinessNegativeCameraFlowState.GALLERY
                                             delay(100)
                                             pagerState.animateScrollToPage(recordedClips.size - 1)
                                         }
@@ -390,14 +389,14 @@ fun NegativeVideoCameraView(
                             }
                         }
 
-                        NegativeCameraFlowState.GALLERY -> { } // Clean Compose empty branch
+                        BusinessNegativeCameraFlowState.GALLERY -> EmptyView()
                     }
                 }
             }
         }
 
         // 5. Full Screen Gallery Overlay
-        if (flowState == NegativeCameraFlowState.GALLERY) {
+        if (flowState == BusinessNegativeCameraFlowState.GALLERY) {
             Box(modifier = Modifier.fillMaxSize().background(Color.Black).zIndex(10f)) {
 
                 // Pager
@@ -405,7 +404,7 @@ fun NegativeVideoCameraView(
                     HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
                         val clip = recordedClips[page]
                         Box {
-                            NegativeSafeVideoPlayer(uri = clip.uri, modifier = Modifier.fillMaxSize())
+                            BusinessNegativeSafeVideoPlayer(uri = clip.uri, modifier = Modifier.fillMaxSize())
 
                             // Delete Button
                             Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 58.dp), contentAlignment = Alignment.TopEnd) {
@@ -422,7 +421,7 @@ fun NegativeVideoCameraView(
                     Box(modifier = Modifier.fillMaxWidth().background(Color.Black.copy(0.6f)).padding(24.dp).padding(bottom = 20.dp)) {
                         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
 
-                            val nextMandatory = (1..expectedAngles).find { idx -> recordedClips.none { it.phase is NegativeCameraPhase.Mandatory && (it.phase as NegativeCameraPhase.Mandatory).idx == idx } }?.let { NegativeCameraPhase.Mandatory(it) }
+                            val nextMandatory = (1..expectedAngles).find { idx -> recordedClips.none { it.phase is BusinessNegativeCameraPhase.Mandatory && (it.phase as BusinessNegativeCameraPhase.Mandatory).idx == idx } }?.let { BusinessNegativeCameraPhase.Mandatory(it) }
                             val timeRemaining = maxTotalTimeLimit - totalDurationElapsedInt
 
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -432,13 +431,13 @@ fun NegativeVideoCameraView(
 
                             if (nextMandatory != null) {
                                 Button(
-                                    onClick = { currentPhase = nextMandatory; flowState = NegativeCameraFlowState.INSTRUCTION },
+                                    onClick = { currentPhase = nextMandatory; flowState = BusinessNegativeCameraFlowState.INSTRUCTION },
                                     modifier = Modifier.fillMaxWidth().height(56.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF387DFF)), shape = RoundedCornerShape(16.dp)
                                 ) { Text("Record Next Angle", fontSize = 17.sp, fontWeight = FontWeight.Bold) }
                             } else {
                                 if (timeRemaining > 0) {
                                     Button(
-                                        onClick = { currentPhase = NegativeCameraPhase.Optional(recordedClips.size + 1); flowState = NegativeCameraFlowState.INSTRUCTION },
+                                        onClick = { currentPhase = BusinessNegativeCameraPhase.Optional(recordedClips.size + 1); flowState = BusinessNegativeCameraFlowState.INSTRUCTION },
                                         modifier = Modifier.fillMaxWidth().height(56.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF387DFF)), shape = RoundedCornerShape(16.dp)
                                     ) { Text("Add Extra Clip", fontSize = 17.sp, fontWeight = FontWeight.Bold) }
                                 }
@@ -484,8 +483,8 @@ fun NegativeVideoCameraView(
                         recordedClips.forEach { try { it.uri.path?.let { p -> File(p).delete() } } catch (e: Exception) {} }
                         recordedClips = emptyList()
                         timeElapsed = 0
-                        currentPhase = NegativeCameraPhase.Mandatory(1)
-                        flowState = NegativeCameraFlowState.INSTRUCTION
+                        currentPhase = BusinessNegativeCameraPhase.Mandatory(1)
+                        flowState = BusinessNegativeCameraFlowState.INSTRUCTION
                         onDismiss()
                     }, contentAlignment = Alignment.Center) {
                         Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
@@ -510,7 +509,7 @@ fun NegativeVideoCameraView(
 
 // MARK: - Native Video Player (ExoPlayer)
 @Composable
-fun NegativeSafeVideoPlayer(uri: Uri, modifier: Modifier = Modifier) {
+fun BusinessNegativeSafeVideoPlayer(uri: Uri, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val exoPlayer = remember {
         ExoPlayer.Builder(context).build().apply {

@@ -79,7 +79,7 @@ fun AccountSecurityView(
                     item {
                         SettingsSection(header = "Email", footer = "Cognito will send a verification code to the new email address before completing the change.") {
                             SettingsRow(title = "Current email", value = if (currentEmail.isEmpty()) "Not set" else currentEmail)
-                            HorizontalDivider() // 🚀 FIXED: Modern Jetpack Compose Divider
+                            HorizontalDivider()
                             SettingsRow(title = "Change Email", icon = Icons.Default.Email, onClick = { currentScreen = SecurityScreen.EMAIL })
                         }
                     }
@@ -160,7 +160,8 @@ fun AccountSecurityView(
                             } catch (e: Exception) {
                                 println("Failed to delete user: ${e.message}")
                             } finally {
-                                vm.signOut(authState)
+                                // 🚀 YOUR FIX: Removed 'authState' argument to match teammate's viewmodel
+                                vm.signOut()
                                 isDeleting = false
                                 onDismiss()
                             }
@@ -217,7 +218,6 @@ fun UpdateEmailView(currentEmail: String, onCompleted: () -> Unit, onBack: () ->
             isWorking = true; isError = false; statusMessage = null
             coroutineScope.launch {
                 try {
-                    // 🚀 FIXED: AWS Amplify attribute syntax for Kotlin
                     val attribute = com.amplifyframework.auth.AuthUserAttribute(AuthUserAttributeKey.email(), cleaned)
                     val result = Amplify.Auth.updateUserAttribute(attribute)
 

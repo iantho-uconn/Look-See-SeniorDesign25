@@ -83,4 +83,5 @@ dependencies {
     // Video Playback
     implementation("androidx.media3:media3-exoplayer:1.11.0")
     implementation("androidx.media3:media3-ui:1.11.0")
+    implementation("androidx.media3:media3-transformer:1.11.0")
 }

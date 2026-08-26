@@ -1,17 +1,10 @@
 package looksee.angelll.com.uifiles
 
-import android.annotation.SuppressLint
-import android.graphics.Bitmap
-import android.media.MediaMetadataRetriever
+import android.graphics.BitmapFactory
 import android.net.Uri
-import android.view.HapticFeedbackConstants
-import android.widget.VideoView
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Image
+import androidx.compose.animation.*
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -26,153 +19,129 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
-import kotlin.math.max
-import kotlin.time.Duration.Companion.milliseconds
+import kotlin.math.ceil
 
-@SuppressLint("DefaultLocale")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LandmarkRecord(
+fun LandmarkRecordScreen(
     vm: AuthViewModel,
-    isNavVisible: MutableState<Boolean>,
     isActive: Boolean = true,
+    isNavVisible: MutableState<Boolean> = mutableStateOf(true),
     archivedMedia: ArchivedMedia? = null,
     existingLandmarkId: String? = null,
     existingLabel: String? = null,
     existingDescription: String? = null,
-    @Suppress("UNUSED_PARAMETER") onAddMoreMedia: (String) -> Unit = {},
+    existingSecondsNeeded: Double? = null,
+    onAddMoreMedia: (String) -> Unit = {},
     onDismiss: () -> Unit
 ) {
-    val context = LocalContext.current
-    val view = LocalView.current
+    val haptic = LocalHapticFeedback.current
     val focusManager = LocalFocusManager.current
     val coroutineScope = rememberCoroutineScope()
+    val context = LocalContext.current
 
-    // 🚀 THE S3 FOLDER FIX:
-    // We inject the existing ID directly into the State upon initialization.
-    // This completely eliminates the race condition that was generating new UUID folders!
-    var businessLandmarkId by remember { mutableStateOf(existingLandmarkId) }
-    var labelText by remember { mutableStateOf(existingLabel ?: "") }
-
-    // Using explicit MutableState for the ScannerSheet (matches SwiftUI @Binding behavior)
-    val shortDescriptionState = remember { mutableStateOf(existingDescription ?: "") }
-
-    var showTextScanner by remember { mutableStateOf(false) }
-    var pickedVideoURLs by remember { mutableStateOf<List<Uri>>(emptyList()) }
-    var pickedImage by remember { mutableStateOf<Bitmap?>(null) }
-    val clipDurations = remember { mutableStateMapOf<Uri, Double>() }
-
-    var extractedLatitude by remember { mutableStateOf<Double?>(null) }
-    var extractedLongitude by remember { mutableStateOf<Double?>(null) }
-    var statusText by remember { mutableStateOf("No landmark media selected.") }
-    var showArchivePrompt by remember { mutableStateOf(false) }
-    var showDiscardAlert by remember { mutableStateOf(false) }
-
-    var showLimitAlert by remember { mutableStateOf(false) }
-    var limitAlertTitle by remember { mutableStateOf("") }
-    var limitAlertMessage by remember { mutableStateOf("") }
-
-    var pendingArchiveURLs by remember { mutableStateOf<List<Uri>>(emptyList()) }
-    var isStitchingVideos by remember { mutableStateOf(false) }
-
-    var showAutoQueueAlert by remember { mutableStateOf(false) }
-    var capturedNegativeVideo by remember { mutableStateOf<CapturedNegativeVideo?>(null) }
-    var showNegativeCamera by remember { mutableStateOf(false) }
-
-    var completedPositiveResult by remember { mutableStateOf<PositiveSubmissionResult?>(null) }
-    var completedLandmarkId by remember { mutableStateOf<String?>(null) }
-    var isFullSubmissionComplete by remember { mutableStateOf(false) }
-    var showCompletionPopup by remember { mutableStateOf(false) }
-
-    var isFormVisible by remember { mutableStateOf(false) }
-
-    // External Services (Will be unresolved red until implemented)
+    // Upload Services (Linked to your real implementations)
     val uploadService = remember { UploadService() }
     val hardNegativeUploadService = remember { HardNegativeUploadService() }
     val locationManager = remember { LocationManager() }
 
-    val primaryColor = Color(0xFF387DFF) // 0.22, 0.49, 1.00
-    val groupedBg = Color(0xFFF2F2F7)
-    val secondaryGroupedBg = Color.White
+    // Forms
+    var labelText by remember { mutableStateOf(existingLabel ?: "") }
+    var shortDescription by remember { mutableStateOf(existingDescription ?: "") }
+    var businessLandmarkId by remember { mutableStateOf(existingLandmarkId) }
+    var showTextScanner by remember { mutableStateOf(false) }
 
-    val minimumCombinedVideoDuration = 30.0
+    // Media State
+    var pickedVideoUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
+    var pickedImageUri by remember { mutableStateOf<Uri?>(null) }
+    var clipDurations by remember { mutableStateOf<Map<Uri, Double>>(emptyMap()) }
 
-    val hasPositiveMedia = pickedVideoURLs.isNotEmpty() || pickedImage != null
+    var capturedNegativeVideo by remember { mutableStateOf<CapturedNegativeVideo?>(null) }
+    var pendingArchiveUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
+
+    // UI Triggers
+    var showNegativeCamera by remember { mutableStateOf(false) }
+    var isFormVisible by remember { mutableStateOf(archivedMedia != null) }
+    var statusText by remember { mutableStateOf(if (archivedMedia != null) "Loaded archived media." else "No landmark media selected.") }
+    var showDiscardAlert by remember { mutableStateOf(false) }
+    var showLimitAlert by remember { mutableStateOf(false) }
+    var limitAlertTitle by remember { mutableStateOf("") }
+    var limitAlertMessage by remember { mutableStateOf("") }
+    var showBackgroundUploadAlert by remember { mutableStateOf(false) }
+
+    // Logic Trackers
+    var extractedLatitude by remember { mutableStateOf<Double?>(null) }
+    var extractedLongitude by remember { mutableStateOf<Double?>(null) }
+    var isStitchingVideos by remember { mutableStateOf(false) }
+
+    var completedPositiveResult by remember { mutableStateOf<PositiveSubmissionResult?>(null) }
+    var completedLandmarkId by remember { mutableStateOf<String?>(null) }
+    var isFullSubmissionComplete by remember { mutableStateOf(false) }
+
+    val PrimaryBlue = Color(0xFF387DFF)
+    val SecondaryGrouped = Color(0xFF1C1C1E)
+
+    val uiTargetDuration = existingSecondsNeeded?.let { ceil(it).toInt() } ?: if (existingLandmarkId != null) 1 else 30
+    val negativeTargetDuration = if (existingLandmarkId != null) 1 else 10
+
+    val hasPositiveMedia = pickedVideoUris.isNotEmpty() || pickedImageUri != null
     val hasLabel = labelText.trim().isNotEmpty()
-    val hasRequiredShortDescription = shortDescriptionState.value.trim().isNotEmpty()
-
-    // 🚀 THE NEGATIVE VIDEO FIX:
-    // If it's a Redo (existingLandmarkId exists), we bypass the negative video requirement!
+    val hasRequiredShortDescription = shortDescription.trim().isNotEmpty()
     val hasRequiredNegativeVideo = existingLandmarkId != null || capturedNegativeVideo != null
-
-    val totalClipDuration = pickedVideoURLs.sumOf { clipDurations[it] ?: 0.0 }
-    val hasMinimumClipDuration = pickedImage != null || totalClipDuration >= minimumCombinedVideoDuration
+    val totalClipDuration = pickedVideoUris.sumOf { clipDurations[it] ?: 0.0 }
+    val hasMinimumClipDuration = pickedImageUri != null || totalClipDuration >= 1.0
     val isSubmissionRunning = uploadService.isUploading || hardNegativeUploadService.isUploading || isStitchingVideos
 
-    val canUpload = !isSubmissionRunning && !isFullSubmissionComplete && (
+    val canUpload = !isSubmissionRunning && !isFullSubmissionComplete &&
             if (completedPositiveResult != null) hasRequiredNegativeVideo
-            else hasPositiveMedia && hasLabel && hasRequiredShortDescription && hasRequiredNegativeVideo && hasMinimumClipDuration
-            )
+            else (hasPositiveMedia && hasLabel && hasRequiredShortDescription && hasRequiredNegativeVideo && hasMinimumClipDuration)
 
     val arePositiveDetailsLocked = isSubmissionRunning || completedPositiveResult != null || isFullSubmissionComplete
     val areNegativePhotosLocked = isSubmissionRunning || isFullSubmissionComplete
 
-    val durationSummaryText = if (hasMinimumClipDuration) {
-        "${String.format("%.1f", totalClipDuration)}s total — ready to upload"
-    } else {
-        "${String.format("%.1f", totalClipDuration)}s total — need ${String.format("%.1f", max(0.0, minimumCombinedVideoDuration - totalClipDuration))}s more"
-    }
+    fun makeBusinessLandmarkId() = "landmark_${UUID.randomUUID().toString().replace("-", "").take(8)}"
 
-    fun makeBusinessLandmarkId(): String {
-        return "landmark_" + UUID.randomUUID().toString().replace("-", "").take(8)
-    }
-
-    fun deleteTemporaryVideoIfNeeded(videoURL: Uri?) {
-        if (videoURL == null || archivedMedia != null) return
-        val path = videoURL.path ?: return
-        if (path.startsWith(context.cacheDir.absolutePath)) {
-            try { File(path).delete() } catch (_: Exception) {}
+    fun deleteTemporaryVideoIfNeeded(uri: Uri?) {
+        if (uri == null || archivedMedia != null) return
+        val path = uri.path ?: return
+        if (path.startsWith(context.cacheDir.path)) {
+            try { File(path).delete() } catch (e: Exception) {}
         }
     }
 
-    fun deleteAllTemporaryVideos(urls: List<Uri>) {
-        urls.forEach { deleteTemporaryVideoIfNeeded(it) }
+    fun deleteAllTemporaryVideos(uris: List<Uri>) {
+        uris.forEach { deleteTemporaryVideoIfNeeded(it) }
     }
 
     fun clearScreen() {
-        deleteAllTemporaryVideos(pickedVideoURLs)
+        deleteAllTemporaryVideos(pickedVideoUris)
         capturedNegativeVideo?.deleteLocalFile()
-        pickedVideoURLs = emptyList()
-        clipDurations.clear()
-        pickedImage = null
+        pickedVideoUris = emptyList()
+        clipDurations = emptyMap()
+        pickedImageUri = null
         extractedLatitude = null
         extractedLongitude = null
 
-        // 🚀 THE FIX: Safely restore the Redo IDs so it doesn't accidentally generate a new one!
         if (existingLandmarkId == null) {
             businessLandmarkId = null
             labelText = ""
-            shortDescriptionState.value = ""
+            shortDescription = ""
         } else {
             businessLandmarkId = existingLandmarkId
             labelText = existingLabel ?: ""
-            shortDescriptionState.value = existingDescription ?: ""
+            shortDescription = existingDescription ?: ""
         }
 
         capturedNegativeVideo = null
@@ -185,119 +154,62 @@ fun LandmarkRecord(
         hardNegativeUploadService.reset()
     }
 
-    fun resetForAnotherLandmark() { clearScreen() }
-
-    fun discardPendingMedia() {
-        deleteAllTemporaryVideos(pendingArchiveURLs)
-        pendingArchiveURLs = emptyList()
-    }
-
-    fun removeClip(url: Uri) {
-        val mutableList = pickedVideoURLs.toMutableList()
-        if (mutableList.remove(url)) {
-            deleteTemporaryVideoIfNeeded(url)
-            clipDurations.remove(url)
-            pickedVideoURLs = mutableList
-            statusText = if (pickedVideoURLs.isEmpty()) "No media selected." else "Removed clip. ${pickedVideoURLs.size} remaining."
-        }
-    }
-
-    suspend fun loadDuration(url: Uri) = withContext(Dispatchers.IO) {
-        val retriever = MediaMetadataRetriever()
-        try {
-            retriever.setDataSource(context, url)
-            val durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
-            val durationMs = durationStr?.toLongOrNull() ?: 0L
-            val seconds = durationMs / 1000.0
-            if (seconds > 0) {
-                withContext(Dispatchers.Main) { clipDurations[url] = seconds }
-            }
-        } catch (e: Exception) {
-            println("Could not read duration for ${url.lastPathSegment}: $e")
-        } finally {
-            retriever.release()
-        }
-    }
-
-    @Suppress("UNUSED_PARAMETER")
-    fun stitchVideos(urls: List<Uri>): Uri? {
-        // Pure Android natively requires Media3 Transformer API or MediaMuxer here.
-        // Simulated return boundary to match Swift AVMutableComposition structure:
-        return null
-    }
-
     fun processAndStitchPendingMedia() {
-        if (pendingArchiveURLs.isEmpty()) return
+        if (pendingArchiveUris.isEmpty()) return
         isStitchingVideos = true
-        val urlsToStitch = pendingArchiveURLs.toList()
+        val urisToStitch = pendingArchiveUris
 
-        coroutineScope.launch(Dispatchers.IO) {
-            if (urlsToStitch.size > 1) {
-                val stitchedURL = stitchVideos(urlsToStitch)
-                withContext(Dispatchers.Main) {
-                    deleteAllTemporaryVideos(pickedVideoURLs)
-                    deleteAllTemporaryVideos(pendingArchiveURLs)
-                    if (stitchedURL != null) {
-                        pickedVideoURLs = listOf(stitchedURL)
-                        statusText = "Selected combined video."
-                    } else {
-                        pickedVideoURLs = urlsToStitch
-                        statusText = "Selected ${pickedVideoURLs.size} videos."
-                    }
+        coroutineScope.launch {
+            if (urisToStitch.size > 1) {
+                try {
+                    val stitchedUri = VideoMerger.mergeAndValidate(context, urisToStitch, 1.0)
+                    deleteAllTemporaryVideos(pickedVideoUris)
+                    deleteAllTemporaryVideos(pendingArchiveUris)
+                    pickedVideoUris = listOf(stitchedUri)
+                    statusText = "Selected combined video."
+                } catch (e: Exception) {
+                    pickedVideoUris = urisToStitch
+                    statusText = "Selected ${pickedVideoUris.size} videos."
                 }
             } else {
-                withContext(Dispatchers.Main) {
-                    pickedVideoURLs = urlsToStitch
-                    statusText = "Selected video."
-                }
+                pickedVideoUris = urisToStitch
+                statusText = "Selected video."
             }
 
-            val finalURLs = pickedVideoURLs
-            finalURLs.forEach { loadDuration(it) }
-
-            withContext(Dispatchers.Main) {
-                if (extractedLatitude == null) extractedLatitude = locationManager.latitude
-                if (extractedLongitude == null) extractedLongitude = locationManager.longitude
-                if (businessLandmarkId == null) businessLandmarkId = makeBusinessLandmarkId()
-                uploadService.reset()
-                pendingArchiveURLs = emptyList()
-                isStitchingVideos = false
-                isFormVisible = true
+            for (uri in pickedVideoUris) {
+                val duration = getVideoDurationInSeconds(context, uri).toDouble()
+                clipDurations = clipDurations.toMutableMap().apply { put(uri, duration) }
             }
+
+            if (extractedLatitude == null) extractedLatitude = locationManager.latitude
+            if (extractedLongitude == null) extractedLongitude = locationManager.longitude
+            if (businessLandmarkId == null) businessLandmarkId = makeBusinessLandmarkId()
+
+            uploadService.reset()
+            pendingArchiveUris = emptyList()
+            isStitchingVideos = false
+            isFormVisible = true
         }
     }
 
     fun saveToArchiveFromForm() {
         val lat = extractedLatitude ?: locationManager.latitude ?: 0.0
         val lon = extractedLongitude ?: locationManager.longitude ?: 0.0
-        coroutineScope.launch(Dispatchers.IO) {
-            val firstURL = pickedVideoURLs.firstOrNull()
-            val img = pickedImage
-            val id = businessLandmarkId ?: return@launch
+        val idToSave = businessLandmarkId ?: makeBusinessLandmarkId()
+
+        coroutineScope.launch {
+            val firstUri = pickedVideoUris.firstOrNull()
+            val img = pickedImageUri
             val lbl = labelText
-            val desc = shortDescriptionState.value
-            val negURL = capturedNegativeVideo?.fileURL
+            val desc = shortDescription
+            val negUri = capturedNegativeVideo?.fileURL
 
-            if (firstURL != null) {
-                OfflineMediaManager.shared.archiveVideo(firstURL, lat, lon, id, lbl, desc, null, negURL, false)
+            if (firstUri != null) {
+                OfflineMediaManager.archiveVideo(context, firstUri, lat, lon, idToSave, lbl, desc, null, negUri, false)
             } else if (img != null) {
-                OfflineMediaManager.shared.archivePhoto(img, lat, lon, id, lbl, desc, null, negURL, false)
-            } else {
-                return@launch
-            }
-
-            withContext(Dispatchers.Main) {
-                clearScreen()
-                statusText = "Landmark safely queued in Outbox for upload."
+                // If using an image, handle local load
             }
         }
-    }
-
-    fun saveDraftAndDismiss() {
-        if (archivedMedia != null) {
-            OfflineMediaManager.shared.updateDraft(archivedMedia, labelText, shortDescriptionState.value, null)
-        }
-        onDismiss()
     }
 
     fun startFullSubmission() {
@@ -316,628 +228,355 @@ fun LandmarkRecord(
             }
         }
 
-        if (!NetworkMonitor.shared.isConnected) {
-            if (archivedMedia != null) {
-                OfflineMediaManager.shared.updateDraft(archivedMedia, labelText, shortDescriptionState.value, null)
-            } else {
-                saveToArchiveFromForm()
-            }
-            coroutineScope.launch(Dispatchers.Main) {
-                delay(300.milliseconds)
-                showAutoQueueAlert = true
-            }
-            return
-        }
-
-        coroutineScope.launch {
-            if (isSubmissionRunning || isFullSubmissionComplete) return@launch
+        if (archivedMedia != null) {
+            OfflineMediaManager.updateDraft(context, archivedMedia, labelText, shortDescription, null)
+        } else {
             if (businessLandmarkId == null) businessLandmarkId = makeBusinessLandmarkId()
-            val generatedLandmarkId = businessLandmarkId ?: return@launch
+            saveToArchiveFromForm()
 
-            try {
-                val positiveResult: PositiveSubmissionResult
-                vm.fetchUserDetails()
-                val idToken = vm.fetchIdToken()
-
-                val existingPositive = completedPositiveResult
-                if (existingPositive != null) {
-                    positiveResult = existingPositive
-                } else {
-                    val trimmedLabel = labelText.trim()
-                    val trimmedShortDescription = shortDescriptionState.value.trim()
-
-                    if (trimmedLabel.isEmpty() || trimmedShortDescription.isEmpty()) return@launch
-
-                    positiveResult = uploadService.upload(
-                        vm.userEmail,
-                        idToken,
-                        trimmedLabel,
-                        generatedLandmarkId,
-                        trimmedLabel,
-                        trimmedShortDescription,
-                        null,
-                        extractedLatitude ?: locationManager.latitude ?: 0.0,
-                        extractedLongitude ?: locationManager.longitude ?: 0.0,
-                        locationManager.horizontalAccuracy ?: 0.0,
-                        pickedVideoURLs,
-                        pickedImage
-                    )
-
-                    completedPositiveResult = positiveResult
-                    statusText = "Landmark media saved. Uploading reference video…"
-
-                    if (existingLandmarkId == null) {
-                        withContext(Dispatchers.Main) {
-                            vm.tokenBalance -= 1
-                            vm.activeLandmarksCount += 1
-                        }
-                    }
-                }
-
-                val finalLandmarkId = positiveResult.landmarkId ?: generatedLandmarkId
-
-                // 🚀 THE FIX: Never uploads a negative video if it's a Redo!
-                val negVideo = capturedNegativeVideo
-                if (negVideo != null && existingLandmarkId == null) {
-                    hardNegativeUploadService.upload(finalLandmarkId, idToken, negVideo)
-                }
-
-                completedLandmarkId = finalLandmarkId
-                isFullSubmissionComplete = true
-                statusText = "Landmark uploaded. The reference video is processing in the background."
-                showCompletionPopup = true
-
-                if (archivedMedia != null) {
-                    OfflineMediaManager.shared.deleteArchive(archivedMedia)
-                }
-            } catch (e: Exception) {
-                if (e.localizedMessage?.contains("ERR_SUBSCRIPTION_EXPIRED") == true) {
-                    withContext(Dispatchers.Main) {
-                        limitAlertTitle = "Subscription Expired"
-                        limitAlertMessage = "Your subscription period has ended. Please renew to continue uploading landmarks."
-                        showLimitAlert = true
-                    }
-                } else {
-                    println("Full landmark submission failed: ${e.localizedMessage}")
-                }
+            if (existingLandmarkId == null) {
+                vm.tokenBalance -= 1
+                vm.activeLandmarksCount += 1
             }
         }
+
+        AutoUploadManager.forceRetry()
+        showBackgroundUploadAlert = true
     }
 
     LaunchedEffect(archivedMedia) {
-        val archive = archivedMedia ?: return@LaunchedEffect
-        isFormVisible = true
-        coroutineScope.launch(Dispatchers.IO) {
-            val fileURL = OfflineMediaManager.shared.getFileURL(archive)
-            var videoURLs: List<Uri> = emptyList()
-            var loadedImage: Bitmap? = null
-            var negVideo: CapturedNegativeVideo? = null
+        archivedMedia?.let { archive ->
+            coroutineScope.launch {
+                val file = OfflineMediaManager.getFile(context, archive)
+                val negFile = OfflineMediaManager.getNegativeVideo(context, archive)
 
-            if (archive.isVideo) {
-                if (fileURL is Uri) videoURLs = listOf(fileURL)
-            } else {
-                val path = if (fileURL is Uri) fileURL.path else null
-                if (path != null) {
-                    val file = File(path)
-                    if (file.exists()) {
-                        loadedImage = android.graphics.BitmapFactory.decodeFile(file.absolutePath)
-                    }
+                if (archive.isVideo) {
+                    val uri = Uri.fromFile(file)
+                    pickedVideoUris = listOf(uri)
+                    clipDurations = clipDurations.toMutableMap().apply { put(uri, getVideoDurationInSeconds(context, uri).toDouble()) }
+                } else {
+                    pickedImageUri = Uri.fromFile(file)
                 }
-            }
 
-            val negURL = OfflineMediaManager.shared.getNegativeVideoURL(archive)
-            if (negURL is Uri && File(negURL.path ?: "").exists()) {
-                negVideo = CapturedNegativeVideo(fileURL = negURL)
-            }
+                if (negFile != null && negFile.exists()) {
+                    capturedNegativeVideo = CapturedNegativeVideo(Uri.fromFile(negFile))
+                }
 
-            withContext(Dispatchers.Main) {
-                pickedVideoURLs = videoURLs
-                pickedImage = loadedImage
-                capturedNegativeVideo = negVideo
                 extractedLatitude = archive.latitude
                 extractedLongitude = archive.longitude
-                labelText = archive.savedLabel ?: ""
-                shortDescriptionState.value = archive.savedDescription ?: ""
+                labelText = archive.savedLabel
+                shortDescription = archive.savedDescription
                 if (businessLandmarkId == null) businessLandmarkId = makeBusinessLandmarkId()
                 statusText = "Loaded archived media."
             }
-
-            videoURLs.forEach { loadDuration(it) }
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         if (!hasPositiveMedia && !isFormVisible) {
-            PositiveVideoCameraView(
-                isActive = isActive,
-                isNavVisible = isNavVisible,
-                onDone = { urls ->
-                    pendingArchiveURLs = urls
-                    showArchivePrompt = true
+            BusinessPositiveVideoCameraScreen(
+                completionButtonTitle = "Use Recorded Videos",
+                onDone = { uri ->
+                    pendingArchiveUris = listOf(uri)
+                    processAndStitchPendingMedia()
                 },
-                onCancel = { onDismiss() }
+                onDismiss = onDismiss
             )
         } else {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(groupedBg)
-                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
-                        focusManager.clearFocus()
-                    }
+                    .background(Color(0xFF0F0F1A))
+                    .clickable { focusManager.clearFocus() }
+                    .verticalScroll(rememberScrollState())
+                    .padding(vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(20.dp)
             ) {
-                Spacer(Modifier.height(50.dp))
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(20.dp)
-                ) {
-                    Spacer(Modifier.height(16.dp))
 
-                    // Positive Media Preview
-                    if (pickedVideoURLs.isNotEmpty()) {
-                        Column(verticalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.padding(horizontal = 16.dp)) {
-                            // Duration Summary Banner
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Icon(
-                                    imageVector = if (hasMinimumClipDuration) Icons.Filled.CheckCircle else Icons.Filled.Schedule,
-                                    contentDescription = null,
-                                    tint = if (hasMinimumClipDuration) Color.Green else Color(0xFFFFA500),
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Text(
-                                    text = durationSummaryText,
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (hasMinimumClipDuration) Color.Green else Color(0xFFFFA500)
-                                )
-                                Spacer(Modifier.weight(1f))
-                            }
+                // Toolbar
+                Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.ArrowBackIosNew, contentDescription = "Back", tint = PrimaryBlue)
+                    }
+                }
 
-                            pickedVideoURLs.forEachIndexed { index, url ->
-                                Box(modifier = Modifier.fillMaxWidth().height(240.dp).clip(RoundedCornerShape(16.dp))) {
-                                    UploadFormVideoPlayer(url = url)
+                // Positive Media Preview
+                if (pickedVideoUris.isNotEmpty()) {
+                    Column(spacing = 16.dp, modifier = Modifier.padding(horizontal = 16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(if (hasMinimumClipDuration) Icons.Default.CheckCircle else Icons.Default.Schedule, contentDescription = null, tint = if (hasMinimumClipDuration) Color.Green else Color(0xFFFFA500), modifier = Modifier.size(16.dp))
+                            Text("${String.format("%.1f", totalClipDuration)}s total — ready to upload", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = if (hasMinimumClipDuration) Color.Green else Color(0xFFFFA500))
+                        }
 
-                                    if (!arePositiveDetailsLocked) {
-                                        Box(modifier = Modifier.fillMaxSize().padding(12.dp), contentAlignment = Alignment.TopEnd) {
-                                            IconButton(
-                                                onClick = {
-                                                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                                                    if (pickedVideoURLs.size == 1) clearScreen() else removeClip(url)
-                                                },
-                                                modifier = Modifier.size(32.dp).background(Color.Black.copy(alpha = 0.6f), CircleShape)
-                                            ) {
-                                                Icon(Icons.Filled.Close, contentDescription = "Close", tint = Color.White, modifier = Modifier.size(14.dp))
-                                            }
+                        pickedVideoUris.forEachIndexed { index, uri ->
+                            Box(modifier = Modifier.fillMaxWidth().height(240.dp).clip(RoundedCornerShape(16.dp))) {
+                                UploadFormVideoPlayer(uri)
+
+                                if (!arePositiveDetailsLocked) {
+                                    Box(modifier = Modifier.align(Alignment.TopEnd).padding(12.dp).size(32.dp).background(Color.Black.copy(0.6f), CircleShape).clickable {
+                                        haptic.performHapticFeedback(HapticFeedbackType.Light)
+                                        if (pickedVideoUris.size == 1) clearScreen()
+                                        else {
+                                            deleteTemporaryVideoIfNeeded(uri)
+                                            clipDurations = clipDurations.toMutableMap().apply { remove(uri) }
+                                            pickedVideoUris = pickedVideoUris.filter { it != uri }
+                                            statusText = "Removed clip. ${pickedVideoUris.size} remaining."
                                         }
-                                    }
-
-                                    Box(modifier = Modifier.fillMaxSize().padding(12.dp), contentAlignment = Alignment.BottomStart) {
-                                        Text(
-                                            text = if (clipDurations[url] != null) "Clip ${index + 1} · ${String.format("%.1f", clipDurations[url])}s" else "Clip ${index + 1} · loading…",
-                                            fontSize = 13.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = Color.White,
-                                            modifier = Modifier.background(Color.Black.copy(alpha = 0.6f), CircleShape).padding(horizontal = 12.dp, vertical = 6.dp)
-                                        )
+                                    }, contentAlignment = Alignment.Center) {
+                                        Icon(Icons.Default.Close, contentDescription = "Remove", tint = Color.White, modifier = Modifier.size(14.dp))
                                     }
                                 }
+
+                                val clipLabel = clipDurations[uri]?.let { "Clip ${index + 1} · ${String.format("%.1f", it)}s" } ?: "Clip ${index + 1} · loading..."
+                                Text(clipLabel, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.BottomStart).padding(12.dp).background(Color.Black.copy(0.5f), CircleShape).padding(horizontal = 12.dp, vertical = 6.dp))
                             }
                         }
-                    } else {
-                        pickedImage?.let { img ->
-                            Image(
-                                bitmap = img.asImageBitmap(),
-                                contentDescription = null,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxWidth().height(240.dp).padding(horizontal = 16.dp).clip(RoundedCornerShape(16.dp))
-                            )
+                    }
+                } else if (pickedImageUri != null) {
+                    LocalUriImage(
+                        uri = pickedImageUri!!,
+                        modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth().height(240.dp).clip(RoundedCornerShape(16.dp))
+                    )
+                }
+
+                if (statusText.isNotEmpty()) {
+                    Row(modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Text(statusText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color.Gray)
+
+                        if (statusText.contains("Outbox") || statusText.contains("queued")) {
+                            Text("Retry", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = PrimaryBlue, modifier = Modifier.background(PrimaryBlue.copy(0.15f), CircleShape).clickable {
+                                haptic.performHapticFeedback(HapticFeedbackType.Medium)
+                                archivedMedia?.let { OfflineMediaManager.prioritizeAndRetry(context, it) }
+                                AutoUploadManager.forceRetry()
+                            }.padding(horizontal = 14.dp, vertical = 6.dp))
                         }
                     }
+                }
 
-                    if (statusText.isNotEmpty()) {
-                        Text(
-                            text = statusText,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color.Gray,
-                            modifier = Modifier.padding(horizontal = 16.dp)
-                        )
-                    }
-
-                    // Location Section
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp)
-                            .background(secondaryGroupedBg, RoundedCornerShape(16.dp))
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Filled.LocationOn, contentDescription = null, tint = primaryColor, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                // Location Banner
+                Surface(color = SecondaryGrouped, shape = RoundedCornerShape(16.dp), modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth()) {
+                    Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        Icon(Icons.Default.LocationOn, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(24.dp))
+                        Column(modifier = Modifier.weight(1f)) {
                             if (locationManager.isAuthorized && locationManager.latitude != null && locationManager.longitude != null) {
-                                Text("${locationManager.latitude}, ${locationManager.longitude}", fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                                Text("${locationManager.latitude}, ${locationManager.longitude}", fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, color = Color.White)
                                 Text("Accuracy: ±${locationManager.horizontalAccuracy?.toInt() ?: 0}m", fontSize = 13.sp, color = Color.Gray)
-                            } else if (locationManager.authorizationStatus.toString() == "Denied" || locationManager.authorizationStatus.toString() == "Restricted") {
+                            } else if (locationManager.authorizationStatus == AuthorizationStatus.DENIED) {
                                 Text("Location Denied", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.Red)
                             } else {
-                                Text("Requesting location…", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Color.Gray)
+                                Text("Requesting location...", fontSize = 14.sp, color = Color.Gray)
                             }
                         }
-                        Spacer(Modifier.weight(1f))
                         if (!locationManager.isAuthorized) {
-                            Button(
-                                onClick = {
-                                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                                    locationManager.requestPermissionIfNeeded()
-                                },
-                                enabled = !arePositiveDetailsLocked,
-                                colors = ButtonDefaults.buttonColors(containerColor = primaryColor),
-                                shape = CircleShape
-                            ) { Text("Enable", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White) }
+                            Button(onClick = { haptic.performHapticFeedback(HapticFeedbackType.Medium); locationManager.requestPermissionIfNeeded() }, colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue), shape = CircleShape, enabled = !arePositiveDetailsLocked) { Text("Enable") }
                         }
                     }
+                }
 
-                    if (isFormVisible) {
-                        // Landmark Form
-                        Column(verticalArrangement = Arrangement.spacedBy(20.dp), modifier = Modifier.padding(horizontal = 16.dp)) {
-                            // Label
-                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text("LANDMARK LABEL", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
-                                TextField(
-                                    value = labelText,
-                                    onValueChange = { labelText = it },
-                                    placeholder = { Text("e.g., Gampel Pavilion", color = Color.Gray) },
-                                    enabled = !arePositiveDetailsLocked && existingLandmarkId == null,
-                                    singleLine = true,
-                                    colors = TextFieldDefaults.colors(
-                                        focusedContainerColor = secondaryGroupedBg,
-                                        unfocusedContainerColor = secondaryGroupedBg,
-                                        disabledContainerColor = secondaryGroupedBg,
-                                        focusedIndicatorColor = Color.Transparent,
-                                        unfocusedIndicatorColor = Color.Transparent,
-                                        disabledIndicatorColor = Color.Transparent
-                                    ),
+                if (isFormVisible) {
+
+                    // Form Fields
+                    Column(modifier = Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("LANDMARK LABEL", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                            OutlinedTextField(
+                                value = labelText, onValueChange = { labelText = it },
+                                placeholder = { Text("e.g., Gampel Pavilion", color = Color.Gray) },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(16.dp),
+                                colors = OutlinedTextFieldDefaults.colors(focusedContainerColor = SecondaryGrouped, unfocusedContainerColor = SecondaryGrouped, focusedBorderColor = Color.Transparent, unfocusedBorderColor = Color.Transparent, focusedTextColor = Color.White, unfocusedTextColor = Color.White),
+                                enabled = !arePositiveDetailsLocked && existingLandmarkId == null
+                            )
+                            if (businessLandmarkId != null) Text("ID: $businessLandmarkId", fontSize = 12.sp, color = Color.DarkGray, fontFamily = FontFamily.Monospace)
+                        }
+
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("SHORT DESCRIPTION", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                            Box(contentAlignment = Alignment.BottomEnd) {
+                                OutlinedTextField(
+                                    value = shortDescription, onValueChange = { shortDescription = it },
+                                    placeholder = { Text("e.g., Front entrance", color = Color.Gray) },
+                                    modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp),
                                     shape = RoundedCornerShape(16.dp),
-                                    modifier = Modifier.fillMaxWidth()
+                                    colors = OutlinedTextFieldDefaults.colors(focusedContainerColor = SecondaryGrouped, unfocusedContainerColor = SecondaryGrouped, focusedBorderColor = Color.Transparent, unfocusedBorderColor = Color.Transparent, focusedTextColor = Color.White, unfocusedTextColor = Color.White),
+                                    enabled = !arePositiveDetailsLocked && existingLandmarkId == null
                                 )
-                                if (businessLandmarkId != null) {
-                                    Text("ID: $businessLandmarkId", fontSize = 12.sp, fontWeight = FontWeight.Medium, fontFamily = FontFamily.Monospace, color = Color.Gray.copy(alpha = 0.5f))
-                                }
-                            }
-
-                            // Short Description
-                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text("SHORT DESCRIPTION", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
-                                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.BottomEnd) {
-                                    TextField(
-                                        value = shortDescriptionState.value,
-                                        onValueChange = { shortDescriptionState.value = it },
-                                        placeholder = { Text("e.g., Front entrance", color = Color.Gray) },
-                                        enabled = !arePositiveDetailsLocked && existingLandmarkId == null,
-                                        minLines = 3,
-                                        maxLines = 6,
-                                        colors = TextFieldDefaults.colors(
-                                            focusedContainerColor = secondaryGroupedBg,
-                                            unfocusedContainerColor = secondaryGroupedBg,
-                                            disabledContainerColor = secondaryGroupedBg,
-                                            focusedIndicatorColor = Color.Transparent,
-                                            unfocusedIndicatorColor = Color.Transparent,
-                                            disabledIndicatorColor = Color.Transparent
-                                        ),
-                                        shape = RoundedCornerShape(16.dp),
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
-                                    IconButton(
-                                        onClick = {
-                                            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                                            showTextScanner = true
-                                        },
-                                        enabled = !arePositiveDetailsLocked && existingLandmarkId == null,
-                                        modifier = Modifier.padding(12.dp).size(36.dp).background(if (arePositiveDetailsLocked || existingLandmarkId != null) primaryColor.copy(alpha = 0.5f) else primaryColor, CircleShape)
-                                    ) {
-                                        Icon(Icons.Filled.Search, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
-                                    }
-                                }
-                            }
-
-                            if (completedPositiveResult != null && !isFullSubmissionComplete) {
-                                Row(modifier = Modifier.fillMaxWidth().background(Color.Green.copy(alpha = 0.1f), RoundedCornerShape(16.dp)).padding(20.dp), verticalAlignment = Alignment.Top) {
-                                    Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = Color.Green, modifier = Modifier.size(24.dp))
-                                    Spacer(Modifier.width(16.dp))
-                                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                        Text("Landmark Saved", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.Black)
-                                        Text("Your landmark and positive media were successfully uploaded to the cloud.", fontSize = 14.sp, color = Color.Gray)
-                                    }
-                                }
-                            }
-
-                            // 🚀 THE FIX: Only show Negative Video section if this is a BRAND-NEW upload!
-                            if (existingLandmarkId == null) {
-                                Column(verticalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.fillMaxWidth().background(secondaryGroupedBg, RoundedCornerShape(16.dp)).padding(20.dp)) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                            Text("Negative Background", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Color.Black)
-                                            Text("Record a >= 10s video panning the area. Do NOT include the landmark.", fontSize = 15.sp, color = Color.Gray)
-                                        }
-                                        Icon(
-                                            imageVector = if (hasRequiredNegativeVideo) Icons.Filled.CheckCircle else Icons.Filled.Error,
-                                            contentDescription = null,
-                                            tint = if (hasRequiredNegativeVideo) Color.Green else Color(0xFFFFA500),
-                                            modifier = Modifier.size(22.dp)
-                                        )
-                                    }
-
-                                    Button(
-                                        onClick = {
-                                            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                                            showNegativeCamera = true
-                                        },
-                                        enabled = !areNegativePhotosLocked,
-                                        modifier = Modifier.fillMaxWidth().height(54.dp),
-                                        shape = RoundedCornerShape(16.dp),
-                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1C1C29), disabledContainerColor = Color(0xFF1C1C29).copy(alpha = 0.6f))
-                                    ) {
-                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                            Icon(Icons.Filled.Camera, contentDescription = null, tint = Color.White)
-                                            Text(if (capturedNegativeVideo == null) "Record Negative" else "Retake Negative", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                                        }
-                                    }
-
-                                    capturedNegativeVideo?.let { negVid ->
-                                        Box(modifier = Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(16.dp))) {
-                                            UploadFormVideoPlayer(url = negVid.fileURL)
-                                            Button(
-                                                onClick = {
-                                                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                                                    negVid.deleteLocalFile()
-                                                    capturedNegativeVideo = null
-                                                },
-                                                enabled = !areNegativePhotosLocked,
-                                                modifier = Modifier.align(Alignment.TopEnd).padding(12.dp).size(32.dp),
-                                                contentPadding = PaddingValues(0.dp),
-                                                colors = ButtonDefaults.buttonColors(containerColor = Color.Black.copy(alpha = 0.6f)),
-                                                shape = CircleShape
-                                            ) {
-                                                Icon(Icons.Filled.Close, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        // Upload Button Row
-                        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            if (archivedMedia != null) {
-                                Button(
-                                    onClick = {
-                                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                                        saveDraftAndDismiss()
-                                    },
-                                    modifier = Modifier.size(60.dp),
-                                    shape = RoundedCornerShape(16.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = secondaryGroupedBg)
-                                ) { Icon(Icons.Filled.ArrowBack, contentDescription = null, tint = Color.Black, modifier = Modifier.size(20.dp)) }
-                            }
-
-                            if (hasPositiveMedia || completedPositiveResult != null) {
-                                Button(
-                                    onClick = {
-                                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                                        startFullSubmission()
-                                    },
-                                    enabled = canUpload,
-                                    modifier = Modifier.weight(1f).height(60.dp),
-                                    shape = RoundedCornerShape(16.dp),
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = primaryColor,
-                                        disabledContainerColor = Color.Gray.copy(alpha = 0.3f)
-                                    )
-                                ) {
-                                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                                        if (isSubmissionRunning) {
-                                            CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
-                                            Text(
-                                                text = if (hardNegativeUploadService.isUploading) "Uploading reference..." else if (isStitchingVideos) "Processing..." else uploadService.status,
-                                                fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Color.White
-                                            )
-                                        } else {
-                                            Icon(if (isFullSubmissionComplete) Icons.Filled.CheckCircle else Icons.Filled.CloudUpload, contentDescription = null, tint = Color.White)
-                                            Text(
-                                                text = if (isFullSubmissionComplete) "Complete" else if (completedPositiveResult != null) "Retry Negative" else if (existingLandmarkId != null) "Upload Additional Media" else "Upload Landmark",
-                                                fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Color.White
-                                            )
-                                        }
-                                    }
-                                }
-                            } else if (archivedMedia != null) {
-                                Spacer(Modifier.weight(1f))
-                            }
-                        }
-
-                        // Status Cards
-                        if (uploadService.stage.toString() != "Idle") {
-                            Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).background(secondaryGroupedBg, RoundedCornerShape(16.dp)).padding(20.dp)) {
-                                if (uploadService.isUploading) {
-                                    CircularProgressIndicator(modifier = Modifier.size(24.dp), color = primaryColor)
-                                } else {
-                                    Icon(
-                                        imageVector = if (uploadService.stage.toString() == "Complete") Icons.Filled.CheckCircle else if (uploadService.stage.toString() == "Failed") Icons.Filled.Error else Icons.Filled.CloudUpload,
-                                        contentDescription = null,
-                                        tint = if (uploadService.stage.toString() == "Complete") Color.Green else if (uploadService.stage.toString() == "Failed") Color.Red else primaryColor,
-                                        modifier = Modifier.size(24.dp)
-                                    )
-                                }
-                                Spacer(Modifier.width(16.dp))
-                                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    Text(uploadService.status, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.Black)
-                                    Text(uploadService.detail, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Color.Gray)
-                                    if (uploadService.isUploading) LinearProgressIndicator(progress = { uploadService.progress }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), color = primaryColor)
-                                }
-                                if (uploadService.stage.toString() == "Failed") {
-                                    IconButton(onClick = { uploadService.reset() }, modifier = Modifier.size(24.dp)) { Icon(Icons.Filled.Close, contentDescription = "Dismiss") }
-                                }
-                            }
-                        }
-
-                        if (hardNegativeUploadService.status != "Idle") {
-                            Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).background(secondaryGroupedBg, RoundedCornerShape(16.dp)).padding(20.dp)) {
-                                if (hardNegativeUploadService.isUploading) {
-                                    CircularProgressIndicator(modifier = Modifier.size(24.dp), color = primaryColor)
-                                } else {
-                                    Icon(Icons.Filled.Videocam, contentDescription = null, tint = primaryColor, modifier = Modifier.size(24.dp))
-                                }
-                                Spacer(Modifier.width(16.dp))
-                                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    Text("Reference Video", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.Black)
-                                    Text(hardNegativeUploadService.status, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Color.Gray)
-                                    if (hardNegativeUploadService.isUploading) LinearProgressIndicator(progress = { hardNegativeUploadService.progress }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), color = primaryColor)
-                                }
-                            }
-                        }
-
-                        if (isFullSubmissionComplete) {
-                            Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).background(Color.Green.copy(alpha = 0.1f), RoundedCornerShape(16.dp)).padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = Color.Green, modifier = Modifier.size(24.dp))
-                                Spacer(Modifier.width(16.dp))
-                                Text("Submission Complete", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Color.Black)
-                            }
-                        }
-
-                        if (archivedMedia == null && !uploadService.isUploading && !isFullSubmissionComplete) {
-                            Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), contentAlignment = Alignment.CenterStart) {
-                                Button(
-                                    onClick = {
-                                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                                        showDiscardAlert = true
-                                    },
-                                    modifier = Modifier.size(60.dp),
-                                    shape = RoundedCornerShape(16.dp),
-                                    contentPadding = PaddingValues(0.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(alpha = 0.1f))
-                                ) {
-                                    Icon(Icons.Filled.Delete, contentDescription = "Delete", tint = Color.Red, modifier = Modifier.size(20.dp))
+                                Box(modifier = Modifier.padding(12.dp).size(36.dp).background(if (arePositiveDetailsLocked || existingLandmarkId != null) PrimaryBlue.copy(0.5f) else PrimaryBlue, CircleShape).clickable(enabled = !arePositiveDetailsLocked && existingLandmarkId == null) {
+                                    haptic.performHapticFeedback(HapticFeedbackType.Light)
+                                    showTextScanner = true
+                                }, contentAlignment = Alignment.Center) {
+                                    Icon(Icons.Default.DocumentScanner, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
                                 }
                             }
                         }
                     }
 
-                    Spacer(Modifier.height(40.dp))
-                }
-                Spacer(Modifier.height(90.dp))
-            }
+                    if (completedPositiveResult != null && !isFullSubmissionComplete) {
+                        Surface(color = Color.Green.copy(0.1f), shape = RoundedCornerShape(16.dp), modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth()) {
+                            Row(modifier = Modifier.padding(20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.Top) {
+                                Icon(Icons.Default.Verified, contentDescription = null, tint = Color.Green, modifier = Modifier.size(24.dp))
+                                Column {
+                                    Text("Landmark Saved", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                    Text("Your landmark and positive media were successfully uploaded to the cloud.", fontSize = 14.sp, color = Color.Gray)
+                                }
+                            }
+                        }
+                    }
 
-            // Overlays
-            if (showArchivePrompt) {
-                Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f)), contentAlignment = Alignment.Center) {
-                    Column(
-                        modifier = Modifier.padding(horizontal = 24.dp).background(Color.White, RoundedCornerShape(32.dp)).padding(30.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(24.dp)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Box(modifier = Modifier.size(70.dp).background(primaryColor.copy(alpha = 0.15f), CircleShape))
-                            Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = primaryColor, modifier = Modifier.size(32.dp))
-                        }
-                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("Capture Complete", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color.Black)
-                            Text("Continue to fill out the landmark details. You can upload it when you're done.", fontSize = 15.sp, color = Color.Gray, textAlign = TextAlign.Center)
-                        }
-                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Button(
-                                onClick = {
-                                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                                    showArchivePrompt = false
-                                    processAndStitchPendingMedia()
-                                },
-                                modifier = Modifier.fillMaxWidth().height(54.dp),
-                                shape = RoundedCornerShape(16.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = primaryColor)
-                            ) { Text("Continue", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Color.White) }
+                    if (existingLandmarkId == null) {
+                        // Negative Media Section
+                        Column(modifier = Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                            Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("Negative Background", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                    Text("Record a >= ${negativeTargetDuration}s video panning the area. Do NOT include the landmark.", fontSize = 15.sp, color = Color.Gray)
+                                }
+                                Icon(if (hasRequiredNegativeVideo) Icons.Default.CheckCircle else Icons.Default.Warning, contentDescription = null, tint = if (hasRequiredNegativeVideo) Color.Green else Color(0xFFFFA500), modifier = Modifier.size(22.dp))
+                            }
 
                             Button(
-                                onClick = {
-                                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                                    showArchivePrompt = false
-                                    discardPendingMedia()
-                                },
-                                modifier = Modifier.fillMaxWidth().height(54.dp),
+                                onClick = { haptic.performHapticFeedback(HapticFeedbackType.Medium); showNegativeCamera = true },
+                                modifier = Modifier.fillMaxWidth().height(56.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1C1C24)),
                                 shape = RoundedCornerShape(16.dp),
-                                border = BorderStroke(2.dp, Color.Red.copy(alpha = 0.8f)),
-                                colors = ButtonDefaults.buttonColors(containerColor = Color.LightGray.copy(alpha = 0.15f))
-                            ) { Text("Discard", fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = Color.Red) }
+                                enabled = !areNegativePhotosLocked
+                            ) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.CameraAlt, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                                    Text(if (capturedNegativeVideo == null) "Record Negative" else "Retake Negative", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+
+                            if (capturedNegativeVideo != null) {
+                                Box(modifier = Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(16.dp))) {
+                                    UploadFormVideoPlayer(capturedNegativeVideo!!.fileURL)
+                                    if (!areNegativePhotosLocked) {
+                                        Box(modifier = Modifier.align(Alignment.TopEnd).padding(12.dp).size(32.dp).background(Color.Black.copy(0.6f), CircleShape).clickable {
+                                            haptic.performHapticFeedback(HapticFeedbackType.Light)
+                                            capturedNegativeVideo?.deleteLocalFile()
+                                            capturedNegativeVideo = null
+                                        }, contentAlignment = Alignment.Center) {
+                                            Icon(Icons.Default.Close, contentDescription = "Remove", tint = Color.White, modifier = Modifier.size(14.dp))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Main Upload Button Row
+                    Row(modifier = Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        if (archivedMedia != null) {
+                            Button(onClick = { haptic.performHapticFeedback(HapticFeedbackType.Light); saveDraftAndDismiss() }, modifier = Modifier.size(60.dp), colors = ButtonDefaults.buttonColors(containerColor = SecondaryGrouped), shape = RoundedCornerShape(16.dp)) {
+                                Icon(Icons.Default.Undo, contentDescription = "Undo", tint = Color.White)
+                            }
+                        }
+
+                        if (hasPositiveMedia || completedPositiveResult != null) {
+                            Button(
+                                onClick = { haptic.performHapticFeedback(HapticFeedbackType.Heavy); startFullSubmission() },
+                                modifier = Modifier.weight(1f).height(60.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = if (canUpload) PrimaryBlue else Color.DarkGray, disabledContainerColor = Color.DarkGray),
+                                shape = RoundedCornerShape(16.dp),
+                                enabled = canUpload
+                            ) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.CloudUpload, contentDescription = null, tint = Color.White)
+                                    Text(if (archivedMedia != null) "Upload Draft" else if (existingLandmarkId != null) "Upload Additional Media" else "Upload Landmark", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                }
+                            }
+                        } else if (archivedMedia != null) {
+                            Spacer(Modifier.weight(1f))
+                        }
+
+                        if (archivedMedia == null) {
+                            Button(onClick = { haptic.performHapticFeedback(HapticFeedbackType.Medium); showDiscardAlert = true }, modifier = Modifier.size(60.dp), colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(0.1f)), shape = RoundedCornerShape(16.dp)) {
+                                Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.Red)
+                            }
+                        }
+                    }
+
+                    // Status Cards
+                    if (uploadService.stage != UploadStage.IDLE) {
+                        Surface(color = SecondaryGrouped, shape = RoundedCornerShape(16.dp), modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth()) {
+                            Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.Top) {
+                                    if (uploadService.isUploading) CircularProgressIndicator(color = PrimaryBlue, modifier = Modifier.size(24.dp).padding(top = 2.dp))
+                                    else Icon(Icons.Default.Info, contentDescription = null, tint = if (uploadService.stage == UploadStage.COMPLETE) Color.Green else if (uploadService.stage == UploadStage.FAILED) Color.Red else PrimaryBlue, modifier = Modifier.size(24.dp))
+                                    Column {
+                                        Text(uploadService.status, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                        Text(uploadService.detail, fontSize = 14.sp, color = Color.Gray)
+                                    }
+                                }
+                                if (uploadService.isUploading) LinearProgressIndicator(progress = { uploadService.progress }, modifier = Modifier.fillMaxWidth().height(4.dp), color = PrimaryBlue)
+                                if (uploadService.stage == UploadStage.FAILED) TextButton(onClick = { uploadService.reset() }) { Text("Dismiss", color = PrimaryBlue, fontWeight = FontWeight.Bold) }
+                            }
+                        }
+                    }
+
+                    if (hardNegativeUploadService.status != "Idle") {
+                        Surface(color = SecondaryGrouped, shape = RoundedCornerShape(16.dp), modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth()) {
+                            Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.Top) {
+                                    if (hardNegativeUploadService.isUploading) CircularProgressIndicator(color = PrimaryBlue, modifier = Modifier.size(24.dp).padding(top = 2.dp))
+                                    else Icon(Icons.Default.Videocam, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(24.dp))
+                                    Column {
+                                        Text("Reference Video", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                        Text(hardNegativeUploadService.status, fontSize = 14.sp, color = Color.Gray)
+                                    }
+                                }
+                                if (hardNegativeUploadService.isUploading) LinearProgressIndicator(progress = { hardNegativeUploadService.progress }, modifier = Modifier.fillMaxWidth().height(4.dp), color = PrimaryBlue)
+                            }
+                        }
+                    }
+
+                    if (isFullSubmissionComplete) {
+                        Surface(color = Color.Green.copy(0.1f), shape = RoundedCornerShape(16.dp), modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth()) {
+                            Row(modifier = Modifier.padding(20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Verified, contentDescription = null, tint = Color.Green, modifier = Modifier.size(24.dp))
+                                Text("Submission Complete", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            }
                         }
                     }
                 }
+                Spacer(Modifier.height(40.dp))
             }
+        }
 
-            if (isStitchingVideos) {
-                Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.8f)), contentAlignment = Alignment.Center) {
-                    Column(
-                        modifier = Modifier.background(Color.White, RoundedCornerShape(32.dp)).padding(30.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(20.dp)
-                    ) {
-                        CircularProgressIndicator(color = primaryColor)
-                        Text("Processing videos", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.Black)
-                        Text("Please wait a moment.", fontSize = 15.sp, color = Color.Gray, textAlign = TextAlign.Center)
-                    }
+        if (isStitchingVideos) {
+            Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(0.6f)).zIndex(100f), contentAlignment = Alignment.Center) {
+                Column(modifier = Modifier.background(Color(0xFF1C1C24), RoundedCornerShape(24.dp)).padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(20.dp)) {
+                    CircularProgressIndicator(color = Color.White, modifier = Modifier.size(48.dp))
+                    Text("Processing Video", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    Text("Please wait a moment.", fontSize = 14.sp, color = Color.Gray, textAlign = TextAlign.Center)
                 }
             }
         }
     }
 
-    // Alerts and Dialogs
     if (showDiscardAlert) {
         AlertDialog(
             onDismissRequest = { showDiscardAlert = false },
             title = { Text("Discard this upload?") },
             text = { Text("This will remove the media and clear the form.") },
-            confirmButton = {
-                TextButton(
-                    onClick = { showDiscardAlert = false; clearScreen() },
-                    colors = ButtonDefaults.textButtonColors(contentColor = Color.Red)
-                ) { Text("Discard") }
+            confirmButton = { TextButton(onClick = { showDiscardAlert = false; clearScreen() }) { Text("Discard", color = Color.Red) } },
+            dismissButton = { TextButton(onClick = { showDiscardAlert = false }) { Text("Cancel", color = Color.White) } },
+            containerColor = SecondaryGrouped
+        )
+    }
+
+    if (showBackgroundUploadAlert) {
+        AlertDialog(
+            onDismissRequest = {
+                showBackgroundUploadAlert = false
+                clearScreen()
+                onDismiss()
             },
-            dismissButton = {
-                TextButton(onClick = { showDiscardAlert = false }) { Text("Cancel") }
-            }
-        )
-    }
-
-    if (showCompletionPopup) {
-        AlertDialog(
-            onDismissRequest = { showCompletionPopup = false },
-            title = { Text("Landmark Uploaded!") },
-            text = { Text("Your landmark media was uploaded. The negative reference video may continue processing in the background.") },
-            confirmButton = {
-                if (archivedMedia != null || existingLandmarkId != null) {
-                    TextButton(onClick = { showCompletionPopup = false; onDismiss() }) { Text("Done") }
-                } else {
-                    Column(horizontalAlignment = Alignment.End) {
-                        TextButton(onClick = { showCompletionPopup = false; resetForAnotherLandmark() }) { Text("Record Another Landmark") }
-                        TextButton(onClick = { showCompletionPopup = false; resetForAnotherLandmark(); onDismiss() }) { Text("Done") }
-                    }
-                }
-            }
-        )
-    }
-
-    if (showAutoQueueAlert) {
-        AlertDialog(
-            onDismissRequest = { showAutoQueueAlert = false },
-            title = { Text("Connection Offline") },
-            text = { Text("You currently have no internet connection. This landmark has been securely added to your Upload Queue and will automatically sync when service returns!") },
-            confirmButton = {
-                TextButton(onClick = {
-                    showAutoQueueAlert = false
-                    if (archivedMedia != null) onDismiss()
-                }) { Text("OK") }
-            }
+            title = { Text("Upload Queued!") },
+            text = { Text("Your landmark has been securely queued! It will upload in the background. Feel free to keep using the app, but please make sure to leave it open until the upload finishes.") },
+            confirmButton = { TextButton(onClick = { showBackgroundUploadAlert = false; clearScreen() }) { Text("Record Another Landmark", color = PrimaryBlue) } },
+            dismissButton = { TextButton(onClick = { showBackgroundUploadAlert = false; clearScreen(); onDismiss() }) { Text("Done", color = Color.White) } },
+            containerColor = SecondaryGrouped
         )
     }
 
@@ -946,41 +585,40 @@ fun LandmarkRecord(
             onDismissRequest = { showLimitAlert = false },
             title = { Text(limitAlertTitle) },
             text = { Text(limitAlertMessage) },
-            confirmButton = { TextButton(onClick = { showLimitAlert = false }) { Text("OK") } }
-        )
-    }
-
-    if (showNegativeCamera) {
-        NegativeVideoCameraView(
-            onDone = { video ->
-                capturedNegativeVideo = video
-                if (!hardNegativeUploadService.isUploading) hardNegativeUploadService.reset()
-                showNegativeCamera = false
-            },
-            onDismiss = { showNegativeCamera = false }
-        )
-    }
-
-    if (showTextScanner) {
-        ScannerSheet(
-            scannedText = shortDescriptionState,
-            onDismiss = { showTextScanner = false }
+            confirmButton = { TextButton(onClick = { showLimitAlert = false }) { Text("OK", color = PrimaryBlue) } },
+            containerColor = SecondaryGrouped
         )
     }
 }
 
+// Custom Native Image Loader (Replaces Coil)
 @Composable
-fun UploadFormVideoPlayer(url: Uri) {
-    AndroidView(
-        factory = { context ->
-            VideoView(context).apply {
-                setVideoURI(url)
-                setOnPreparedListener { mp ->
-                    mp.isLooping = true
-                    start()
-                }
+fun LocalUriImage(uri: Uri, modifier: Modifier = Modifier, contentScale: ContentScale = ContentScale.Crop) {
+    val context = LocalContext.current
+    var bitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+
+    LaunchedEffect(uri) {
+        withContext(Dispatchers.IO) {
+            try {
+                val stream = context.contentResolver.openInputStream(uri)
+                bitmap = BitmapFactory.decodeStream(stream)
+                stream?.close()
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
-        },
-        modifier = Modifier.fillMaxSize()
-    )
+        }
+    }
+
+    if (bitmap != null) {
+        androidx.compose.foundation.Image(
+            bitmap = bitmap!!.asImageBitmap(),
+            contentDescription = null,
+            modifier = modifier,
+            contentScale = contentScale
+        )
+    } else {
+        Box(modifier = modifier.background(Color.DarkGray), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(color = Color.White)
+        }
+    }
 }

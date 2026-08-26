@@ -1,11 +1,10 @@
 package looksee.angelll.com.uifiles
 
-import android.annotation.SuppressLint
 import android.net.Uri
-import android.view.HapticFeedbackConstants
-import android.widget.VideoView
+import android.view.ViewGroup
+import android.widget.FrameLayout
+import androidx.camera.view.PreviewView
 import androidx.compose.animation.*
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -23,27 +22,30 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalView
-import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.zIndex
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import androidx.compose.ui.viewinterop.AndroidView
-import kotlinx.coroutines.Job
+import androidx.media3.common.MediaItem
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
-import kotlin.math.max
-import kotlin.math.min
-import kotlin.time.Duration.Companion.milliseconds
+
+// MARK: - Models & Enums
 
 sealed class CameraPhase {
     data class Mandatory(val idx: Int) : CameraPhase()
@@ -76,582 +78,363 @@ sealed class CameraPhase {
         }
 }
 
-data class RecordedClip(val phase: CameraPhase, val url: Uri, val duration: Int) {
-    val id: String get() = url.toString()
+data class RecordedClip(
+    val phase: CameraPhase,
+    val uri: Uri,
+    val duration: Int
+) {
+    val id: String get() = uri.toString()
 }
 
-sealed class CameraFlowState {
-    object Instruction : CameraFlowState()
-    object Recording : CameraFlowState()
-    data class ReviewingRecent(val url: Uri, val duration: Int) : CameraFlowState()
-    object Gallery : CameraFlowState()
+enum class CameraFlowState {
+    INSTRUCTION, RECORDING, REVIEWING_RECENT, GALLERY
 }
 
-@SuppressLint("DefaultLocale")
+// MARK: - Main Screen
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun PositiveVideoCameraView(
     isActive: Boolean,
     isNavVisible: MutableState<Boolean>,
+    uiTargetDuration: Int = 30,
+    minTotalTimeLimit: Int? = null,
     completionButtonTitle: String = "Finish Submission",
     onDone: (List<Uri>) -> Unit,
     onCancel: () -> Unit
 ) {
-    val brandBlue = Color(0xFF387DFF)
-    val brandOrange = Color(0xFFFFA500)
-
-    val view = LocalView.current
-    val coroutineScope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val coroutineScope = rememberCoroutineScope()
 
-    // Expects your NegativeVideoCameraService implementation (Will be red until added!)
-    val cameraService = remember { NegativeVideoCameraService() }
-
-    var wasRecordingBeforeBackground by remember { mutableStateOf(false) }
-    var suppressNextError by remember { mutableStateOf(false) }
+    val cameraService = remember { NegativeVideoCameraService(context) }
 
     var currentPhase by remember { mutableStateOf<CameraPhase>(CameraPhase.Mandatory(1)) }
-    var flowState by remember { mutableStateOf<CameraFlowState>(CameraFlowState.Instruction) }
+    var flowState by remember { mutableStateOf(CameraFlowState.INSTRUCTION) }
+
+    var reviewingUri by remember { mutableStateOf<Uri?>(null) }
+    var reviewingDuration by remember { mutableStateOf(0) }
 
     val expectedAngles = 1
-    var recordingJob by remember { mutableStateOf<Job?>(null) }
-    var timeElapsed by remember { mutableIntStateOf(0) }
+    val maxTotalTimeLimit = 90
+    val actualMinTotalTimeLimit = minTotalTimeLimit ?: uiTargetDuration
 
+    var timeElapsed by remember { mutableStateOf(0) }
     var recordedClips by remember { mutableStateOf<List<RecordedClip>>(emptyList()) }
     var gallerySelection by remember { mutableStateOf("") }
     var isCancelled by remember { mutableStateOf(false) }
 
-    var zoomLevel by remember { mutableFloatStateOf(1.0f) }
+    var isFinishing by remember { mutableStateOf(false) }
+    var finishingErrorMessage by remember { mutableStateOf<String?>(null) }
+
+    var zoomLevel by remember { mutableStateOf(1f) }
     var showZoomIndicator by remember { mutableStateOf(false) }
-    var zoomFadeJob by remember { mutableStateOf<Job?>(null) }
-
     var showZoomInstruction by remember { mutableStateOf(false) }
-    var zoomInstructionJob by remember { mutableStateOf<Job?>(null) }
-
-    var isCameraWarmedUp by remember { mutableStateOf(false) }
-
-    val maxTotalTimeLimit = 90
-    val minTotalTimeLimit = 30
 
     val totalDurationElapsedInt = recordedClips.sumOf { it.duration }
 
     val minPhaseTimeLimit = if (currentPhase.isMandatory) {
-        4
+        if (actualMinTotalTimeLimit == 30) 4
+        else if (actualMinTotalTimeLimit == 1) 1
+        else actualMinTotalTimeLimit
     } else {
-        min(4, minTotalTimeLimit - totalDurationElapsedInt)
+        val deficit = actualMinTotalTimeLimit - totalDurationElapsedInt
+        if (actualMinTotalTimeLimit == 30) if (deficit > 0) Math.min(4, deficit) else 1
+        else if (actualMinTotalTimeLimit == 1) 1
+        else if (deficit > 0) deficit else 1
     }
 
-    val maxPhaseTimeLimit = if (currentPhase.isMandatory) {
-        maxTotalTimeLimit / expectedAngles
-    } else {
-        maxTotalTimeLimit - totalDurationElapsedInt
+    val maxPhaseTimeLimit = if (currentPhase.isMandatory) maxTotalTimeLimit / expectedAngles else maxTotalTimeLimit - totalDurationElapsedInt
+
+    val isReviewingRecent = flowState == CameraFlowState.REVIEWING_RECENT
+
+    val currentLiveDuration = when (flowState) {
+        CameraFlowState.RECORDING -> timeElapsed
+        CameraFlowState.REVIEWING_RECENT -> reviewingDuration
+        else -> 0
     }
 
-    val isReviewingRecent = flowState is CameraFlowState.ReviewingRecent
+    val isCurrentClipValidMandatory = currentPhase.isMandatory && currentLiveDuration >= minPhaseTimeLimit
+    val totalTime = totalDurationElapsedInt + currentLiveDuration
+    val capturedMandatoryCount = recordedClips.count { it.phase.isMandatory }
+    val effectiveMandatoryCount = capturedMandatoryCount + if (isCurrentClipValidMandatory) 1 else 0
+    val isReady = totalTime >= actualMinTotalTimeLimit && effectiveMandatoryCount >= expectedAngles
 
-    val currentLiveProgress = remember(flowState, timeElapsed, recordedClips, currentPhase) {
-        val currentLiveDuration: Int
-        val isCurrentClipValidMandatory: Boolean
+    val pagerState = rememberPagerState(pageCount = { recordedClips.size })
 
-        if (flowState == CameraFlowState.Recording) {
-            currentLiveDuration = timeElapsed
-            isCurrentClipValidMandatory = currentPhase.isMandatory && timeElapsed >= minPhaseTimeLimit
-        } else if (flowState is CameraFlowState.ReviewingRecent) {
-            val dur = (flowState as CameraFlowState.ReviewingRecent).duration
-            currentLiveDuration = dur
-            isCurrentClipValidMandatory = currentPhase.isMandatory && dur >= minPhaseTimeLimit
-        } else {
-            currentLiveDuration = 0
-            isCurrentClipValidMandatory = false
-        }
-
-        val total = totalDurationElapsedInt + currentLiveDuration
-        val capturedMandatoryCount = recordedClips.count { it.phase.isMandatory }
-        val effectiveMandatoryCount = capturedMandatoryCount + (if (isCurrentClipValidMandatory) 1 else 0)
-
-        val isReady = (total >= minTotalTimeLimit) && (effectiveMandatoryCount >= expectedAngles)
-        Pair(total, isReady)
-    }
-
-    fun showZoomIndicatorThenFade() {
-        zoomFadeJob?.cancel()
-        showZoomIndicator = true
-        zoomFadeJob = coroutineScope.launch {
-            delay(1500.milliseconds)
-            showZoomIndicator = false
-        }
-    }
-
-    fun triggerRecordingInstruction() {
-        zoomInstructionJob?.cancel()
-        showZoomInstruction = true
-        zoomInstructionJob = coroutineScope.launch {
-            delay(4000.milliseconds)
-            showZoomInstruction = false
-        }
-    }
-
-    fun startTimer() {
-        timeElapsed = 0
-        triggerRecordingInstruction()
-        recordingJob?.cancel()
-        recordingJob = coroutineScope.launch {
-            while (timeElapsed < maxPhaseTimeLimit) {
-                delay(1000.milliseconds)
-                timeElapsed += 1
-            }
-            recordingJob?.cancel()
-            recordingJob = null
-            cameraService.stopRecording()
-        }
-    }
-
-    fun stopTimer() {
-        recordingJob?.cancel()
-        recordingJob = null
-    }
-
-    fun nextRequiredPhase(): CameraPhase? {
-        for (i in 0 until expectedAngles) {
-            if (!recordedClips.any { it.phase.indexPos == i && it.phase.isMandatory }) {
-                return CameraPhase.Mandatory(i + 1)
-            }
-        }
-        return null
-    }
-
-    fun deleteClip(clip: RecordedClip) {
-        val mutableClips = recordedClips.toMutableList()
-        val idx = mutableClips.indexOf(clip)
-        if (idx != -1) {
-            mutableClips.removeAt(idx)
-            try { File(clip.url.path ?: "").delete() } catch (_: Exception) {}
-            recordedClips = mutableClips
-        }
-
-        if (recordedClips.isEmpty()) {
-            currentPhase = nextRequiredPhase() ?: CameraPhase.Mandatory(1)
-            flowState = CameraFlowState.Instruction
-        }
-    }
-
-    fun handleAppBackgrounding() {
-        if (flowState != CameraFlowState.Recording) return
-        wasRecordingBeforeBackground = true
-        suppressNextError = true
-        stopTimer()
-        cameraService.stopRecording()
-    }
-
-    fun handleAppForegrounding() {
-        if (!wasRecordingBeforeBackground) return
-        wasRecordingBeforeBackground = false
-        cameraService.errorMessage = null
-        cameraService.start()
-    }
-
-    // Lifecycle Observer for Background/Foreground
+    // Lifecycle Handling for Backgrounding
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            when (event) {
-                Lifecycle.Event.ON_PAUSE -> handleAppBackgrounding()
-                Lifecycle.Event.ON_RESUME -> handleAppForegrounding()
-                else -> {}
+            if (event == Lifecycle.Event.ON_PAUSE) {
+                cameraService.handleInterruptionBegan()
+            } else if (event == Lifecycle.Event.ON_RESUME) {
+                cameraService.handleInterruptionEnded()
+                if (flowState == CameraFlowState.RECORDING) {
+                    timeElapsed = 0
+                    flowState = CameraFlowState.INSTRUCTION
+                }
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    LaunchedEffect(Unit) {
-        isNavVisible.value = (flowState == CameraFlowState.Instruction)
-        cameraService.onVideoRecorded = { uri: Uri ->
-            if (isCancelled) {
-                try { File(uri.path ?: "").delete() } catch (_: Exception) {}
-                onCancel()
-            } else if (suppressNextError) {
-                suppressNextError = false
-                try { File(uri.path ?: "").delete() } catch (_: Exception) {}
-                flowState = CameraFlowState.Instruction
-            } else {
-                val recordedDuration = timeElapsed
-                flowState = CameraFlowState.ReviewingRecent(uri, recordedDuration)
-            }
-        }
-        if (isActive) {
-            coroutineScope.launch {
-                cameraService.start()
-                delay(400.milliseconds)
-                isCameraWarmedUp = true
-            }
-        }
-    }
-
+    // Handle incoming video
     DisposableEffect(Unit) {
+        cameraService.onVideoRecorded = { uri ->
+            reviewingUri = uri
+            reviewingDuration = timeElapsed
+            flowState = CameraFlowState.REVIEWING_RECENT
+        }
         onDispose {
-            isNavVisible.value = true
-            isCameraWarmedUp = false
-            coroutineScope.launch {
-                delay(500.milliseconds)
-                cameraService.stop()
-            }
-            stopTimer()
-            zoomFadeJob?.cancel()
-            zoomInstructionJob?.cancel()
+            cameraService.stop()
         }
     }
 
-    LaunchedEffect(isActive) {
-        if (isActive) {
-            if (!wasRecordingBeforeBackground) {
-                coroutineScope.launch {
-                    cameraService.start()
-                    delay(400.milliseconds)
-                    isCameraWarmedUp = true
-                }
+    // Timer
+    LaunchedEffect(flowState, cameraService.isRecording) {
+        if (flowState == CameraFlowState.RECORDING && cameraService.isRecording) {
+            timeElapsed = 0
+            showZoomInstruction = true
+            coroutineScope.launch { delay(4000); showZoomInstruction = false }
+
+            while (timeElapsed < maxPhaseTimeLimit) {
+                delay(1000)
+                timeElapsed++
             }
-        } else {
-            coroutineScope.launch { cameraService.stop() }
-            isCameraWarmedUp = false
+            cameraService.stopRecording()
         }
     }
 
     LaunchedEffect(flowState) {
-        isNavVisible.value = (flowState == CameraFlowState.Instruction)
+        isNavVisible.value = (flowState == CameraFlowState.INSTRUCTION)
     }
 
-    Box(modifier = Modifier.fillMaxSize().background(Color(0xFFF2F2F7))) {
+    fun deleteClip(clip: RecordedClip) {
+        recordedClips = recordedClips.filter { it.id != clip.id }
+        try { clip.uri.path?.let { File(it).delete() } } catch (e: Exception) {}
 
-        // MARK: - Camera Preview
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .alpha(if (flowState == CameraFlowState.Gallery || isReviewingRecent) 0f else if (isCameraWarmedUp) 1f else 0.001f)
-        ) {
-            PositiveVideoCameraPreview(
-                cameraService = cameraService,
-                zoomLevel = zoomLevel,
-                onZoomChanged = {
-                    zoomLevel = it
-                    showZoomIndicatorThenFade()
+        if (recordedClips.isEmpty()) {
+            val nextMandatory = (1..expectedAngles).find { idx -> recordedClips.none { it.phase is CameraPhase.Mandatory && (it.phase as CameraPhase.Mandatory).idx == idx } }?.let { CameraPhase.Mandatory(it) }
+            currentPhase = nextMandatory ?: CameraPhase.Mandatory(1)
+            flowState = CameraFlowState.INSTRUCTION
+        }
+    }
+
+    Box(modifier = Modifier.fillMaxSize().background(Color(0xFF0F0F1A))) {
+
+        // 1. Camera Preview
+        if (flowState == CameraFlowState.INSTRUCTION || flowState == CameraFlowState.RECORDING) {
+            AndroidView(
+                factory = { ctx ->
+                    val previewView = PreviewView(ctx).apply {
+                        layoutParams = ViewGroup.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT
+                        )
+                        scaleType = PreviewView.ScaleType.FILL_CENTER
+                    }
+                    if (isActive) cameraService.start(lifecycleOwner, previewView.surfaceProvider)
+                    previewView
                 },
-                modifier = Modifier.fillMaxSize()
-            )
-        }
-
-        // MARK: - Video Player
-        if (flowState is CameraFlowState.ReviewingRecent) {
-            PositiveSafeVideoPlayer(
-                uri = (flowState as CameraFlowState.ReviewingRecent).url,
-                modifier = Modifier.fillMaxSize()
-            )
-        }
-
-        // MARK: - Zoom Instruction
-        AnimatedVisibility(
-            visible = flowState == CameraFlowState.Recording && showZoomInstruction,
-            enter = fadeIn() + slideInVertically(initialOffsetY = { -it }),
-            exit = fadeOut() + slideOutVertically(targetOffsetY = { -it }),
-            modifier = Modifier.align(Alignment.TopCenter).padding(top = 110.dp)
-        ) {
-            Text(
-                text = "Slowly pan across the landmark while pinching to zoom in and out",
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White,
-                textAlign = TextAlign.Center,
                 modifier = Modifier
-                    .padding(horizontal = 14.dp)
-                    .background(brandBlue.copy(alpha = 0.9f), CircleShape)
-                    .padding(horizontal = 14.dp, vertical = 8.dp)
+                    .fillMaxSize()
+                    .pointerInput(Unit) {
+                        detectTransformGestures { _, _, zoom, _ ->
+                            zoomLevel = (zoomLevel * zoom).coerceIn(1f, 5f)
+                            showZoomIndicator = true
+                            cameraService.videoCapture?.camera?.cameraControl?.setZoomRatio(zoomLevel)
+                        }
+                    }
+                    .pointerInput(Unit) {
+                        detectTapGestures { offset ->
+                            val factory = (LocalContext as? PreviewView)?.meteringPointFactory ?: return@detectTapGestures
+                            val point = factory.createPoint(offset.x, offset.y)
+                            val action = androidx.camera.core.FocusMeteringAction.Builder(point).build()
+                            cameraService.videoCapture?.camera?.cameraControl?.startFocusAndMetering(action)
+                        }
+                    }
             )
+
+            // Hide Zoom Indicator after delay
+            LaunchedEffect(zoomLevel) {
+                delay(1500)
+                showZoomIndicator = false
+            }
         }
 
-        // MARK: - Zoom Indicator
-        AnimatedVisibility(
-            visible = showZoomIndicator,
-            enter = fadeIn(tween(200)),
-            exit = fadeOut(tween(300)),
-            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 160.dp)
-        ) {
+        // 2. Video Player for Reviewing
+        if (isReviewingRecent && reviewingUri != null) {
+            PositiveSafeVideoPlayer(uri = reviewingUri!!, modifier = Modifier.fillMaxSize())
+        }
+
+        // 3. Zoom Overlay Text
+        AnimatedVisibility(visible = showZoomInstruction, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.TopCenter).padding(top = 110.dp)) {
             Text(
-                text = String.format("%.1fx", zoomLevel),
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = FontFamily.Monospace,
-                color = Color.White,
-                modifier = Modifier
-                    .background(Color.Black.copy(alpha = 0.6f), CircleShape)
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                "Slowly pan across the landmark while pinching to zoom in and out",
+                color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center,
+                modifier = Modifier.background(Color(0xFF387DFF).copy(alpha = 0.9f), CircleShape).padding(horizontal = 14.dp, vertical = 8.dp)
             )
         }
 
-        // MARK: - UI Overlays
+        AnimatedVisibility(visible = showZoomIndicator, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 160.dp)) {
+            Text(
+                String.format("%.1fx", zoomLevel),
+                color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace,
+                modifier = Modifier.background(Color.Black.copy(alpha = 0.6f), CircleShape).padding(horizontal = 16.dp, vertical = 8.dp)
+            )
+        }
+
+        // 4. Main UI Overlay
         Column(modifier = Modifier.fillMaxSize()) {
 
-            // Top Controls
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 60.dp),
-                verticalAlignment = Alignment.Top
-            ) {
-                if (flowState != CameraFlowState.Gallery) {
-                    IconButton(
-                        onClick = {
-                            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                            isCancelled = true
-                            stopTimer()
-                            if (cameraService.isRecording) {
-                                cameraService.stopRecording()
-                            } else {
-                                recordedClips.forEach { try { File(it.url.path ?: "").delete() } catch(_: Exception){} }
-                                if (flowState is CameraFlowState.ReviewingRecent) {
-                                    try { File((flowState as CameraFlowState.ReviewingRecent).url.path ?: "").delete() } catch(_: Exception){}
-                                }
-                                recordedClips = emptyList()
-                                timeElapsed = 0
-                                currentPhase = CameraPhase.Mandatory(1)
-                                flowState = CameraFlowState.Instruction
-                                onCancel()
-                            }
-                        },
-                        modifier = Modifier
-                            .size(44.dp)
-                            .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                            .border(0.5.dp, Color.White.copy(alpha = 0.2f), CircleShape)
-                    ) {
+            // Top Bar
+            Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 58.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                if (flowState != CameraFlowState.GALLERY) {
+                    Box(modifier = Modifier.size(44.dp).clip(CircleShape).background(Color.White.copy(0.2f)).border(0.5.dp, Color.White.copy(0.2f), CircleShape).clickable {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        isCancelled = true
+                        if (cameraService.isRecording) cameraService.stopRecording()
+                        recordedClips.forEach { try { it.uri.path?.let { p -> File(p).delete() } } catch (e: Exception) {} }
+                        reviewingUri?.path?.let { File(it).delete() }
+                        onCancel()
+                    }, contentAlignment = Alignment.Center) {
                         Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
                     }
-                }
 
-                Spacer(Modifier.weight(1f))
-
-                if (flowState != CameraFlowState.Gallery) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        modifier = Modifier
-                            .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                            .border(0.5.dp, Color.White.copy(alpha = 0.2f), CircleShape)
-                            .padding(horizontal = 12.dp, vertical = 8.dp)
-                    ) {
-                        Icon(
-                            imageVector = if (currentLiveProgress.second) Icons.Default.CheckCircle else Icons.Default.Schedule,
-                            contentDescription = null,
-                            tint = if (currentLiveProgress.second) Color.Green else brandOrange,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Text(
-                            text = "${currentLiveProgress.first}s / $maxTotalTimeLimit",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace,
-                            color = Color.White
-                        )
+                    Row(modifier = Modifier.background(Color.Black.copy(0.4f), CircleShape).padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(if (isReady) Icons.Default.CheckCircle else Icons.Default.Schedule, contentDescription = null, tint = if (isReady) Color.Green else Color(0xFFFFA500), modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("${totalTime}s / ${maxTotalTimeLimit}", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
                     }
                 }
             }
 
-            AnimatedVisibility(
-                visible = flowState == CameraFlowState.Instruction,
-                enter = fadeIn() + slideInVertically(initialOffsetY = { -it }),
-                exit = fadeOut() + slideOutVertically(targetOffsetY = { -it })
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 16.dp)
-                        .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
-                        .border(0.5.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
-                        .padding(20.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    verticalAlignment = Alignment.Top
-                ) {
-                    Icon(Icons.Default.CameraEnhance, contentDescription = null, tint = brandBlue, modifier = Modifier.size(24.dp))
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("Capture Positive Media", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                        Text(
-                            "Follow the on-screen steps to capture the different angles of the landmark. This video should be from a typical place where a user may see the landmark.",
-                            fontSize = 14.sp, color = Color.White.copy(alpha = 0.8f), lineHeight = 20.sp
-                        )
+            if (flowState == CameraFlowState.INSTRUCTION) {
+                Row(modifier = Modifier.padding(horizontal = 20.dp).fillMaxWidth().background(Color.Black.copy(0.4f), RoundedCornerShape(16.dp)).border(0.5.dp, Color.White.copy(0.2f), RoundedCornerShape(16.dp)).padding(20.dp), verticalAlignment = Alignment.Top) {
+                    Icon(Icons.Default.CameraAlt, contentDescription = null, tint = Color(0xFF387DFF), modifier = Modifier.size(24.dp))
+                    Spacer(Modifier.width(16.dp))
+                    Column {
+                        Text("Capture Positive Media", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(6.dp))
+                        Text("Follow the on-screen steps to capture the different angles of the landmark. This video should be from a typical place where a user may see the landmark.", color = Color.White.copy(0.8f), fontSize = 14.sp)
                     }
                 }
             }
 
             Spacer(Modifier.weight(1f))
 
-            // Bottom Controls based on Flow State
-            Box(
-                modifier = Modifier.fillMaxWidth().padding(bottom = 100.dp, top = 20.dp).padding(horizontal = 20.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                AnimatedContent<CameraFlowState>(targetState = flowState, label = "FlowStateAnimation") { state ->
-                    when (state) {
-                        is CameraFlowState.Instruction -> {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(32.dp))
-                                    .border(0.5.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(32.dp))
-                                    .padding(24.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(16.dp)
-                            ) {
-                                Text(currentPhase.title, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                                Text(
-                                    text = currentPhase.instruction,
-                                    fontSize = 15.sp, fontWeight = FontWeight.Medium, color = Color.White.copy(alpha = 0.9f), textAlign = TextAlign.Center
-                                )
+            // Bottom Controls
+            AnimatedVisibility(visible = true, enter = slideInVertically(initialOffsetY = { it }) + fadeIn(), exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()) {
+                Box(modifier = Modifier.padding(horizontal = 20.dp, bottom = 100.dp).fillMaxWidth().background(Color.Black.copy(0.6f), RoundedCornerShape(32.dp)).border(0.5.dp, Color.White.copy(0.2f), RoundedCornerShape(32.dp)).padding(24.dp)) {
+
+                    when (flowState) {
+                        CameraFlowState.INSTRUCTION -> {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(currentPhase.title, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                                Spacer(Modifier.height(16.dp))
+                                Text(currentPhase.instruction, color = Color.White.copy(0.9f), fontSize = 15.sp, textAlign = TextAlign.Center)
+                                Spacer(Modifier.height(16.dp))
+
                                 Button(
                                     onClick = {
-                                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                                        flowState = CameraFlowState.Recording
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        flowState = CameraFlowState.RECORDING
                                         cameraService.startRecording()
-                                        startTimer()
                                     },
-                                    modifier = Modifier.fillMaxWidth().height(54.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = brandBlue),
+                                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF387DFF)),
                                     shape = RoundedCornerShape(16.dp)
-                                ) {
-                                    Text("Start Recording", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                                }
+                                ) { Text("Start Recording", fontSize = 17.sp, fontWeight = FontWeight.Bold) }
 
                                 if (recordedClips.isNotEmpty()) {
+                                    Spacer(Modifier.height(12.dp))
                                     Button(
                                         onClick = {
-                                            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                                            gallerySelection = recordedClips.lastOrNull()?.id ?: ""
-                                            flowState = CameraFlowState.Gallery
+                                            gallerySelection = recordedClips.last().id
+                                            flowState = CameraFlowState.GALLERY
                                         },
-                                        modifier = Modifier.fillMaxWidth().height(54.dp),
-                                        colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black),
+                                        modifier = Modifier.fillMaxWidth().height(56.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color.White),
                                         shape = RoundedCornerShape(16.dp)
-                                    ) {
-                                        Text("Cancel & View Captured Clips", fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
-                                    }
+                                    ) { Text("Cancel & View Captured Clips", color = Color.Black, fontSize = 17.sp, fontWeight = FontWeight.Bold) }
                                 }
                             }
                         }
 
-                        is CameraFlowState.Recording -> {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(20.dp)) {
+                        CameraFlowState.RECORDING -> {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
                                 if (timeElapsed < minPhaseTimeLimit) {
-                                    Text(
-                                        text = "Keep recording for ${minPhaseTimeLimit - timeElapsed}s...",
-                                        fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White,
-                                        modifier = Modifier.background(Color.Black.copy(alpha = 0.6f), CircleShape).padding(horizontal = 16.dp, vertical = 8.dp)
-                                    )
+                                    Text("Keep recording for ${minPhaseTimeLimit - timeElapsed}s...", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.background(Color.Black.copy(0.6f), CircleShape).padding(horizontal = 16.dp, vertical = 8.dp))
                                 } else {
-                                    Text(
-                                        text = "Ready to stop",
-                                        fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White,
-                                        modifier = Modifier.background(Color.Green.copy(alpha = 0.8f), CircleShape).padding(horizontal = 16.dp, vertical = 8.dp)
-                                    )
+                                    Text("Ready to stop", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.background(Color(0xFF4CAF50).copy(0.8f), CircleShape).padding(horizontal = 16.dp, vertical = 8.dp))
                                 }
 
-                                Box(contentAlignment = Alignment.Center) {
-                                    IconButton(
-                                        onClick = {
-                                            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                                            stopTimer()
-                                            cameraService.stopRecording()
-                                        },
-                                        enabled = timeElapsed >= minPhaseTimeLimit,
-                                        modifier = Modifier.size(80.dp)
-                                    ) {
-                                        CircularProgressIndicator(
-                                            progress = { timeElapsed.toFloat() / maxPhaseTimeLimit.toFloat() },
-                                            modifier = Modifier.fillMaxSize(),
-                                            color = Color.Red,
-                                            trackColor = Color.White.copy(alpha = 0.3f),
-                                            strokeWidth = 4.dp
-                                        )
-                                        Box(
-                                            modifier = Modifier
-                                                .size(if (timeElapsed >= minPhaseTimeLimit) 32.dp else 64.dp)
-                                                .background(if (timeElapsed >= minPhaseTimeLimit) Color.Red else Color.White.copy(alpha = 0.8f), RoundedCornerShape(if (timeElapsed >= minPhaseTimeLimit) 8.dp else 40.dp))
-                                        )
-                                    }
+                                Spacer(Modifier.height(20.dp))
+
+                                Box(modifier = Modifier.size(80.dp).clip(CircleShape).clickable(enabled = timeElapsed >= minPhaseTimeLimit) {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    cameraService.stopRecording()
+                                }, contentAlignment = Alignment.Center) {
+                                    CircularProgressIndicator(progress = { timeElapsed.toFloat() / maxPhaseTimeLimit.toFloat() }, modifier = Modifier.fillMaxSize(), color = Color.Red, trackColor = Color.White.copy(0.3f), strokeWidth = 4.dp)
+                                    Box(modifier = Modifier.size(if(timeElapsed >= minPhaseTimeLimit) 32.dp else 64.dp).clip(RoundedCornerShape(if(timeElapsed >= minPhaseTimeLimit) 8.dp else 40.dp)).background(if(timeElapsed >= minPhaseTimeLimit) Color.Red else Color.White.copy(0.8f)))
                                 }
                             }
                         }
 
-                        is CameraFlowState.ReviewingRecent -> {
-                            val uri = state.url
-                            val recordedDuration = state.duration
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(32.dp))
-                                    .border(0.5.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(32.dp))
-                                    .padding(24.dp),
-                                horizontalArrangement = Arrangement.spacedBy(16.dp)
-                            ) {
+                        CameraFlowState.REVIEWING_RECENT -> {
+                            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                                 Button(
                                     onClick = {
-                                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                                        try { File(uri.path ?: "").delete() } catch(_: Exception){}
-                                        flowState = CameraFlowState.Instruction
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        reviewingUri?.path?.let { File(it).delete() }
+                                        flowState = CameraFlowState.INSTRUCTION
                                     },
-                                    modifier = Modifier.weight(1f).height(54.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(alpha = 0.8f)),
+                                    modifier = Modifier.weight(1f).height(56.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(0.8f)),
                                     shape = RoundedCornerShape(16.dp)
                                 ) { Text("Retake", fontSize = 16.sp, fontWeight = FontWeight.Bold) }
 
                                 Button(
                                     onClick = {
-                                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                                        val newClip = RecordedClip(currentPhase, uri, recordedDuration)
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        val newClip = RecordedClip(currentPhase, reviewingUri!!, reviewingDuration)
                                         recordedClips = recordedClips + newClip
-                                        gallerySelection = newClip.id
-                                        flowState = CameraFlowState.Gallery
+
+                                        coroutineScope.launch {
+                                            flowState = CameraFlowState.GALLERY
+                                            delay(100)
+                                            pagerState.animateScrollToPage(recordedClips.size - 1)
+                                        }
                                     },
-                                    modifier = Modifier.weight(1f).height(54.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = brandBlue),
+                                    modifier = Modifier.weight(1f).height(56.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF387DFF)),
                                     shape = RoundedCornerShape(16.dp)
                                 ) { Text("Accept", fontSize = 16.sp, fontWeight = FontWeight.Bold) }
                             }
                         }
 
-                        is CameraFlowState.Gallery -> {
-                            // Handled entirely by the main ZStack Overlay
-                            Spacer(Modifier.height(1.dp))
-                        }
+                        CameraFlowState.GALLERY -> { } // Clean Compose empty branch
                     }
                 }
             }
         }
 
-        // MARK: - Gallery View
-        if (flowState == CameraFlowState.Gallery) {
-            Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+        // 5. Full Screen Gallery Overlay
+        if (flowState == CameraFlowState.GALLERY) {
+            Box(modifier = Modifier.fillMaxSize().background(Color.Black).zIndex(10f)) {
 
-                val pagerState = rememberPagerState(pageCount = { recordedClips.size })
-
-                // Keep pager in sync with selection
-                LaunchedEffect(gallerySelection) {
-                    val idx = recordedClips.indexOfFirst { it.id == gallerySelection }
-                    if (idx != -1 && pagerState.currentPage != idx) {
-                        pagerState.scrollToPage(idx)
-                    }
-                }
-
-                HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
-                    if (page < recordedClips.size) {
+                // Pager
+                if (recordedClips.isNotEmpty()) {
+                    HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
                         val clip = recordedClips[page]
-                        Box(modifier = Modifier.fillMaxSize()) {
-                            PositiveSafeVideoPlayer(uri = clip.url, modifier = Modifier.fillMaxSize())
+                        Box {
+                            PositiveSafeVideoPlayer(uri = clip.uri, modifier = Modifier.fillMaxSize())
 
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 60.dp),
-                                horizontalArrangement = Arrangement.End
-                            ) {
-                                IconButton(
-                                    onClick = {
-                                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                                        deleteClip(clip)
-                                    },
-                                    modifier = Modifier.size(32.dp).background(Color.Black.copy(alpha = 0.6f), CircleShape)
-                                ) {
+                            // Delete Button
+                            Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 58.dp), contentAlignment = Alignment.TopEnd) {
+                                Box(modifier = Modifier.size(32.dp).background(Color.Black.copy(0.6f), CircleShape).clickable { deleteClip(clip) }, contentAlignment = Alignment.Center) {
                                     Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.White, modifier = Modifier.size(16.dp))
                                 }
                             }
@@ -659,187 +442,107 @@ fun PositiveVideoCameraView(
                     }
                 }
 
-                // Top Cancel Button
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 60.dp),
-                    horizontalArrangement = Arrangement.Start
-                ) {
-                    IconButton(
-                        onClick = {
-                            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                            isCancelled = true
-                            recordedClips.forEach { try { File(it.url.path ?: "").delete() } catch(_: Exception){} }
-                            recordedClips = emptyList()
-                            timeElapsed = 0
-                            currentPhase = CameraPhase.Mandatory(1)
-                            flowState = CameraFlowState.Instruction
-                            onCancel()
-                        },
-                        modifier = Modifier
-                            .size(44.dp)
-                            .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                            .border(0.5.dp, Color.White.copy(alpha = 0.2f), CircleShape)
-                    ) {
+                // Gallery Controls
+                Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.Bottom) {
+                    Box(modifier = Modifier.fillMaxWidth().background(Color.Black.copy(0.6f)).padding(24.dp).padding(bottom = 20.dp)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+
+                            val nextMandatory = (1..expectedAngles).find { idx -> recordedClips.none { it.phase is CameraPhase.Mandatory && (it.phase as CameraPhase.Mandatory).idx == idx } }?.let { CameraPhase.Mandatory(it) }
+                            val timeRemaining = maxTotalTimeLimit - totalDurationElapsedInt
+
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Total: ${totalDurationElapsedInt}s / ${maxTotalTimeLimit}s", color = Color.Gray, fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                                if (nextMandatory == null) Icon(if(totalDurationElapsedInt >= actualMinTotalTimeLimit) Icons.Default.CheckCircle else Icons.Default.Warning, contentDescription = null, tint = if(totalDurationElapsedInt >= actualMinTotalTimeLimit) Color.Green else Color(0xFFFFA500))
+                            }
+
+                            if (nextMandatory != null) {
+                                Button(
+                                    onClick = { currentPhase = nextMandatory; flowState = CameraFlowState.INSTRUCTION },
+                                    modifier = Modifier.fillMaxWidth().height(56.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF387DFF)), shape = RoundedCornerShape(16.dp)
+                                ) { Text("Record Next Angle", fontSize = 17.sp, fontWeight = FontWeight.Bold) }
+                            } else {
+                                if (timeRemaining > 0) {
+                                    Button(
+                                        onClick = { currentPhase = CameraPhase.Optional(recordedClips.size + 1); flowState = CameraFlowState.INSTRUCTION },
+                                        modifier = Modifier.fillMaxWidth().height(56.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF387DFF)), shape = RoundedCornerShape(16.dp)
+                                    ) { Text("Add Extra Clip", fontSize = 17.sp, fontWeight = FontWeight.Bold) }
+                                }
+
+                                if (totalDurationElapsedInt >= actualMinTotalTimeLimit) {
+                                    Button(
+                                        onClick = {
+                                            isFinishing = true
+                                            onDone(recordedClips.map { it.uri })
+                                        },
+                                        modifier = Modifier.fillMaxWidth().height(56.dp), colors = ButtonDefaults.buttonColors(containerColor = Color.White), shape = RoundedCornerShape(16.dp), enabled = !isFinishing
+                                    ) {
+                                        if (isFinishing) CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(24.dp))
+                                        else Text(completionButtonTitle, color = Color.Black, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                } else {
+                                    Text("Total video must be at least $actualMinTotalTimeLimit seconds", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp))
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Gallery Top Close
+                Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 58.dp)) {
+                    Box(modifier = Modifier.size(44.dp).clip(CircleShape).background(Color.White.copy(0.2f)).border(0.5.dp, Color.White.copy(0.2f), CircleShape).clickable {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        recordedClips.forEach { try { it.uri.path?.let { p -> File(p).delete() } } catch (e: Exception) {} }
+                        recordedClips = emptyList()
+                        timeElapsed = 0
+                        currentPhase = CameraPhase.Mandatory(1)
+                        flowState = CameraFlowState.INSTRUCTION
+                        onCancel()
+                    }, contentAlignment = Alignment.Center) {
                         Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
                     }
                 }
-
-                // Bottom Controls
-                Column(
-                    modifier = Modifier.align(Alignment.BottomCenter).padding(20.dp).padding(bottom = 40.dp)
-                ) {
-                    val nextMandatory = nextRequiredPhase()
-                    val timeRemaining = maxTotalTimeLimit - totalDurationElapsedInt
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Total: ${totalDurationElapsedInt}s / ${maxTotalTimeLimit}s",
-                            fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, color = Color.Gray
-                        )
-                        if (nextMandatory == null) {
-                            Icon(
-                                imageVector = if (totalDurationElapsedInt >= minTotalTimeLimit) Icons.Default.Verified else Icons.Default.Warning,
-                                contentDescription = null,
-                                tint = if (totalDurationElapsedInt >= minTotalTimeLimit) Color.Green else brandOrange,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    }
-
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(32.dp))
-                            .border(0.5.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(32.dp))
-                            .padding(24.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        if (nextMandatory != null) {
-                            Button(
-                                onClick = {
-                                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                                    currentPhase = nextMandatory
-                                    flowState = CameraFlowState.Instruction
-                                },
-                                modifier = Modifier.fillMaxWidth().height(54.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = brandBlue),
-                                shape = RoundedCornerShape(16.dp)
-                            ) { Text("Record Next Angle", fontSize = 17.sp, fontWeight = FontWeight.Bold) }
-                        } else {
-                            if (totalDurationElapsedInt >= minTotalTimeLimit) {
-                                Button(
-                                    onClick = {
-                                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                                        onDone(recordedClips.map { it.url })
-                                    },
-                                    modifier = Modifier.fillMaxWidth().height(54.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black),
-                                    shape = RoundedCornerShape(16.dp)
-                                ) { Text(completionButtonTitle, fontSize = 17.sp, fontWeight = FontWeight.Bold) }
-                            } else {
-                                Text(
-                                    text = "Total video from all angles must be between $minTotalTimeLimit to $maxTotalTimeLimit seconds",
-                                    fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White, textAlign = TextAlign.Center,
-                                    modifier = Modifier.padding(vertical = 5.dp)
-                                )
-                            }
-
-                            if (timeRemaining > 0) {
-                                Button(
-                                    onClick = {
-                                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                                        currentPhase = CameraPhase.Optional(recordedClips.size + 1)
-                                        flowState = CameraFlowState.Instruction
-                                    },
-                                    modifier = Modifier.fillMaxWidth().height(54.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = brandBlue),
-                                    shape = RoundedCornerShape(16.dp)
-                                ) { Text("Add Extra Clip", fontSize = 17.sp, fontWeight = FontWeight.SemiBold) }
-                            }
-                        }
-                    }
-                }
             }
         }
 
-        // Camera Error Overlay
-        cameraService.errorMessage?.let { message ->
-            if (!suppressNextError) {
-                Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.7f)), contentAlignment = Alignment.Center) {
-                    Column(
-                        modifier = Modifier.padding(40.dp).background(Color.DarkGray, RoundedCornerShape(32.dp)).padding(30.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        Icon(Icons.Default.Warning, contentDescription = null, tint = brandOrange, modifier = Modifier.size(42.dp))
-                        Text("Camera Unavailable", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                        Text(message, fontSize = 15.sp, color = Color.LightGray, textAlign = TextAlign.Center)
-                        Button(
-                            onClick = { onCancel() },
-                            modifier = Modifier.fillMaxWidth().height(54.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = Color.Gray),
-                            shape = RoundedCornerShape(14.dp)
-                        ) { Text("Close", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White) }
-                    }
+        // Error Overlay
+        if (cameraService.errorMessage != null || finishingErrorMessage != null) {
+            Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(0.8f)).zIndex(20f), contentAlignment = Alignment.Center) {
+                Column(modifier = Modifier.background(Color.DarkGray, RoundedCornerShape(32.dp)).padding(30.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Icon(Icons.Default.Warning, contentDescription = null, tint = Color.Yellow, modifier = Modifier.size(42.dp))
+                    Text("Camera Unavailable", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                    Text(cameraService.errorMessage ?: finishingErrorMessage ?: "", color = Color.LightGray, fontSize = 15.sp, textAlign = TextAlign.Center)
+                    Button(onClick = onCancel, modifier = Modifier.fillMaxWidth().height(50.dp), colors = ButtonDefaults.buttonColors(containerColor = Color.Gray)) { Text("Close", color = Color.White, fontWeight = FontWeight.Bold) }
                 }
             }
         }
     }
 }
 
-// MARK: - Native Wrappers
-
+// MARK: - Native Video Player (ExoPlayer)
 @Composable
-fun PositiveVideoCameraPreview(
-    @Suppress("UNUSED_PARAMETER") cameraService: Any?, // Prefixed to avoid unused parameter warning until implemented
-    zoomLevel: Float,
-    onZoomChanged: (Float) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Box(
-        modifier = modifier
-            .pointerInput(Unit) {
-                detectTransformGestures { _, _, zoom, _ ->
-                    val newZoom = max(1.0f, min(zoomLevel * zoom, 5.0f))
-                    onZoomChanged(newZoom)
-                }
-            }
-            .pointerInput(Unit) {
-                detectTapGestures { _ ->
-                    // Map this offset to focus logic if needed
-                }
-            }
-    ) {
-        AndroidView(
-            factory = { context ->
-                android.view.View(context).apply { setBackgroundColor(android.graphics.Color.DKGRAY) }
-            },
-            modifier = Modifier.fillMaxSize()
-        )
+fun PositiveSafeVideoPlayer(uri: Uri, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val exoPlayer = remember {
+        ExoPlayer.Builder(context).build().apply {
+            setMediaItem(MediaItem.fromUri(uri))
+            repeatMode = ExoPlayer.REPEAT_MODE_ALL
+            prepare()
+            playWhenReady = true
+        }
     }
-}
 
-@Composable
-fun PositiveSafeVideoPlayer(
-    uri: Uri,
-    modifier: Modifier = Modifier
-) {
+    DisposableEffect(Unit) {
+        onDispose {
+            exoPlayer.release()
+        }
+    }
+
     AndroidView(
-        factory = { context ->
-            VideoView(context).apply {
-                setVideoURI(uri)
-                setOnPreparedListener { mp ->
-                    mp.isLooping = true
-                    start()
-                }
-                layoutParams = android.view.ViewGroup.LayoutParams(
-                    android.view.ViewGroup.LayoutParams.MATCH_PARENT,
-                    android.view.ViewGroup.LayoutParams.MATCH_PARENT
-                )
+        factory = { ctx ->
+            PlayerView(ctx).apply {
+                player = exoPlayer
+                useController = false
+                layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
             }
         },
         modifier = modifier
