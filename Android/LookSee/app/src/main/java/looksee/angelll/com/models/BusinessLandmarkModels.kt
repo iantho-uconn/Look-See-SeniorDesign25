@@ -60,6 +60,41 @@ data class BusinessLandmark(
         }
 }
 
+data class BusinessPromotionListResponse(
+    val items: List<BusinessPromotion> = emptyList(),
+    val count: Int = 0,
+)
+
+data class BusinessPromotionMutationResponse(
+    val ok: Boolean = false,
+    val item: BusinessPromotion = BusinessPromotion(),
+)
+
+data class BusinessPromotionDeleteResponse(
+    val ok: Boolean = false,
+    val promotionId: String = "",
+    val message: String? = null,
+)
+
+data class BusinessPromotion(
+    val promotionId: String = "",
+    val userEmail: String = "",
+    val ownerUserId: String = "",
+    val landmarkId: String = "",
+    val landmarkLabel: String = "",
+    val name: String = "",
+    val description: String = "",
+    val imageUrl: String = "",
+    val startDate: String = "",
+    val endDate: String = "",
+    val enabled: Boolean = false,
+    val createdAt: Long? = null,
+    val updatedAt: Long? = null,
+) {
+    val id: String
+        get() = promotionId
+}
+
 enum class BusinessDatasetRole(
     val wireValue: String,
     val displayName: String,
@@ -131,3 +166,22 @@ data class BusinessHardNegativeProcessedItem(
     val negativeId: String = "",
     val status: String = "",
 )
+
+sealed class BusinessPromotionEditorContext {
+    abstract val navigationTitle: String
+    abstract val saveButtonTitle: String
+    abstract val existingPromotion: BusinessPromotion?
+
+    data class Create(
+        override val navigationTitle: String = "New Promotion",
+        override val saveButtonTitle: String = "Add",
+        override val existingPromotion: BusinessPromotion? = null
+    ) : BusinessPromotionEditorContext()
+
+    data class Edit(
+        val promotion: BusinessPromotion,
+        override val navigationTitle: String = "Edit Promotion",
+        override val saveButtonTitle: String = "Save",
+        override val existingPromotion: BusinessPromotion? = promotion
+    ) : BusinessPromotionEditorContext()
+}

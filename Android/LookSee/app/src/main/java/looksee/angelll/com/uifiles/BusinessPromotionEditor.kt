@@ -20,7 +20,7 @@ import kotlinx.coroutines.launch
 import looksee.angelll.com.models.BusinessLandmark
 import looksee.angelll.com.models.BusinessPromotion
 import looksee.angelll.com.models.BusinessPromotionEditorContext
-import looksee.angelll.com.services.BusinessPromotionService
+import looksee.angelll.com.models.BusinessPromotionService
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId

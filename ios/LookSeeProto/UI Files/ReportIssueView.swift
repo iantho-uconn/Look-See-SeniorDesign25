@@ -2,23 +2,78 @@
 //  ReportIssueView.swift
 //  LookSeeProto
 //
-//  "Report a Bug" sheet — captures a screenshot of whatever screen was
-//  visible when the report button was tapped, lets the user pick a
-//  category/severity and describe the issue, then hands it to the
-//  system Mail composer addressed to the team inbox.
-//
 
 import SwiftUI
 import PhotosUI
-import MessageUI
+import Sentry // 🚀 ADDED: Sentry SDK
+
+// MARK: - Report Models
+
+enum ReportCategory: String, CaseIterable, Identifiable {
+    case uiBug = "ui_bug"
+    case detectionBug = "detection_bug"
+    case uploadBug = "upload_bug"
+    case other = "other"
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .uiBug: return String(localized: "UI Bug")
+        case .detectionBug: return String(localized: "Detection Bug")
+        case .uploadBug: return String(localized: "Upload Bug")
+        case .other: return String(localized: "Other")
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .uiBug: return "rectangle.on.rectangle.slash"
+        case .detectionBug: return "viewfinder.circle"
+        case .uploadBug: return "arrow.up.circle"
+        case .other: return "questionmark.circle"
+        }
+    }
+}
+
+enum ReportSeverity: String, CaseIterable, Identifiable {
+    case low, medium, high, critical
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .low: return String(localized: "Low")
+        case .medium: return String(localized: "Medium")
+        case .high: return String(localized: "High")
+        case .critical: return String(localized: "Critical")
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .low: return .green
+        case .medium: return .yellow
+        case .high: return .orange
+        case .critical: return .red
+        }
+    }
+}
+
+struct BugReport {
+    var category: ReportCategory
+    var severity: ReportSeverity
+    var title: String
+    var description: String
+    var screenshot: UIImage?
+}
+
+// MARK: - Main View
 
 struct ReportIssueView: View {
     @EnvironmentObject var vm: AuthViewModel
     @Environment(\.dismiss) var dismiss
 
-    /// Pass in a screenshot captured at the moment the report button was
-    /// tapped (see ReportIssueButton below) so the user doesn't have to
-    /// reproduce the bug a second time just to attach an image.
     let initialScreenshot: UIImage?
 
     @State private var category: ReportCategory = .uiBug
@@ -28,11 +83,8 @@ struct ReportIssueView: View {
     @State private var screenshot: UIImage?
 
     @State private var photoPickerItem: PhotosPickerItem?
-    @State private var showMailComposer = false
-    @State private var showNoMailAlert = false
     @State private var showSentConfirmation = false
     @State private var isResolvingIdentity = false
-    @State private var verifiedReplyToEmail: String?
 
     @FocusState private var focusedField: Field?
     private enum Field { case title, description }
@@ -42,16 +94,6 @@ struct ReportIssueView: View {
     private var isValid: Bool {
         !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    private var currentReport: BugReport {
-        BugReport(
-            category: category,
-            severity: severity,
-            title: title.trimmingCharacters(in: .whitespacesAndNewlines),
-            description: description.trimmingCharacters(in: .whitespacesAndNewlines),
-            screenshot: screenshot
-        )
     }
 
     init(initialScreenshot: UIImage? = nil) {
@@ -87,32 +129,10 @@ struct ReportIssueView: View {
                     }
                 }
             }
-            .sheet(isPresented: $showMailComposer) {
-                MailComposerView(
-                    subject: MailReportService.subject(for: currentReport),
-                    body: MailReportService.body(for: currentReport, userEmail: verifiedReplyToEmail ?? vm.userEmail),
-                    recipients: MailReportService.recipients,
-                    replyToAddress: verifiedReplyToEmail,
-                    attachmentData: MailReportService.attachmentData(for: currentReport),
-                    attachmentFilename: "screenshot.jpg",
-                    attachmentMimeType: "image/jpeg",
-                    onFinish: { result in
-                        showMailComposer = false
-                        if result == .sent {
-                            showSentConfirmation = true
-                        }
-                    }
-                )
-            }
             .alert("Report Sent", isPresented: $showSentConfirmation) {
                 Button("Done") { dismiss() }
             } message: {
-                Text("Thanks for helping improve LookSee!")
-            }
-            .alert("Mail Not Set Up", isPresented: $showNoMailAlert) {
-                Button("OK", role: .cancel) { }
-            } message: {
-                Text("Add a Mail account in Settings to send reports from the app, or email us directly at \(MailReportService.recipients.first ?? "").")
+                Text("Thanks for helping improve LookSee! Your report has been sent directly to our developer dashboard.")
             }
         }
     }
@@ -271,27 +291,25 @@ struct ReportIssueView: View {
         Button {
             UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
             focusedField = nil
-
             guard !isResolvingIdentity else { return }
             isResolvingIdentity = true
 
-            Task {
-                // Fetch first, THEN decide what to show — otherwise the
-                // sheet opens before this finishes and replyToAddress
-                // never gets set in time.
-                let verifiedEmail = try? await AuthService.shared.fetchVerifiedEmail()
+            // 🚀 Sends the Bug Report directly to your Sentry / Jira Dashboard silently!
+            SentrySDK.capture(message: "[\(category.displayName)] \(title)") { scope in
+                scope.setExtra(value: description, key: "User Description")
+                scope.setTag(value: severity.displayName, key: "Severity")
+                scope.setTag(value: category.displayName, key: "Category")
+                scope.setExtra(value: vm.userEmail, key: "User Email")
 
-                await MainActor.run {
-                    verifiedReplyToEmail = verifiedEmail ?? vm.userEmail
-                    isResolvingIdentity = false
-
-                    if MailReportService.canSendMail() {
-                        showMailComposer = true
-                    } else {
-                        showNoMailAlert = true
-                    }
+                if let screenshot = screenshot, let data = screenshot.jpegData(compressionQuality: 0.8) {
+                    let attachment = Attachment(data: data, filename: "screenshot.jpg", contentType: "image/jpeg")
+                    scope.addAttachment(attachment)
                 }
             }
+
+            isResolvingIdentity = false
+            showSentConfirmation = true
+
         } label: {
             HStack(spacing: 10) {
                 if isResolvingIdentity {
@@ -321,76 +339,9 @@ struct ReportIssueView: View {
     }
 }
 
-// MARK: - Mail Composer Wrapper
-
-/// UIKit bridge for MFMailComposeViewController — SwiftUI has no native
-/// mail composer, so this wraps the system one.
-struct MailComposerView: UIViewControllerRepresentable {
-    let subject: String
-    let body: String
-    let recipients: [String]
-    /// Best-effort only — see notes below. iOS gives third-party apps no
-    /// way to force the "From" address of a Mail-composed message.
-    var replyToAddress: String? = nil
-    let attachmentData: Data?
-    let attachmentFilename: String
-    let attachmentMimeType: String
-    let onFinish: (MFMailComposeResult) -> Void
-
-    func makeUIViewController(context: Context) -> MFMailComposeViewController {
-        let composer = MFMailComposeViewController()
-        composer.mailComposeDelegate = context.coordinator
-        composer.setSubject(subject)
-        composer.setMessageBody(body, isHTML: false)
-        composer.setToRecipients(recipients)
-
-        if let replyToAddress, !replyToAddress.isEmpty {
-            // MFMailComposeViewController has no public API for setting a
-            // Reply-To header — the only place the reporter's real email
-            // can reliably surface is in the body text itself (already
-            // included via MailReportService.body's "Reported by:" line).
-            // This call is a legacy, deprecated-since-iOS-15 hint that iOS
-            // may or may not honor — kept only because it's harmless, not
-            // because it's reliable.
-            composer.setPreferredSendingEmailAddress(replyToAddress)
-        }
-
-        if let attachmentData {
-            composer.addAttachmentData(attachmentData, mimeType: attachmentMimeType, fileName: attachmentFilename)
-        }
-        return composer
-    }
-
-    func updateUIViewController(_ uiViewController: MFMailComposeViewController, context: Context) { }
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(onFinish: onFinish)
-    }
-
-    final class Coordinator: NSObject, MFMailComposeViewControllerDelegate {
-        let onFinish: (MFMailComposeResult) -> Void
-
-        init(onFinish: @escaping (MFMailComposeResult) -> Void) {
-            self.onFinish = onFinish
-        }
-
-        func mailComposeController(
-            _ controller: MFMailComposeViewController,
-            didFinishWith result: MFMailComposeResult,
-            error: Error?
-        ) {
-            controller.dismiss(animated: true) {
-                self.onFinish(result)
-            }
-        }
-    }
-}
-
 // MARK: - Report Button + Screenshot Capture
+// This handles the screenshot capture and opens the Report Issue sheet.
 
-/// Drop this anywhere (e.g. your side menu or a toolbar) to launch the
-/// report sheet. Captures a screenshot of the current window at the
-/// moment of tapping, so the user's current screen is pre-attached.
 struct ReportIssueButton: View {
     @State private var showReportSheet = false
     @State private var capturedScreenshot: UIImage?
@@ -401,8 +352,27 @@ struct ReportIssueButton: View {
             capturedScreenshot = Self.captureCurrentScreen()
             showReportSheet = true
         } label: {
-            Label("Report a Bug", systemImage: "exclamationmark.bubble.fill")
+            HStack(spacing: 16) {
+                Image(systemName: "ladybug.fill")
+                    .font(.system(size: 18))
+                    .foregroundStyle(.white)
+                    .frame(width: 36, height: 36)
+                    .background(Color.red)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Report a Bug")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(.primary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(Color(uiColor: .tertiaryLabel))
+            }
+            .padding(16)
         }
+        Divider().padding(.leading, 68)
         .sheet(isPresented: $showReportSheet) {
             ReportIssueView(initialScreenshot: capturedScreenshot)
         }

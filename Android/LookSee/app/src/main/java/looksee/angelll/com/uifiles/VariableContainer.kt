@@ -180,10 +180,6 @@ class VariableContainer private constructor() {
         merchantAddress = ""
         merchantLogoUrl = ""
     }
-
-    fun getLandmarkName(): String {
-        return landmarkName
-    }
 }
 
 // Stub for LandmarkManifestEntry to prevent compiler errors

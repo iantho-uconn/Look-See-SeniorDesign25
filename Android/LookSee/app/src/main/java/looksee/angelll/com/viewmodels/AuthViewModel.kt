@@ -78,7 +78,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             try {
                 val result = Amplify.Auth.signIn(usernameInput, passwordInput)
-                if (result.isSignInComplete) {
+                if (result.isSignedIn) {
                     isSignedIn = true
                     requiresNewPassword = false
                     errorMessage = ""
@@ -134,7 +134,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             try {
                 val result = Amplify.Auth.confirmSignIn(newPassword)
-                if (result.isSignInComplete) {
+                if (result.isSignedIn) {
                     isSignedIn = true
                     requiresNewPassword = false
                     errorMessage = ""

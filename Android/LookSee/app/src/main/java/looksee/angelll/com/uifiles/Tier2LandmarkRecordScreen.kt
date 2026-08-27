@@ -20,6 +20,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -29,6 +30,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import looksee.angelll.com.viewmodels.AuthViewModel
+import looksee.angelll.com.models.*
+import looksee.angelll.com.detection.*
+import java.io.File
+import looksee.angelll.com.detection.NetworkMonitor as Monitor
 
 private val PrimaryColor = Color(0xFF387DFF)
 private val SystemGroupedBackground = Color(0xFFF2F2F7)
@@ -44,13 +49,27 @@ fun Tier2LandmarkRecordScreen(
     vm: AuthViewModel,
     onDismiss: () -> Unit
 ) {
+    val context = LocalContext.current
     val hapticFeedback = LocalHapticFeedback.current
     val coroutineScope = rememberCoroutineScope()
 
-    val uploadService = remember { UploadService() }
+    val uploadService = remember { UploadService(context) }
+    val isUploading by uploadService.isUploading.collectAsState()
+    val uploadStage by uploadService.stage.collectAsState()
+    val uploadStatus by uploadService.status.collectAsState()
+    val uploadDetail by uploadService.detail.collectAsState()
+
     val hardNegativeUploadService = remember { HardNegativeUploadService() }
-    val locationManager = remember { LocationManager() }
+    val isHardNegativeUploading by hardNegativeUploadService.isUploading.collectAsState()
+    val hardNegativeStatus by hardNegativeUploadService.status.collectAsState()
+    val hardNegativeProgress by hardNegativeUploadService.progress.collectAsState()
+
+    val locationManager = remember { LocationManager(context) }
+    val locationState by locationManager.state.collectAsState()
     val nearbyService = remember { NearbyLandmarkService() }
+    val nearbyItems by nearbyService.items.collectAsState()
+    val isNearbyLoading by nearbyService.isLoading.collectAsState()
+    val nearbyError by nearbyService.errorMessage.collectAsState()
 
     var pickedVideoUri by remember { mutableStateOf<Uri?>(null) }
     var showVideoPicker by remember { mutableStateOf(false) }
@@ -61,7 +80,7 @@ fun Tier2LandmarkRecordScreen(
     var showArchivePrompt by remember { mutableStateOf(false) }
     var showDiscardAlert by remember { mutableStateOf(false) }
     var pendingArchiveUri by remember { mutableStateOf<Uri?>(null) }
-    var pendingArchiveLocation by remember { mutableStateOf<LocationData?>(null) }
+    var pendingArchiveLocation by remember { mutableStateOf<LookSeeLocationFix?>(null) }
     var showAutoQueueAlert by remember { mutableStateOf(false) }
 
     var capturedNegativeVideo by remember { mutableStateOf<CapturedNegativeVideo?>(null) }
@@ -76,17 +95,15 @@ fun Tier2LandmarkRecordScreen(
     val radiusMeters = 100.0
 
     val hasMedia = pickedVideoUri != null
-    val hasUsableLocation = locationManager.isAuthorized &&
-            locationManager.latitude != null &&
-            locationManager.longitude != null &&
-            (locationManager.horizontalAccuracy ?: 0.0) in 0.1..maxAllowedAccuracy
+    val currentFix = (locationState as? LookSeeLocationState.Ready)?.fix
+    val hasUsableLocation = currentFix != null && currentFix.accuracyMeters <= maxAllowedAccuracy
 
     val canSubmitUpload = (hasMedia || capturedNegativeVideo != null) &&
             selectedLandmark != null &&
-            !uploadService.isUploading &&
-            !hardNegativeUploadService.isUploading
+            !isUploading &&
+            !isHardNegativeUploading
 
-    val areNegativePhotosLocked = uploadService.isUploading || hardNegativeUploadService.isUploading
+    val areNegativePhotosLocked = isUploading || isHardNegativeUploading
 
     fun deleteTemporaryVideoIfNeeded(uri: Uri?) {
         if (uri != null) {
@@ -105,7 +122,7 @@ fun Tier2LandmarkRecordScreen(
 
         if (initialLandmarkId != null) {
             hasAppliedInitialLandmark = false
-            coroutineScope.launch { nearbyService.fetchNearby(locationManager.latitude ?: 0.0, locationManager.longitude ?: 0.0, radiusMeters) }
+            coroutineScope.launch { nearbyService.fetchNearby(currentFix?.latitude ?: 0.0, currentFix?.longitude ?: 0.0, radiusMeters) }
         }
         statusText = "No media selected."
         uploadService.reset()
@@ -126,25 +143,26 @@ fun Tier2LandmarkRecordScreen(
             pickedVideoUri = it
             statusText = "Selected video."
         }
-        extractedLatitude = pendingArchiveLocation?.latitude ?: locationManager.latitude
-        extractedLongitude = pendingArchiveLocation?.longitude ?: locationManager.longitude
+        extractedLatitude = pendingArchiveLocation?.latitude ?: currentFix?.latitude
+        extractedLongitude = pendingArchiveLocation?.longitude ?: currentFix?.longitude
         uploadService.reset()
         pendingArchiveUri = null
         pendingArchiveLocation = null
     }
 
     fun saveToArchiveFromPrompt() {
-        val lat = pendingArchiveLocation?.latitude ?: locationManager.latitude ?: 0.0
-        val lon = pendingArchiveLocation?.longitude ?: locationManager.longitude ?: 0.0
+        val lat = pendingArchiveLocation?.latitude ?: currentFix?.latitude ?: 0.0
+        val lon = pendingArchiveLocation?.longitude ?: currentFix?.longitude ?: 0.0
         val id = selectedLandmark?.landmarkId
         val label = selectedLandmark?.label ?: "Tier 2 Media"
         val desc = selectedLandmark?.shortDescription ?: ""
-        val negUri = capturedNegativeVideo?.fileUri
+        val negFile = capturedNegativeVideo?.file
 
         coroutineScope.launch(Dispatchers.IO) {
             val uriToSave = pendingArchiveUri
             if (uriToSave != null) {
-                OfflineMediaManager.archiveVideo(uriToSave, lat, lon, id, label, desc, null, negUri, true)
+                val file = File(uriToSave.path ?: "")
+                OfflineMediaManager.shared(context).archiveVideo(file, lat, lon, id, label, desc, "", negFile, true)
             }
             withContext(Dispatchers.Main) {
                 discardPendingMedia()
@@ -156,12 +174,13 @@ fun Tier2LandmarkRecordScreen(
     fun saveToArchiveFromForm() {
         val landmark = selectedLandmark ?: return
         val uri = pickedVideoUri ?: return
-        val lat = extractedLatitude ?: locationManager.latitude ?: 0.0
-        val lon = extractedLongitude ?: locationManager.longitude ?: 0.0
-        val negUri = capturedNegativeVideo?.fileUri
+        val lat = extractedLatitude ?: currentFix?.latitude ?: 0.0
+        val lon = extractedLongitude ?: currentFix?.longitude ?: 0.0
+        val negFile = capturedNegativeVideo?.file
 
         coroutineScope.launch(Dispatchers.IO) {
-            OfflineMediaManager.archiveVideo(uri, lat, lon, landmark.landmarkId, landmark.label, landmark.shortDescription, null, negUri, true)
+            val file = File(uri.path ?: "")
+            OfflineMediaManager.shared(context).archiveVideo(file, lat, lon, landmark.landmarkId, landmark.label, landmark.shortDescription, "", negFile, true)
             withContext(Dispatchers.Main) {
                 clearScreen()
                 statusText = "Media securely saved to Upload Queue."
@@ -172,7 +191,7 @@ fun Tier2LandmarkRecordScreen(
     fun startUpload() {
         val landmark = selectedLandmark ?: return
         val uri = pickedVideoUri ?: return
-        if (!NetworkMonitor.isConnected) {
+        if (!Monitor.getInstance(context).isConnected.value) {
             saveToArchiveFromForm()
             showAutoQueueAlert = true
             return
@@ -181,13 +200,14 @@ fun Tier2LandmarkRecordScreen(
             vm.fetchUserEmail()
             val idToken = vm.fetchIdToken()
             try {
+                val file = File(uri.path ?: "")
                 uploadService.upload(
-                    vm.userEmail.value, idToken, landmark.label, landmark.landmarkId,
-                    landmark.label, landmark.shortDescription, null,
-                    extractedLatitude ?: locationManager.latitude ?: 0.0,
-                    extractedLongitude ?: locationManager.longitude ?: 0.0,
-                    locationManager.horizontalAccuracy ?: 0.0,
-                    listOf(uri), null
+                    vm.userEmail, idToken, landmark.label, landmark.landmarkId,
+                    landmark.label, landmark.shortDescription, "",
+                    extractedLatitude ?: currentFix?.latitude ?: 0.0,
+                    extractedLongitude ?: currentFix?.longitude ?: 0.0,
+                    currentFix?.accuracyMeters?.toDouble() ?: 0.0,
+                    listOf(file), null
                 )
                 capturedNegativeVideo?.let { negVideo ->
                     hardNegativeUploadService.upload(landmark.landmarkId, idToken, negVideo)
@@ -202,16 +222,14 @@ fun Tier2LandmarkRecordScreen(
     }
 
     suspend fun refreshNearbyIfPossible(force: Boolean = false) {
-        val lat = locationManager.latitude ?: return
-        val lon = locationManager.longitude ?: return
-        val acc = locationManager.horizontalAccuracy ?: return
-        if (!locationManager.isAuthorized || acc <= 0 || acc > maxAllowedAccuracy) return
+        val fix = currentFix ?: return
+        if (locationState !is LookSeeLocationState.Ready || fix.accuracyMeters > maxAllowedAccuracy) return
 
         if (force) Log.d("Nearby", "Forcing refresh")
-        nearbyService.fetchNearby(lat, lon, radiusMeters)
+        nearbyService.fetchNearby(fix.latitude, fix.longitude, radiusMeters)
 
         if (!hasAppliedInitialLandmark && initialLandmarkId != null) {
-            val match = nearbyService.items.find { it.landmarkId == initialLandmarkId }
+            val match = nearbyItems.find { it.landmarkId == initialLandmarkId }
             if (match != null) {
                 selectedLandmark = match
                 deleteTemporaryVideoIfNeeded(pickedVideoUri)
@@ -226,7 +244,7 @@ fun Tier2LandmarkRecordScreen(
 
     LaunchedEffect(Unit) {
         if (archivedMedia != null) {
-            pickedVideoUri = OfflineMediaManager.getFileUri(archivedMedia)
+            pickedVideoUri = Uri.fromFile(OfflineMediaManager.shared(context).getFile(archivedMedia))
             extractedLatitude = archivedMedia.latitude
             extractedLongitude = archivedMedia.longitude
             statusText = "Loaded archived media."
@@ -241,7 +259,7 @@ fun Tier2LandmarkRecordScreen(
         }
     }
 
-    LaunchedEffect(locationManager.latitude, locationManager.longitude, locationManager.horizontalAccuracy) {
+    LaunchedEffect(currentFix) {
         refreshNearbyIfPossible()
     }
 
@@ -272,7 +290,7 @@ fun Tier2LandmarkRecordScreen(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = PrimaryColor),
                     shape = RoundedCornerShape(16.dp),
-                    enabled = !uploadService.isUploading && archivedMedia == null
+                    enabled = !isUploading && archivedMedia == null
                 ) {
                     Row(modifier = Modifier.padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.Videocam, contentDescription = null)
@@ -300,24 +318,24 @@ fun Tier2LandmarkRecordScreen(
                     Icon(Icons.Default.LocationOn, contentDescription = null, tint = PrimaryColor, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(8.dp))
                     Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        if (locationManager.isAuthorized && locationManager.latitude != null) {
-                            Text("${locationManager.latitude}, ${locationManager.longitude}", fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                            Text("Accuracy: ±${locationManager.horizontalAccuracy?.toInt()}m", fontSize = 12.sp, color = Color.Gray)
-                        } else if (locationManager.authorizationStatus == "denied") {
+                        if (currentFix != null) {
+                            Text("${currentFix.latitude}, ${currentFix.longitude}", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                            Text("Accuracy: ±${currentFix.accuracyMeters.toInt()}m", fontSize = 12.sp, color = Color.Gray)
+                        } else if (locationState is LookSeeLocationState.Unavailable) {
                             Text("Location Denied", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.Red)
                         } else {
                             Text("Requesting location…", fontSize = 14.sp, color = Color.Gray)
                         }
                     }
-                    if (!locationManager.isAuthorized) {
+                    if (locationState is LookSeeLocationState.PermissionRequired) {
                         Button(
-                            onClick = { hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress); locationManager.requestPermissionIfNeeded() },
+                            onClick = { hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress); locationManager.start() },
                             colors = ButtonDefaults.buttonColors(containerColor = PrimaryColor), shape = CircleShape
                         ) { Text("Enable", fontSize = 13.sp, fontWeight = FontWeight.Bold) }
                     } else {
                         IconButton(
                             onClick = { hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress); coroutineScope.launch { refreshNearbyIfPossible(true) } },
-                            enabled = !uploadService.isUploading,
+                            enabled = !isUploading,
                             modifier = Modifier.background(PrimaryColor.copy(alpha = 0.1f), CircleShape)
                         ) { Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = PrimaryColor, modifier = Modifier.size(20.dp)) }
                     }
@@ -327,17 +345,18 @@ fun Tier2LandmarkRecordScreen(
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Text("Nearby Landmarks", fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 20.dp))
 
-                if (nearbyService.items.isEmpty() && nearbyService.isLoading) {
+                if (nearbyItems.isEmpty() && isNearbyLoading) {
                     CircularProgressIndicator(modifier = Modifier.padding(horizontal = 20.dp).size(24.dp))
-                } else if (nearbyService.errorMessage != null) {
-                    Text("Error: ${nearbyService.errorMessage}", fontSize = 14.sp, color = Color.Red, modifier = Modifier.padding(horizontal = 20.dp))
+                } else if (nearbyError != null) {
+                    Text("Error: $nearbyError", fontSize = 14.sp, color = Color.Red, modifier = Modifier.padding(horizontal = 20.dp))
                 } else if (!hasUsableLocation) {
                     Text("Nearby landmarks will appear once location is available.", fontSize = 14.sp, color = Color.Gray, modifier = Modifier.padding(horizontal = 20.dp))
-                } else if (nearbyService.items.isEmpty()) {
-                    Text("No landmarks found within ${radiusMeters.toInt()} meters.", fontSize = 14.sp, color = Color.Gray, modifier = Modifier.padding(horizontal = 20.dp))
+                } else if (nearbyItems.isEmpty()) {
+                    val radiusStr = radiusMeters.toInt().toString()
+                    Text("No landmarks found within $radiusStr meters.", fontSize = 14.sp, color = Color.Gray, modifier = Modifier.padding(horizontal = 20.dp))
                 } else {
                     Column(modifier = Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        nearbyService.items.forEach { landmark ->
+                        nearbyItems.forEach { landmark ->
                             val isSelected = selectedLandmark?.landmarkId == landmark.landmarkId
                             Row(
                                 modifier = Modifier
@@ -345,7 +364,7 @@ fun Tier2LandmarkRecordScreen(
                                     .shadow(2.dp, RoundedCornerShape(20.dp))
                                     .background(if (isSelected) PrimaryColor.copy(alpha = 0.1f) else SecondaryGroupedBackground, RoundedCornerShape(20.dp))
                                     .border(if (isSelected) 2.dp else 0.dp, if (isSelected) PrimaryColor else Color.Transparent, RoundedCornerShape(20.dp))
-                                    .clickable(!uploadService.isUploading) {
+                                    .clickable(!isUploading) {
                                         hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                                         selectedLandmark = landmark
                                         if (initialLandmarkId != null && !hasAppliedInitialLandmark) {
@@ -417,7 +436,7 @@ fun Tier2LandmarkRecordScreen(
 
                             capturedNegativeVideo?.let { negVideo ->
                                 Box(modifier = Modifier.fillMaxWidth().height(220.dp)) {
-                                    UploadFormVideoPlayer(uri = negVideo.fileUri, modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(20.dp)))
+                                    UploadFormVideoPlayer(uri = Uri.fromFile(negVideo.file), modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(20.dp)))
                                     IconButton(
                                         onClick = { hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress); negVideo.deleteLocalFile(); capturedNegativeVideo = null },
                                         modifier = Modifier.align(Alignment.TopEnd).padding(12.dp).background(Color.Black.copy(alpha = 0.6f), CircleShape).border(0.5.dp, Color.White.copy(alpha = 0.2f), CircleShape).size(32.dp),
@@ -434,7 +453,7 @@ fun Tier2LandmarkRecordScreen(
                                 onClick = { hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress); onDismiss() },
                                 modifier = Modifier.size(60.dp), colors = ButtonDefaults.buttonColors(containerColor = SecondaryGroupedBackground), shape = RoundedCornerShape(16.dp), elevation = ButtonDefaults.buttonElevation(defaultElevation = 2.dp)
                             ) { Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.Black) }
-                        } else if (hasMedia && !uploadService.isUploading) {
+                        } else if (hasMedia && !isUploading) {
                             Button(
                                 onClick = { hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress); saveToArchiveFromForm() },
                                 modifier = Modifier.size(60.dp), colors = ButtonDefaults.buttonColors(containerColor = PrimaryColor), shape = RoundedCornerShape(16.dp), elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp)
@@ -449,7 +468,7 @@ fun Tier2LandmarkRecordScreen(
                             enabled = canSubmitUpload
                         ) {
                             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                                if (uploadService.isUploading || hardNegativeUploadService.isUploading) {
+                                if (isUploading || isHardNegativeUploading) {
                                     CircularProgressIndicator(color = Color.White, modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                                     Text("Uploading...", fontSize = 17.sp, fontWeight = FontWeight.Bold)
                                 } else {
@@ -459,7 +478,7 @@ fun Tier2LandmarkRecordScreen(
                             }
                         }
 
-                        if (archivedMedia == null && hasMedia && !uploadService.isUploading) {
+                        if (archivedMedia == null && hasMedia && !isUploading) {
                             Button(
                                 onClick = { hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress); showDiscardAlert = true },
                                 modifier = Modifier.size(60.dp), colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(alpha = 0.1f)), shape = RoundedCornerShape(16.dp)
@@ -467,34 +486,34 @@ fun Tier2LandmarkRecordScreen(
                         }
                     }
 
-                    if (uploadService.stage != "idle") {
+                    if (uploadStage != PositiveUploadStage.IDLE) {
                         Surface(modifier = Modifier.fillMaxWidth().shadow(4.dp, RoundedCornerShape(24.dp)), shape = RoundedCornerShape(24.dp), color = SecondaryGroupedBackground) {
                             Row(modifier = Modifier.padding(20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.Top) {
-                                if (uploadService.isUploading) CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                                else Icon(Icons.Default.Info, contentDescription = null, tint = if (uploadService.stage == "complete") Color.Green else if (uploadService.stage == "failed") Color.Red else PrimaryColor, modifier = Modifier.size(24.dp))
+                                if (isUploading) CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                                else Icon(Icons.Default.Info, contentDescription = null, tint = if (uploadStage == PositiveUploadStage.COMPLETE) Color.Green else if (uploadStage == PositiveUploadStage.FAILED) Color.Red else PrimaryColor, modifier = Modifier.size(24.dp))
 
                                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    Text(uploadService.status, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                                    Text(uploadService.detail, fontSize = 14.sp, color = Color.Gray)
+                                    Text(uploadStatus, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                                    Text(uploadDetail, fontSize = 14.sp, color = Color.Gray)
                                 }
                             }
                         }
                     }
 
-                    if (hardNegativeUploadService.status != "Idle") {
+                    if (hardNegativeStatus != "Idle") {
                         Surface(modifier = Modifier.fillMaxWidth().shadow(4.dp, RoundedCornerShape(24.dp)), shape = RoundedCornerShape(24.dp), color = SecondaryGroupedBackground) {
                             Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.Top) {
-                                    if (hardNegativeUploadService.isUploading) CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                                    if (isHardNegativeUploading) CircularProgressIndicator(modifier = Modifier.size(24.dp))
                                     else Icon(Icons.Default.Videocam, contentDescription = null, tint = PrimaryColor, modifier = Modifier.size(24.dp))
 
                                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                         Text("Reference Video", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                                        Text(hardNegativeUploadService.status, fontSize = 14.sp, color = Color.Gray)
+                                        Text(hardNegativeStatus, fontSize = 14.sp, color = Color.Gray)
                                     }
                                 }
-                                if (hardNegativeUploadService.isUploading) {
-                                    LinearProgressIndicator(progress = { hardNegativeUploadService.progress }, modifier = Modifier.fillMaxWidth(), color = PrimaryColor)
+                                if (isHardNegativeUploading) {
+                                    LinearProgressIndicator(progress = { hardNegativeProgress.toFloat() }, modifier = Modifier.fillMaxWidth(), color = PrimaryColor)
                                 }
                             }
                         }

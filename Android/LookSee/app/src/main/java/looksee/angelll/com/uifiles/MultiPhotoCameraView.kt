@@ -1,64 +1,62 @@
 package looksee.angelll.com.uifiles
 
-import android.net.Uri
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CameraAlt
-import androidx.compose.material.icons.filled.Cancel
-import androidx.compose.material.icons.filled.WarningAmber
+import androidx.compose.material.icons.filled.Camera
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.rememberAsyncImagePainter
+import kotlinx.coroutines.launch
+import looksee.angelll.com.models.*
+import looksee.angelll.com.viewmodels.*
+import looksee.angelll.com.services.*
 
 @Composable
-fun MultiPhotoCameraScreen(
-    existingPhotos: List<CapturedNegativePhoto>, // Unresolved reference
-    minimumPhotoCount: Int = 5,
-    maximumPhotoCount: Int = 10,
-    onDone: (List<CapturedNegativePhoto>) -> Unit,
+fun MultiPhotoCameraView(
+    onPhotosCaptured: (List<looksee.angelll.com.models.CapturedNegativePhoto>) -> Unit,
     onDismiss: () -> Unit
 ) {
-    // Unresolved reference: MultiPhotoCameraService
-    val cameraService = remember {
-        MultiPhotoCameraService(existingPhotos, maximumPhotoCount)
-    }
+    val context = LocalContext.current
+    val service = remember { MultiPhotoCameraService(context) }
+    
+    val capturedPhotos by service.capturedPhotos.collectAsState()
+    val isCapturing by service.isCapturing.collectAsState()
+    val errorMessage by service.errorMessage.collectAsState()
+    
+    val canCapture = capturedPhotos.size < 10 && !isCapturing
 
-    val hasMinimumPhotos = cameraService.capturedPhotos.size >= minimumPhotoCount
-    val remainingRequiredPhotos = maxOf(minimumPhotoCount - cameraService.capturedPhotos.size, 0)
+    Scaffold(
+        containerColor = Color.Black
+    ) { paddingValues ->
+        Box(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
+            // Camera Preview Placeholder
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.DarkGray),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("Camera Preview", color = Color.White)
+                ViewfinderCircle()
+            }
 
-    LaunchedEffect(Unit) {
-        cameraService.start()
-    }
-
-    DisposableEffect(Unit) {
-        onDispose {
-            cameraService.stop()
-        }
-    }
-
-    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
-        // Camera Preview Placeholder (To be implemented with CameraX)
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Icon(Icons.Default.CameraAlt, contentDescription = "Camera", tint = Color.DarkGray, modifier = Modifier.size(64.dp))
-        }
-
-        Column(modifier = Modifier.fillMaxSize()) {
-            // Top Controls
+            // Top Bar
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -66,163 +64,90 @@ fun MultiPhotoCameraScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Button(
-                    onClick = {
-                        cameraService.discardNewPhotos()
-                        onDismiss()
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.Black.copy(alpha = 0.55f)),
-                    shape = CircleShape
+                IconButton(onClick = onDismiss, modifier = Modifier.background(Color.Black.copy(0.5f), CircleShape)) {
+                    Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+                }
+                
+                Surface(
+                    color = Color.Black.copy(0.5f),
+                    shape = RoundedCornerShape(16.dp)
                 ) {
-                    Text("Cancel", fontWeight = FontWeight.SemiBold, color = Color.White)
+                    Text(
+                        "${capturedPhotos.size} / 10",
+                        color = Color.White,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        fontWeight = FontWeight.Bold
+                    )
                 }
 
-                Text(
-                    text = "${cameraService.capturedPhotos.size} / $maximumPhotoCount",
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                    modifier = Modifier
-                        .background(Color.Black.copy(alpha = 0.55f), CircleShape)
-                        .padding(horizontal = 16.dp, vertical = 10.dp)
-                )
-            }
-
-            Spacer(modifier = Modifier.weight(1f))
-
-            // Instructions
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-                    .padding(bottom = 12.dp)
-                    .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(16.dp))
-                    .padding(horizontal = 20.dp, vertical = 12.dp)
-            ) {
-                Text("Capture Negative References", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.White)
-                Spacer(modifier = Modifier.height(4.dp))
-                Text("Photograph the surrounding area, not the landmark itself.", fontSize = 12.sp, color = Color.White, textAlign = TextAlign.Center)
-                Spacer(modifier = Modifier.height(4.dp))
-
-                if (remainingRequiredPhotos > 0) {
-                    Text("$remainingRequiredPhotos more required", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.Yellow)
+                if (capturedPhotos.isNotEmpty()) {
+                    TextButton(
+                        onClick = { onPhotosCaptured(capturedPhotos) },
+                        colors = ButtonDefaults.textButtonColors(contentColor = Color.White),
+                        modifier = Modifier.background(Color(0xFF007AFF), RoundedCornerShape(16.dp))
+                    ) {
+                        Text("Done", fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 8.dp))
+                    }
                 } else {
-                    Text("Minimum complete", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.Green)
+                    Spacer(modifier = Modifier.width(48.dp))
                 }
             }
 
-            // Thumbnail Strip
-            if (cameraService.capturedPhotos.isNotEmpty()) {
+            // Bottom UI
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .background(Color.Black.copy(0.7f))
+                    .padding(vertical = 24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // Photo List
                 LazyRow(
+                    modifier = Modifier.fillMaxWidth(),
                     contentPadding = PaddingValues(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    modifier = Modifier.padding(bottom = 8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(cameraService.capturedPhotos) { photo ->
-                        Box(contentAlignment = Alignment.TopEnd) {
-                            Image(
-                                painter = rememberAsyncImagePainter(model = photo.fileUri),
-                                contentDescription = "Thumbnail",
-                                modifier = Modifier
-                                    .size(72.dp)
-                                    .clip(RoundedCornerShape(10.dp)),
-                                contentScale = ContentScale.Crop
-                            )
+                    items(capturedPhotos) { photo ->
+                        Box(
+                            modifier = Modifier
+                                .size(60.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color.Gray)
+                        ) {
+                            // In a real app, use Coil to show the photo
                             IconButton(
-                                onClick = { cameraService.removePhoto(photo) },
+                                onClick = { service.removePhoto(photo) },
                                 modifier = Modifier
-                                    .size(24.dp)
-                                    .offset(x = 6.dp, y = (-6).dp)
-                                    .background(Color.White, CircleShape)
+                                    .align(Alignment.TopEnd)
+                                    .size(20.dp)
+                                    .background(Color.Red, CircleShape)
                             ) {
-                                Icon(Icons.Default.Cancel, contentDescription = "Remove", tint = Color.Red)
+                                Icon(Icons.Default.Delete, contentDescription = null, tint = Color.White, modifier = Modifier.size(12.dp))
                             }
                         }
                     }
                 }
-            }
 
-            // Bottom Controls
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color.Black.copy(alpha = 0.65f))
-                    .padding(horizontal = 16.dp, vertical = 12.dp)
-                    .padding(bottom = 28.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                // Shutter Button
+                Box(
+                    modifier = Modifier
+                        .size(80.dp)
+                        .border(4.dp, Color.White, CircleShape)
+                        .padding(6.dp)
+                        .clip(CircleShape)
+                        .background(if (canCapture) Color.White else Color.Gray)
+                        .clickable(enabled = canCapture) { service.capturePhoto() },
+                    contentAlignment = Alignment.Center
                 ) {
-                    Spacer(modifier = Modifier.width(90.dp))
-
-                    // Capture Button
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .size(76.dp)
-                            .background(Color.White, CircleShape)
-                            .padding(6.dp)
-                            .border(3.dp, Color.Black.copy(alpha = 0.8f), CircleShape)
-                    ) {
-                        if (cameraService.isCapturing) {
-                            CircularProgressIndicator(color = Color.Black)
-                        } else {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .clip(CircleShape)
-                                    .clickable(enabled = cameraService.canCaptureAnotherPhoto) {
-                                        cameraService.capturePhoto()
-                                    }
-                            )
-                        }
-                    }
-
-                    // Done Button
-                    Button(
-                        onClick = {
-                            onDone(cameraService.capturedPhotos)
-                            onDismiss()
-                        },
-                        enabled = hasMinimumPhotos,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color.Blue,
-                            disabledContainerColor = Color.Gray.copy(alpha = 0.75f)
-                        ),
-                        shape = RoundedCornerShape(14.dp),
-                        modifier = Modifier
-                            .width(90.dp)
-                            .height(52.dp)
-                    ) {
-                        Text("Done", fontWeight = FontWeight.Bold, color = Color.White)
+                    if (isCapturing) {
+                        CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(30.dp))
                     }
                 }
-            }
-        }
-
-        // Error Overlay
-        if (cameraService.errorMessage != null) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.9f))
-                    .padding(28.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Icon(Icons.Default.WarningAmber, contentDescription = "Error", tint = Color.White, modifier = Modifier.size(42.dp))
-                    Text("Camera Unavailable", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                    Text(cameraService.errorMessage!!, textAlign = TextAlign.Center, color = Color.White)
-                    Button(
-                        onClick = {
-                            cameraService.discardNewPhotos()
-                            onDismiss()
-                        }
-                    ) {
-                        Text("Close")
-                    }
+                
+                if (errorMessage != null) {
+                    Text(errorMessage!!, color = Color.Red, fontSize = 14.sp)
                 }
             }
         }

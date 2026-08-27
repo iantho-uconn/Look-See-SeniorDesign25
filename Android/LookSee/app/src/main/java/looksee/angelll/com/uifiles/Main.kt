@@ -1,16 +1,9 @@
 package looksee.angelll.com.uifiles
 
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.tooling.preview.Preview
+import looksee.angelll.com.viewmodels.AuthViewModel
 
 @Composable
-fun MainScreen() {
-    // Unresolved reference: ButtonsScreen()
-    ButtonsScreen()
-}
-
-@Preview(showBackground = true)
-@Composable
-fun PreviewMainScreen() {
-    MainScreen()
+fun MainScreen(vm: AuthViewModel, onNavigate: (String) -> Unit) {
+    ButtonsScreen(vm = vm, onNavigate = onNavigate)
 }

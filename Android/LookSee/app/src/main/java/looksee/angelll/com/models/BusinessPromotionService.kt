@@ -2,41 +2,6 @@ package looksee.angelll.com.models
 
 import com.google.gson.Gson
 
-data class BusinessPromotionListResponse(
-    val items: List<BusinessPromotion> = emptyList(),
-    val count: Int = 0,
-)
-
-data class BusinessPromotionMutationResponse(
-    val ok: Boolean = false,
-    val item: BusinessPromotion = BusinessPromotion(),
-)
-
-data class BusinessPromotionDeleteResponse(
-    val ok: Boolean = false,
-    val promotionId: String = "",
-    val message: String? = null,
-)
-
-data class BusinessPromotion(
-    val promotionId: String = "",
-    val userEmail: String = "",
-    val ownerUserId: String = "",
-    val landmarkId: String = "",
-    val landmarkLabel: String = "",
-    val name: String = "",
-    val description: String = "",
-    val imageUrl: String = "",
-    val startDate: String = "",
-    val endDate: String = "",
-    val enabled: Boolean = false,
-    val createdAt: Long? = null,
-    val updatedAt: Long? = null,
-) {
-    val id: String
-        get() = promotionId
-}
-
 sealed class BusinessPromotionServiceError(message: String) : Exception(message) {
     data object NotSignedIn :
         BusinessPromotionServiceError("You must be signed in before managing promotions.")

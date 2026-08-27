@@ -16,6 +16,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.io.File
 import java.util.UUID
+import looksee.angelll.com.uifiles.VideoMerger
 
 enum class AuthorizationStatus {
     NOT_DETERMINED, AUTHORIZED, DENIED
@@ -31,6 +32,9 @@ class NegativeVideoCameraService(private val context: Context) {
     var isInterrupted by mutableStateOf(false)
 
     var videoCapture: VideoCapture<Recorder>? = null
+        private set
+
+    var camera: androidx.camera.core.Camera? = null
         private set
 
     private var activeRecording: Recording? = null
@@ -94,7 +98,7 @@ class NegativeVideoCameraService(private val context: Context) {
 
             try {
                 cameraProvider.unbindAll()
-                cameraProvider.bindToLifecycle(
+                camera = cameraProvider.bindToLifecycle(
                     lifecycleOwner, cameraSelector, preview, videoCapture
                 )
             } catch (exc: Exception) {

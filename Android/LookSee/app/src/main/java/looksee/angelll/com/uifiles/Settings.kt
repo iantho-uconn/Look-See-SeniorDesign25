@@ -17,6 +17,11 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.zIndex
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import looksee.angelll.com.viewmodels.*
+import looksee.angelll.com.models.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -73,22 +78,12 @@ fun SettingsScreen(
 ) {
     val presenter = remember { SettingsPresenter() }
     val haptic = LocalHapticFeedback.current
-    val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
     var showCancelAlert by remember { mutableStateOf(false) }
     var isCancelling by remember { mutableStateOf(false) }
 
     val isFullyLoggedIn = vm.isSignedIn && vm.userEmail.isNotEmpty()
-
-    val isFreeTrial = remember(vm.userEmail) {
-        context.getSharedPreferences("LookSeePrefs", Context.MODE_PRIVATE)
-            .getBoolean("isFreeTrial_${vm.userEmail}", false)
-    }
-
-    val dynamicPlanTitle = if (!vm.hasActiveSubscription) "Free Account"
-    else if (isFreeTrial) "14-Day Free Trial"
-    else "Verified Subscriber"
 
     LaunchedEffect(isFullyLoggedIn) {
         if (!presenter.justPurchased) {
@@ -108,19 +103,18 @@ fun SettingsScreen(
             Surface(
                 modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth(),
                 color = SecondaryGrouped,
-                shape = RoundedCornerShape(20.dp),
-                shadowElevation = 4.dp
+                shape = RoundedCornerShape(16.dp)
             ) {
                 if (!isFullyLoggedIn) {
                     Row(
-                        modifier = Modifier.padding(20.dp),
+                        modifier = Modifier.padding(16.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        Icon(Icons.Default.AccountCircle, contentDescription = null, modifier = Modifier.size(48.dp), tint = Color.Gray)
+                        Icon(Icons.Default.AccountCircle, contentDescription = null, modifier = Modifier.size(60.dp), tint = Color.Gray)
                         Column {
                             Text("Guest User", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                            Text("Browsing anonymously", fontSize = 14.sp, color = Color.Gray)
+                            Text("Sign in to sync your data", fontSize = 14.sp, color = Color.Gray)
                         }
                     }
                 } else {
@@ -130,13 +124,13 @@ fun SettingsScreen(
                                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 presenter.showUserProfileEditor = true
                             }
-                            .padding(20.dp)
+                            .padding(16.dp)
                             .fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         Box(
-                            modifier = Modifier.size(52.dp).clip(CircleShape).background(PrimaryBlue.copy(alpha = 0.15f)),
+                            modifier = Modifier.size(64.dp).clip(CircleShape).background(Color.DarkGray),
                             contentAlignment = Alignment.Center
                         ) {
                             if (vm.profileImageUrl.isNotEmpty()) {
@@ -145,7 +139,7 @@ fun SettingsScreen(
                                     modifier = Modifier.fillMaxSize()
                                 )
                             } else {
-                                Icon(Icons.Default.Person, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(32.dp))
+                                Icon(Icons.Default.Person, contentDescription = null, tint = Color.White, modifier = Modifier.size(32.dp))
                             }
                         }
 
@@ -156,51 +150,47 @@ fun SettingsScreen(
                                     fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White
                                 )
                                 if (vm.hasActiveSubscription) {
-                                    Icon(Icons.Default.CheckCircle, contentDescription = "Verified", tint = PrimaryBlue, modifier = Modifier.size(16.dp))
+                                    Icon(Icons.Default.CheckCircle, contentDescription = "Verified", tint = PrimaryBlue, modifier = Modifier.size(18.dp))
                                 }
                             }
-                            Text(dynamicPlanTitle, fontSize = 14.sp, color = Color.Gray)
+                            Text(
+                                text = if (vm.hasActiveSubscription) "Verified Subscriber" else "Free Account",
+                                fontSize = 14.sp,
+                                color = if (vm.hasActiveSubscription) PrimaryBlue else Color.Gray,
+                                fontWeight = if (vm.hasActiveSubscription) FontWeight.Bold else FontWeight.Normal
+                            )
                         }
-                        Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color.DarkGray)
+                        Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color(0xFFC7C7CC))
                     }
                 }
             }
 
             // 2. BUSINESS MANAGEMENT
-            Column(modifier = Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("BUSINESS MANAGEMENT", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray, modifier = Modifier.padding(horizontal = 4.dp))
+            Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+                Text(
+                    "BUSINESS MANAGEMENT",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.Gray,
+                    modifier = Modifier.padding(start = 8.dp, bottom = 8.dp)
+                )
 
-                if (isFullyLoggedIn && vm.hasActiveSubscription) {
-                    if (isFreeTrial) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Color(0xFF332000)).padding(16.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFFFA500))
-                            Column {
-                                Text("Free Trial Active", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                                Text("Please subscribe before your 14-day trial ends to prevent your landmarks from being deactivated.", fontSize = 13.sp, color = Color.LightGray)
-                            }
-                        }
-                    }
-
-                    Surface(color = SecondaryGrouped, shape = RoundedCornerShape(20.dp)) {
-                        Column {
+                Surface(color = SecondaryGrouped, shape = RoundedCornerShape(16.dp)) {
+                    Column {
+                        if (isFullyLoggedIn && vm.hasActiveSubscription) {
                             SettingsRow(icon = Icons.Default.Business, iconBg = PrimaryBlue, title = "Manage My Landmarks", subtitle = "View the landmarks assigned to your account.") {
                                 onNavigate("BusinessLandmarksView")
                             }
-                            HorizontalDivider(modifier = Modifier.padding(start = 68.dp), color = Color.DarkGray)
+                            HorizontalDivider(modifier = Modifier.padding(start = 68.dp), color = Color.White.copy(alpha = 0.1f))
                             SettingsRow(icon = Icons.Default.GeneratingTokens, iconBg = Color(0xFFFFA500), title = "Tokens (${vm.tokenBalance})", subtitle = "Buy tokens to update your inventory.") {
                                 presenter.subscriptionStartingTab = 1
                                 presenter.showSubscriptionFlow = true
                             }
-                        }
-                    }
-                } else {
-                    Surface(color = SecondaryGrouped, shape = RoundedCornerShape(20.dp)) {
-                        SettingsRow(icon = Icons.Default.Lock, iconBg = Color.Gray, title = "Business Tools Locked", subtitle = "Subscribe to a plan to unlock landmarks and tokens.") {
-                            presenter.subscriptionStartingTab = 0
-                            presenter.showSubscriptionFlow = true
+                        } else {
+                            SettingsRow(icon = Icons.Default.Lock, iconBg = Color.Gray, title = "Business Tools Locked", subtitle = "Subscribe to a plan to unlock landmarks.") {
+                                presenter.subscriptionStartingTab = 0
+                                presenter.showSubscriptionFlow = true
+                            }
                         }
                     }
                 }
@@ -208,23 +198,24 @@ fun SettingsScreen(
 
             // 3. ACCOUNT
             if (isFullyLoggedIn) {
-                Column(modifier = Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("ACCOUNT", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray, modifier = Modifier.padding(horizontal = 4.dp))
+                Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+                    Text(
+                        "ACCOUNT",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.Gray,
+                        modifier = Modifier.padding(start = 8.dp, bottom = 8.dp)
+                    )
 
-                    Surface(color = SecondaryGrouped, shape = RoundedCornerShape(20.dp)) {
+                    Surface(color = SecondaryGrouped, shape = RoundedCornerShape(16.dp)) {
                         Column {
                             if (vm.hasActiveSubscription) {
                                 val businessSubtitle = if (vm.storeName.isEmpty()) "Update store name and phone number." else vm.storeName
                                 SettingsRow(icon = Icons.Default.Storefront, iconBg = PrimaryBlue, title = "Business Profile", subtitle = businessSubtitle) {
                                     onNavigate("BusinessProfileView")
                                 }
-                            } else {
-                                SettingsRow(icon = Icons.Default.Lock, iconBg = Color.Gray, title = "Business Profile Locked", subtitle = "Subscribe to edit your public store info.") {
-                                    presenter.subscriptionStartingTab = 0
-                                    presenter.showSubscriptionFlow = true
-                                }
+                                HorizontalDivider(modifier = Modifier.padding(start = 68.dp), color = Color.White.copy(alpha = 0.1f))
                             }
-                            HorizontalDivider(modifier = Modifier.padding(start = 68.dp), color = Color.DarkGray)
                             SettingsRow(icon = Icons.Default.VpnKey, iconBg = Color.Gray, title = "Account & Security", subtitle = "Change your email or password.") {
                                 onNavigate("AccountSecurityView")
                             }
@@ -233,40 +224,46 @@ fun SettingsScreen(
                 }
             }
 
-            // 4. MEMBERSHIP / PROMO
-            if (!vm.hasActiveSubscription || !isFullyLoggedIn) {
-                GuestPromoCard(presenter, isFullyLoggedIn)
-            } else {
-                Column(modifier = Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("MEMBERSHIP", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray, modifier = Modifier.padding(horizontal = 4.dp))
-                    Surface(color = SecondaryGrouped, shape = RoundedCornerShape(20.dp)) {
-                        Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            // 4. MEMBERSHIP
+            Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+                Text(
+                    "MEMBERSHIP",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.Gray,
+                    modifier = Modifier.padding(start = 8.dp, bottom = 8.dp)
+                )
+
+                if (!vm.hasActiveSubscription || !isFullyLoggedIn) {
+                    GuestPromoCard(presenter, isFullyLoggedIn)
+                } else {
+                    Surface(color = SecondaryGrouped, shape = RoundedCornerShape(16.dp)) {
+                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("Current Plan", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
-                                Text(dynamicPlanTitle, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = PrimaryBlue)
+                                Text("Current Plan", fontSize = 16.sp, color = Color.White)
+                                Text("Verified Subscriber", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = PrimaryBlue)
                             }
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("Status", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
-                                Text("Active", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color(0xFF4CAF50))
+                                Text("Status", fontSize = 16.sp, color = Color.White)
+                                Text("Active", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFF4CAF50))
                             }
-                            HorizontalDivider(color = Color.DarkGray)
+                            HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
                             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                 Button(
                                     onClick = { presenter.subscriptionStartingTab = 0; presenter.showSubscriptionFlow = true },
-                                    modifier = Modifier.weight(1f),
-                                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue.copy(alpha = 0.1f)),
-                                    shape = RoundedCornerShape(12.dp)
+                                    modifier = Modifier.weight(1f).height(44.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue.copy(alpha = 0.15f)),
+                                    shape = RoundedCornerShape(10.dp)
                                 ) {
-                                    Text("Manage Plan", color = PrimaryBlue, fontWeight = FontWeight.Bold)
+                                    Text("Manage", color = PrimaryBlue, fontWeight = FontWeight.Bold)
                                 }
-                                OutlinedButton(
+                                Button(
                                     onClick = { showCancelAlert = true },
-                                    modifier = Modifier.weight(1f),
-                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Red),
-                                    border = androidx.compose.foundation.BorderStroke(2.dp, Color.Red.copy(alpha = 0.8f)),
-                                    shape = RoundedCornerShape(12.dp)
+                                    modifier = Modifier.weight(1f).height(44.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(alpha = 0.1f)),
+                                    shape = RoundedCornerShape(10.dp)
                                 ) {
-                                    Text("Cancel", fontWeight = FontWeight.Bold)
+                                    Text("Cancel", color = Color.Red, fontWeight = FontWeight.Bold)
                                 }
                             }
                         }
@@ -275,19 +272,18 @@ fun SettingsScreen(
             }
 
             // 5. OTHER SETTINGS
-            Surface(modifier = Modifier.padding(horizontal = 16.dp), color = SecondaryGrouped, shape = RoundedCornerShape(20.dp)) {
-                Column {
-                    SettingsRow(icon = Icons.AutoMirrored.Filled.Help, iconBg = Color(0xFFFFA500), title = "Help & Support") {}
-                    HorizontalDivider(modifier = Modifier.padding(start = 68.dp), color = Color.DarkGray)
-                    SettingsRow(icon = Icons.Default.PrivacyTip, iconBg = Color(0xFF9C27B0), title = "Privacy Policy") {}
-                    HorizontalDivider(modifier = Modifier.padding(start = 68.dp), color = Color.DarkGray)
-                    SettingsRow(icon = Icons.Default.Description, iconBg = Color(0xFF4CAF50), title = "Terms of Service") {}
-                    HorizontalDivider(modifier = Modifier.padding(start = 68.dp), color = Color.DarkGray)
-                    SettingsRow(icon = Icons.Default.Settings, iconBg = Color.Gray, title = "Settings & Preferences") {
-                        onNavigate("DeepSettingsView")
+            Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+                Surface(color = SecondaryGrouped, shape = RoundedCornerShape(16.dp)) {
+                    Column {
+                        SettingsRow(icon = Icons.AutoMirrored.Filled.Help, iconBg = Color(0xFFFFA500), title = "Help & Support") {}
+                        HorizontalDivider(modifier = Modifier.padding(start = 68.dp), color = Color.White.copy(alpha = 0.1f))
+                        SettingsRow(icon = Icons.Default.PrivacyTip, iconBg = Color(0xFF9C27B0), title = "Privacy Policy") {}
+                        HorizontalDivider(modifier = Modifier.padding(start = 68.dp), color = Color.White.copy(alpha = 0.1f))
+                        SettingsRow(icon = Icons.Default.Description, iconBg = Color(0xFF4CAF50), title = "Terms of Service") {}
                     }
                 }
             }
+
         }
 
         // Full Screen Loading Overlay
@@ -528,7 +524,7 @@ fun UserProfileEditSheet(vm: AuthViewModel, onDismiss: () -> Unit) {
                 ) {
                     Text("Change Profile Picture", color = Color.Gray, fontWeight = FontWeight.Bold, modifier = Modifier.padding(16.dp).align(Alignment.CenterHorizontally))
                     HorizontalDivider(color = Color.White.copy(0.1f))
-                    TextButton(onClick = { showPhotoActionSheet = false; cameraLauncher.launch() }, modifier = Modifier.fillMaxWidth().padding(8.dp)) {
+                    TextButton(onClick = { showPhotoActionSheet = false; cameraLauncher.launch(null) }, modifier = Modifier.fillMaxWidth().padding(8.dp)) {
                         Text("Take Photo", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
                     }
                     HorizontalDivider(color = Color.White.copy(0.1f))
@@ -607,7 +603,3 @@ fun resizeAndConvertToBase64(image: Bitmap): String {
 fun DeepSettingsView(isFullyLoggedIn: Boolean, vm: AuthViewModel) { /* Stub */ }
 @Composable
 fun BusinessProfileView(vm: AuthViewModel) { /* Stub */ }
-@Composable
-fun AccountSecurityView(vm: AuthViewModel) { /* Stub */ }
-@Composable
-fun BusinessLandmarksView() { /* Stub */ }

@@ -3,14 +3,11 @@ package looksee.angelll.com.viewmodels
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.amplifyframework.auth.options.AuthFetchSessionOptions
-import com.amplifyframework.core.Amplify
+import com.amplifyframework.kotlin.core.Amplify
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
 
 enum class UserTier {
     GUEST, AUTHENTICATED, BUSINESS
@@ -27,42 +24,37 @@ class AuthState : ViewModel() {
     private val _didSignOut = MutableStateFlow(false)
     val didSignOut: StateFlow<Boolean> = _didSignOut.asStateFlow()
 
+    /**
+     * Resolves the current user's tier by checking their auth session and attributes.
+     * This ensures the UI is locked/unlocked based on their subscription level.
+     */
     fun resolveTier() {
         viewModelScope.launch {
             try {
-                // Wrapper to convert Java callbacks to Kotlin Coroutines
-                val session = suspendCancellableCoroutine<com.amplifyframework.auth.AuthSession> { cont ->
-                    Amplify.Auth.fetchAuthSession({ cont.resume(it) }, { cont.resumeWithException(it) })
-                }
+                // Use Kotlin Facade for suspend support
+                val session = Amplify.Auth.fetchAuthSession()
 
                 if (!session.isSignedIn) {
                     _tier.value = UserTier.GUEST
-                    _isReady.value = true
                     return@launch
                 }
 
-                // Force refresh tokens
+                // Force refresh to ensure we have the latest group/tier information from Cognito
                 val options = AuthFetchSessionOptions.builder().forceRefresh(true).build()
-                suspendCancellableCoroutine<com.amplifyframework.auth.AuthSession> { cont ->
-                    Amplify.Auth.fetchAuthSession(options, { cont.resume(it) }, { cont.resumeWithException(it) })
-                }
+                Amplify.Auth.fetchAuthSession(options)
 
-                val attributes = suspendCancellableCoroutine<List<com.amplifyframework.auth.AuthUserAttribute>> { cont ->
-                    Amplify.Auth.fetchUserAttributes({ cont.resume(it) }, { cont.resumeWithException(it) })
-                }
+                // Fetch user attributes to check for the "custom:group" attribute
+                val attributes = Amplify.Auth.fetchUserAttributes()
+                val groupAttr = attributes.find { it.key.keyString == "custom:group" }
 
-                println("🔍 All attributes: $attributes")
-
-                val groupAttr = attributes.firstOrNull { it.key.keyString == "custom:group" }
-                if (groupAttr != null) {
-                    println("🔍 Found group attribute: ${groupAttr.value}")
-                    _tier.value = if (groupAttr.value == "business-users") UserTier.BUSINESS else UserTier.AUTHENTICATED
+                _tier.value = if (groupAttr?.value == "business-users") {
+                    UserTier.BUSINESS
                 } else {
-                    println("⚠️ No group attribute found")
-                    _tier.value = UserTier.AUTHENTICATED
+                    UserTier.AUTHENTICATED
                 }
             } catch (e: Exception) {
                 println("❌ resolveTier failed: $e")
+                // Fallback to AUTHENTICATED if they are signed in but attributes fail
                 _tier.value = UserTier.AUTHENTICATED
             } finally {
                 _isReady.value = true
@@ -70,12 +62,13 @@ class AuthState : ViewModel() {
         }
     }
 
+    /**
+     * Signs the user out and resets the local auth state.
+     */
     fun signOut() {
         viewModelScope.launch {
             try {
-                suspendCancellableCoroutine<com.amplifyframework.auth.result.AuthSignOutResult> { cont ->
-                    Amplify.Auth.signOut { cont.resume(it) }
-                }
+                Amplify.Auth.signOut()
             } catch (e: Exception) {
                 println("❌ AuthState signOut failed: $e")
             } finally {

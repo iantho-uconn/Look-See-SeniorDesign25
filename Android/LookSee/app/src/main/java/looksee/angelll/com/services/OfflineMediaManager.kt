@@ -1,5 +1,8 @@
 package looksee.angelll.com.services
 
+import looksee.angelll.com.models.CapturedNegativePhoto
+import looksee.angelll.com.models.CapturedNegativeVideo
+
 import android.content.Context
 import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
@@ -396,7 +399,3 @@ data class ArchivedMedia(
     val isTier2: Boolean
 )
 
-data class CapturedNegativePhoto(
-    val id: String = UUID.randomUUID().toString(),
-    val uri: Uri
-)

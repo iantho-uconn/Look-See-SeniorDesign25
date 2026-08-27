@@ -136,6 +136,8 @@
 		D079C5EB303844D2000A1237 /* BusinessNegativeVideoCameraView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D079C5E9303844CE000A1237 /* BusinessNegativeVideoCameraView.swift */; };
 		D079C5ED3038457E000A1237 /* BusinessPositiveVideoCameraView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D079C5EC3038457A000A1237 /* BusinessPositiveVideoCameraView.swift */; };
 		D079C5EE3038457E000A1237 /* BusinessPositiveVideoCameraView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D079C5EC3038457A000A1237 /* BusinessPositiveVideoCameraView.swift */; };
+		D079C5F1304062DB000A1237 /* Sentry in Frameworks */ = {isa = PBXBuildFile; productRef = D079C5F0304062DB000A1237 /* Sentry */; };
+		D079C5F3304062DB000A1237 /* SentrySwiftUI in Frameworks */ = {isa = PBXBuildFile; productRef = D079C5F2304062DB000A1237 /* SentrySwiftUI */; };
 		D0B0B12C2FE48EC100C75E25 /* OfflineMediaManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0B0B12B2FE48EBD00C75E25 /* OfflineMediaManager.swift */; };
 		D0B0B12E2FE48EF800C75E25 /* ArchiveView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0B0B12D2FE48EF500C75E25 /* ArchiveView.swift */; };
 		D0B0B1302FE51DBA00C75E25 /* LandmarkMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0B0B12F2FE51DB500C75E25 /* LandmarkMapView.swift */; };
@@ -320,10 +322,12 @@
 			buildActionMask = 2147483647;
 			files = (
 				D0CA58443017C93600058BB3 /* AWSS3StoragePlugin in Frameworks */,
+				D079C5F3304062DB000A1237 /* SentrySwiftUI in Frameworks */,
 				D0E78BDB3008C6E800E5FE00 /* StripePaymentSheet in Frameworks */,
 				B02344EB2F46355C00F4230E /* Amplify in Frameworks */,
 				B02344ED2F46356400F4230E /* AWSCognitoAuthPlugin in Frameworks */,
 				3C19EB412F981FA400D1AA43 /* ZIPFoundation in Frameworks */,
+				D079C5F1304062DB000A1237 /* Sentry in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -535,6 +539,8 @@
 				3C19EB402F981FA400D1AA43 /* ZIPFoundation */,
 				D0E78BDA3008C6E800E5FE00 /* StripePaymentSheet */,
 				D0CA58433017C93600058BB3 /* AWSS3StoragePlugin */,
+				D079C5F0304062DB000A1237 /* Sentry */,
+				D079C5F2304062DB000A1237 /* SentrySwiftUI */,
 			);
 			productName = LookSeeProto;
 			productReference = 3C918F9D2E9ECE5F00AF5DAF /* LookSeeProto.app */;
@@ -626,6 +632,7 @@
 				B03AD91D2F462B2B0009E3AE /* XCRemoteSwiftPackageReference "amplify-swift" */,
 				3C19EB3F2F981FA400D1AA43 /* XCRemoteSwiftPackageReference "ZIPFoundation" */,
 				D0E78BD93008C65A00E5FE00 /* XCRemoteSwiftPackageReference "stripe-ios-spm" */,
+				D079C5EF304062DB000A1237 /* XCRemoteSwiftPackageReference "sentry-cocoa" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 3C918F9E2E9ECE5F00AF5DAF /* Products */;
@@ -1310,6 +1317,14 @@
 				minimumVersion = 2.53.3;
 			};
 		};
+		D079C5EF304062DB000A1237 /* XCRemoteSwiftPackageReference "sentry-cocoa" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/getsentry/sentry-cocoa";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 9.26.1;
+			};
+		};
 		D0E78BD93008C65A00E5FE00 /* XCRemoteSwiftPackageReference "stripe-ios-spm" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/stripe/stripe-ios-spm";
@@ -1360,6 +1375,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = B03AD91D2F462B2B0009E3AE /* XCRemoteSwiftPackageReference "amplify-swift" */;
 			productName = AWSCognitoAuthPlugin;
+		};
+		D079C5F0304062DB000A1237 /* Sentry */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D079C5EF304062DB000A1237 /* XCRemoteSwiftPackageReference "sentry-cocoa" */;
+			productName = Sentry;
+		};
+		D079C5F2304062DB000A1237 /* SentrySwiftUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D079C5EF304062DB000A1237 /* XCRemoteSwiftPackageReference "sentry-cocoa" */;
+			productName = SentrySwiftUI;
 		};
 		D0CA58433017C93600058BB3 /* AWSS3StoragePlugin */ = {
 			isa = XCSwiftPackageProductDependency;

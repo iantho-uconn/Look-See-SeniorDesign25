@@ -26,7 +26,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import looksee.angelll.com.models.BusinessBulkLandmarkFailure
 import looksee.angelll.com.models.BusinessLandmark
-import looksee.angelll.com.services.BusinessLandmarkService
+import looksee.angelll.com.models.BusinessLandmarkService
 
 data class BusinessBulkDeleteResult(
     val successfulLandmarkIds: Set<String>,
@@ -77,7 +77,7 @@ fun BusinessBulkDeleteView(
                             BusinessBulkLandmarkFailure(
                                 landmarkId = landmark.landmarkId,
                                 landmarkLabel = displayLabel(landmark),
-                                message = e.localizedMessage ?: "Unknown error"
+                                error = e.localizedMessage ?: "Unknown error"
                             )
                         )
                     }
@@ -226,7 +226,7 @@ fun BusinessBulkDeleteView(
                                 result.failedLandmarks.forEach { failure ->
                                     Column(modifier = Modifier.padding(vertical = 4.dp)) {
                                         Text(if (failure.landmarkLabel.isEmpty()) failure.landmarkId else failure.landmarkLabel, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                        Text(failure.message, fontSize = 12.sp, color = Color.Gray)
+                                        Text(failure.error, fontSize = 12.sp, color = Color.Gray)
                                     }
                                 }
                             }

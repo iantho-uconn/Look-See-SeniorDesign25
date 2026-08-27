@@ -137,7 +137,7 @@ fun LoadingAnimationScreen(
         RadarSweep(rotation = sweepRotation.value)
 
         Image(
-            painter = painterResource(id = android.R.drawable.ic_dialog_info),
+            painter = painterResource(id = looksee.angelll.com.R.drawable.looksee_logo),
             contentDescription = "LookSee Logo",
             modifier = Modifier
                 .size(290.dp)

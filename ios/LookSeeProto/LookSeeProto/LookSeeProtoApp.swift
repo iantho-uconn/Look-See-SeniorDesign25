@@ -9,6 +9,7 @@ import SwiftUI
 import Amplify
 import AWSCognitoAuthPlugin
 import AWSS3StoragePlugin
+import Sentry // 🚀 ADDED: Sentry SDK
 
 @main
 struct LookSeeProtoApp: App {
@@ -20,6 +21,7 @@ struct LookSeeProtoApp: App {
     
     init() {
         configureAmplify()
+        configureSentry() // 🚀 ADDED: Boot up Sentry
     }
     
     func configureAmplify() {
@@ -31,6 +33,23 @@ struct LookSeeProtoApp: App {
         } catch {
             print("❌ Failed to configure Amplify:", error)
         }
+    }
+    
+    // 🚀 ADDED: Sentry Configuration
+    func configureSentry() {
+        SentrySDK.start { options in
+            // PASTE YOUR DSN HERE (You get this when you make a free account on Sentry.io)
+            options.dsn = "YOUR_SENTRY_DSN_KEY_GOES_HERE"
+            
+            // Enable performance monitoring
+            options.tracesSampleRate = 1.0
+            
+            // Enable Session Replay (Captures screen video leading up to a bug)
+            options.sessionReplay = SentryReplayOptions(sessionSampleRate: 1.0, onErrorSampleRate: 1.0)
+            
+            // 🛡️ SECURITY: Automatically masks ALL text and images by default.
+        }
+        print("✅ Sentry configured")
     }
     
     var body: some Scene {

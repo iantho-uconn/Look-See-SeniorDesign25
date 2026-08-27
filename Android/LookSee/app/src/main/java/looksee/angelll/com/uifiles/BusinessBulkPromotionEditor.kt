@@ -24,8 +24,8 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import looksee.angelll.com.models.BusinessBulkLandmarkFailure
 import looksee.angelll.com.models.BusinessLandmark
-import looksee.angelll.com.services.BusinessLandmarkService
-import looksee.angelll.com.services.BusinessPromotionService
+import looksee.angelll.com.models.BusinessLandmarkService
+import looksee.angelll.com.models.BusinessPromotionService
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -121,7 +121,7 @@ fun BusinessBulkPromotionEditor(
                                 BusinessBulkLandmarkFailure(
                                     landmarkId = landmark.landmarkId,
                                     landmarkLabel = displayLabel(landmark),
-                                    message = e.localizedMessage ?: "Unknown error"
+                                    error = e.localizedMessage ?: "Unknown error"
                                 )
                             )
                         }
@@ -313,7 +313,7 @@ fun BusinessBulkPromotionEditor(
                                 result.failedLandmarks.forEach { failure ->
                                     Column(modifier = Modifier.padding(vertical = 4.dp)) {
                                         Text(if (failure.landmarkLabel.isEmpty()) failure.landmarkId else failure.landmarkLabel, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                        Text(failure.message, fontSize = 12.sp, color = Color.Gray)
+                                        Text(failure.error, fontSize = 12.sp, color = Color.Gray)
                                     }
                                 }
                             }

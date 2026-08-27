@@ -28,339 +28,114 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.amplifyframework.core.Amplify
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
-import looksee.angelll.com.R
-import looksee.angelll.com.services.AuthService
-import looksee.angelll.com.viewmodels.AuthViewModel
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
+import com.amplifyframework.auth.AuthException
+import com.amplifyframework.auth.result.step.*
+import looksee.angelll.com.models.*
+import looksee.angelll.com.viewmodels.*
+import looksee.angelll.com.services.*
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LoginScreen(
     vm: AuthViewModel,
-    onSignedIn: () -> Unit,
-    onGoToSignup: () -> Unit,
-    onContinueAsGuest: () -> Unit
+    onNavigate: (String) -> Unit
 ) {
-    var username by remember { mutableStateOf("") }
+    var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
-    var showForgotPassword by remember { mutableStateOf(false) }
-
-    var newPasswordInput by remember { mutableStateOf("") }
-    var showVerificationAlert by remember { mutableStateOf(false) }
-    var verificationCode by remember { mutableStateOf("") }
-
+    var isLoggingIn by remember { mutableStateOf(false) }
+    
     val focusManager = LocalFocusManager.current
-    val coroutineScope = rememberCoroutineScope()
 
-    val isSignedIn by vm.isSignedIn.collectAsState()
-    val errorMessage by vm.errorMessage.collectAsState()
-    val requiresNewPassword by vm.requiresNewPassword.collectAsState()
-
-    val sanitizedUsername = username.trim().lowercase()
-
-    LaunchedEffect(isSignedIn) {
-        if (isSignedIn) onSignedIn()
-    }
-
-    if (requiresNewPassword) {
-        AlertDialog(
-            onDismissRequest = { newPasswordInput = "" },
-            title = { Text("Update Password") },
-            text = {
-                Column {
-                    Text("Your account has a temporary password. Please create a new permanent password.")
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = newPasswordInput,
-                        onValueChange = { newPasswordInput = it },
-                        label = { Text("New Password") },
-                        visualTransformation = PasswordVisualTransformation()
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { vm.confirmNewPassword(newPasswordInput) }) {
-                    Text("Update & Sign In")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { newPasswordInput = "" }) { Text("Cancel") }
-            }
-        )
-    }
-
-    if (showVerificationAlert) {
-        AlertDialog(
-            onDismissRequest = { verificationCode = "" },
-            title = { Text("Verify Email") },
-            text = {
-                Column {
-                    Text("Enter the 6-digit code sent to $sanitizedUsername.")
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = verificationCode,
-                        onValueChange = { verificationCode = it },
-                        label = { Text("Verification Code") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        coroutineScope.launch {
-                            try {
-                                val result = AuthService.shared.confirm(sanitizedUsername, verificationCode)
-                                if (result.isSignUpComplete) {
-                                    showVerificationAlert = false
-                                    verificationCode = ""
-                                    vm.signIn(sanitizedUsername, password)
-                                }
-                            } catch (_: Exception) {}
-                        }
-                    }
-                ) { Text("Verify") }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = {
-                        coroutineScope.launch {
-                            try {
-                                suspendCancellableCoroutine<com.amplifyframework.auth.result.AuthCodeDeliveryDetails> { cont ->
-                                    Amplify.Auth.resendSignUpCode(sanitizedUsername, { cont.resume(it) }, { cont.resumeWithException(it) })
-                                }
-                            } catch (_: Exception) {}
-                        }
-                    }
-                ) { Text("Resend Code") }
-            }
-        )
+    LaunchedEffect(vm.isSignedIn) {
+        if (vm.isSignedIn) {
+            onNavigate("main")
+        }
     }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF0F0F1A))
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null
-            ) { focusManager.clearFocus() }
+            .background(Color.Black),
+        contentAlignment = Alignment.Center
     ) {
-        Box(
-            modifier = Modifier
-                .size(300.dp)
-                .offset(y = (-100).dp)
-                .align(Alignment.TopCenter)
-                .background(
-                    brush = Brush.radialGradient(
-                        colors = listOf(Color(0x33387DFF), Color.Transparent)
-                    ),
-                    shape = CircleShape
-                )
-        )
-
         Column(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 28.dp)
+                .fillMaxWidth()
+                .padding(32.dp)
                 .verticalScroll(rememberScrollState()),
-            horizontalAlignment = Alignment.CenterHorizontally
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
-            Spacer(modifier = Modifier.weight(1f))
-
             Image(
-                painter = painterResource(id = R.drawable.looksee_logo),
-                contentDescription = "LookSee Logo",
-                modifier = Modifier.size(250.dp)
+                painter = painterResource(id = android.R.drawable.ic_lock_lock), // Placeholder
+                contentDescription = "Logo",
+                modifier = Modifier.size(80.dp)
             )
-
+            
             Text(
-                text = "Sign in to continue",
-                color = Color.White.copy(alpha = 0.4f),
-                fontSize = 16.sp
+                "Welcome Back",
+                color = Color.White,
+                fontSize = 28.sp,
+                fontWeight = FontWeight.Bold
             )
-
-            Spacer(modifier = Modifier.height(32.dp))
-
-            Column(modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    text = "Email",
-                    color = Color.White.copy(alpha = 0.5f),
-                    fontSize = 12.sp,
-                    modifier = Modifier.padding(bottom = 6.dp)
-                )
+            
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 OutlinedTextField(
-                    value = username,
-                    onValueChange = { username = it },
-                    placeholder = { Text("you@example.com", color = Color.Gray) },
-                    singleLine = true,
+                    value = email,
+                    onValueChange = { email = it },
+                    label = { Text("Email") },
+                    modifier = Modifier.fillMaxWidth(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                    singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = Color(0xFF2E2E3D),
-                        unfocusedContainerColor = Color(0xFF2E2E3D),
-                        unfocusedBorderColor = Color(0xFF387DFF).copy(alpha = 0.3f),
-                        focusedBorderColor = Color(0xFF387DFF),
                         focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White
-                    ),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth()
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = Color(0xFF007AFF),
+                        unfocusedBorderColor = Color.Gray
+                    )
                 )
-            }
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            Column(modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    text = "Password",
-                    color = Color.White.copy(alpha = 0.5f),
-                    fontSize = 12.sp,
-                    modifier = Modifier.padding(bottom = 6.dp)
-                )
+                
                 OutlinedTextField(
                     value = password,
                     onValueChange = { password = it },
-                    placeholder = { Text("••••••••", color = Color.Gray) },
-                    singleLine = true,
+                    label = { Text("Password") },
+                    modifier = Modifier.fillMaxWidth(),
                     visualTransformation = PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = Color(0xFF2E2E3D),
-                        unfocusedContainerColor = Color(0xFF2E2E3D),
-                        unfocusedBorderColor = Color(0xFF387DFF).copy(alpha = 0.3f),
-                        focusedBorderColor = Color(0xFF387DFF),
                         focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White
-                    ),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth()
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = Color(0xFF007AFF),
+                        unfocusedBorderColor = Color.Gray
+                    )
                 )
             }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End
-            ) {
-                TextButton(onClick = { showForgotPassword = true }) {
-                    Text(
-                        text = "Forgot password?",
-                        color = Color(0xFF387DFF),
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
+            
+            if (vm.errorMessage.isNotEmpty()) {
+                Text(vm.errorMessage, color = Color.Red, fontSize = 14.sp)
             }
-
-            if (errorMessage.isNotEmpty()) {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalAlignment = Alignment.Start
-                ) {
-                    Text(
-                        text = errorMessage,
-                        color = Color.Red,
-                        fontSize = 12.sp
-                    )
-                    if (errorMessage.lowercase().contains("verif")) {
-                        TextButton(onClick = {
-                            focusManager.clearFocus()
-                            showVerificationAlert = true
-                        }) {
-                            Text(
-                                text = "Account unverified? Tap here to enter code.",
-                                color = Color(0xFF387DFF),
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-            }
-
-            if (isSignedIn) {
-                Text(
-                    text = "Signed in successfully!",
-                    color = Color.Green,
-                    fontSize = 12.sp,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-            }
-
+            
             Button(
                 onClick = {
                     focusManager.clearFocus()
-                    coroutineScope.launch {
-                        Amplify.Auth.signOut { }
-                        vm.signIn(sanitizedUsername, password)
-                    }
+                    vm.signIn(email, password)
                 },
-                enabled = sanitizedUsername.isNotEmpty() && password.isNotEmpty(),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF387DFF)),
-                shape = RoundedCornerShape(14.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp)
+                modifier = Modifier.fillMaxWidth().height(56.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF007AFF)),
+                enabled = email.isNotEmpty() && password.isNotEmpty()
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Sign In", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
-                    Spacer(modifier = Modifier.width(8.dp))
-
-                    // 🚀 The real Arrow Icon!
-                    Icon(Icons.Filled.ArrowForward, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
-                }
+                Text("Sign In", fontSize = 18.sp, fontWeight = FontWeight.Bold)
             }
-
-            Spacer(modifier = Modifier.height(14.dp))
-
+            
             Row(
                 modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Box(modifier = Modifier.weight(1f).height(1.dp).background(Color.White.copy(alpha = 0.1f)))
-                Text("or", color = Color.White.copy(alpha = 0.3f), fontSize = 12.sp, modifier = Modifier.padding(horizontal = 12.dp))
-                Box(modifier = Modifier.weight(1f).height(1.dp).background(Color.White.copy(alpha = 0.1f)))
-            }
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            Button(
-                onClick = {
-                    focusManager.clearFocus()
-                    coroutineScope.launch {
-                        Amplify.Auth.signOut { }
-                        onContinueAsGuest()
-                    }
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.07f)),
-                shape = RoundedCornerShape(14.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp)
-                    .border(0.5.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(14.dp))
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    // 🚀 The real Person Icon!
-                    Icon(Icons.Filled.Person, contentDescription = null, tint = Color.White.copy(alpha = 0.6f), modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Continue as Guest", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = Color.White.copy(alpha = 0.6f))
-                }
-            }
-
-            TextButton(
-                onClick = {
-                    focusManager.clearFocus()
-                    onGoToSignup()
-                },
-                modifier = Modifier.padding(top = 8.dp, bottom = 40.dp)
-            ) {
-                Row {
-                    Text("Don't have an account? ", color = Color.White.copy(alpha = 0.4f), fontSize = 12.sp)
-                    Text("Sign up", color = Color(0xFF387DFF), fontSize = 12.sp)
+                Text("Don't have an account?", color = Color.Gray)
+                TextButton(onClick = { onNavigate("signup") }) {
+                    Text("Sign Up", color = Color(0xFF007AFF), fontWeight = FontWeight.Bold)
                 }
             }
         }

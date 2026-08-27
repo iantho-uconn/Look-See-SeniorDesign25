@@ -25,6 +25,7 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
+        isCoreLibraryDesugaringEnabled = true
     }
     buildFeatures {
         compose = true
@@ -97,6 +98,8 @@ dependencies {
     // Checkpoint 11: durable, network-constrained background uploads.
     implementation("androidx.work:work-runtime-ktx:2.11.2")
 
+    implementation("androidx.localbroadcastmanager:localbroadcastmanager:1.1.0")
+
     // Keep 2.1.5: LiteRT 2.1.6 has the duplicate-namespace packaging bug.
     implementation("com.google.ai.edge.litert:litert:2.1.5")
 
@@ -105,4 +108,6 @@ dependencies {
 
     //coil
     implementation("io.coil-kt:coil-compose:2.5.0")
+
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }

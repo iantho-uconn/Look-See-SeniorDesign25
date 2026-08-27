@@ -67,7 +67,7 @@ sealed class PositiveUploadError(message: String) : Exception(message) {
         PositiveUploadError(messageForStatus(code))
 
     companion object {
-        private fun messageForStatus(code: Int): String = when {
+        fun messageForStatus(code: Int): String = when {
             code == 401 || code == 403 ->
                 "Your session is no longer authorized. Please sign in again."
             code == 404 -> "The upload service could not find the requested resource."
@@ -88,10 +88,10 @@ sealed class PositiveUploadError(message: String) : Exception(message) {
  * Construct this service with an Android Context in production. The internal constructor keeps
  * network and media preparation deterministic in local unit tests.
  */
-class UploadService private constructor(
-    private val httpClient: UploadHttpClient,
-    private val videoMerger: PositiveVideoMerger,
-    private val gson: Gson,
+class UploadService(
+    val httpClient: UploadHttpClient,
+    val videoMerger: PositiveVideoMerger,
+    val gson: Gson,
 ) {
     constructor(context: Context) : this(
         httpClient = UrlConnectionUploadHttpClient(),
@@ -290,10 +290,10 @@ class UploadService private constructor(
             "Your positive landmark media was saved successfully.",
         )
         return PositiveSubmissionResult(
-            initResponse.submissionId,
-            landmarkId,
-            mediaKind,
-            initResponse.s3Key,
+            submissionId = initResponse.submissionId,
+            landmarkId = landmarkId,
+            mediaKind = mediaKind,
+            s3Key = initResponse.s3Key,
         )
     }
 
@@ -381,10 +381,10 @@ class UploadService private constructor(
                 "Your combined video was saved successfully.",
             )
             return PositiveSubmissionResult(
-                initResponse.submissionId,
-                landmarkId,
-                mediaKind,
-                initResponse.s3Key,
+                submissionId = initResponse.submissionId,
+                landmarkId = landmarkId,
+                mediaKind = mediaKind,
+                s3Key = initResponse.s3Key,
             )
         } finally {
             if (mergedVideo.deleteAfterUpload) mergedVideo.file.delete()
@@ -494,14 +494,14 @@ class UploadService private constructor(
     }
 }
 
-private fun String?.normalizedOptionalText(): String? = this?.trim()?.takeIf(String::isNotEmpty)
+fun String?.normalizedOptionalText(): String? = this?.trim()?.takeIf(String::isNotEmpty)
 
-internal data class UploadHttpResponse(
+data class UploadHttpResponse(
     val statusCode: Int,
     val body: String = "",
 )
 
-internal interface UploadHttpClient {
+interface UploadHttpClient {
     suspend fun postJson(
         url: String,
         authorization: String,
@@ -524,7 +524,7 @@ internal interface UploadHttpClient {
     ): UploadHttpResponse
 }
 
-internal class UrlConnectionUploadHttpClient : UploadHttpClient {
+class UrlConnectionUploadHttpClient : UploadHttpClient {
     override suspend fun postJson(
         url: String,
         authorization: String,

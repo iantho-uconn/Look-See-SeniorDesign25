@@ -30,8 +30,8 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import looksee.angelll.com.models.ArchivedMedia
-import looksee.angelll.com.services.AutoUploadManager
-import looksee.angelll.com.services.OfflineMediaManager
+import looksee.angelll.com.models.AutoUploadManager
+import looksee.angelll.com.models.OfflineMediaManager
 import looksee.angelll.com.viewmodels.AuthViewModel
 
 // We extract your color palette constants
@@ -43,8 +43,12 @@ private val primaryColor = Color(0xFF387DFF)
 @Composable
 fun ArchiveView(vm: AuthViewModel) {
     val context = LocalContext.current
-    val archivedItems by OfflineMediaManager.archivedItems.collectAsState()
-    val isUploading by AutoUploadManager.isUploading.collectAsState()
+    val offlineManager = remember { OfflineMediaManager.shared(context) }
+    val archivedItems by offlineManager.archivedItems.collectAsState()
+    
+    val autoUploadManager = remember { AutoUploadManager.shared(context) }
+    val autoUploadState by autoUploadManager.state.collectAsState()
+    val isUploading = autoUploadState.isUploading
 
     var showInfoSheet by remember { mutableStateOf(false) }
     var selectedMedia by remember { mutableStateOf<ArchivedMedia?>(null) }
@@ -54,7 +58,7 @@ fun ArchiveView(vm: AuthViewModel) {
 
     LaunchedEffect(isUploading, archivedItems.size) {
         if (!isUploading && archivedItems.isNotEmpty()) {
-            AutoUploadManager.startProcessing(context, vm)
+            autoUploadManager.startProcessing()
         }
     }
 
@@ -65,8 +69,8 @@ fun ArchiveView(vm: AuthViewModel) {
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = backgroundColor),
                 navigationIcon = {
                     IconButton(onClick = {
-                        if (isUploading) AutoUploadManager.stopProcessing()
-                        else coroutineScope.launch { AutoUploadManager.startProcessing(context, vm) }
+                        if (isUploading) autoUploadManager.stopProcessing()
+                        else autoUploadManager.startProcessing()
                     }) {
                         Icon(
                             imageVector = if (isUploading) Icons.Default.PauseCircleFilled else Icons.Default.PlayCircleFilled,
@@ -132,7 +136,7 @@ fun ArchiveView(vm: AuthViewModel) {
                         selectedMedia = null
                         coroutineScope.launch {
                             delay(300) // DispatchQueue.main.asyncAfter equivalent
-                            if (isUploading) AutoUploadManager.stopProcessing()
+                            if (isUploading) autoUploadManager.stopProcessing()
                             editingMedia = mediaToEdit
                         }
                     }
@@ -197,9 +201,13 @@ fun StatusHeader(isUploading: Boolean, count: Int) {
 @Composable
 fun QueueItemCard(media: ArchivedMedia, onClick: () -> Unit) {
     val context = LocalContext.current
-    val currentlyUploadingId by AutoUploadManager.currentlyUploadingId.collectAsState()
-    val progress by AutoUploadManager.currentUploadProgress.collectAsState()
+    val offlineManager = remember { OfflineMediaManager.shared(context) }
+    val autoUploadManager = remember { AutoUploadManager.shared(context) }
+    val autoUploadState by autoUploadManager.state.collectAsState()
+    val currentlyUploadingId = autoUploadState.currentlyUploadingId
+    val progress = autoUploadState.currentUploadProgress
     val isCurrentlyUploading = currentlyUploadingId == media.id
+    val coroutineScope = rememberCoroutineScope()
 
     val borderColor = if (isCurrentlyUploading) Color.Blue.copy(alpha = 0.5f) else Color.White.copy(alpha = 0.1f)
 
@@ -224,7 +232,7 @@ fun QueueItemCard(media: ArchivedMedia, onClick: () -> Unit) {
             if (media.isVideo) {
                 Icon(Icons.Default.Videocam, contentDescription = null, tint = Color.White)
             } else {
-                val file = OfflineMediaManager.getFileURL(context, media)
+                val file = offlineManager.getFile(media)
                 val bitmap = BitmapFactory.decodeFile(file.absolutePath)
                 if (bitmap != null) {
                     Image(
@@ -273,7 +281,7 @@ fun QueueItemCard(media: ArchivedMedia, onClick: () -> Unit) {
 
         // Delete Button
         if (!isCurrentlyUploading) {
-            IconButton(onClick = { OfflineMediaManager.deleteArchive(context, media) }) {
+            IconButton(onClick = { coroutineScope.launch { offlineManager.deleteArchive(media) } }) {
                 Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.Red.copy(alpha = 0.8f))
             }
         }
@@ -337,7 +345,7 @@ fun QueueInfoSheet(onDismiss: () -> Unit) {
 
 @Composable
 fun InfoRow(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, desc: String) {
-    Row(crossAxisAlignment = Alignment.Top) {
+    Row(verticalAlignment = Alignment.Top) {
         Icon(icon, contentDescription = null, tint = Color.Blue, modifier = Modifier.size(24.dp))
         Spacer(modifier = Modifier.width(16.dp))
         Column {

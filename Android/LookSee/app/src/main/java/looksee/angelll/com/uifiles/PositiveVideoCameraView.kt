@@ -44,6 +44,11 @@ import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
+import looksee.angelll.com.viewmodels.*
+import looksee.angelll.com.models.*
+import looksee.angelll.com.services.*
+import androidx.lifecycle.LifecycleOwner
+import androidx.camera.core.Preview
 
 // MARK: - Models & Enums
 
@@ -109,6 +114,7 @@ fun PositiveVideoCameraView(
     val coroutineScope = rememberCoroutineScope()
 
     val cameraService = remember { NegativeVideoCameraService(context) }
+    var previewViewInstance by remember { mutableStateOf<PreviewView?>(null) }
 
     var currentPhase by remember { mutableStateOf<CameraPhase>(CameraPhase.Mandatory(1)) }
     var flowState by remember { mutableStateOf(CameraFlowState.INSTRUCTION) }
@@ -228,15 +234,16 @@ fun PositiveVideoCameraView(
         if (flowState == CameraFlowState.INSTRUCTION || flowState == CameraFlowState.RECORDING) {
             AndroidView(
                 factory = { ctx ->
-                    val previewView = PreviewView(ctx).apply {
+                    PreviewView(ctx).apply {
                         layoutParams = ViewGroup.LayoutParams(
                             ViewGroup.LayoutParams.MATCH_PARENT,
                             ViewGroup.LayoutParams.MATCH_PARENT
                         )
                         scaleType = PreviewView.ScaleType.FILL_CENTER
+                    }.also {
+                        previewViewInstance = it
+                        if (isActive) cameraService.start(lifecycleOwner, it.surfaceProvider)
                     }
-                    if (isActive) cameraService.start(lifecycleOwner, previewView.surfaceProvider)
-                    previewView
                 },
                 modifier = Modifier
                     .fillMaxSize()
@@ -244,15 +251,15 @@ fun PositiveVideoCameraView(
                         detectTransformGestures { _, _, zoom, _ ->
                             zoomLevel = (zoomLevel * zoom).coerceIn(1f, 5f)
                             showZoomIndicator = true
-                            cameraService.videoCapture?.camera?.cameraControl?.setZoomRatio(zoomLevel)
+                            cameraService.camera?.cameraControl?.setZoomRatio(zoomLevel)
                         }
                     }
                     .pointerInput(Unit) {
                         detectTapGestures { offset ->
-                            val factory = (LocalContext as? PreviewView)?.meteringPointFactory ?: return@detectTapGestures
+                            val factory = previewViewInstance?.meteringPointFactory ?: return@detectTapGestures
                             val point = factory.createPoint(offset.x, offset.y)
                             val action = androidx.camera.core.FocusMeteringAction.Builder(point).build()
-                            cameraService.videoCapture?.camera?.cameraControl?.startFocusAndMetering(action)
+                            cameraService.camera?.cameraControl?.startFocusAndMetering(action)
                         }
                     }
             )
@@ -327,7 +334,7 @@ fun PositiveVideoCameraView(
 
             // Bottom Controls
             AnimatedVisibility(visible = true, enter = slideInVertically(initialOffsetY = { it }) + fadeIn(), exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()) {
-                Box(modifier = Modifier.padding(horizontal = 20.dp, bottom = 100.dp).fillMaxWidth().background(Color.Black.copy(0.6f), RoundedCornerShape(32.dp)).border(0.5.dp, Color.White.copy(0.2f), RoundedCornerShape(32.dp)).padding(24.dp)) {
+                Box(modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 100.dp).fillMaxWidth().background(Color.Black.copy(0.6f), RoundedCornerShape(32.dp)).border(0.5.dp, Color.White.copy(0.2f), RoundedCornerShape(32.dp)).padding(24.dp)) {
 
                     when (flowState) {
                         CameraFlowState.INSTRUCTION -> {

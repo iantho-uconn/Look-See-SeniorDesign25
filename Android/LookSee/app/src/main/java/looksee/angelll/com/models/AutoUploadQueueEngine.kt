@@ -167,7 +167,7 @@ internal class AutoUploadQueueEngine(
                             uploadedCount,
                             pending.size,
                             POSITIVE_PROGRESS_WEIGHT +
-                                negativeProgress.coerceIn(0.0, 1.0) * NEGATIVE_PROGRESS_WEIGHT,
+                                (negativeProgress.coerceIn(0.0, 1.0) * NEGATIVE_PROGRESS_WEIGHT),
                         )
                     }
                 }

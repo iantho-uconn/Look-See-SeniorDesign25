@@ -10,6 +10,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -36,6 +37,9 @@ import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.URL
+import looksee.angelll.com.models.*
+import looksee.angelll.com.viewmodels.*
+import looksee.angelll.com.services.*
 
 @Composable
 fun PopUp() {
@@ -138,12 +142,12 @@ fun PopUp() {
                             Spacer(Modifier.width(12.dp))
                             Column {
                                 Text("Visit Website", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                                try {
-                                    val host = Uri.parse(websiteUrlStr).host
-                                    if (host != null) {
-                                        Text(host, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = Color.White.copy(alpha = 0.75f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    }
-                                } catch (e: Exception) {}
+                                val host = remember(websiteUrlStr) {
+                                    try { Uri.parse(websiteUrlStr).host } catch (e: Exception) { null }
+                                }
+                                if (host != null) {
+                                    Text(host, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = Color.White.copy(alpha = 0.75f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
                             }
                             Spacer(Modifier.weight(1f))
                             Icon(Icons.Default.NorthEast, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
@@ -207,7 +211,7 @@ fun PopUp() {
                 HorizontalDivider(color = Color.White.copy(alpha = 0.18f))
 
                 // MARK: - Close Button
-                Box(modifier = Modifier.padding(horizontal = 20.dp, top = 14.dp, bottom = 18.dp)) {
+                Box(modifier = Modifier.padding(start = 20.dp, top = 14.dp, end = 20.dp, bottom = 18.dp)) {
                     Button(
                         onClick = {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)

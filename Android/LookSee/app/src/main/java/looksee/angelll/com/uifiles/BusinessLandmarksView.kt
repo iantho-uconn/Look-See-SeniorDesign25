@@ -34,6 +34,21 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
+import looksee.angelll.com.models.OfflineMediaManager as ArchiveManager
+import looksee.angelll.com.models.AutoUploadManager as Uploader
+import looksee.angelll.com.detection.NetworkMonitor as Monitor
+import looksee.angelll.com.models.BusinessLandmarksViewModel
+import looksee.angelll.com.viewmodels.AuthViewModel
+import looksee.angelll.com.models.BusinessLandmark
+import looksee.angelll.com.models.BusinessPromotionService
+import looksee.angelll.com.models.NearbyLandmark
+import looksee.angelll.com.models.BusinessPromotion
+import looksee.angelll.com.models.ArchivedMedia
+import looksee.angelll.com.models.AutoUploadState
+import looksee.angelll.com.models.AutoUploadItemProgress
+import looksee.angelll.com.models.BusinessLandmarkDataSource
+import looksee.angelll.com.models.BusinessLandmarkService
+import looksee.angelll.com.models.BusinessPromotionListResponse
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -53,9 +68,9 @@ fun BusinessLandmarksView(
 
     // ViewModels & Managers
     val viewModel = remember { BusinessLandmarksViewModel() }
-    val offlineManager = remember { OfflineMediaManager.shared }
-    val uploadManager = remember { AutoUploadManager.shared }
-    val networkMonitor = remember { NetworkMonitor.shared }
+    val offlineManager = remember { ArchiveManager.shared(context) }
+    val uploadManager = remember { Uploader.shared(context) }
+    val networkMonitor = remember { Monitor.getInstance(context) }
 
     // State
     var searchText by remember { mutableStateOf("") }
@@ -72,19 +87,23 @@ fun BusinessLandmarksView(
     var hasLoadedOnce by remember { mutableStateOf(false) }
 
     val archivedItems by offlineManager.archivedItems.collectAsState()
-    val isOnline = networkMonitor.isConnected
-    val currentlyUploadingId = uploadManager.currentlyUploadingId
-    val currentUploadProgress = uploadManager.currentUploadProgress
+    val isOnline by networkMonitor.isConnected.collectAsState()
+    val autoUploadState by uploadManager.state.collectAsState()
+    val currentlyUploadingId = autoUploadState.currentlyUploadingId
+    val currentUploadProgress = autoUploadState.currentUploadProgress
+
+    val landmarks by viewModel.landmarks.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
 
     val promotionService = remember { BusinessPromotionService() }
 
     // Computed Properties
     val cleanedSearchText = searchText.trim()
 
-    val displayedLandmarks = remember(viewModel.landmarks, cleanedSearchText, promotionTitlesByLandmarkId) {
-        if (cleanedSearchText.isEmpty()) return@remember viewModel.landmarks
+    val displayedLandmarks = remember(landmarks, cleanedSearchText, promotionTitlesByLandmarkId) {
+        if (cleanedSearchText.isEmpty()) return@remember landmarks
 
-        viewModel.landmarks.mapNotNull { landmark ->
+        landmarks.mapNotNull { landmark ->
             if (landmark.label.contains(cleanedSearchText, ignoreCase = true)) Pair(landmark, 0)
             else if (promotionTitlesByLandmarkId[landmark.landmarkId].orEmpty().any { it.contains(cleanedSearchText, ignoreCase = true) }) Pair(landmark, 1)
             else null
@@ -95,29 +114,29 @@ fun BusinessLandmarksView(
     val healthyLandmarks = displayedLandmarks.filter { it.status != "NEEDS_MORE_MEDIA" }
 
     val visibleLandmarkIds = displayedLandmarks.map { it.landmarkId }.toSet()
-    val selectedLandmarks = viewModel.landmarks.filter { selectedLandmarkIds.contains(it.landmarkId) }
+    val selectedLandmarks = landmarks.filter { selectedLandmarkIds.contains(it.landmarkId) }
     val visibleSelectedCount = selectedLandmarkIds.intersect(visibleLandmarkIds).size
     val hiddenSelectedCount = selectedLandmarkIds.subtract(visibleLandmarkIds).size
     val selectionCountText = "${selectedLandmarks.size} landmark${if (selectedLandmarks.size == 1) "" else "s"} selected"
 
     fun healthyLandmarkCountText(count: Int): String {
-        return if (cleanedSearchText.isNotEmpty()) "($count)" else "($count of ${viewModel.landmarks.count { it.status != "NEEDS_MORE_MEDIA" }})"
+        return if (cleanedSearchText.isNotEmpty()) "($count)" else "($count of ${landmarks.count { it.status != "NEEDS_MORE_MEDIA" }})"
     }
 
     // Actions
     fun loadPromotionSearchIndex(forceReload: Boolean = false) {
         coroutineScope.launch {
-            val validLandmarkIds = viewModel.landmarks.map { it.landmarkId }.toSet()
+            val validLandmarkIds = landmarks.map { it.landmarkId }.toSet()
             promotionTitlesByLandmarkId = promotionTitlesByLandmarkId.filterKeys { it in validLandmarkIds }
 
-            val landmarksToLoad = if (forceReload) viewModel.landmarks else viewModel.landmarks.filter { promotionTitlesByLandmarkId[it.landmarkId] == null }
+            val landmarksToLoad = if (forceReload) landmarks else landmarks.filter { promotionTitlesByLandmarkId[it.landmarkId] == null }
             if (landmarksToLoad.isEmpty()) return@launch
 
             isIndexingPromotionTitles = true
             for (landmark in landmarksToLoad) {
                 try {
-                    val items = promotionService.fetchPromotions(landmark.landmarkId)
-                    val titles = items.map { it.name.trim() }.filter { it.isNotEmpty() }
+                    val response = promotionService.fetchPromotions(landmark.landmarkId)
+                    val titles = response.items.map { it.name.trim() }.filter { it.isNotEmpty() }
                     promotionTitlesByLandmarkId = promotionTitlesByLandmarkId.toMutableMap().apply { put(landmark.landmarkId, titles) }
                 } catch (e: Exception) {
                     if (promotionTitlesByLandmarkId[landmark.landmarkId] == null) {
@@ -146,11 +165,10 @@ fun BusinessLandmarksView(
             loadPromotionSearchIndex()
             LocalBroadcastManager.getInstance(context).sendBroadcast(Intent("CheckGlobalNotifications"))
         }
-        uploadManager.attachAuthVM(vm)
     }
 
-    LaunchedEffect(viewModel.landmarks) {
-        val validIds = viewModel.landmarks.map { it.landmarkId }.toSet()
+    LaunchedEffect(landmarks) {
+        val validIds = landmarks.map { it.landmarkId }.toSet()
         selectedLandmarkIds = selectedLandmarkIds.intersect(validIds)
     }
 
@@ -170,19 +188,20 @@ fun BusinessLandmarksView(
                         IconButton(onClick = {
                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             refreshLandmarksAndSearchIndex()
-                        }, enabled = !viewModel.isLoading) {
+                        }, enabled = !isLoading) {
                             Icon(Icons.Default.Refresh, contentDescription = "Refresh")
                         }
                         TextButton(onClick = {
                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             isSelectionMode = true
-                        }, enabled = viewModel.landmarks.isNotEmpty()) {
-                            Text("Select", color = if (viewModel.landmarks.isNotEmpty()) PrimaryBlue else Color.Gray, fontWeight = FontWeight.Bold)
+                        }, enabled = landmarks.isNotEmpty()) {
+                            Text("Select", color = if (landmarks.isNotEmpty()) PrimaryBlue else Color.Gray, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
             )
         },
+
         bottomBar = {
             if (isSelectionMode) {
                 Surface(color = SecondaryGrouped.copy(alpha = 0.95f), shadowElevation = 8.dp) {
@@ -222,7 +241,7 @@ fun BusinessLandmarksView(
     ) { paddingValues ->
 
         PullToRefreshBox(
-            isRefreshing = viewModel.isLoading,
+            isRefreshing = isLoading,
             onRefresh = { refreshLandmarksAndSearchIndex() },
             modifier = Modifier.fillMaxSize().background(Color.Black).padding(paddingValues).clickable { focusManager.clearFocus() }
         ) {
@@ -330,7 +349,7 @@ fun BusinessLandmarksView(
                                                 Text(item.title, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
                                                 if (currentlyUploadingId == item.id) {
                                                     Text("Uploading...", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = PrimaryBlue)
-                                                    LinearProgressIndicator(progress = { currentUploadProgress }, modifier = Modifier.fillMaxWidth().height(4.dp), color = PrimaryBlue, trackColor = Color.DarkGray)
+                                                    LinearProgressIndicator(progress = { currentUploadProgress.toFloat() }, modifier = Modifier.fillMaxWidth().height(4.dp), color = PrimaryBlue, trackColor = Color.DarkGray)
                                                 } else {
                                                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                                         Icon(Icons.Default.Schedule, contentDescription = null, tint = Color(0xFFFFA500), modifier = Modifier.size(10.dp))
@@ -339,7 +358,7 @@ fun BusinessLandmarksView(
                                                 }
                                             }
                                             if (currentlyUploadingId != item.id) {
-                                                IconButton(onClick = { offlineManager.deleteArchive(context, item) }) {
+                                                IconButton(onClick = { coroutineScope.launch { offlineManager.deleteArchive(item) } }) {
                                                     Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.Red, modifier = Modifier.background(Color.Red.copy(0.1f), CircleShape).padding(8.dp))
                                                 }
                                             }
@@ -350,7 +369,7 @@ fun BusinessLandmarksView(
                             }
                         }
                     }
-                } else if (viewModel.landmarks.isNotEmpty() && !isSelectionMode && cleanedSearchText.isEmpty()) {
+                } else if (landmarks.isNotEmpty() && !isSelectionMode && cleanedSearchText.isEmpty()) {
                     item {
                         Surface(color = SecondaryGrouped, shape = RoundedCornerShape(24.dp), modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth()) {
                             Column(modifier = Modifier.padding(30.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -388,14 +407,14 @@ fun BusinessLandmarksView(
                     }
                 }
 
-                if (viewModel.isLoading && viewModel.landmarks.isEmpty()) {
+                if (isLoading && landmarks.isEmpty()) {
                     item {
                         Column(modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
                             CircularProgressIndicator(color = PrimaryBlue)
                             Text("Loading your landmarks...", fontSize = 14.sp, color = Color.Gray)
                         }
                     }
-                } else if (viewModel.landmarks.isEmpty()) {
+                } else if (landmarks.isEmpty()) {
                     item { Text("No active business landmarks.", fontSize = 15.sp, color = Color.Gray, modifier = Modifier.padding(horizontal = 20.dp)) }
                 } else if (displayedLandmarks.isEmpty()) {
                     item {
@@ -440,8 +459,8 @@ fun BusinessLandmarksView(
         }
     }
 
-    if (showBulkPromotionSheet) { Dialog(onDismissRequest = { showBulkPromotionSheet = false }) { BusinessBulkPromotionEditor(selectedLandmarks) } }
-    if (showBulkDeleteSheet) { Dialog(onDismissRequest = { showBulkDeleteSheet = false }) { BusinessBulkDeleteView(selectedLandmarks) } }
+    if (showBulkPromotionSheet) { Dialog(onDismissRequest = { showBulkPromotionSheet = false }) { BusinessBulkPromotionEditor(selectedLandmarks, onCompleted = { showBulkPromotionSheet = false }, onDismiss = { showBulkPromotionSheet = false }) } }
+    if (showBulkDeleteSheet) { Dialog(onDismissRequest = { showBulkDeleteSheet = false }) { BusinessBulkDeleteView(selectedLandmarks, onCompleted = { showBulkDeleteSheet = false }, onDismiss = { showBulkDeleteSheet = false }) } }
 }
 
 @Composable

@@ -17,23 +17,32 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.runtime.collectAsState
+import looksee.angelll.com.models.*
+import looksee.angelll.com.viewmodels.*
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LibraryScreen() {
-    // Unresolved references until translated
-    val libraryService = LibraryService.shared
-    val modelService = ModelService.shared
+    val context = LocalContext.current
+    val libraryService = remember { LibraryService.shared(context) }
+    val modelService = remember { ModelService.shared(context) }
     val coroutineScope = rememberCoroutineScope()
 
     var searchText by remember { mutableStateOf("") }
+    val items by libraryService.items.collectAsState()
+    val isLoading by libraryService.isLoading.collectAsState()
+    val errorMessage by libraryService.errorMessage.collectAsState()
 
-    val filteredItems = remember(searchText, libraryService.items) {
+    val filteredItems = remember(searchText, items) {
         if (searchText.isEmpty()) {
-            libraryService.items
+            items
         } else {
-            libraryService.items.filter {
+            items.filter {
                 it.label.contains(searchText, ignoreCase = true) ||
                         it.shortDescription.contains(searchText, ignoreCase = true)
             }
@@ -42,19 +51,15 @@ fun LibraryScreen() {
 
     fun loadForCurrentModel() {
         coroutineScope.launch {
-            val state = modelService.state
+            val state = modelService.state.value
             if (state is ModelState.Loaded) {
-                val first = state.infos.firstOrNull()
-                val clusterIdString = first?.name?.split("-")?.lastOrNull() ?: ""
+                val first = state.models.firstOrNull()
+                val clusterIdString = first?.clusterId ?: ""
                 val clusterIdInt = clusterIdString.toIntOrNull()
 
                 if (clusterIdInt != null) {
                     libraryService.fetchLandmarks(clusterIdInt)
-                } else {
-                    libraryService.errorMessage = "No model loaded. Load a model first in Settings."
                 }
-            } else {
-                libraryService.errorMessage = "No model loaded. Load a model first in Settings."
             }
         }
     }
@@ -79,7 +84,7 @@ fun LibraryScreen() {
                 .padding(paddingValues)
         ) {
             when {
-                libraryService.isLoading -> {
+                isLoading -> {
                     Column(
                         modifier = Modifier.fillMaxSize(),
                         verticalArrangement = Arrangement.Center,
@@ -94,7 +99,7 @@ fun LibraryScreen() {
                         )
                     }
                 }
-                libraryService.errorMessage != null -> {
+                errorMessage != null -> {
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
@@ -115,7 +120,7 @@ fun LibraryScreen() {
                             fontSize = 18.sp
                         )
                         Text(
-                            text = libraryService.errorMessage!!,
+                            text = errorMessage!!,
                             fontSize = 13.sp,
                             color = Color.Gray,
                             textAlign = TextAlign.Center
@@ -126,7 +131,7 @@ fun LibraryScreen() {
                         }
                     }
                 }
-                libraryService.items.isEmpty() -> {
+                items.isEmpty() -> {
                     Column(
                         modifier = Modifier
                             .fillMaxSize()

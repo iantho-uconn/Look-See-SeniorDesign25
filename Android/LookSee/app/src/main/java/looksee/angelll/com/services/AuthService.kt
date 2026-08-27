@@ -9,6 +9,8 @@ import com.amplifyframework.kotlin.core.Amplify
 
 object AuthService {
 
+    val shared = this
+
     // SIGN UP
     suspend fun signUp(usernameInput: String, passwordInput: String, emailInput: String, groupInput: String): AuthSignUpResult {
         val options = AuthSignUpOptions.builder()
