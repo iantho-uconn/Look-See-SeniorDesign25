@@ -102,4 +102,7 @@ dependencies {
 
     // Stripe for Payments
     implementation("com.stripe:stripe-android:23.17.0")
+
+    //coil
+    implementation("io.coil-kt:coil-compose:2.5.0")
 }
