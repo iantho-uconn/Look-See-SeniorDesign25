@@ -95,7 +95,7 @@ internal class AutoUploadQueueEngine(
     suspend fun process(): AutoUploadRunResult {
         if (pauseGate.isPaused()) return AutoUploadRunResult.Paused(0)
 
-        val pending = archive.pendingItems()
+        val pending = archive.pendingItems().sortedBy(ArchivedMedia::dateSaved)
         if (pending.isEmpty()) return AutoUploadRunResult.Completed(0)
 
         val session = try {

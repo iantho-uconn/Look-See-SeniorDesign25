@@ -97,6 +97,21 @@ class AutoUploadQueueEngineTest {
     }
 
     @Test
+    fun uploadsOldestArchivedMediaFirst(): Unit = runBlocking {
+        val newer = archivedMedia(title = "Newer", dateSaved = Date(2_000L))
+        val older = archivedMedia(title = "Older", dateSaved = Date(1_000L))
+        val fixture = Fixture(items = listOf(newer, older))
+
+        val result = fixture.engine.process()
+
+        assertEquals(AutoUploadRunResult.Completed(2), result)
+        assertEquals(
+            listOf(older.id, newer.id),
+            fixture.positive.calls.map(PositiveCall::mediaId),
+        )
+    }
+
+    @Test
     fun transientFailureRequestsRetryAndKeepsTheCurrentArchive(): Unit = runBlocking {
         val fixture = Fixture()
         val failure = UnknownHostException("offline")
@@ -146,6 +161,7 @@ class AutoUploadQueueEngineTest {
             savedLabel: String? = "Library",
             isVideo: Boolean = false,
             hasNegative: Boolean = false,
+            dateSaved: Date = Date(1_786_000_000_000L),
         ): ArchivedMedia {
             val id = UUID.randomUUID()
             return ArchivedMedia(
@@ -156,7 +172,7 @@ class AutoUploadQueueEngineTest {
                 isVideo = isVideo,
                 latitude = 40.7,
                 longitude = -74.0,
-                dateSaved = Date(1_786_000_000_000L),
+                dateSaved = dateSaved,
                 landmarkId = null,
                 savedLabel = savedLabel,
                 savedDescription = "Description",

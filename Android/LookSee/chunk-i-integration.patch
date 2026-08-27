@@ -1,0 +1,22 @@
+diff --git a/app/build.gradle.kts b/app/build.gradle.kts
+--- a/app/build.gradle.kts
++++ b/app/build.gradle.kts
+@@ -70,3 +70,6 @@ dependencies {
+     implementation("com.google.code.gson:gson:2.14.0")
++
++    // Chunk I: Android-native Stripe PaymentSheet and Google Pay/card checkout.
++    implementation("com.stripe:stripe-android:23.17.0")
+ 
+     val media3Version = "1.10.1"
+diff --git a/app/src/main/AndroidManifest.xml b/app/src/main/AndroidManifest.xml
+--- a/app/src/main/AndroidManifest.xml
++++ b/app/src/main/AndroidManifest.xml
+@@ -27,4 +27,8 @@
+         android:roundIcon="@mipmap/ic_launcher_round"
+         android:supportsRtl="true"
+         android:theme="@style/Theme.LookSee">
++        <meta-data
++            android:name="com.google.android.gms.wallet.api.enabled"
++            android:value="true" />
++
+         <activity

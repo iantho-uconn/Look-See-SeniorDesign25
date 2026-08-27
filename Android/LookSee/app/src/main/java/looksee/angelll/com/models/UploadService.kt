@@ -47,7 +47,7 @@ sealed class PositiveUploadError(message: String) : Exception(message) {
 
     data object NoMediaSelected :
         PositiveUploadError(
-            "Please record one or more videos (totaling at least 30 seconds) " +
+            "Please record one or more videos (totaling at least 15 seconds) " +
                 "or take one landmark photo.",
         )
 
@@ -106,7 +106,7 @@ class UploadService private constructor(
 
     private val uploadGuard = AtomicBoolean(false)
 
-    private val _status = MutableStateFlow("Continue landmark entries below")
+    private val _status = MutableStateFlow("Ready to upload")
     val status: StateFlow<String> = _status.asStateFlow()
 
     private val _detail = MutableStateFlow("Your landmark media has not been uploaded yet.")
@@ -337,7 +337,7 @@ class UploadService private constructor(
                     label = label,
                     landmarkId = landmarkId,
                     mediaKind = mediaKind,
-                    filename = videoUploadFilename(label, descriptor.fileExtension),
+                    filename = descriptor.uploadFilename,
                     contentType = descriptor.contentType,
                 ),
                 idToken,
@@ -474,26 +474,23 @@ class UploadService private constructor(
     }
 
     private data class VideoDescriptor(
-        val fileExtension: String,
+        val uploadFilename: String,
         val contentType: String,
     )
 
     private fun videoDescriptor(file: File): VideoDescriptor =
         if (file.extension.equals("mov", ignoreCase = true)) {
-            VideoDescriptor("mov", "video/quicktime")
+            VideoDescriptor("video.mov", "video/quicktime")
         } else {
-            VideoDescriptor("mp4", "video/mp4")
+            VideoDescriptor("video.mp4", "video/mp4")
         }
-
-    private fun videoUploadFilename(label: String, extension: String): String =
-        "${label.trim()}.$extension"
 
     companion object {
         private const val BASE_URL =
             "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev"
         private const val API_TIMEOUT_MILLIS = 60_000
         private const val MEDIA_UPLOAD_TIMEOUT_MILLIS = 300_000
-        private const val MINIMUM_COMBINED_VIDEO_DURATION_SECONDS = 30.0
+        private const val MINIMUM_COMBINED_VIDEO_DURATION_SECONDS = 1.0
     }
 }
 

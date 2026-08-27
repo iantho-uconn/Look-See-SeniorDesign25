@@ -16,6 +16,7 @@ class SubmissionModelsTest {
             InitSubmissionRequest(
                 userEmail = "person@example.com",
                 label = "City Hall",
+                landmarkId = "landmark-1",
                 mediaKind = MediaKind.VIDEO,
                 filename = "clip.mov",
                 contentType = "video/quicktime",
@@ -23,25 +24,10 @@ class SubmissionModelsTest {
         )
 
         assertTrue(json.contains("\"userEmail\":\"person@example.com\""))
+        assertTrue(json.contains("\"landmarkId\":\"landmark-1\""))
         assertTrue(json.contains("\"mediaKind\":\"video\""))
         assertTrue(json.contains("\"contentType\":\"video/quicktime\""))
         assertFalse(json.contains("VIDEO"))
-    }
-
-    @Test
-    fun initRequestIncludesExistingLandmarkIdForFolderReuse() {
-        val json = gson.toJson(
-            InitSubmissionRequest(
-                userEmail = "person@example.com",
-                label = "City Hall",
-                landmarkId = "landmark-123",
-                mediaKind = MediaKind.PHOTO,
-                filename = "photo.jpg",
-                contentType = "image/jpeg",
-            ),
-        )
-
-        assertTrue(json.contains("\"landmarkId\":\"landmark-123\""))
     }
 
     @Test

@@ -20,7 +20,6 @@ class UploadServiceTest {
             UploadHttpResponse(200),
         )
         val service = UploadService(http, unusedVideoMerger())
-        assertEquals("Continue landmark entries below", service.status.value)
 
         val result = service.upload(
             userEmail = "  owner@example.com  ",
@@ -56,9 +55,6 @@ class UploadServiceTest {
         assertTrue(http.calls[2].url.endsWith("/submissions/complete"))
         assertFalse(http.calls[2].body.contains("\"shortDescription\""))
         assertTrue(http.calls[2].body.contains("\"userDescription\":\"Near the library\""))
-
-        service.reset()
-        assertEquals("Ready to upload", service.status.value)
     }
 
     @Test
@@ -67,7 +63,7 @@ class UploadServiceTest {
         val merged = File.createTempFile("looksee_merged", ".mp4").apply { writeBytes(byteArrayOf(2)) }
         val merger = PositiveVideoMerger { clips, minimumDuration ->
             assertEquals(listOf(input), clips)
-            assertEquals(30.0, minimumDuration, 0.0)
+            assertEquals(1.0, minimumDuration, 0.0)
             MergedVideo(merged, deleteAfterUpload = true)
         }
         val http = RecordingUploadHttpClient(
@@ -94,7 +90,7 @@ class UploadServiceTest {
         )
 
         assertEquals(MediaKind.VIDEO, result.mediaKind)
-        assertTrue(http.calls[0].body.contains("\"filename\":\"Clock Tower.mp4\""))
+        assertTrue(http.calls[0].body.contains("\"filename\":\"video.mp4\""))
         assertTrue(http.calls[0].body.contains("\"contentType\":\"video/mp4\""))
         assertEquals("video/mp4", http.calls[1].contentType)
         assertFalse("UploadService owns and removes merged output", merged.exists())

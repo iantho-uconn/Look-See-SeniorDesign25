@@ -207,6 +207,64 @@ class ModelSelectorTest {
         selector.close()
     }
 
+    @Test
+    fun soleBundledModelAutoActivatesInDebugForImmediateDeviceTesting() {
+        val bundledFile = File(temporaryFolder.newFolder("automatic"), "only.tflite")
+            .apply { writeText("model") }
+        val bundled = BundledTestModel(
+            modelFile = bundledFile,
+            classLabels = listOf("Clock"),
+        )
+        val store = RecordingTestModelSelectionStore()
+        val selector = ModelSelector(
+            modelState = MutableStateFlow(ModelState.NotLoaded),
+            testingEnabled = true,
+            bundledTestModels = listOf(bundled),
+            testSelectionStore = store,
+        )
+
+        assertEquals(bundled.id, selector.selectedTestModelId.value)
+        assertEquals(bundled.id, store.selectedId)
+        assertEquals("bundled-test", selector.activeClusterId.value)
+        assertEquals(1, selector.activeClassCount)
+        selector.close()
+    }
+
+    @Test
+    fun bundledReleasePreservesExactManifestIdentityAndClassLabels() {
+        val directory = temporaryFolder.newFolder("release-bundle")
+        val modelFile = File(directory, "0.tflite").apply { writeText("model") }
+        val manifestFile = File(directory, "landmark-manifest.json").apply {
+            writeText("manifest")
+        }
+        val bundled = BundledTestModel(
+            modelFile = modelFile,
+            displayName = "Cluster 0 · yolo26",
+            classLabels = listOf("Clock", "Library"),
+            clusterId = "0",
+            modelVersion = "run-1",
+            manifestFile = manifestFile,
+            classCount = 2,
+            modelKey = "models/cluster-0/0.tflite",
+            manifestKey = "models/cluster-0/landmark-manifest.json",
+        )
+        val selector = ModelSelector(
+            modelState = MutableStateFlow(ModelState.NotLoaded),
+            testingEnabled = true,
+            bundledTestModels = listOf(bundled),
+        )
+
+        assertTrue(selector.selectTestModel(bundled))
+
+        val active = selector.activeRelease.value
+        assertEquals("0|run-1", active?.releaseIdentifier)
+        assertEquals(2, active?.classCount)
+        assertEquals(listOf("Clock", "Library"), active?.classLabels)
+        assertEquals(manifestFile, active?.manifestFile)
+        assertEquals("models/cluster-0/0.tflite", active?.modelKey)
+        selector.close()
+    }
+
     private fun selector(initialState: ModelState): ModelSelector =
         ModelSelector(MutableStateFlow(initialState))
 

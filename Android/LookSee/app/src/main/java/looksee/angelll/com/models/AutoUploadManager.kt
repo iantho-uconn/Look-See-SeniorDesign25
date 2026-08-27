@@ -76,6 +76,9 @@ class AutoUploadManager private constructor(context: Context) {
         enqueue(expedited = true)
     }
 
+    /** Clears a user pause and immediately retries the durable upload queue. */
+    fun forceRetry() = startProcessing()
+
     /** The active item may finish; the worker checks this flag before advancing to the next item. */
     fun stopProcessing() {
         pauseStore.setPaused(true)
@@ -262,7 +265,8 @@ private class SharedPreferencesAutoUploadPauseStore(context: Context) : AutoUplo
 private class OfflineMediaAutoUploadArchive(
     private val manager: OfflineMediaManager,
 ) : AutoUploadArchive {
-    override fun pendingItems(): List<ArchivedMedia> = manager.archivedItems.value.toList()
+    override fun pendingItems(): List<ArchivedMedia> =
+        manager.archivedItems.value.sortedBy(ArchivedMedia::dateSaved)
 
     override fun positiveFile(media: ArchivedMedia): File = manager.getFile(media)
 
