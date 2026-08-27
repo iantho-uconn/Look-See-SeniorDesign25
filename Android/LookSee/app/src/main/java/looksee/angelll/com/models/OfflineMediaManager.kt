@@ -42,14 +42,11 @@ class OfflineMediaManager internal constructor(
     private val _archivedItems = MutableStateFlow(loadArchive())
     val archivedItems: StateFlow<List<ArchivedMedia>> = _archivedItems.asStateFlow()
 
-    /**
-     * Session-only negative-photo cache.
-     *
-     * The supplied iOS source never defines or serializes CapturedNegativePhoto. JPEG bytes are the
-     * closest Android equivalent and keep this cache intentionally out of the persistent ledger.
-     */
-    private val _negativeCache = MutableStateFlow<Map<UUID, List<ByteArray>>>(emptyMap())
-    val negativeCache: StateFlow<Map<UUID, List<ByteArray>>> = _negativeCache.asStateFlow()
+    /** Session-only cache that keeps captured negative-photo files alive with their identities. */
+    private val _negativeCache =
+        MutableStateFlow<Map<UUID, List<CapturedNegativePhoto>>>(emptyMap())
+    val negativeCache: StateFlow<Map<UUID, List<CapturedNegativePhoto>>> =
+        _negativeCache.asStateFlow()
 
     constructor(context: Context) : this(
         fileStore = AndroidArchiveFileStore(context.applicationContext),
@@ -200,9 +197,12 @@ class OfflineMediaManager internal constructor(
         updateAndPersist(media.id) { it.copy(isFavorite = !(it.isFavorite ?: false)) }
     }
 
-    suspend fun cacheNegativePhotos(mediaId: UUID, jpegPhotos: List<ByteArray>) {
+    suspend fun cacheNegativePhotos(
+        mediaId: UUID,
+        photos: List<CapturedNegativePhoto>,
+    ) {
         mutationMutex.withLock {
-            _negativeCache.value = _negativeCache.value + (mediaId to jpegPhotos.map { it.clone() })
+            _negativeCache.value = _negativeCache.value + (mediaId to photos.toList())
         }
     }
 

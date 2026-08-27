@@ -5,193 +5,162 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager as AndroidLocationManager
+import android.os.Bundle
 import android.os.Looper
-import android.util.Log
 import androidx.core.content.ContextCompat
-import com.google.android.gms.location.FusedLocationProviderClient
-import com.google.android.gms.location.LocationCallback
-import com.google.android.gms.location.LocationRequest
-import com.google.android.gms.location.LocationResult
-import com.google.android.gms.location.LocationServices
-import com.google.android.gms.location.Priority
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.util.logging.Logger
 
-enum class LocationAuthorizationStatus {
-    NOT_DETERMINED,
-    AUTHORIZED_COARSE,
-    AUTHORIZED_FINE,
-    DENIED,
-}
-
-data class LocationSnapshot(
+data class LookSeeLocationFix(
     val latitude: Double,
     val longitude: Double,
-    val horizontalAccuracy: Double,
-    val capturedAtMillis: Long,
-)
+    val accuracyMeters: Float,
+) {
+    fun isUsable(): Boolean =
+        latitude.isFinite() && latitude in -90.0..90.0 &&
+                longitude.isFinite() && longitude in -180.0..180.0 &&
+                accuracyMeters.isFinite() && accuracyMeters > 0f &&
+                accuracyMeters <= MAX_MODEL_LOCATION_ACCURACY_METERS
+
+    companion object {
+        const val MAX_MODEL_LOCATION_ACCURACY_METERS = 100f
+    }
+}
+
+sealed interface LookSeeLocationState {
+    data object PermissionRequired : LookSeeLocationState
+    data object Searching : LookSeeLocationState
+    data class Ready(val fix: LookSeeLocationFix) : LookSeeLocationState
+    data class Unavailable(val message: String) : LookSeeLocationState
+}
 
 /**
- * Android counterpart to LocationManager.swift.
+ * Small framework-location bridge used by model delivery and the detector.
  *
- * Android permission dialogs must be launched by an Activity or Composable.
- * After that result is received, call [onPermissionResult]. Valid fixes are
- * forwarded through [onUsableLocation] so ModelAutoRefreshService can be wired
- * in without coupling this platform service to the model-delivery layer.
+ * It deliberately avoids a Google Play Services dependency, works with the
+ * Android emulator's injected GPS position, and ignores fixes rougher than
+ * 100 meters before they can trigger a model refresh.
  */
-class LocationManager(
-    context: Context,
-    private val fusedLocationClient: FusedLocationProviderClient =
-        LocationServices.getFusedLocationProviderClient(context.applicationContext),
-) : AutoCloseable {
-    private val appContext = context.applicationContext
+class LocationManager(context: Context) : AutoCloseable {
+    private val applicationContext = context.applicationContext
+    private val platformManager =
+        applicationContext.getSystemService(Context.LOCATION_SERVICE) as AndroidLocationManager
 
-    private val _latitude = MutableStateFlow<Double?>(null)
-    val latitude: StateFlow<Double?> = _latitude.asStateFlow()
-
-    private val _longitude = MutableStateFlow<Double?>(null)
-    val longitude: StateFlow<Double?> = _longitude.asStateFlow()
-
-    private val _horizontalAccuracy = MutableStateFlow<Double?>(null)
-    val horizontalAccuracy: StateFlow<Double?> = _horizontalAccuracy.asStateFlow()
-
-    private val _authorizationStatus =
-        MutableStateFlow(readAuthorizationStatus(permissionResultKnown = false))
-    val authorizationStatus: StateFlow<LocationAuthorizationStatus> =
-        _authorizationStatus.asStateFlow()
-
-    var onUsableLocation: ((LocationSnapshot) -> Unit)? = null
-
-    val isAuthorized: Boolean
-        get() = when (_authorizationStatus.value) {
-            LocationAuthorizationStatus.AUTHORIZED_COARSE,
-            LocationAuthorizationStatus.AUTHORIZED_FINE,
-            -> true
-
-            LocationAuthorizationStatus.NOT_DETERMINED,
-            LocationAuthorizationStatus.DENIED,
-            -> false
-        }
-
-    private var isUpdatingLocation = false
-
-    private val locationRequest = LocationRequest.Builder(
-        Priority.PRIORITY_HIGH_ACCURACY,
-        LOCATION_INTERVAL_MILLIS,
-    )
-        .setMinUpdateIntervalMillis(MIN_LOCATION_INTERVAL_MILLIS)
-        .setMinUpdateDistanceMeters(MINIMUM_MOVEMENT_METERS)
-        .build()
-
-    private val locationCallback = object : LocationCallback() {
-        override fun onLocationResult(result: LocationResult) {
-            result.lastLocation?.let(::handleLocation)
-        }
-    }
-
-    fun requestPermissionIfNeeded(): Boolean {
-        refreshAuthorizationStatus(permissionResultKnown = false)
-        return if (isAuthorized) {
-            start()
-            false
+    private val _state = MutableStateFlow<LookSeeLocationState>(
+        if (hasLocationPermission()) {
+            LookSeeLocationState.Searching
         } else {
-            true
+            LookSeeLocationState.PermissionRequired
+        },
+    )
+    val state: StateFlow<LookSeeLocationState> = _state.asStateFlow()
+
+    private val listener = object : LocationListener {
+        override fun onLocationChanged(location: Location) {
+            publish(location)
+        }
+
+        @Deprecated("Deprecated by Android")
+        override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) = Unit
+
+        override fun onProviderEnabled(provider: String) = Unit
+
+        override fun onProviderDisabled(provider: String) {
+            if (enabledProviders().isEmpty()) {
+                _state.value = LookSeeLocationState.Unavailable(
+                    "Location is disabled on this device.",
+                )
+            }
         }
     }
 
-    fun onPermissionResult() {
-        refreshAuthorizationStatus(permissionResultKnown = true)
-        if (isAuthorized) start() else stop()
-    }
+    fun hasLocationPermission(): Boolean =
+        ContextCompat.checkSelfPermission(
+            applicationContext,
+            Manifest.permission.ACCESS_FINE_LOCATION,
+        ) == PackageManager.PERMISSION_GRANTED ||
+                ContextCompat.checkSelfPermission(
+                    applicationContext,
+                    Manifest.permission.ACCESS_COARSE_LOCATION,
+                ) == PackageManager.PERMISSION_GRANTED
 
+    /** Call again after the runtime permission result changes. */
     @SuppressLint("MissingPermission")
-    fun start(): Boolean {
-        refreshAuthorizationStatus(permissionResultKnown = false)
-
-        if (!isAuthorized) {
-            Log.w(TAG, "Location updates not started because permission is missing")
-            return false
-        }
-
-        if (isUpdatingLocation) return true
-
-        fusedLocationClient.requestLocationUpdates(
-            locationRequest,
-            locationCallback,
-            Looper.getMainLooper(),
-        )
-        isUpdatingLocation = true
-        return true
-    }
-
-    fun stop() {
-        if (!isUpdatingLocation) return
-        fusedLocationClient.removeLocationUpdates(locationCallback)
-        isUpdatingLocation = false
-    }
-
-    private fun handleLocation(location: Location) {
-        val accuracy = if (location.hasAccuracy()) location.accuracy.toDouble() else null
-
-        _latitude.value = location.latitude
-        _longitude.value = location.longitude
-        _horizontalAccuracy.value = accuracy
-
-        if (accuracy == null || accuracy <= 0.0) return
-
-        if (accuracy > MAXIMUM_ACCEPTED_ACCURACY_METERS) {
-            Log.w(TAG, "Ignoring rough location fix: %.1fm accuracy".format(accuracy))
+    fun start() {
+        if (!hasLocationPermission()) {
+            _state.value = LookSeeLocationState.PermissionRequired
             return
         }
 
-        onUsableLocation?.invoke(
-            LocationSnapshot(
-                latitude = location.latitude,
-                longitude = location.longitude,
-                horizontalAccuracy = accuracy,
-                capturedAtMillis = location.time,
-            ),
-        )
-    }
+        stopUpdatesOnly()
+        _state.value = LookSeeLocationState.Searching
 
-    private fun refreshAuthorizationStatus(permissionResultKnown: Boolean) {
-        _authorizationStatus.value = readAuthorizationStatus(permissionResultKnown)
-    }
-
-    private fun readAuthorizationStatus(
-        permissionResultKnown: Boolean,
-    ): LocationAuthorizationStatus {
-        val fineGranted = ContextCompat.checkSelfPermission(
-            appContext,
-            Manifest.permission.ACCESS_FINE_LOCATION,
-        ) == PackageManager.PERMISSION_GRANTED
-
-        if (fineGranted) return LocationAuthorizationStatus.AUTHORIZED_FINE
-
-        val coarseGranted = ContextCompat.checkSelfPermission(
-            appContext,
-            Manifest.permission.ACCESS_COARSE_LOCATION,
-        ) == PackageManager.PERMISSION_GRANTED
-
-        if (coarseGranted) return LocationAuthorizationStatus.AUTHORIZED_COARSE
-
-        return if (permissionResultKnown) {
-            LocationAuthorizationStatus.DENIED
-        } else {
-            LocationAuthorizationStatus.NOT_DETERMINED
+        val providers = enabledProviders()
+        if (providers.isEmpty()) {
+            _state.value = LookSeeLocationState.Unavailable(
+                "Location is disabled. Enable it or set an emulator location.",
+            )
+            return
         }
+
+        providers.forEach { provider ->
+            runCatching {
+                platformManager.getLastKnownLocation(provider)?.let(::publish)
+                platformManager.requestLocationUpdates(
+                    provider,
+                    MIN_UPDATE_INTERVAL_MILLIS,
+                    MIN_UPDATE_DISTANCE_METERS,
+                    listener,
+                    Looper.getMainLooper(),
+                )
+            }.onFailure { error ->
+                logger.warning("Unable to start $provider location updates: ${error.message}")
+            }
+        }
+    }
+
+    fun stop() {
+        stopUpdatesOnly()
     }
 
     override fun close() {
         stop()
     }
 
-    companion object {
-        private const val TAG = "LocationManager"
-        private const val LOCATION_INTERVAL_MILLIS = 10_000L
-        private const val MIN_LOCATION_INTERVAL_MILLIS = 5_000L
-        private const val MINIMUM_MOVEMENT_METERS = 15f
-        private const val MAXIMUM_ACCEPTED_ACCURACY_METERS = 100.0
+    private fun enabledProviders(): List<String> =
+        listOf(
+            AndroidLocationManager.GPS_PROVIDER,
+            AndroidLocationManager.NETWORK_PROVIDER,
+        ).filter { provider ->
+            runCatching { platformManager.isProviderEnabled(provider) }.getOrDefault(false)
+        }
+
+    private fun publish(location: Location) {
+        val fix = LookSeeLocationFix(
+            latitude = location.latitude,
+            longitude = location.longitude,
+            accuracyMeters = location.accuracy,
+        )
+        if (!fix.isUsable()) {
+            logger.info(
+                "Ignoring rough/invalid location fix: accuracy=${location.accuracy}m.",
+            )
+            return
+        }
+        _state.value = LookSeeLocationState.Ready(fix)
+    }
+
+    private fun stopUpdatesOnly() {
+        runCatching { platformManager.removeUpdates(listener) }
+    }
+
+    private companion object {
+        const val MIN_UPDATE_INTERVAL_MILLIS = 15_000L
+        const val MIN_UPDATE_DISTANCE_METERS = 15f
+        val logger: Logger = Logger.getLogger(LocationManager::class.java.name)
     }
 }

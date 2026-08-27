@@ -135,7 +135,8 @@ class OfflineMediaManagerTest {
                 negative,
             ),
         )
-        manager.cacheNegativePhotos(media.id, listOf(byteArrayOf(9)))
+        val negativePhoto = CapturedNegativePhoto(temporaryFile("negative-photo", ".jpg"))
+        manager.cacheNegativePhotos(media.id, listOf(negativePhoto))
 
         manager.deleteArchive(media)
 
@@ -145,6 +146,7 @@ class OfflineMediaManagerTest {
         assertFalse(files.names.contains(media.thumbnailFileName))
         assertFalse(files.names.contains(requireNotNull(media.negativeVideoFileName)))
         assertEquals("[]", ledger.json)
+        negativePhoto.deleteLocalFile()
         negative.delete()
     }
 

@@ -14,9 +14,12 @@ internal fun rememberLookSeePaymentSheet(
     onResult: (PaymentSheetResult) -> Unit,
 ): PaymentSheet {
     val currentResult = rememberUpdatedState(onResult)
+
     return remember {
-        PaymentSheet.Builder { result -> currentResult.value(result) }.build()
-    }
+        PaymentSheet.Builder { result ->
+            currentResult.value(result)
+        }
+    }.build()
 }
 
 internal fun presentCheckoutSession(
@@ -25,11 +28,14 @@ internal fun presentCheckoutSession(
     session: CheckoutSession,
 ) {
     PaymentConfiguration.init(context, session.publishableKey)
-    val environment = if (session.publishableKey.startsWith("pk_live_")) {
-        PaymentSheet.GooglePayConfiguration.Environment.Production
-    } else {
-        PaymentSheet.GooglePayConfiguration.Environment.Test
-    }
+
+    val environment =
+        if (session.publishableKey.startsWith("pk_live_")) {
+            PaymentSheet.GooglePayConfiguration.Environment.Production
+        } else {
+            PaymentSheet.GooglePayConfiguration.Environment.Test
+        }
+
     val configuration = PaymentSheet.Configuration.Builder("LookSee")
         .customer(
             PaymentSheet.CustomerConfiguration(
@@ -48,8 +54,14 @@ internal fun presentCheckoutSession(
         .build()
 
     if (session.isSetupIntent) {
-        paymentSheet.presentWithSetupIntent(session.clientSecret, configuration)
+        paymentSheet.presentWithSetupIntent(
+            session.clientSecret,
+            configuration,
+        )
     } else {
-        paymentSheet.presentWithPaymentIntent(session.clientSecret, configuration)
+        paymentSheet.presentWithPaymentIntent(
+            session.clientSecret,
+            configuration,
+        )
     }
 }

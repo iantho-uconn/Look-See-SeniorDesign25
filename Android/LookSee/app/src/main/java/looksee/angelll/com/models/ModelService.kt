@@ -18,6 +18,7 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
+import java.security.MessageDigest
 import java.util.UUID
 import java.util.logging.Logger
 import java.util.zip.ZipInputStream
@@ -42,6 +43,10 @@ data class ModelInfo(
     val classCount: Int,
     val modelFile: File,
     val manifestFile: File,
+    val platform: String = "android",
+    val format: String = "litert",
+    val modelSha256: String? = null,
+    val modelSizeBytes: Long? = null,
     val objects: List<ObjectLocation> = emptyList(),
 ) {
     val id: String
@@ -215,6 +220,26 @@ sealed class ModelReleaseException(message: String, cause: Throwable? = null) :
         "No .tflite model was found in the Android artifact for cluster $clusterId.",
     )
 
+    data class UnsupportedModelArtifact(val clusterId: String, val artifact: String) :
+        ModelReleaseException(
+            "Cluster $clusterId returned an iOS or unsupported model artifact ($artifact). " +
+                    "The discovery API must return the Android .tflite release.",
+        )
+
+    data class NoUsableModels(val details: String) : ModelReleaseException(
+        "The discovery API returned model records, but none were usable on Android: $details",
+    )
+
+    data class ModelSizeMismatch(val expected: Long, val actual: Long) :
+        ModelReleaseException(
+            "The downloaded TFLite size was $actual bytes; expected $expected bytes.",
+        )
+
+    data class ModelChecksumMismatch(val expected: String, val actual: String) :
+        ModelReleaseException(
+            "The downloaded TFLite SHA-256 was $actual; expected $expected.",
+        )
+
     data class InvalidTflite(val fileName: String) : ModelReleaseException(
         "$fileName is not a valid TensorFlow Lite flatbuffer.",
     )
@@ -331,7 +356,12 @@ class ModelService(
     ): List<ModelInfo> {
         requireHttpUrl(apiUrl)
         val requestJson = gson.toJson(
-            mapOf("latitude" to latitude, "longitude" to longitude),
+            mapOf(
+                "latitude" to latitude,
+                "longitude" to longitude,
+                "platform" to ANDROID_PLATFORM,
+                "format" to ANDROID_FORMAT,
+            ),
         )
         val response = transport.postJson(apiUrl, requestJson)
         if (response.statusCode !in 200..299) {
@@ -355,6 +385,7 @@ class ModelService(
         }
 
         val models = mutableListOf<ModelInfo>()
+        val preparationFailures = mutableListOf<String>()
         val progressPerModel = 0.85 / parsed.models.size.toDouble()
 
         parsed.models.forEachIndexed { index, payload ->
@@ -365,6 +396,7 @@ class ModelService(
             try {
                 models += prepareModelInfo(payload, parsed.reason, allObjects)
             } catch (error: Exception) {
+                preparationFailures += "cluster $clusterId: ${error.message}"
                 logger.warning(
                     "Skipping incomplete release for cluster $clusterId: ${error.message}",
                 )
@@ -373,6 +405,13 @@ class ModelService(
             if (shouldUpdateProgress) {
                 _downloadProgress.value = 0.15 + progressPerModel * (index + 1)
             }
+        }
+
+        if (models.isEmpty()) {
+            throw ModelReleaseException.NoUsableModels(
+                preparationFailures.joinToString(separator = "; ")
+                    .ifBlank { "unknown release preparation failure" },
+            )
         }
 
         return models
@@ -396,6 +435,7 @@ class ModelService(
             ?: throw ModelReleaseException.MissingManifestUrl(clusterId)
         requireHttpUrl(modelUrl)
         requireHttpUrl(manifestUrl)
+        validateAndroidArtifact(payload, clusterId, modelUrl)
 
         val prepared = prepareRelease(
             clusterId = clusterId,
@@ -404,6 +444,8 @@ class ModelService(
             manifestUrl = manifestUrl,
             expectedManifestSchemaVersion = payload.manifestSchemaVersion,
             expectedClassCount = payload.classCount,
+            expectedModelSha256 = payload.modelSha256,
+            expectedModelSizeBytes = payload.modelSizeBytes,
         )
 
         return ModelInfo(
@@ -419,6 +461,10 @@ class ModelService(
             classCount = prepared.manifest.classCount,
             modelFile = prepared.modelFile,
             manifestFile = prepared.manifestFile,
+            platform = payload.platform ?: ANDROID_PLATFORM,
+            format = payload.format ?: ANDROID_FORMAT,
+            modelSha256 = payload.modelSha256,
+            modelSizeBytes = payload.modelSizeBytes,
             objects = allObjects.filter { it.clusterId == clusterId },
         )
     }
@@ -430,6 +476,8 @@ class ModelService(
         manifestUrl: String,
         expectedManifestSchemaVersion: Int?,
         expectedClassCount: Int?,
+        expectedModelSha256: String?,
+        expectedModelSizeBytes: Long?,
     ): PreparedRelease {
         val releaseDirectory = releaseDirectory(clusterId, modelVersion)
         val modelFile = File(releaseDirectory, MODEL_FILE_NAME)
@@ -438,6 +486,11 @@ class ModelService(
         if (modelFile.isFile && manifestFile.isFile) {
             try {
                 validateTflite(modelFile)
+                validateArtifactIntegrity(
+                    modelFile,
+                    expectedModelSha256,
+                    expectedModelSizeBytes,
+                )
                 val manifest = decodeAndValidateManifest(
                     data = manifestFile.readBytes(),
                     clusterId = clusterId,
@@ -464,6 +517,8 @@ class ModelService(
             finalReleaseDirectory = releaseDirectory,
             expectedManifestSchemaVersion = expectedManifestSchemaVersion,
             expectedClassCount = expectedClassCount,
+            expectedModelSha256 = expectedModelSha256,
+            expectedModelSizeBytes = expectedModelSizeBytes,
         )
     }
 
@@ -475,6 +530,8 @@ class ModelService(
         finalReleaseDirectory: File,
         expectedManifestSchemaVersion: Int?,
         expectedClassCount: Int?,
+        expectedModelSha256: String?,
+        expectedModelSizeBytes: Long?,
     ): PreparedRelease {
         val stagingDirectory = File(modelsDirectory, ".staging-${UUID.randomUUID()}")
         val workDirectory = File(stagingDirectory, "_work")
@@ -509,6 +566,11 @@ class ModelService(
             }
             materializeTflite(downloadedModel, stagedModel, clusterId)
             validateTflite(stagedModel)
+            validateArtifactIntegrity(
+                stagedModel,
+                expectedModelSha256,
+                expectedModelSizeBytes,
+            )
 
             workDirectory.deleteRecursively()
             finalReleaseDirectory.parentFile?.mkdirs()
@@ -606,6 +668,62 @@ class ModelService(
             if (!identifier.contentEquals(TFLITE_IDENTIFIER)) {
                 throw ModelReleaseException.InvalidTflite(file.name)
             }
+        }
+    }
+
+    private fun validateArtifactIntegrity(
+        file: File,
+        expectedSha256: String?,
+        expectedSizeBytes: Long?,
+    ) {
+        if (expectedSizeBytes != null && file.length() != expectedSizeBytes) {
+            throw ModelReleaseException.ModelSizeMismatch(
+                expected = expectedSizeBytes,
+                actual = file.length(),
+            )
+        }
+
+        val normalizedExpectedSha = expectedSha256?.trim()?.lowercase().orEmpty()
+        if (normalizedExpectedSha.isNotEmpty()) {
+            val digest = MessageDigest.getInstance("SHA-256")
+            file.inputStream().buffered().use { input ->
+                val buffer = ByteArray(DEFAULT_DIGEST_BUFFER_SIZE)
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    digest.update(buffer, 0, count)
+                }
+            }
+            val actual = digest.digest().joinToString("") { byte ->
+                (byte.toInt() and 0xff).toString(16).padStart(2, '0')
+            }
+            if (actual != normalizedExpectedSha) {
+                throw ModelReleaseException.ModelChecksumMismatch(
+                    expected = normalizedExpectedSha,
+                    actual = actual,
+                )
+            }
+        }
+    }
+
+    private fun validateAndroidArtifact(
+        payload: ModelPayload,
+        clusterId: String,
+        modelUrl: String,
+    ) {
+        val platform = payload.platform?.trim()?.lowercase()
+        val format = payload.format?.trim()?.lowercase()
+        val artifact = payload.modelKey?.takeIf { it.isNotBlank() }
+            ?: runCatching { URI(modelUrl).path.substringAfterLast('/') }.getOrDefault(modelUrl)
+
+        val platformIsAndroid = platform == null || platform == ANDROID_PLATFORM
+        val formatIsLiteRt = format == null || format in ANDROID_FORMAT_ALIASES
+        val artifactName = artifact.lowercase()
+        val looksLikeTflite =
+            artifactName.endsWith(".tflite") || artifactName.endsWith(".tflite.zip")
+
+        if (!platformIsAndroid || !formatIsLiteRt || !looksLikeTflite) {
+            throw ModelReleaseException.UnsupportedModelArtifact(clusterId, artifact)
         }
     }
 
@@ -714,6 +832,7 @@ class ModelService(
                 model.modelVersion,
                 model.modelKey ?: "no-model-key",
                 model.manifestKey ?: "no-manifest-key",
+                model.modelSha256 ?: "no-model-sha",
                 model.objects.size.toString(),
             ).joinToString("|")
         }.sorted()
@@ -794,6 +913,10 @@ class ModelService(
         val manifestKey: String?,
         val manifestSchemaVersion: Int?,
         val classCount: Int?,
+        val platform: String?,
+        val format: String?,
+        val modelSha256: String?,
+        val modelSizeBytes: Long?,
     )
 
     private data class ObjectPayload(
@@ -808,6 +931,10 @@ class ModelService(
 
         private const val MODEL_FILE_NAME = "Model.tflite"
         private const val MANIFEST_FILE_NAME = "landmark-manifest.json"
+        private const val ANDROID_PLATFORM = "android"
+        private const val ANDROID_FORMAT = "litert"
+        private val ANDROID_FORMAT_ALIASES = setOf("litert", "tflite", "tensorflow-lite")
+        private const val DEFAULT_DIGEST_BUFFER_SIZE = 64 * 1024
         private const val TFLITE_IDENTIFIER_OFFSET = 4L
         private const val TFLITE_MINIMUM_HEADER_BYTES = 8L
         private val TFLITE_IDENTIFIER = byteArrayOf('T'.code.toByte(), 'F'.code.toByte(), 'L'.code.toByte(), '3'.code.toByte())

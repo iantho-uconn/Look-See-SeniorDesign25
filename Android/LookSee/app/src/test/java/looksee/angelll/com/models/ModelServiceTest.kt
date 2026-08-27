@@ -41,7 +41,11 @@ class ModelServiceTest {
         fixture.service.loadModels(latitude = 40.7128, longitude = -74.0060)
 
         val model = (fixture.service.state.value as ModelState.Loaded).models.single()
-        assertEquals(setOf("Model.tflite", "landmark-manifest.json"), model.modelFile.parentFile.list()?.toSet())
+        val releaseDirectory = requireNotNull(model.modelFile.parentFile)
+        assertEquals(
+            setOf("Model.tflite", "landmark-manifest.json"),
+            releaseDirectory.list()?.toSet(),
+        )
         assertTrue(model.modelFile.readBytes().copyOfRange(4, 8).contentEquals("TFL3".toByteArray()))
     }
 
@@ -78,13 +82,14 @@ class ModelServiceTest {
     }
 
     @Test
-    fun skipsReleaseWhenManifestIdentityDoesNotMatchModelVersion() = runBlocking {
+    fun failsLoadWhenManifestIdentityDoesNotMatchModelVersion() = runBlocking {
         val fixture = fixture(manifestBytes = manifestJson(trainingRunId = "wrong-run").toByteArray())
 
         fixture.service.loadModels(latitude = 40.7128, longitude = -74.0060)
 
-        val loaded = fixture.service.state.value as ModelState.Loaded
-        assertTrue(loaded.models.isEmpty())
+        val failed = fixture.service.state.value as ModelState.Failed
+        assertTrue(failed.message.contains("wrong-run"))
+        assertTrue(failed.message.contains("run-a"))
         assertEquals(0, fixture.manifestStore.registeredReleaseCount)
         assertFalse(File(fixture.modelsDirectory, "cluster-7/run-a").exists())
         assertEquals(0, fixture.transport.modelDownloadCount)

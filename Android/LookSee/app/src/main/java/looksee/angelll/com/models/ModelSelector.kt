@@ -48,12 +48,18 @@ data class BundledTestModel(
     val modelFile: File,
     val displayName: String = modelFile.nameWithoutExtension.replace('_', ' '),
     val classLabels: List<String> = emptyList(),
+    val clusterId: String = "bundled-test",
+    val modelVersion: String = "bundled-${modelFile.nameWithoutExtension}",
+    val manifestFile: File? = null,
+    val classCount: Int = classLabels.size,
+    val modelKey: String = modelFile.name,
+    val manifestKey: String? = manifestFile?.name,
 ) {
     val id: String
-        get() = modelFile.name
+        get() = "$clusterId|$modelVersion|${modelFile.name}"
 
     val isInstalled: Boolean
-        get() = modelFile.isFile
+        get() = modelFile.isFile && (manifestFile == null || manifestFile.isFile)
 }
 
 internal interface TestModelSelectionStore {
@@ -291,9 +297,12 @@ class ModelSelector internal constructor(
 
     private fun restoreTestSelection() {
         if (!testingEnabled) return
-        val savedId = testSelectionStore.readSelectedId() ?: return
-        val selected = availableTestModels.firstOrNull { it.id == savedId } ?: return
+        val savedId = testSelectionStore.readSelectedId()
+        val selected = savedId?.let { id ->
+            availableTestModels.firstOrNull { it.id == id }
+        } ?: availableTestModels.singleOrNull() ?: return
         _selectedTestModelId.value = selected.id
+        if (savedId != selected.id) testSelectionStore.writeSelectedId(selected.id)
         activate(selected)
     }
 
@@ -307,13 +316,13 @@ class ModelSelector internal constructor(
     private fun activate(testModel: BundledTestModel): Boolean {
         if (!testModel.isInstalled) return false
         val candidate = ActiveModelRelease(
-            clusterId = "bundled-test",
-            modelVersion = "bundled-${testModel.modelFile.nameWithoutExtension}",
+            clusterId = testModel.clusterId,
+            modelVersion = testModel.modelVersion,
             modelFile = testModel.modelFile,
-            manifestFile = null,
-            classCount = testModel.classLabels.size,
-            modelKey = testModel.modelFile.name,
-            manifestKey = null,
+            manifestFile = testModel.manifestFile,
+            classCount = testModel.classCount,
+            modelKey = testModel.modelKey,
+            manifestKey = testModel.manifestKey,
             displayName = testModel.displayName,
             classLabels = testModel.classLabels,
         )
@@ -388,30 +397,8 @@ class ModelSelector internal constructor(
                     .also { sharedInstance = it }
             }
 
-        private fun discoverBundledTestModels(context: Context): List<BundledTestModel> {
-            val assetNames = runCatching { context.assets.list(TEST_MODEL_ASSET_DIRECTORY) }
-                .getOrNull()
-                .orEmpty()
-                .filter { it.endsWith(".tflite", ignoreCase = true) }
-            val destination = File(context.codeCacheDir, TEST_MODEL_ASSET_DIRECTORY).apply {
-                mkdirs()
-            }
-            return assetNames.mapNotNull { assetName ->
-                runCatching {
-                    val output = File(destination, assetName)
-                    context.assets.open("$TEST_MODEL_ASSET_DIRECTORY/$assetName").use { input ->
-                        output.outputStream().use { destinationStream ->
-                            input.copyTo(destinationStream)
-                        }
-                    }
-                    BundledTestModel(output)
-                }.onFailure { error ->
-                    logger.warning("Could not prepare bundled test model $assetName: ${error.message}")
-                }.getOrNull()
-            }
-        }
-
-        private const val TEST_MODEL_ASSET_DIRECTORY = "models"
+        private fun discoverBundledTestModels(context: Context): List<BundledTestModel> =
+            BundledModelAssetInstaller.discover(context)
 
         /** Pure Kotlin haversine distance keeps selector tests local/JVM-only. */
         private fun distanceMeters(from: Coordinate, to: Coordinate): Double {

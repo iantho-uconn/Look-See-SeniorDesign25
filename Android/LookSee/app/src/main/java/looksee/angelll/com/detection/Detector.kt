@@ -50,7 +50,7 @@ data class DetectionBox(
 
     fun intersects(other: DetectionBox): Boolean =
         left < other.right && other.left < right &&
-            top < other.bottom && other.top < bottom
+                top < other.bottom && other.top < bottom
 }
 
 data class Detection(
@@ -144,7 +144,7 @@ class DetectionTracker(
 
     private fun sameTrack(first: Detection, second: Detection): Boolean =
         first.releaseIdentifier == second.releaseIdentifier &&
-            first.classIndex == second.classIndex
+                first.classIndex == second.classIndex
 }
 
 data class DetectorFrame(
@@ -464,11 +464,11 @@ class Detector internal constructor(
                     }
                     require(loadedManifest.trainingRunId == release.modelVersion) {
                         "Manifest version ${loadedManifest.trainingRunId} does not match " +
-                            "${release.modelVersion}."
+                                "${release.modelVersion}."
                     }
                     require(loadedManifest.classCount == effectiveClassCount) {
                         "Manifest classCount ${loadedManifest.classCount} does not match " +
-                            "$effectiveClassCount."
+                                "$effectiveClassCount."
                     }
                 }
             }
@@ -487,7 +487,7 @@ class Detector internal constructor(
             _loadState.value = DetectorLoadState.Ready(release.releaseIdentifier)
             logger.info(
                 "Detector hot-swapped to ${release.displayName} " +
-                    "($effectiveClassCount classes).",
+                        "($effectiveClassCount classes).",
             )
         } catch (error: Exception) {
             candidateModel?.close()
@@ -497,7 +497,7 @@ class Detector internal constructor(
             )
             logger.severe(
                 "Detector model load failed for ${release.releaseIdentifier}: " +
-                    error.message,
+                        error.message,
             )
         }
     }
@@ -847,11 +847,11 @@ class Detector internal constructor(
             val toLatitude = Math.toRadians(to.latitude)
             val haversine =
                 sin(latitudeDelta / 2.0) * sin(latitudeDelta / 2.0) +
-                    cos(fromLatitude) * cos(toLatitude) *
-                    sin(longitudeDelta / 2.0) * sin(longitudeDelta / 2.0)
+                        cos(fromLatitude) * cos(toLatitude) *
+                        sin(longitudeDelta / 2.0) * sin(longitudeDelta / 2.0)
             val bounded = haversine.coerceIn(0.0, 1.0)
             return EARTH_RADIUS_METERS *
-                2.0 * atan2(sqrt(bounded), sqrt(1.0 - bounded))
+                    2.0 * atan2(sqrt(bounded), sqrt(1.0 - bounded))
         }
     }
 }
@@ -895,6 +895,9 @@ private class LiteRtDetectorModel(
     override val inferredClassCount: Int? by lazy {
         val outputShapes = (0 until interpreter.outputTensorCount)
             .map { interpreter.getOutputTensor(it).shape() }
+        if (outputShapes.any { it.lastOrNull() == END_TO_END_OUTPUT_VALUES }) {
+            return@lazy null
+        }
         val confidenceShape = (0 until interpreter.outputTensorCount)
             .firstOrNull { index ->
                 interpreter.getOutputTensor(index).name().contains("confidence", ignoreCase = true)
@@ -912,7 +915,7 @@ private class LiteRtDetectorModel(
     init {
         require((isNhwc && imageShape[3] == 3) || (!isNhwc && imageShape[1] == 3)) {
             "LiteRT detector image input must be NHWC or NCHW RGB; " +
-                "received ${imageShape.contentToString()}."
+                    "received ${imageShape.contentToString()}."
         }
         require(inputWidth == Detector.INPUT_WIDTH && inputHeight == Detector.INPUT_HEIGHT) {
             "LookSee detector expects 640x640 input; received ${inputWidth}x$inputHeight."
@@ -967,7 +970,7 @@ private class LiteRtDetectorModel(
             val combinedIndex = outputTensors.indexOfFirst { it.shape().lastOrNull() == 6 }
             require(combinedIndex >= 0) {
                 "Unknown LiteRT detector outputs: " +
-                    outputTensors.joinToString { "${it.name()}=${it.shape().contentToString()}" }
+                        outputTensors.joinToString { "${it.name()}=${it.shape().contentToString()}" }
             }
             DetectorModelOutput.EndToEnd(
                 values = values[combinedIndex],

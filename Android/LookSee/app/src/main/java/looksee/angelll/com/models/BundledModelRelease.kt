@@ -124,15 +124,15 @@ internal object BundledModelReleaseValidator {
         }
         require(numericClusterId == manifest.clusterId) {
             "Release cluster $numericClusterId does not match manifest cluster " +
-                "${manifest.clusterId}."
+                    "${manifest.clusterId}."
         }
         require(modelVersion == manifest.trainingRunId) {
             "Release version $modelVersion does not match manifest version " +
-                "${manifest.trainingRunId}."
+                    "${manifest.trainingRunId}."
         }
         require(release.classCount == manifest.classCount) {
             "Release classCount ${release.classCount} does not match manifest " +
-                "classCount ${manifest.classCount}."
+                    "classCount ${manifest.classCount}."
         }
 
         validatePreprocessing(release.preprocessing)
@@ -231,7 +231,7 @@ internal object BundledModelReleaseValidator {
         file.inputStream().buffered().use { input ->
             val header = ByteArray(8)
             input.read(header) == header.size &&
-                header.copyOfRange(4, 8).contentEquals("TFL3".toByteArray())
+                    header.copyOfRange(4, 8).contentEquals("TFL3".toByteArray())
         }
 
     internal fun sha256(file: File): String {
@@ -299,7 +299,7 @@ internal object BundledModelAssetInstaller {
         val releaseDirectory = File(
             context.codeCacheDir,
             "$MODEL_ASSET_DIRECTORY/${safeDirectoryName(release.clusterId)}/" +
-                safeDirectoryName(release.modelVersion),
+                    safeDirectoryName(release.modelVersion),
         )
         val modelFile = File(releaseDirectory, modelName)
         val manifestFile = File(releaseDirectory, manifestName)
@@ -307,8 +307,8 @@ internal object BundledModelAssetInstaller {
         var actualHash = modelFile
             .takeIf {
                 it.isFile &&
-                    it.length() == release.modelSizeBytes &&
-                    BundledModelReleaseValidator.hasTfliteIdentifier(it)
+                        it.length() == release.modelSizeBytes &&
+                        BundledModelReleaseValidator.hasTfliteIdentifier(it)
             }
             ?.let(BundledModelReleaseValidator::sha256)
         if (actualHash != expectedHash) {
@@ -358,10 +358,16 @@ internal object BundledModelAssetInstaller {
         assetPath: String,
         destination: File,
     ) {
-        check(destination.parentFile?.mkdirs() != false) {
-            "Unable to create ${destination.parentFile}."
+        val destinationDirectory = checkNotNull(destination.parentFile) {
+            "Bundled asset destination has no parent directory: $destination."
         }
-        val temporary = File(destination.parentFile, ".${destination.name}.${UUID.randomUUID()}")
+        check(destinationDirectory.isDirectory || destinationDirectory.mkdirs()) {
+            "Unable to create $destinationDirectory."
+        }
+        val temporary = File(
+            destinationDirectory,
+            ".${destination.name}.${UUID.randomUUID()}",
+        )
         try {
             assets.open(assetPath, AssetManager.ACCESS_STREAMING).use { input ->
                 temporary.outputStream().buffered().use { output ->

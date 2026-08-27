@@ -79,4 +79,6 @@ dependencies {
 
     // Keep 2.1.5: LiteRT 2.1.6 has the duplicate-namespace packaging bug.
     implementation("com.google.ai.edge.litert:litert:2.1.5")
+
+    implementation("com.stripe:stripe-android:23.17.0")
 }
