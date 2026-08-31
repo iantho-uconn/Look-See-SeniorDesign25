@@ -2,77 +2,67 @@
 //  Buttons.swift
 //  LookSeeProto
 //
+//  Created by Christian Barbara on 1/25/26.
+//
+//  Updated: TabView-based paging replaced with a manual HStack pager so
+//  swiping shows a live, finger-following preview of the adjacent page
+//  (camera/record/map) instead of only snapping after release.
+//  Merged back in: VariableContainer/PopUp landmark-info overlay, which the
+//  pager rewrite had dropped.
+//
 
 import SwiftUI
-import Combine
 
 struct Buttons: View {
     @EnvironmentObject var vm: AuthViewModel
     @EnvironmentObject var authState: AuthState
-    
-    @Environment(\.scenePhase) var scenePhase
-    
+
     @ObservedObject private var infoView = VariableContainer.shared
 
     @State private var showPromotion = false
     @State private var showBusinessAlert = false
     @State private var showSignUpPrompt = false
     @State private var showSignUp = false
+    @State private var showLogin = false
     @State private var currentTab = 0
-
     @State private var pendingUploadLandmarkId: String?
-    @State private var showRecordSheet = false
-    
-    // Redo logic
-    @State private var redoLandmarkId: String?
-    @State private var redoLandmarkLabel: String?
-    @State private var redoLandmarkDesc: String?
-    @State private var redoSecondsNeeded: Double? // 🚀 THE FIX: State variable added to hold the incoming value!
-    
-    @State private var keepScanCameraAlive = false
-    @State private var isRecordSheetAnimating = false
 
     @State private var chromeVisible = true
     @State private var chromeFadeTask: Task<Void, Never>?
     @State private var isDetecting = false
     @State private var showTutorial = false
 
+    @State private var showSideMenu = false
     @State private var isReticlePulsing = false
 
+    // Live horizontal offset while a swipe is in progress. 0 when idle.
     @State private var dragOffset: CGFloat = 0
-    @State private var isDragging: Bool = false
-    @GestureState private var isDraggingState: Bool = false
-    @GestureState private var isSwipingState: Bool = false
 
-    @State private var hasPreloadedMap = false
-
-    // Generic One-Time Notification State
-    @State private var showGenericNotification = false
-    @State private var hasShownNotificationThisSession = false
-    @State private var showMyLandmarksFromAlert = false
-    
-    @AppStorage("dismissedGlobalNotifs_v4") private var dismissedNotificationsString: String = ""
-
+    // 🚀 THE FIX: Completely ignores Cognito authState.tier.
+    // If they haven't actually paid (or aren't legacy), they get NOTHING.
     private var isBusinessMode: Bool {
         return vm.hasActiveSubscription
     }
 
-    var tabCount: Int { return 2 }
+    var tabCount: Int {
+        return isBusinessMode ? 3 : 2
+    }
 
     private var isScanTab: Bool { currentTab == 0 }
-    private var mapTabIndex: Int { 1 }
+
+    private var mapTabIndex: Int {
+        return tabCount - 1
+    }
+
+    private var recordTabIndex: Int { 1 }
 
     private var topBarTitle: String {
         if currentTab == 0 { return "LookSee" }
-        return "Map"
+        if currentTab == mapTabIndex { return "Map" }
+        return "Record"
     }
 
     var isActive: Bool = true
-    
-    var isScanCameraActive: Bool {
-        if showRecordSheet || isRecordSheetAnimating || showMyLandmarksFromAlert { return false }
-        return true
-    }
 
     var body: some View {
         NavigationStack {
@@ -91,14 +81,14 @@ struct Buttons: View {
                                 withAnimation(.easeOut(duration: 0.1)) { chromeVisible = false }
                             }
                         }
+                        // Full-width live-tracking swipe — active on any tab
+                        // except Map, where the map's own pan/zoom gestures
+                        // need the whole surface (edge zones handle that case).
+                        // Disabled entirely while the landmark info popup is
+                        // showing, so swiping doesn't fight with the popup.
                         .simultaneousGesture(
                             (currentTab != mapTabIndex && !infoView.infoView)
                                 ? DragGesture(minimumDistance: 12)
-                                    .updating($isSwipingState) { value, state, _ in
-                                        if abs(value.translation.width) > abs(value.translation.height) {
-                                            state = true
-                                        }
-                                    }
                                     .onChanged { value in
                                         guard abs(value.translation.width) > abs(value.translation.height) else { return }
                                         dragOffset = clampedDragOffset(value.translation.width, width: pageWidth)
@@ -117,44 +107,6 @@ struct Buttons: View {
                                 : nil
                         )
 
-                    // 🚀 THE GENERIC 3-SECOND NOTIFICATION PILL
-                    VStack {
-                        if showGenericNotification && currentTab == 0 {
-                            Button {
-                                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                                withAnimation(.easeOut(duration: 0.3)) { showGenericNotification = false }
-                                showMyLandmarksFromAlert = true
-                            } label: {
-                                HStack(spacing: 12) {
-                                    Image(systemName: "flag.fill").foregroundColor(.white)
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text("Action Required")
-                                            .font(.system(size: 14, weight: .bold, design: .rounded))
-                                            .foregroundStyle(.white)
-                                        Text("Attention is needed for landmarks.")
-                                            .font(.system(size: 12, weight: .medium))
-                                            .foregroundStyle(.white.opacity(0.9))
-                                    }
-                                    Spacer()
-                                    Image(systemName: "chevron.right").foregroundColor(.white.opacity(0.6))
-                                }
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 12)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                        .fill(Color.red)
-                                        .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 4)
-                                )
-                                .padding(.horizontal, 24)
-                            }
-                            .buttonStyle(.plain)
-                            .padding(.top, 70)
-                            .transition(.move(edge: .top).combined(with: .opacity))
-                        }
-                        Spacer()
-                    }
-                    .zIndex(100)
-
                     if currentTab == mapTabIndex && !infoView.infoView {
                         mapEdgeSwipeZones(width: pageWidth)
                     }
@@ -171,18 +123,41 @@ struct Buttons: View {
                         }
                         .transition(.opacity)
                         .animation(.easeOut(duration: 0.3), value: chromeVisible)
-                        .allowsHitTesting(!isSwipingState)
                     }
 
                     if showSignUpPrompt { signUpPromptOverlay }
 
+                    if showSideMenu {
+                        Color.black.opacity(0.4)
+                            .ignoresSafeArea()
+                            .onTapGesture {
+                                withAnimation(.easeOut(duration: 0.25)) { showSideMenu = false }
+                            }
+                            .transition(.opacity)
+                    }
+
+                    HStack(spacing: 0) {
+                        Spacer()
+                        Settings()
+                            .environmentObject(vm)
+                            .frame(width: pageWidth * 0.75)
+                            .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
+                            .offset(x: showSideMenu ? 0 : pageWidth)
+                    }
+                    .animation(.easeOut(duration: 0.25), value: showSideMenu)
+
+                    // Present the landmark info popup at the root level so it
+                    // always sits above the pager, top bar, bottom bar, and
+                    // side menu.
                     if infoView.infoView {
                         ZStack {
                             Color.black
                                 .opacity(0.45)
                                 .ignoresSafeArea()
                                 .onTapGesture {
-                                    withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                                    withAnimation(
+                                        .spring(response: 0.35, dampingFraction: 0.82)
+                                    ) {
                                         infoView.dismissLandmark()
                                     }
                                 }
@@ -194,70 +169,67 @@ struct Buttons: View {
                     }
                 }
                 .simultaneousGesture(
-                    DragGesture(minimumDistance: 15)
-                        .updating($isDraggingState) { value, state, transaction in
-                            state = true
+                    // Side-menu swipe-to-dismiss stays independent of paging.
+                    DragGesture(minimumDistance: 30).onEnded { value in
+                        guard !infoView.infoView else { return }
+                        guard showSideMenu else { return }
+                        if value.translation.width > 40 {
+                            withAnimation(.easeOut(duration: 0.25)) { showSideMenu = false }
                         }
+                    }
                 )
-                .allowsHitTesting(!isDraggingState)
-                .onChange(of: infoView.infoView) { _, isShowingPopup in
-                    chromeFadeTask?.cancel()
+            }
+            .onChange(of: infoView.infoView) { _, isShowingPopup in
+                chromeFadeTask?.cancel()
 
-                    if isShowingPopup {
-                        withAnimation(.easeOut(duration: 0.15)) {
-                            chromeVisible = false
-                        }
-                    } else {
-                        revealChromeThenFade()
+                if isShowingPopup {
+                    showSideMenu = false
+                    withAnimation(.easeOut(duration: 0.15)) {
+                        chromeVisible = false
                     }
-                }
-                .animation(
-                    .spring(response: 0.35, dampingFraction: 0.82),
-                    value: infoView.infoView
-                )
-            }
-            .fullScreenCover(isPresented: $showMyLandmarksFromAlert) {
-                LazyView(
-                    NavigationStack {
-                        BusinessLandmarksView()
-                            .toolbar {
-                                ToolbarItem(placement: .topBarLeading) {
-                                    Button("Close") { showMyLandmarksFromAlert = false }
-                                        .fontWeight(.bold)
-                                }
-                            }
-                    }
-                )
-            }
-            .fullScreenCover(isPresented: $showRecordSheet) {
-                LandmarkRecord(
-                    isNavVisible: .constant(true),
-                    isActive: true,
-                    existingLandmarkId: redoLandmarkId,
-                    existingLabel: redoLandmarkLabel,
-                    existingDescription: redoLandmarkDesc,
-                    existingSecondsNeeded: redoSecondsNeeded, // 🚀 THE FIX: Parameter passed to the sheet!
-                    onAddMoreMedia: { landmarkId in
-                        pendingUploadLandmarkId = landmarkId
-                        showRecordSheet = false
-                    }
-                )
-            }
-            .onChange(of: showRecordSheet) { _, isShown in
-                if !isShown {
-                    isRecordSheetAnimating = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                        isRecordSheetAnimating = false
-                        redoLandmarkId = nil
-                        redoLandmarkLabel = nil
-                        redoLandmarkDesc = nil
-                        redoSecondsNeeded = nil // 🚀 Cleanup
-                    }
+                } else {
+                    revealChromeThenFade()
                 }
             }
+            .animation(
+                .spring(response: 0.35, dampingFraction: 0.82),
+                value: infoView.infoView
+            )
             .fullScreenCover(isPresented: $showSignUp) {
                 NavigationStack {
-                    Signup(onSignupSuccess: { _ in showSignUp = false }, onGoToLogin: { showSignUp = false })
+                    Signup(
+                        onSignupSuccess: { _ in
+                            showSignUp = false
+                        },
+                        onGoToLogin: {
+                            showSignUp = false
+                            DispatchQueue.main.async {
+                                showLogin = true
+                            }
+                        }
+                    )
+                }
+            }
+            .fullScreenCover(isPresented: $showLogin) {
+                NavigationStack {
+                    Login(
+                        vm: vm,
+                        onSignedIn: {
+                            showLogin = false
+                        },
+                        onGoToSignup: {
+                            showLogin = false
+                            DispatchQueue.main.async {
+                                showSignUp = true
+                            }
+                        },
+                        onContinueAsGuest: {
+                            showLogin = false
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                currentTab = 0
+                            }
+                        }
+                    )
                 }
             }
             .sheet(isPresented: $showTutorial) {
@@ -272,53 +244,15 @@ struct Buttons: View {
             scheduleChromeFadeIfNeeded()
             viewfinderTimingReset()
             UITabBar.appearance().isHidden = true
-            updateIdleTimer(for: currentTab, active: isActive)
-            
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                hasPreloadedMap = true
-            }
-            
-            checkForGlobalNotifications()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("CheckGlobalNotifications"))) { _ in
-            if currentTab == 0 && !showGenericNotification {
-                checkForGlobalNotifications()
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("TriggerRedoRecord"))) { notif in
-            if let userInfo = notif.userInfo,
-               let id = userInfo["id"] as? String,
-               let label = userInfo["label"] as? String,
-               let desc = userInfo["description"] as? String {
-                self.redoLandmarkId = id
-                self.redoLandmarkLabel = label
-                self.redoLandmarkDesc = desc
-                
-                // 🚀 THE FIX: Extracts the passed seconds!
-                if let needed = userInfo["secondsNeeded"] as? Double {
-                    self.redoSecondsNeeded = needed
-                }
-                
-                // Gives iOS 0.6 seconds to release the camera lenses before opening Record
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                    self.showRecordSheet = true
-                }
-            }
-        }
-        .onChange(of: scenePhase) { _, newPhase in
-            if newPhase == .active {
-                checkForGlobalNotifications()
-            }
-        }
-        .onChange(of: currentTab) { _, newTab in
-            revealChromeThenFade()
-            updateIdleTimer(for: newTab, active: isActive)
-        }
-        .onChange(of: isActive) { _, newActive in
-            updateIdleTimer(for: currentTab, active: newActive)
         }
     }
 
+    // MARK: - Pager
+
+    /// Lays every tab's content side-by-side in one HStack and shifts it by
+    /// -currentTab * width, live-adjusted by dragOffset while swiping. This
+    /// keeps the adjacent page mounted and visible as it slides in, instead
+    /// of only appearing after the gesture ends.
     private func pager() -> some View {
         GeometryReader { proxy in
             let width = proxy.size.width
@@ -343,27 +277,42 @@ struct Buttons: View {
             LandmarkScan(
                 onTap: revealChromeThenFade,
                 isDetecting: $isDetecting,
-                isNavVisible: $chromeVisible,
-                isActive: isScanCameraActive
+                isNavVisible: $chromeVisible
             )
+        } else if isBusinessMode && index == recordTabIndex {
+            LandmarkRecord { landmarkId in
+                pendingUploadLandmarkId = landmarkId
+                withAnimation(.easeInOut(duration: 0.25)) { currentTab = 0 }
+            }
+            .safeAreaInset(edge: .top) { Color.clear.frame(height: 45) }
+            .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 90) }
         } else if index == mapTabIndex {
             LandmarkMapView()
                 .safeAreaInset(edge: .top) { Color.clear.frame(height: 45) }
                 .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 90) }
-                .opacity(hasPreloadedMap ? 1.0 : 0.99)
         } else {
             EmptyView()
         }
     }
 
+    // MARK: - Drag handling
+
+    /// Prevents dragging past the first or last tab from producing an
+    /// unbounded offset — light rubber-band resistance at the ends.
     private func clampedDragOffset(_ translation: CGFloat, width: CGFloat) -> CGFloat {
-        if currentTab == 0 && translation > 0 { return translation * 0.35 }
-        if currentTab == tabCount - 1 && translation < 0 { return translation * 0.35 }
+        if currentTab == 0 && translation > 0 {
+            return translation * 0.35
+        }
+        if currentTab == tabCount - 1 && translation < 0 {
+            return translation * 0.35
+        }
         return translation
     }
 
     private func commitDrag(translation: CGFloat, predicted: CGFloat, width: CGFloat) {
         let threshold = width * 0.28
+        // A fast flick should commit even if the finger didn't travel the
+        // full threshold distance — use whichever translation is larger.
         let effective = abs(predicted) > abs(translation) ? predicted : translation
 
         var newTab = currentTab
@@ -389,19 +338,8 @@ struct Buttons: View {
         }
     }
 
-    private func updateIdleTimer(for tab: Int, active: Bool) {
-        let shouldDisableAutoLock = (tab == 0 && active )
-        if shouldDisableAutoLock {
-            if !UIApplication.shared.isIdleTimerDisabled {
-                UIApplication.shared.isIdleTimerDisabled = true
-            }
-        } else {
-            if UIApplication.shared.isIdleTimerDisabled {
-                UIApplication.shared.isIdleTimerDisabled = false
-            }
-        }
-    }
-    
+    /// Narrow live-drag strips on the Map tab, so swiping in/out of the map
+    /// works without hijacking the map's own pan/zoom gestures everywhere else.
     private func mapEdgeSwipeZones(width: CGFloat) -> some View {
         HStack {
             Color.white.opacity(0.001)
@@ -465,19 +403,26 @@ struct Buttons: View {
                         else { showBusinessAlert = true }
                     }
                 )
+                .sheet(isPresented: $showPromotion) {
+                    NavigationStack {
+                        BusinessLandmarksView()
+                    }
+                }
+                .alert("Premium Account Required", isPresented: $showBusinessAlert) {
+                    Button("OK", role: .cancel) {}
+                } message: {
+                    Text("You need an active subscription to access the Promotion Editor.")
+                }
             Spacer()
 
-            // 🚀 RESTORED NATIVE NAVIGATION!
-            // Wraps Settings in LazyView so your profile picture doesn't eagerly load and blink the camera!
-            NavigationLink {
-                LazyView(Settings().environmentObject(vm))
-                    .navigationTitle("") // Hides the big text at the top, leaves the back button!
+            Button {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                withAnimation(.easeOut(duration: 0.25)) {
+                    showSideMenu = true
+                }
             } label: {
                 NavButton(icon: "line.3.horizontal", label: "Menu")
             }
-            .simultaneousGesture(TapGesture().onEnded {
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            })
         }
         .padding(.horizontal, 24)
         .padding(.top, 16)
@@ -485,40 +430,14 @@ struct Buttons: View {
     }
 
     private var bottomBar: some View {
-        HStack(alignment: .center, spacing: 0) {
-            
-            tabButton(title: "Scan", icon: "viewfinder", tab: 0, locked: false)
-            
-            Button {
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                if !isBusinessMode {
-                    showSignUpPrompt = true
-                } else {
-                    showRecordSheet = true
-                }
-            } label: {
-                VStack(spacing: 4) {
-                    ZStack(alignment: .topTrailing) {
-                        Image(systemName: "video.fill")
-                            .font(.system(size: 22, weight: .medium))
-                        if !isBusinessMode {
-                            Image(systemName: "lock.fill")
-                                .font(.system(size: 10))
-                                .offset(x: 12, y: -4)
-                        }
-                    }
-                    Text("Record")
-                        .font(.system(size: 11, weight: .bold, design: .rounded))
-                }
-                .foregroundStyle(Color.secondary)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
+        HStack(spacing: 0) {
+            tabButton(title: "Scan", icon: "camera.aperture", tab: 0, locked: false)
+            if isBusinessMode {
+                tabButton(title: "Record", icon: "video", tab: recordTabIndex, locked: false)
             }
-            
             tabButton(title: "Map", icon: "map", tab: mapTabIndex, locked: false)
-            
         }
-        .padding(.horizontal, 10)
+        .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .background(Capsule().fill(.ultraThinMaterial))
         .overlay(Capsule().stroke(Color(uiColor: .separator).opacity(0.5), lineWidth: 0.5))
@@ -530,6 +449,7 @@ struct Buttons: View {
     private var tutorialContent: some View {
         ZStack {
             Color(uiColor: .systemBackground).ignoresSafeArea()
+
             VStack(spacing: 24) {
                 Group {
                     if currentTab == 0 {
@@ -547,7 +467,7 @@ struct Buttons: View {
                                 .font(.system(size: 16, weight: .medium))
                                 .foregroundStyle(.secondary)
                         }
-                    } else {
+                    } else if currentTab == mapTabIndex {
                         Image(systemName: "map.fill")
                             .font(.system(size: 60))
                             .foregroundStyle(Color(red: 0.22, green: 0.49, blue: 1.00))
@@ -561,10 +481,25 @@ struct Buttons: View {
                                 .font(.system(size: 16, weight: .medium))
                                 .foregroundStyle(.secondary)
                         }
+                    } else {
+                        Image(systemName: "video.fill")
+                            .font(.system(size: 60))
+                            .foregroundStyle(Color(red: 0.22, green: 0.49, blue: 1.00))
+                            .shadow(color: Color(red: 0.22, green: 0.49, blue: 1.00).opacity(0.5), radius: 10, x: 0, y: 5)
+
+                        VStack(spacing: 8) {
+                            Text("Record Landmark")
+                                .font(.system(size: 24, weight: .bold, design: .rounded))
+                                .foregroundStyle(.primary)
+                            Text("Record a short video of a nearby landmark to help improve our recognition models.")
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
+
                 Spacer()
             }
             .padding(.top, 32)
@@ -667,14 +602,7 @@ struct Buttons: View {
         }
         .foregroundStyle(locked ? Color(uiColor: .quaternaryLabel) : currentTab == tab ? Color(red: 0.22, green: 0.49, blue: 1.00) : Color.secondary)
         .frame(maxWidth: .infinity).padding(.vertical, 10)
-        .overlay(alignment: .bottom) {
-            if currentTab == tab && !locked {
-                Capsule()
-                    .fill(Color(red: 0.22, green: 0.49, blue: 1.00))
-                    .frame(width: 24, height: 3)
-                    .offset(y: -2)
-            }
-        }
+        .background(Group { if currentTab == tab && !locked { RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(red: 0.22, green: 0.49, blue: 1.00).opacity(0.15)) } })
         .contentShape(Rectangle())
         .highPriorityGesture(TapGesture().onEnded {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -699,50 +627,5 @@ struct Buttons: View {
             }
             .frame(width: 56, height: 48).contentShape(Rectangle())
         }
-    }
-
-    // 🚀 Shows ONLY ONCE per session. Automatically disappears after 3 seconds.
-    private func checkForGlobalNotifications() {
-        guard vm.isSignedIn, !hasShownNotificationThisSession else { return }
-        
-        Task {
-            let silentVM = BusinessLandmarksViewModel()
-            await silentVM.loadLandmarks()
-            
-            let dismissedString = UserDefaults.standard.string(forKey: "dismissedGlobalNotifs_v4") ?? ""
-            var dismissedSet = Set(dismissedString.split(separator: ",").map(String.init))
-            
-            if let needsMediaLandmark = silentVM.landmarks.first(where: { $0.status == "NEEDS_MORE_MEDIA" && !dismissedSet.contains($0.landmarkId) }) {
-                
-                dismissedSet.insert(needsMediaLandmark.landmarkId)
-                UserDefaults.standard.set(dismissedSet.joined(separator: ","), forKey: "dismissedGlobalNotifs_v4")
-                
-                await MainActor.run {
-                    hasShownNotificationThisSession = true
-                    
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
-                        showGenericNotification = true
-                        chromeVisible = true
-                    }
-                    
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-                        withAnimation(.easeOut(duration: 0.3)) {
-                            showGenericNotification = false
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-// 🚀 Stops the profile picture from eagerly preloading!
-struct LazyView<Content: View>: View {
-    let build: () -> Content
-    init(_ build: @autoclosure @escaping () -> Content) {
-        self.build = build
-    }
-    var body: Content {
-        build()
     }
 }
