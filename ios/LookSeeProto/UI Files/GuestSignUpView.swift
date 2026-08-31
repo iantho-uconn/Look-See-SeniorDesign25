@@ -16,8 +16,11 @@ struct GuestSignUpView: View {
     @State private var username = ""
     @State private var email = ""
     @State private var password = ""
+    @State private var confirmPassword = ""
     @State private var phoneNumber = ""
     @State private var verificationCode = ""
+    @State private var isPasswordVisible = false
+    @State private var isConfirmPasswordVisible = false
     
     @State private var showVerification = false
     @State private var isProcessing = false
@@ -42,7 +45,9 @@ struct GuestSignUpView: View {
         !username.isEmpty &&
         !sanitizedEmail.isEmpty &&
         !phoneNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-        isValidPassword(password)
+        isValidPassword(password) &&
+        !confirmPassword.isEmpty &&
+        password == confirmPassword
     }
     
     private var isVerificationValid: Bool {
@@ -77,45 +82,138 @@ struct GuestSignUpView: View {
                             VStack(spacing: 18) {
                                 
                                 VStack(alignment: .leading, spacing: 6) {
-                                    Text("Unique Username").font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary)
-                                    TextField("username", text: $username)
+                                    Text("Unique Username").font(.system(size: 13, weight: .medium)).foregroundStyle(Color.white.opacity(0.9))
+                                    TextField(
+                                        "username",
+                                        text: $username,
+                                        prompt: Text("username").foregroundStyle(Color.white.opacity(0.6))
+                                    )
                                         .focused($IsKeyboard)
                                         .textInputAutocapitalization(.never)
                                         .autocorrectionDisabled(true)
                                         .padding().background(Color.white.opacity(0.05)).cornerRadius(12).foregroundStyle(.white)
+                                        .colorScheme(.dark)
                                         .onChange(of: username) { _, newValue in
                                             username = newValue.lowercased().filter { "abcdefghijklmnopqrstuvwxyz0123456789_".contains($0) }
                                         }
                                 }
                                 
                                 VStack(alignment: .leading, spacing: 6) {
-                                    Text("Email Address").font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary)
-                                    TextField("name@example.com", text: $email)
+                                    Text("Email Address").font(.system(size: 13, weight: .medium)).foregroundStyle(Color.white.opacity(0.9))
+                                    TextField(
+                                        "Email Address",
+                                        text: $email,
+                                        prompt: Text("name@example.com").foregroundStyle(Color.white.opacity(0.6))
+                                    )
                                         .focused($IsKeyboard)
                                         .keyboardType(.emailAddress)
                                         .textInputAutocapitalization(.never)
                                         .autocorrectionDisabled(true)
                                         .padding().background(Color.white.opacity(0.05)).cornerRadius(12).foregroundStyle(.white)
+                                        .colorScheme(.dark)
                                 }
                                 
                                 VStack(alignment: .leading, spacing: 6) {
-                                    Text("Password").font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary)
-                                    SecureField("Create a strong password", text: $password)
+                                    Text("Password").font(.system(size: 13, weight: .medium)).foregroundStyle(Color.white.opacity(0.9))
+                                    HStack(spacing: 10) {
+                                        Group {
+                                            if isPasswordVisible {
+                                                TextField(
+                                                    "Password",
+                                                    text: $password,
+                                                    prompt: Text("Create a strong password").foregroundStyle(Color.white.opacity(0.6))
+                                                )
+                                            } else {
+                                                SecureField(
+                                                    "Password",
+                                                    text: $password,
+                                                    prompt: Text("Create a strong password").foregroundStyle(Color.white.opacity(0.6))
+                                                )
+                                            }
+                                        }
                                         .focused($IsKeyboard)
-                                        .padding().background(Color.white.opacity(0.05)).cornerRadius(12).foregroundStyle(.white)
+                                        .textContentType(.newPassword)
+                                        .textInputAutocapitalization(.never)
+                                        .autocorrectionDisabled(true)
+
+                                        Button {
+                                            isPasswordVisible.toggle()
+                                        } label: {
+                                            Image(systemName: isPasswordVisible ? "eye.slash.fill" : "eye.fill")
+                                                .foregroundStyle(Color.white.opacity(0.75))
+                                                .frame(width: 24, height: 24)
+                                        }
+                                        .buttonStyle(.plain)
+                                        .accessibilityLabel(isPasswordVisible ? "Hide password" : "Show password")
+                                    }
+                                    .padding()
+                                    .background(Color.white.opacity(0.05))
+                                    .cornerRadius(12)
+                                    .foregroundStyle(.white)
+                                    .colorScheme(.dark)
                                     
                                     if !password.isEmpty && !isValidPassword(password) {
                                         Text("Requires 8+ chars, 1 uppercase, 1 lowercase, 1 number, and 1 special char.")
                                             .font(.system(size: 11)).foregroundStyle(.red).padding(.leading, 4)
                                     }
                                 }
+
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text("Confirm Password").font(.system(size: 13, weight: .medium)).foregroundStyle(Color.white.opacity(0.9))
+                                    HStack(spacing: 10) {
+                                        Group {
+                                            if isConfirmPasswordVisible {
+                                                TextField(
+                                                    "Confirm Password",
+                                                    text: $confirmPassword,
+                                                    prompt: Text("Retype your password").foregroundStyle(Color.white.opacity(0.6))
+                                                )
+                                            } else {
+                                                SecureField(
+                                                    "Confirm Password",
+                                                    text: $confirmPassword,
+                                                    prompt: Text("Retype your password").foregroundStyle(Color.white.opacity(0.6))
+                                                )
+                                            }
+                                        }
+                                        .focused($IsKeyboard)
+                                        .textContentType(.newPassword)
+                                        .textInputAutocapitalization(.never)
+                                        .autocorrectionDisabled(true)
+
+                                        Button {
+                                            isConfirmPasswordVisible.toggle()
+                                        } label: {
+                                            Image(systemName: isConfirmPasswordVisible ? "eye.slash.fill" : "eye.fill")
+                                                .foregroundStyle(Color.white.opacity(0.75))
+                                                .frame(width: 24, height: 24)
+                                        }
+                                        .buttonStyle(.plain)
+                                        .accessibilityLabel(isConfirmPasswordVisible ? "Hide confirmation password" : "Show confirmation password")
+                                    }
+                                    .padding()
+                                    .background(Color.white.opacity(0.05))
+                                    .cornerRadius(12)
+                                    .foregroundStyle(.white)
+                                    .colorScheme(.dark)
+
+                                    if !confirmPassword.isEmpty && password != confirmPassword {
+                                        Text("Passwords do not match.")
+                                            .font(.system(size: 11)).foregroundStyle(.red).padding(.leading, 4)
+                                    }
+                                }
                                 
                                 VStack(alignment: .leading, spacing: 6) {
-                                    Text("Phone Number").font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary)
-                                    TextField("123-456-7890", text: $phoneNumber)
+                                    Text("Phone Number").font(.system(size: 13, weight: .medium)).foregroundStyle(Color.white.opacity(0.9))
+                                    TextField(
+                                        "Phone Number",
+                                        text: $phoneNumber,
+                                        prompt: Text("123-456-7890").foregroundStyle(Color.white.opacity(0.6))
+                                    )
                                         .focused($IsKeyboard)
                                         .keyboardType(.phonePad)
                                         .padding().background(Color.white.opacity(0.05)).cornerRadius(12).foregroundStyle(.white)
+                                        .colorScheme(.dark)
                                         .onChange(of: phoneNumber) { _, newValue in
                                             let filtered = newValue.filter { "0123456789".contains($0) }
                                             if filtered.count > 10 {
@@ -129,8 +227,12 @@ struct GuestSignUpView: View {
                         } else {
                             // MARK: - VERIFICATION FORM
                             VStack(alignment: .leading, spacing: 6) {
-                                Text("Enter 6-Digit Code").font(.caption).foregroundStyle(Color.white.opacity(0.5))
-                                TextField("123456", text: $verificationCode)
+                                Text("Enter 6-Digit Code").font(.caption).foregroundStyle(Color.white.opacity(0.9))
+                                TextField(
+                                    "Verification Code",
+                                    text: $verificationCode,
+                                    prompt: Text("123456").foregroundStyle(Color.white.opacity(0.6))
+                                )
                                     .focused($IsKeyboard)
                                     .keyboardType(.numberPad)
                                     .font(.system(size: 24, weight: .bold, design: .monospaced))
@@ -183,6 +285,11 @@ struct GuestSignUpView: View {
     
     // MARK: - AWS Logic
     func signUp() {
+        guard password == confirmPassword else {
+            errorMessage = "Passwords do not match."
+            return
+        }
+
         isProcessing = true
         errorMessage = ""
         Task {
