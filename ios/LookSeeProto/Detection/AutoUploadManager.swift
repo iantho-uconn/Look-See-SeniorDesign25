@@ -16,7 +16,6 @@ class AutoUploadManager: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
     
-    // 🚀 THE FIX: Attach a weak reference to the active global AuthViewModel
     weak var globalAuthVM: AuthViewModel?
     
     @Published var isUploading = false
@@ -42,13 +41,30 @@ class AutoUploadManager: ObservableObject {
             .dropFirst()
             .sink { [weak self] isConnected in
                 if isConnected {
+                    // 🚀 THE FIX: Slight delay so network status stabilizes before hitting the DB
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                        Task { await self?.autoStartIfPossible() }
+                    }
+                }
+            }
+            .store(in: &cancellables)
+            
+        NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)
+            .sink { [weak self] _ in
+                if self?.isUploading == true {
+                    self?.isUploading = false
+                    self?.currentlyUploadingId = nil
+                }
+                
+                // 🚀 THE FIX: Gives iOS 1.5 seconds to wake up the Camera and Network stack
+                // before we try to process the queue. Prevents main-thread freezing!
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                     Task { await self?.autoStartIfPossible() }
                 }
             }
             .store(in: &cancellables)
     }
     
-    // 🚀 Called from BusinessLandmarksView to tie it to your session!
     func attachAuthVM(_ vm: AuthViewModel) {
         self.globalAuthVM = vm
     }
@@ -79,7 +95,12 @@ class AutoUploadManager: ObservableObject {
     private func autoStartIfPossible() async {
         guard !isPaused else { return }
         
-        // 🚀 THE FIX: Prevent it from creating a blank profile that crashes S3!
+        // 🚀 THE FIX: Hard check for Wi-Fi/Cellular. If offline, abort immediately so the UI doesn't hang!
+        guard NetworkMonitor.shared.isConnected else {
+            print("⚠️ Device is offline. Pausing auto-upload queue.")
+            return
+        }
+        
         guard let authVM = globalAuthVM else {
             print("⚠️ AutoUploadManager has no AuthViewModel attached. Cannot auto-start.")
             return
@@ -126,6 +147,13 @@ class AutoUploadManager: ObservableObject {
         
         for media in pendingMedia {
             if isPaused { break }
+            
+            // Double check connection right before uploading the heavy video
+            if !NetworkMonitor.shared.isConnected {
+                print("⚠️ Connection lost. Pausing auto-upload queue.")
+                isPaused = true
+                break
+            }
             
             if !authVM.hasActiveSubscription {
                 print("🛑 NO ACTIVE SUBSCRIPTION: Stopping auto-upload queue.")

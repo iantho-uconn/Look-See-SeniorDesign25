@@ -1,5 +1,7 @@
 package looksee.angelll.com.uifiles // Added your requested package name
 
+import looksee.angelll.com.models.LandmarkManifestEntry
+import looksee.angelll.com.models.NearbyLandmark
 import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -140,6 +142,23 @@ class VariableContainer private constructor() {
     }
 
     /**
+     * Populates and opens the popup using a NearbyLandmark (e.g. from the map).
+     */
+    fun presentNearbyLandmark(landmark: NearbyLandmark) {
+        resetLandmarkDisplay()
+        
+        landmarkId = landmark.landmarkId
+        landmarkName = landmark.label
+        landmarkDescription = landmark.shortDescription.ifEmpty { "No description is available for this landmark." }
+        
+        promoName = landmark.promotion ?: "No active promotion"
+        
+        infoView = true
+        
+        println("✅ [Nearby Landmark Popup] Presenting landmark: ${landmark.label}")
+    }
+
+    /**
      * Closes the popup while retaining the most recently displayed landmark
      * values for diagnostics.
      */
@@ -182,11 +201,3 @@ class VariableContainer private constructor() {
     }
 }
 
-// Stub for LandmarkManifestEntry to prevent compiler errors
-data class LandmarkManifestEntry(
-    val landmarkId: String,
-    val classIndex: Int,
-    val datasetClassName: String,
-    val label: String,
-    val shortDescription: String
-)

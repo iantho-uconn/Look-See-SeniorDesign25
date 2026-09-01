@@ -46,7 +46,7 @@ struct BusinessLandmark: Codable, Identifiable, Hashable {
     let updatedAt: String?
     let ownershipUpdatedAt: String?
     
-    // 🚀 NEW: Status and Media Requirement Fields
+    // Status and Media Requirement Fields
     let status: String?
     let cleanFrameCount: Int?
     let requiredFrames: Int?
@@ -61,14 +61,21 @@ struct BusinessLandmark: Codable, Identifiable, Hashable {
         return value.isEmpty ? "No description available." : value
     }
 
+    // 🚀 THE FIX: Maps the new PENDING_TRAINING status
     var displayStatus: String {
-        if status == "NEEDS_MORE_MEDIA" {
-            return "Action Needed"
+        switch status {
+        case "NEEDS_MORE_MEDIA": return "Action Needed"
+        case "PREPARING_DATA": return "Preparing Data"
+        case "PENDING_TRAINING": return "Waiting for Training"
+        case "TRAINING_MODEL": return "In Training"
+        case "OPTIMIZING_MODEL": return "Optimizing for iOS"
+        default: return isActive == false ? "Inactive" : "Active"
         }
-        if isActive == false {
-            return "Inactive"
-        }
-        return "Active"
+    }
+
+    // 🚀 THE FIX: Grouping helper now includes PENDING_TRAINING
+    var isProcessing: Bool {
+        return status == "PREPARING_DATA" || status == "PENDING_TRAINING" || status == "TRAINING_MODEL" || status == "OPTIMIZING_MODEL"
     }
 
     var displayPromotionStatus: String {

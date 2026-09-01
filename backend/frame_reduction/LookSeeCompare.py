@@ -295,8 +295,9 @@ def lambda_handler(event, context):
                 ':sec': seconds_needed
             }
         else:
-            status = 'READY_FOR_AUTOLABELING'
-            print(f"✅ MEDIA THRESHOLD MET: {total_saved_frames}/{required_frames} clean frames. Ready for autolabeling!")
+            # 🚀 THE FIX: Assign the correct pipeline status 
+            status = 'PREPARING_DATA'
+            print(f"✅ MEDIA THRESHOLD MET: {total_saved_frames}/{required_frames} clean frames. Sending to data prep!")
             
             update_expr = "SET #st = :s, cleanFrameCount = :c, requiredFrames = :r"
             expr_vals = {

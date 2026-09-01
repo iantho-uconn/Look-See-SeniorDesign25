@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.compose.animation.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -40,6 +41,7 @@ import java.net.URL
 import looksee.angelll.com.models.*
 import looksee.angelll.com.viewmodels.*
 import looksee.angelll.com.services.*
+import looksee.angelll.com.ui.theme.AppleBlue
 
 @Composable
 fun PopUp() {
@@ -49,7 +51,7 @@ fun PopUp() {
 
     var selectedPromotionImage by remember { mutableStateOf<String?>(null) }
 
-    // Colors matching SwiftUI
+    // Colors matching SwiftUI PopUp.swift
     val purpleStart = Color(red = 0.25f, green = 0.10f, blue = 0.90f)
     val purpleEnd = Color(red = 0.50f, green = 0.15f, blue = 0.95f)
     val promotionOrange = Color(red = 1.00f, green = 0.58f, blue = 0.18f)
@@ -78,53 +80,57 @@ fun PopUp() {
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
     ) {
-        // Calculate dynamic dimensions
         val maxWidthPx = maxWidth.value
         val maxHeightPx = maxHeight.value
 
         val popupWidth = minOf(maxOf(maxWidthPx - 56, 1f), 620f).dp
         val maximumPopupHeight = minOf(maxOf(maxHeightPx - 32, 1f), 780f).dp
 
-        // Adaptive Shell
-        Box(
+        // Shell: Equivalent to popupShell in PopUp.swift
+        Surface(
             modifier = Modifier
                 .width(popupWidth)
-                .heightIn(max = maximumPopupHeight) // Acts like ViewThatFits (scrolls only if needed)
-                .shadow(elevation = 30.dp, shape = RoundedCornerShape(30.dp), spotColor = Color.Black.copy(alpha = 0.30f), ambientColor = Color.Black.copy(alpha = 0.30f))
-                .background(Color(0xFF1C1C1E).copy(alpha = 0.95f), RoundedCornerShape(30.dp)) // UltraThickMaterial equivalent
-                .border(1.dp, Color.White.copy(alpha = 0.20f), RoundedCornerShape(30.dp))
-                .clip(RoundedCornerShape(30.dp))
+                .heightIn(max = maximumPopupHeight)
+                .shadow(
+                    elevation = 30.dp,
+                    shape = RoundedCornerShape(30.dp),
+                    spotColor = Color.Black.copy(alpha = 0.30f)
+                ),
+            color = Color(0xFF1C1C1E).copy(alpha = 0.95f), // UltraThickMaterial-ish
+            shape = RoundedCornerShape(30.dp),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.20f))
         ) {
-            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-
-                // Content
+            Column(modifier = Modifier.fillMaxWidth()) {
+                // Scrolling Content
                 Column(
-                    modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 26.dp, bottom = 22.dp),
+                    modifier = Modifier
+                        .weight(1f, fill = false)
+                        .verticalScroll(rememberScrollState())
+                        .padding(start = 20.dp, end = 20.dp, top = 26.dp, bottom = 22.dp),
                     verticalArrangement = Arrangement.spacedBy(18.dp)
                 ) {
-                    // MARK: - Landmark Text Section
+                    // Landmark Text
                     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                         Text(
                             text = displayName,
                             fontSize = 34.sp,
                             fontWeight = FontWeight.Black,
                             color = Color.White,
+                            lineHeight = 40.sp,
                             maxLines = 3,
                             overflow = TextOverflow.Ellipsis
                         )
-
                         Text(
                             text = displayDescription,
                             fontSize = 16.sp,
-                            fontWeight = FontWeight.Normal,
                             color = Color.White.copy(alpha = 0.7f),
-                            lineHeight = 21.sp
+                            lineHeight = 24.sp
                         )
                     }
 
-                    // MARK: - Website Section
-                    val websiteUrlStr = normalizedURL(infoView.landmarkWebsiteUrl)
-                    if (websiteUrlStr != null) {
+                    // Website Button
+                    val websiteUrl = normalizedURL(infoView.landmarkWebsiteUrl)
+                    if (websiteUrl != null) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -132,21 +138,21 @@ fun PopUp() {
                                 .border(1.dp, Color.White.copy(alpha = 0.18f), RoundedCornerShape(16.dp))
                                 .clip(RoundedCornerShape(16.dp))
                                 .clickable {
-                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(websiteUrlStr))
-                                    context.startActivity(intent)
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(websiteUrl)))
                                 }
                                 .padding(horizontal = 16.dp, vertical = 14.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(Icons.Default.Explore, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                            Icon(Icons.Default.Public, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(12.dp))
                             Column {
                                 Text("Visit Website", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                                val host = remember(websiteUrlStr) {
-                                    try { Uri.parse(websiteUrlStr).host } catch (e: Exception) { null }
+                                val host = remember(websiteUrl) {
+                                    runCatching { Uri.parse(websiteUrl).host }.getOrNull()
                                 }
                                 if (host != null) {
-                                    Text(host, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = Color.White.copy(alpha = 0.75f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(host, fontSize = 12.sp, color = Color.White.copy(alpha = 0.75f), maxLines = 1)
                                 }
                             }
                             Spacer(Modifier.weight(1f))
@@ -154,7 +160,7 @@ fun PopUp() {
                         }
                     }
 
-                    // MARK: - Promotion Section
+                    // Promotion Section
                     if (shouldShowPromotion) {
                         Column(
                             modifier = Modifier
@@ -166,12 +172,11 @@ fun PopUp() {
                         ) {
                             Text(cleanedPromoName, fontSize = 21.sp, fontWeight = FontWeight.Bold, color = Color.White)
                             if (cleanedPromoDescription.isNotEmpty()) {
-                                Text(cleanedPromoDescription, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Color.White.copy(alpha = 0.7f))
+                                Text(cleanedPromoDescription, fontSize = 14.sp, color = Color.White.copy(alpha = 0.7f))
                             }
-
-                            // Promotion Image Section
-                            val promoImageUrlStr = normalizedURL(infoView.promoImageUrl)
-                            if (promoImageUrlStr != null) {
+                            
+                            val promoImg = normalizedURL(infoView.promoImageUrl)
+                            if (promoImg != null) {
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -181,13 +186,11 @@ fun PopUp() {
                                         .clip(RoundedCornerShape(14.dp))
                                         .clickable {
                                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            selectedPromotionImage = promoImageUrlStr
+                                            selectedPromotionImage = promoImg
                                         },
                                     contentAlignment = Alignment.BottomEnd
                                 ) {
-                                    // Custom image loader for the promo box
-                                    PromoAsyncImage(url = promoImageUrlStr)
-
+                                    PromoImageLoader(url = promoImg)
                                     Row(
                                         modifier = Modifier
                                             .padding(10.dp)
@@ -204,13 +207,13 @@ fun PopUp() {
                         }
                     }
 
-                    // MARK: - Merchant Info
+                    // Merchant Card
                     MerchantCardView()
                 }
 
                 HorizontalDivider(color = Color.White.copy(alpha = 0.18f))
 
-                // MARK: - Close Button
+                // Footer: Close Button
                 Box(modifier = Modifier.padding(start = 20.dp, top = 14.dp, end = 20.dp, bottom = 18.dp)) {
                     Button(
                         onClick = {
@@ -228,30 +231,27 @@ fun PopUp() {
         }
     }
 
-    // MARK: - Promotion Image Fullscreen Preview (NavigationStack equivalent)
+    // Fullscreen Image Preview
     if (selectedPromotionImage != null) {
         Dialog(
             onDismissRequest = { selectedPromotionImage = null },
-            properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false)
+            properties = DialogProperties(usePlatformDefaultWidth = false)
         ) {
             Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
                 Column(modifier = Modifier.fillMaxSize()) {
-                    // Top Bar (ToolbarItem equivalent)
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(16.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Spacer(Modifier.width(48.dp)) // Balance the title
-                        Text("Promotion Image", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        Spacer(Modifier.width(48.dp))
+                        Text("Promotion Image", color = Color.White, fontWeight = FontWeight.Bold)
                         TextButton(onClick = { selectedPromotionImage = null }) {
-                            Text("Done", fontSize = 16.sp, color = purpleStart)
+                            Text("Done", color = purpleStart, fontWeight = FontWeight.Bold)
                         }
                     }
-
-                    // Image Content (scaledToFit)
-                    Box(modifier = Modifier.weight(1f).fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
-                        PromoPreviewAsyncImage(url = selectedPromotionImage!!)
+                    Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        PromoImageLoader(url = selectedPromotionImage!!, contentScale = ContentScale.Fit)
                     }
                 }
             }
@@ -259,13 +259,11 @@ fun PopUp() {
     }
 }
 
-// Helper Composable to handle the Image Loading states for the inner promotion card
 @Composable
-private fun PromoAsyncImage(url: String) {
+private fun PromoImageLoader(url: String, contentScale: ContentScale = ContentScale.Fit) {
     var bitmap by remember { mutableStateOf<Bitmap?>(null) }
     var isLoading by remember { mutableStateOf(true) }
-    var isError by remember { mutableStateOf(false) }
-
+    
     LaunchedEffect(url) {
         withContext(Dispatchers.IO) {
             try {
@@ -273,66 +271,25 @@ private fun PromoAsyncImage(url: String) {
                 bitmap = BitmapFactory.decodeStream(stream)
                 isLoading = false
             } catch (e: Exception) {
-                isError = true
                 isLoading = false
             }
         }
     }
 
     if (isLoading) {
-        Box(modifier = Modifier.fillMaxSize().background(Color.White.copy(alpha = 0.06f)), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(color = Color.White)
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
         }
-    } else if (isError || bitmap == null) {
-        Box(modifier = Modifier.fillMaxSize().background(Color.White.copy(alpha = 0.06f)), contentAlignment = Alignment.Center) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                Icon(Icons.Default.Image, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(26.dp))
-                Text("Promotion image unavailable", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
-            }
-        }
-    } else {
+    } else if (bitmap != null) {
         androidx.compose.foundation.Image(
             bitmap = bitmap!!.asImageBitmap(),
             contentDescription = null,
             modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.Fit // Boss's fix: Show the complete promotion image
+            contentScale = contentScale
         )
-    }
-}
-
-// Helper Composable for the Fullscreen Preview
-@Composable
-private fun PromoPreviewAsyncImage(url: String) {
-    var bitmap by remember { mutableStateOf<Bitmap?>(null) }
-    var isLoading by remember { mutableStateOf(true) }
-    var isError by remember { mutableStateOf(false) }
-
-    LaunchedEffect(url) {
-        withContext(Dispatchers.IO) {
-            try {
-                val stream = URL(url).openStream()
-                bitmap = BitmapFactory.decodeStream(stream)
-                isLoading = false
-            } catch (e: Exception) {
-                isError = true
-                isLoading = false
-            }
-        }
-    }
-
-    if (isLoading) {
-        CircularProgressIndicator(color = Color.White)
-    } else if (isError || bitmap == null) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Icon(Icons.Default.Image, contentDescription = null, tint = Color.White.copy(alpha = 0.8f), modifier = Modifier.size(42.dp))
-            Text("Could not load image", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = Color.White.copy(alpha = 0.8f))
-        }
     } else {
-        androidx.compose.foundation.Image(
-            bitmap = bitmap!!.asImageBitmap(),
-            contentDescription = null,
-            modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.Fit
-        )
+        Box(modifier = Modifier.fillMaxSize().background(Color.White.copy(alpha = 0.06f)), contentAlignment = Alignment.Center) {
+            Icon(Icons.Default.Image, contentDescription = null, tint = Color.Gray)
+        }
     }
 }

@@ -78,6 +78,7 @@ dependencies {
 
     // Google Maps & Location (Using newer 21.4.0)
     implementation("com.google.maps.android:maps-compose:8.4.0")
+    implementation("com.google.maps.android:maps-compose-utils:8.4.0")
     implementation("com.google.android.gms:play-services-location:21.4.0")
 
     // Permissions
@@ -108,6 +109,9 @@ dependencies {
 
     //coil
     implementation("io.coil-kt:coil-compose:2.5.0")
+
+    // Sentry for error tracking
+    implementation("io.sentry:sentry-android:8.54.0")
 
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }

@@ -76,11 +76,11 @@ fun MerchantCardView() {
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
-                        .background(Color.Blue.copy(alpha = 0.15f), RoundedCornerShape(6.dp))
+                        .background(Color(0xFF387DFF).copy(alpha = 0.15f), RoundedCornerShape(6.dp))
                         .padding(horizontal = 8.dp, vertical = 3.dp)
                 ) {
-                    Icon(Icons.Default.Verified, contentDescription = null, tint = Color.Blue, modifier = Modifier.size(12.dp))
-                    Text("Verified", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = Color.Blue)
+                    Icon(Icons.Default.Verified, contentDescription = null, tint = Color(0xFF387DFF), modifier = Modifier.size(12.dp))
+                    Text("Verified", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF387DFF))
                 }
             }
 
@@ -117,7 +117,7 @@ fun MerchantCardView() {
                             context.startActivity(intent)
                         }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Icon(Icons.Default.Phone, contentDescription = null, tint = Color.Green, modifier = Modifier.size(16.dp))
-                            Text(vm.merchantPhone, fontSize = 14.sp, color = Color.Blue, textDecoration = TextDecoration.Underline)
+                            Text(vm.merchantPhone, fontSize = 14.sp, color = Color(0xFF387DFF), textDecoration = TextDecoration.Underline)
                         }
                     }
 
@@ -126,8 +126,8 @@ fun MerchantCardView() {
                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             showWebsiteAlert = true
                         }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Icon(Icons.Default.Public, contentDescription = null, tint = Color.Blue, modifier = Modifier.size(16.dp))
-                            Text(vm.merchantWebsite, fontSize = 14.sp, color = Color.Blue, textDecoration = TextDecoration.Underline)
+                            Icon(Icons.Default.Public, contentDescription = null, tint = Color(0xFF387DFF), modifier = Modifier.size(16.dp))
+                            Text(vm.merchantWebsite, fontSize = 14.sp, color = Color(0xFF387DFF), textDecoration = TextDecoration.Underline)
                         }
                     }
 
@@ -139,7 +139,7 @@ fun MerchantCardView() {
                             context.startActivity(intent)
                         }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Icon(Icons.Default.LocationOn, contentDescription = null, tint = Color.Red, modifier = Modifier.size(16.dp))
-                            Text(vm.merchantAddress, fontSize = 14.sp, color = Color.Blue, textDecoration = TextDecoration.Underline)
+                            Text(vm.merchantAddress, fontSize = 14.sp, color = Color(0xFF387DFF), textDecoration = TextDecoration.Underline)
                         }
                     }
                 }

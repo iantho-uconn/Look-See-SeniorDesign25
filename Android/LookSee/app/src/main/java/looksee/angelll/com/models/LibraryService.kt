@@ -11,9 +11,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 data class LibraryLandmark(
@@ -67,11 +70,36 @@ class LibraryService internal constructor(
     private val _items = MutableStateFlow<List<LibraryLandmark>>(emptyList())
     val items: StateFlow<List<LibraryLandmark>> = _items.asStateFlow()
 
+    private val _searchText = MutableStateFlow("")
+    val searchText: StateFlow<String> = _searchText.asStateFlow()
+
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
+
+    /**
+     * Filtered landmarks based on the current [searchText].
+     * Matches the filtering logic in iOS Library.swift.
+     */
+    val filteredItems: StateFlow<List<LibraryLandmark>> = combine(
+        _items,
+        _searchText,
+    ) { items, query ->
+        if (query.isBlank()) {
+            items
+        } else {
+            items.filter {
+                it.label.contains(query, ignoreCase = true) ||
+                    it.shortDescription.contains(query, ignoreCase = true)
+            }
+        }
+    }.stateIn(
+        scope = serviceScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = emptyList(),
+    )
 
     init {
         if (observeActiveCluster) {
@@ -100,6 +128,7 @@ class LibraryService internal constructor(
         _isLoading.value = true
         _errorMessage.value = null
         _items.value = emptyList()
+        _searchText.value = ""
         try {
             val response = httpClient.execute(
                 BusinessHttpRequest(
@@ -125,6 +154,10 @@ class LibraryService internal constructor(
         } finally {
             _isLoading.value = false
         }
+    }
+
+    fun setSearchText(query: String) {
+        _searchText.value = query
     }
 
     override fun close() {

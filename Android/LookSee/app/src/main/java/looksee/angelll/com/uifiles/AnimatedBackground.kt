@@ -34,13 +34,12 @@ fun AnimatedBackground(showLoadingUI: Boolean = false) {
     }
     val t = timeMillis / 1000.0
 
-    Box(modifier = Modifier.fillMaxSize().background(Color(0xFF0D0F17))) { // Base color
+    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) { // Pure black base for iOS look
 
         AnimatedGradient(time = t)
 
-        GlowBlob(color = Color.Blue.copy(alpha = 0.20f), size = 360f, xOffset = (sin(t / 5) * 70).toFloat(), yOffset = (-240 + cos(t / 4) * 30).toFloat())
-        GlowBlob(color = Color.Cyan.copy(alpha = 0.10f), size = 250f, xOffset = (-120 + cos(t / 3) * 40).toFloat(), yOffset = (180 + sin(t / 6) * 25).toFloat())
-        GlowBlob(color = Color.Blue.copy(alpha = 0.08f), size = 200f, xOffset = (150 + sin(t / 7) * 30).toFloat(), yOffset = (220 + cos(t / 5) * 20).toFloat())
+        GlowBlob(color = Color(0xFF387DFF).copy(alpha = 0.15f), size = 400f, xOffset = (sin(t / 5) * 50).toFloat(), yOffset = (-200).toFloat())
+        GlowBlob(color = Color(0xFF6B4BFF).copy(alpha = 0.10f), size = 300f, xOffset = (-100).toFloat(), yOffset = (150).toFloat())
 
         FogLayer(time = t)
 
@@ -221,35 +220,13 @@ fun SkylineView() {
     Canvas(modifier = Modifier.fillMaxSize()) {
         val skylinePath = buildSkylinePath(defaultSkylineSegments, size)
 
-        // 1. Draw solid silhouette
+        // Clean, simple silhouette matching iOS PICS.PDF
         drawPath(
             path = skylinePath,
             brush = Brush.verticalGradient(
-                colors = listOf(Color.Black.copy(alpha = 0.45f), Color(0xFF08080F))
+                colors = listOf(Color(0xFF111111), Color.Black)
             )
         )
-
-        // 2. Draw details clipped to silhouette
-        val frames = SkylineLayout.bodyFrames(defaultSkylineSegments, size)
-        clipPath(skylinePath) {
-            for ((segment, frame) in frames) {
-                when (segment.style) {
-                    BuildingStyle.GlassOffice -> drawWindowGrid(frame, 16, 4, 2.5f, 0.30, Color.White.copy(alpha = 0.55f))
-                    BuildingStyle.PlainOffice -> drawWindowGrid(frame, 10, 3, 4f, 0.25, Color.White.copy(alpha = 0.45f))
-                    BuildingStyle.Brick -> {
-                        drawBrickTexture(frame)
-                        drawWindowGrid(frame, 6, 2, 6f, 0.40, Color(0xFFF2D18C))
-                    }
-                    BuildingStyle.ApartmentAC -> {
-                        drawWindowGrid(frame, 8, 3, 4f, 0.35, Color(0xFFF2D999))
-                        drawACUnits(frame)
-                    }
-                    BuildingStyle.Storefront -> drawStorefront(frame)
-                    BuildingStyle.Mall -> drawWindowGrid(frame, 3, 8, 5f, 0.50, Color.White.copy(alpha = 0.35f))
-                    else -> {}
-                }
-            }
-        }
     }
 }
 

@@ -1,181 +1,405 @@
 package looksee.angelll.com.uifiles
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import java.util.Calendar
+import androidx.compose.ui.unit.sp
+import looksee.angelll.com.viewmodels.AuthViewModel
+
+data class Plan(val years: Int, val priceString: String, val baseTokens: Int, val label: String)
+data class TokenAddOn(val tokens: Int, val label: String)
 
 @Composable
-fun PayInfo() {
-    // Card Information
-    var cardProvider by remember { mutableStateOf("Visa") }
-    var cardNum by remember { mutableStateOf("") }
+fun PayInfo(
+    vm: AuthViewModel,
+    onDismiss: () -> Unit
+) {
+    var selectedTab by remember { mutableIntStateOf(0) } // 0: Plan, 1: Tokens, 2: Free Trial
+    var selectedPlanIndex by remember { mutableIntStateOf(0) }
+    var selectedAddOnIndex by remember { mutableIntStateOf(0) }
 
-    // Note: Java Calendar months are 0-indexed, so we add 1
-    val currentMonth = Calendar.getInstance().get(Calendar.MONTH) + 1
-    var expireMonth by remember { mutableIntStateOf(currentMonth) }
-
-    val currentYear = Calendar.getInstance().get(Calendar.YEAR)
-    var expireYear by remember { mutableIntStateOf(currentYear) }
-
-    var cvv by remember { mutableStateOf("") }
-    val cardProviders = listOf("Visa", "Mastercard")
-
-    // Billing Information
-    var firstName by remember { mutableStateOf("") }
-    var lastName by remember { mutableStateOf("") }
-    var state by remember { mutableStateOf("") }
-    var city by remember { mutableStateOf("") }
-    var postCode by remember { mutableStateOf("") }
-    var address1 by remember { mutableStateOf("") }
-    var address2 by remember { mutableStateOf("") }
-    var phone by remember { mutableStateOf("") }
-
-    val stateArray = listOf(
-        "Alabama", "Alaska", "Arizona", "Arkansas", "California", "Colorado", "Connecticut",
-        "Delaware", "Florida", "Georgia", "Hawaii", "Idaho", "Illinois", "Indiana", "Iowa",
-        "Kansas", "Kentucky", "Louisiana", "Maine", "Maryland", "Massachusetts", "Michigan",
-        "Minnesota", "Mississippi", "Missouri", "Montana", "Nebraska", "Nevada", "New Hampshire",
-        "New Jersey", "New Mexico", "New York", "North Carolina", "North Dakota", "Ohio",
-        "Oklahoma", "Oregon", "Pennsylvania", "Rhode Island", "South Carolina", "South Dakota",
-        "Tennessee", "Texas", "Utah", "Vermont", "Virginia", "Washington", "West Virginia",
-        "Wisconsin", "Wyoming"
+    val plans = listOf(
+        Plan(1, "$10", 10, "1 Year"),
+        Plan(3, "$25", 25, "3 Years"),
+        Plan(5, "$35", 35, "5 Years")
     )
 
-    Column(
+    val addOns = listOf(
+        TokenAddOn(0, "None"),
+        TokenAddOn(1, "1 Token (+$3.00)"),
+        TokenAddOn(5, "5 Tokens (+$10.00)"),
+        TokenAddOn(10, "10 Tokens (+$15.00)"),
+        TokenAddOn(25, "25 Tokens (+$35.00)"),
+        TokenAddOn(50, "50 Tokens (+$60.00)"),
+        TokenAddOn(100, "100 Tokens (+$100.00)")
+    )
+
+    val primaryColor = Color(0xFF387DFF)
+    val backgroundColor = Color(0xFF0F0F1A)
+
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp)
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+            .background(backgroundColor)
     ) {
-        // MARK: - Card Information Section
-        Text("Card information", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-
-        DropdownField(
-            label = "Payment Method",
-            options = cardProviders,
-            selectedOption = cardProvider,
-            onOptionSelected = { cardProvider = it }
+        // Decorative Blurs
+        Box(
+            modifier = Modifier
+                .size(300.dp)
+                .offset(x = (-100).dp, y = (-100).dp)
+                .blur(80.dp)
+                .background(primaryColor.copy(alpha = 0.15f), RoundedCornerShape(150.dp))
         )
 
-        OutlinedTextField(
-            value = cardNum,
-            onValueChange = { cardNum = it },
-            label = { Text("Card number") },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            DropdownField(
-                label = "Month",
-                options = (1..12).map { it.toString() },
-                selectedOption = expireMonth.toString(),
-                onOptionSelected = { expireMonth = it.toInt() },
-                modifier = Modifier.weight(1f)
-            )
-
-            DropdownField(
-                label = "Year",
-                options = (currentYear..currentYear + 6).map { it.toString() },
-                selectedOption = expireYear.toString(),
-                onOptionSelected = { expireYear = it.toInt() },
-                modifier = Modifier.weight(1f)
-            )
-        }
-
-        OutlinedTextField(
-            value = cvv,
-            onValueChange = { if (it.length <= 3) cvv = it }, // Limits to 3 chars
-            label = { Text("CVV") },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // MARK: - Billing Information Section
-        Text("Billing information", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-
-        OutlinedTextField(value = firstName, onValueChange = { firstName = it }, label = { Text("First name") }, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(value = lastName, onValueChange = { lastName = it }, label = { Text("Last name") }, modifier = Modifier.fillMaxWidth())
-
-        DropdownField(
-            label = "State",
-            options = stateArray,
-            selectedOption = state,
-            onOptionSelected = { state = it }
-        )
-
-        OutlinedTextField(value = city, onValueChange = { city = it }, label = { Text("City") }, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(value = address1, onValueChange = { address1 = it }, label = { Text("Billing address") }, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(value = address2, onValueChange = { address2 = it }, label = { Text("Billing address, line 2") }, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(value = postCode, onValueChange = { postCode = it }, label = { Text("Zip/postal code") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(value = phone, onValueChange = { phone = it }, label = { Text("Phone number") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone), modifier = Modifier.fillMaxWidth())
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Button(
-            onClick = {
-                // Submit logic here
-                // val info = Payment(...)
-            },
-            modifier = Modifier.fillMaxWidth()
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp)
         ) {
-            Text("Submit")
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            // Header
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                IconButton(onClick = onDismiss) {
+                    Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White.copy(alpha = 0.4f))
+                }
+            }
+
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    text = "LookSee",
+                    color = primaryColor,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = if (selectedTab == 1) "Token Store" else "Upgrade to Business",
+                    color = Color.White,
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Segmented Picker
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
+                    .padding(4.dp)
+            ) {
+                TabItem(
+                    text = "Free Trial",
+                    isSelected = selectedTab == 2,
+                    onClick = { selectedTab = 2 },
+                    modifier = Modifier.weight(1f)
+                )
+                TabItem(
+                    text = "Plan",
+                    isSelected = selectedTab == 0,
+                    onClick = { selectedTab = 0 },
+                    modifier = Modifier.weight(1f)
+                )
+                TabItem(
+                    text = "Tokens",
+                    isSelected = selectedTab == 1,
+                    onClick = { selectedTab = 1 },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(32.dp))
+
+            when (selectedTab) {
+                0 -> PlanView(plans, selectedPlanIndex, { selectedPlanIndex = it }, addOns, selectedAddOnIndex, { selectedAddOnIndex = it }, primaryColor)
+                1 -> TokenStoreView(vm, primaryColor)
+                2 -> FreeTrialView(primaryColor)
+            }
+
+            Spacer(modifier = Modifier.weight(1f))
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Row(
+                modifier = Modifier.align(Alignment.CenterHorizontally),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Icon(Icons.Default.Lock, contentDescription = null, tint = Color.White.copy(alpha = 0.58f), modifier = Modifier.size(12.dp))
+                Text(
+                    text = "Secured by Stripe. Cancel at any time.",
+                    color = Color.White.copy(alpha = 0.58f),
+                    fontSize = 11.sp
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(16.dp))
         }
     }
 }
 
-// Reusable dropdown helper to keep the main view clean (replaces SwiftUI Picker)
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DropdownField(
-    label: String,
-    options: List<String>,
-    selectedOption: String,
-    onOptionSelected: (String) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    var expanded by remember { mutableStateOf(false) }
-
-    ExposedDropdownMenuBox(
-        expanded = expanded,
-        onExpandedChange = { expanded = !expanded },
+fun TabItem(text: String, isSelected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Box(
         modifier = modifier
+            .height(36.dp)
+            .background(
+                if (isSelected) Color.White.copy(alpha = 0.15f) else Color.Transparent,
+                RoundedCornerShape(8.dp)
+            )
+            .clickable { onClick() },
+        contentAlignment = Alignment.Center
     ) {
-        OutlinedTextField(
-            value = selectedOption,
-            onValueChange = {},
-            readOnly = true,
-            label = { Text(label) },
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-            colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
-            modifier = Modifier
-                .menuAnchor()
-                .fillMaxWidth()
+        Text(
+            text = text,
+            color = if (isSelected) Color.White else Color.White.copy(alpha = 0.6f),
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold
         )
-        ExposedDropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false }
-        ) {
-            options.forEach { selectionOption ->
-                DropdownMenuItem(
-                    text = { Text(selectionOption) },
-                    onClick = {
-                        onOptionSelected(selectionOption)
-                        expanded = false
-                    }
-                )
+    }
+}
+
+@Composable
+fun PlanView(
+    plans: List<Plan>,
+    selectedPlanIndex: Int,
+    onPlanSelected: (Int) -> Unit,
+    addOns: List<TokenAddOn>,
+    selectedAddOnIndex: Int,
+    onAddOnSelected: (Int) -> Unit,
+    primaryColor: Color
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color.White.copy(alpha = 0.04f), RoundedCornerShape(24.dp))
+            .border(1.5.dp, primaryColor.copy(alpha = 0.8f), RoundedCornerShape(24.dp))
+            .padding(24.dp)
+    ) {
+        Text("Business Membership", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        Text("Select plan duration and included tokens.", color = Color.White.copy(alpha = 0.58f), fontSize = 13.sp)
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            plans.forEachIndexed { index, plan ->
+                val isSelected = selectedPlanIndex == index
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .background(
+                            if (isSelected) primaryColor.copy(alpha = 0.2f) else Color.White.copy(alpha = 0.05f),
+                            RoundedCornerShape(12.dp)
+                        )
+                        .border(
+                            if (isSelected) 2.dp else 1.dp,
+                            if (isSelected) primaryColor else Color.White.copy(alpha = 0.1f),
+                            RoundedCornerShape(12.dp)
+                        )
+                        .clickable { onPlanSelected(index) }
+                        .padding(vertical = 10.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(plan.label, color = if (isSelected) Color.White else Color.White.copy(alpha = 0.58f), fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Text(plan.priceString, color = if (isSelected) primaryColor else Color.White, fontSize = 18.sp, fontWeight = FontWeight.Black)
+                    Text("${plan.baseTokens} Tokens", color = Color.White.copy(alpha = 0.58f), fontSize = 10.sp, fontWeight = FontWeight.Medium)
+                }
             }
         }
+
+        Spacer(modifier = Modifier.height(14.dp))
+        HorizontalDivider(color = Color.White.copy(alpha = 0.12f))
+        Spacer(modifier = Modifier.height(14.dp))
+
+        VStack(spacing = 10.dp) {
+            FeatureRow("Tokens included instantly", primaryColor)
+            FeatureRow("Add or swap landmarks anytime", primaryColor)
+            FeatureRow("Unlock promotion dashboard", primaryColor)
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+        HorizontalDivider(color = Color.White.copy(alpha = 0.12f))
+        Spacer(modifier = Modifier.height(14.dp))
+
+        Text("Optional Token Add-on", color = Color.White.copy(alpha = 0.58f), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        
+        // Simplified Spinner/Picker
+        var expanded by remember { mutableStateOf(false) }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp)
+                .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(10.dp))
+                .clickable { expanded = true }
+                .padding(10.dp)
+        ) {
+            Text(addOns[selectedAddOnIndex].label, color = Color.White, fontSize = 14.sp)
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                addOns.forEachIndexed { index, addOn ->
+                    DropdownMenuItem(
+                        text = { Text(addOn.label) },
+                        onClick = { 
+                            onAddOnSelected(index)
+                            expanded = false
+                        }
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Button(
+            onClick = { /* Handle Subscribe */ },
+            modifier = Modifier.fillMaxWidth().height(56.dp),
+            shape = RoundedCornerShape(14.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = primaryColor)
+        ) {
+            Text("Subscribe", fontSize = 15.sp, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
+fun TokenStoreView(vm: AuthViewModel, primaryColor: Color) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(24.dp)) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Icon(imageVector = Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(48.dp), tint = primaryColor)
+            Text(text = vm.tokenBalance.toString(), fontSize = 42.sp, fontWeight = FontWeight.Black, color = Color.White)
+            Text(text = "Tokens Available", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.58f))
+        }
+
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("What are tokens?", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            Text(
+                "A token can be used to add another landmark to your account or swap an existing one out. Removing a landmark is free.",
+                color = Color.White.copy(alpha = 0.58f),
+                fontSize = 13.sp,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 8.dp)
+            )
+        }
+
+        Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Buy Token Packs", color = Color.White.copy(alpha = 0.58f), fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 20.dp))
+            
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color.White.copy(alpha = 0.04f), RoundedCornerShape(20.dp))
+                    .padding(vertical = 8.dp)
+            ) {
+                TokenBundleRow(1, "$3.00", primaryColor)
+                HorizontalDivider(modifier = Modifier.padding(start = 68.dp), color = Color.White.copy(alpha = 0.1f))
+                TokenBundleRow(5, "$10.00", primaryColor)
+                HorizontalDivider(modifier = Modifier.padding(start = 68.dp), color = Color.White.copy(alpha = 0.1f))
+                TokenBundleRow(10, "$15.00", primaryColor)
+            }
+        }
+    }
+}
+
+@Composable
+fun TokenBundleRow(tokens: Int, price: String, primaryColor: Color) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { }
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .background(primaryColor.copy(alpha = 0.15f), RoundedCornerShape(18.dp)),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(tokens.toString(), color = primaryColor, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+        }
+        Text("$tokens Tokens", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+        Spacer(modifier = Modifier.weight(1f))
+        Text(price, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+fun FreeTrialView(primaryColor: Color) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color.White.copy(alpha = 0.04f), RoundedCornerShape(24.dp))
+            .border(1.5.dp, Color.Yellow.copy(alpha = 0.5f), RoundedCornerShape(24.dp))
+            .padding(24.dp)
+    ) {
+        Text("14-Day Free Trial", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        
+        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(2.dp), modifier = Modifier.padding(top = 4.dp)) {
+            Text("$0", color = Color.White, fontSize = 34.sp, fontWeight = FontWeight.Black)
+            Text("/14 days", color = Color.White.copy(alpha = 0.58f), fontSize = 14.sp, modifier = Modifier.padding(bottom = 6.dp))
+        }
+
+        Text("Test out the platform risk-free with zero commitment.", color = Color.White.copy(alpha = 0.58f), fontSize = 13.sp, modifier = Modifier.padding(top = 2.dp))
+
+        Spacer(modifier = Modifier.height(14.dp))
+        HorizontalDivider(color = Color.White.copy(alpha = 0.12f))
+        Spacer(modifier = Modifier.height(14.dp))
+
+        VStack(spacing = 10.dp) {
+            FeatureRow("Includes exactly 2 Tokens", primaryColor)
+            FeatureRow("Full access to business tools", primaryColor)
+            FeatureRow("Auto-renews to 1-Year Plan ($10)", primaryColor)
+        }
+
+        Spacer(modifier = Modifier.height(32.dp))
+        
+        Text(
+            "Payment information is required to start your trial. You will not be charged today. Cancel anytime.",
+            color = Color.White.copy(alpha = 0.58f),
+            fontSize = 11.sp,
+            modifier = Modifier.padding(bottom = 16.dp)
+        )
+
+        Button(
+            onClick = { /* Handle Trial */ },
+            modifier = Modifier.fillMaxWidth().height(56.dp),
+            shape = RoundedCornerShape(14.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color.Yellow.copy(alpha = 0.8f))
+        ) {
+            Text("Start Free Trial", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.Black)
+        }
+    }
+}
+
+@Composable
+fun FeatureRow(text: String, primaryColor: Color) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = primaryColor, modifier = Modifier.size(15.dp))
+        Text(text, color = Color.White.copy(alpha = 0.8f), fontSize = 13.sp)
     }
 }

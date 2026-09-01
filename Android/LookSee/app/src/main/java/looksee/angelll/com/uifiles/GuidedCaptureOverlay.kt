@@ -1,6 +1,8 @@
 package looksee.angelll.com.uifiles
 
 import androidx.compose.animation.*
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -16,13 +18,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
-import kotlin.time.Duration.Companion.seconds // Added this import for the warning fix!
+import kotlin.time.Duration.Companion.seconds
 
 enum class RecordingPhase(val message: String) {
     FRONT("Step 1: Pan video across the front of the landmark"),
@@ -42,7 +45,6 @@ fun GuidedCaptureOverlay(
         mutableStateOf(if (isNegative) RecordingPhase.NEGATIVE else RecordingPhase.FRONT)
     }
 
-    // Fixed the Legacy Long warning here using .seconds
     LaunchedEffect(isRecording) {
         if (isRecording) {
             if (!isNegative) {
@@ -56,7 +58,6 @@ fun GuidedCaptureOverlay(
                 }
             }
         } else {
-            // Reset when recording stops
             if (!isNegative) {
                 currentPhase = RecordingPhase.FRONT
             }
@@ -64,6 +65,11 @@ fun GuidedCaptureOverlay(
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
+        // Pulsing Reticle in the center
+        if (isRecording) {
+            PulsingReticle(modifier = Modifier.align(Alignment.Center))
+        }
+
         // Invisible catch-all for taps to dismiss
         Box(
             modifier = Modifier
@@ -95,7 +101,7 @@ fun GuidedCaptureOverlay(
                         .height(220.dp)
                         .clip(RoundedCornerShape(20.dp))
                         .background(Color(0xFF1C1C29).copy(alpha = 0.95f))
-                        .border(2.dp, Color.Blue.copy(alpha = 0.5f), RoundedCornerShape(20.dp))
+                        .border(2.dp, Color(0xFF387DFF).copy(alpha = 0.5f), RoundedCornerShape(20.dp))
                         .padding(24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically)
@@ -103,7 +109,7 @@ fun GuidedCaptureOverlay(
                     Icon(
                         imageVector = Icons.Default.Info,
                         contentDescription = "Info",
-                        tint = Color.Blue,
+                        tint = Color(0xFF387DFF),
                         modifier = Modifier.size(40.dp)
                     )
 
@@ -126,6 +132,56 @@ fun GuidedCaptureOverlay(
         }
     }
 }
+
+@Composable
+fun PulsingReticle(modifier: Modifier = Modifier) {
+    val infiniteTransition = rememberInfiniteTransition(label = "ReticlePulse")
+    val scale by infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 1.2f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1000, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "Scale"
+    )
+    val opacity by infiniteTransition.animateFloat(
+        initialValue = 0.4f,
+        targetValue = 0.8f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1000, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "Opacity"
+    )
+
+    Canvas(modifier = modifier.size(80.dp)) {
+        val strokeWidth = 3.dp.toPx()
+        val radius = (size.minDimension / 2) * scale
+        
+        drawCircle(
+            color = Color(0xFF387DFF).copy(alpha = opacity),
+            radius = radius,
+            style = Stroke(width = strokeWidth)
+        )
+        
+        // Reticle crosshairs
+        val lineLength = 15.dp.toPx()
+        drawLine(
+            color = Color(0xFF387DFF).copy(alpha = opacity),
+            start = center.copy(x = center.x - lineLength),
+            end = center.copy(x = center.x + lineLength),
+            strokeWidth = strokeWidth
+        )
+        drawLine(
+            color = Color(0xFF387DFF).copy(alpha = opacity),
+            start = center.copy(y = center.y - lineLength),
+            end = center.copy(y = center.y + lineLength),
+            strokeWidth = strokeWidth
+        )
+    }
+}
+
 
 @Preview(showBackground = true, backgroundColor = 0xFF000000)
 @Composable

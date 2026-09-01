@@ -6,10 +6,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -32,12 +33,17 @@ fun PrivacyPolicy(onDismiss: () -> Unit) {
     }
 
     Scaffold(
+        containerColor = Color(0xFF0F0F1A),
         topBar = {
             TopAppBar(
-                title = { Text("Privacy Policy", fontSize = 18.sp) },
+                title = { Text("Privacy Policy", fontSize = 18.sp, color = Color.White) },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color(0xFF0F0F1A),
+                    navigationIconContentColor = Color.White
+                ),
                 navigationIcon = {
                     IconButton(onClick = onDismiss) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 }
             )
@@ -46,6 +52,7 @@ fun PrivacyPolicy(onDismiss: () -> Unit) {
         Text(
             text = termsText,
             fontSize = 15.sp,
+            color = Color.White.copy(alpha = 0.8f),
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)

@@ -279,20 +279,18 @@ while True:
     if landmark_id:
         landmarks_table = dynamodb.Table(LANDMARKS_TABLE_NAME)
         
-        # Frame math was already validated by the Lambda. 
-        # Now we just mark it ready for SageMaker.
-        print(f"✅ AUTOLABELING COMPLETE: {labeled_count} frames successfully labeled. Ready for training!")
+        print(f"✅ AUTOLABELING COMPLETE: {labeled_count} frames successfully labeled. Handing off to SageMaker!")
         try:
             landmarks_table.update_item(
                 Key={'landmarkId': landmark_id},
                 UpdateExpression="SET #st = :s, finalLabeledCount = :c",
                 ExpressionAttributeNames={'#st': 'status'},
                 ExpressionAttributeValues={
-                    ':s': 'READY_FOR_TRAINING',
+                    ':s': 'PENDING_TRAINING', 
                     ':c': labeled_count
                 }
             )
-            print("💾 Successfully updated DynamoDB landmark status to 'READY_FOR_TRAINING'.")
+            print("💾 Successfully updated DynamoDB landmark status to 'PENDING_TRAINING'.") # THE FIX: Fixed print statement
         except Exception as e:
             print(f"⚠️ Failed to update DynamoDB success status: {e}")
     else:

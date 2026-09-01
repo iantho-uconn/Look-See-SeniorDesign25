@@ -41,7 +41,7 @@ private val primaryColor = Color(0xFF387DFF)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ArchiveView(vm: AuthViewModel) {
+fun ArchiveView(vm: AuthViewModel, onBack: () -> Unit) {
     val context = LocalContext.current
     val offlineManager = remember { OfflineMediaManager.shared(context) }
     val archivedItems by offlineManager.archivedItems.collectAsState()
@@ -53,6 +53,7 @@ fun ArchiveView(vm: AuthViewModel) {
     var showInfoSheet by remember { mutableStateOf(false) }
     var selectedMedia by remember { mutableStateOf<ArchivedMedia?>(null) }
     var editingMedia by remember { mutableStateOf<ArchivedMedia?>(null) }
+    var showDiscardAllDialog by remember { mutableStateOf(false) }
 
     val coroutineScope = rememberCoroutineScope()
 
@@ -68,19 +69,26 @@ fun ArchiveView(vm: AuthViewModel) {
                 title = { Text("Upload Queue", color = Color.White) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = backgroundColor),
                 navigationIcon = {
-                    IconButton(onClick = {
-                        if (isUploading) autoUploadManager.stopProcessing()
-                        else autoUploadManager.startProcessing()
-                    }) {
-                        Icon(
-                            imageVector = if (isUploading) Icons.Default.PauseCircleFilled else Icons.Default.PlayCircleFilled,
-                            contentDescription = "Toggle Upload",
-                            tint = if (isUploading) Color(0xFFFFA500) else Color.Green,
-                            modifier = Modifier.size(28.dp)
-                        )
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
                     }
                 },
                 actions = {
+                    if (archivedItems.isNotEmpty()) {
+                        IconButton(onClick = {
+                            if (isUploading) autoUploadManager.stopProcessing()
+                            else autoUploadManager.startProcessing()
+                        }) {
+                            Icon(
+                                imageVector = if (isUploading) Icons.Default.PauseCircleFilled else Icons.Default.PlayCircleFilled,
+                                contentDescription = "Toggle Upload",
+                                tint = if (isUploading) Color(0xFFFFA500) else Color.Green
+                            )
+                        }
+                        IconButton(onClick = { showDiscardAllDialog = true }) {
+                            Icon(Icons.Default.DeleteSweep, contentDescription = "Discard All", tint = Color.White)
+                        }
+                    }
                     IconButton(onClick = { showInfoSheet = true }) {
                         Icon(Icons.Default.HelpOutline, contentDescription = "Info", tint = Color.White)
                     }
@@ -110,6 +118,37 @@ fun ArchiveView(vm: AuthViewModel) {
                     }
                 }
             }
+        }
+
+        // Discard All Dialog
+        if (showDiscardAllDialog) {
+            AlertDialog(
+                onDismissRequest = { showDiscardAllDialog = false },
+                title = { Text("Discard All Items?") },
+                text = { Text("This will permanently delete all queued media. This action cannot be undone.") },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            coroutineScope.launch {
+                                autoUploadManager.stopProcessing()
+                                archivedItems.forEach { offlineManager.deleteArchive(it) }
+                                showDiscardAllDialog = false
+                            }
+                        },
+                        colors = ButtonDefaults.textButtonColors(contentColor = Color.Red)
+                    ) {
+                        Text("Discard All")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDiscardAllDialog = false }) {
+                        Text("Cancel")
+                    }
+                },
+                containerColor = cardColor,
+                titleContentColor = Color.White,
+                textContentColor = Color.Gray
+            )
         }
 
         // Info Sheet

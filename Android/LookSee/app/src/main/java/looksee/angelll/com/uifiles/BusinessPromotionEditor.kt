@@ -21,6 +21,9 @@ import looksee.angelll.com.models.BusinessLandmark
 import looksee.angelll.com.models.BusinessPromotion
 import looksee.angelll.com.models.BusinessPromotionEditorContext
 import looksee.angelll.com.models.BusinessPromotionService
+import looksee.angelll.com.ui.theme.AppleBlue
+import looksee.angelll.com.ui.theme.LookSeeCard
+import looksee.angelll.com.ui.theme.LookSeeSectionHeader
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -117,10 +120,10 @@ fun BusinessPromotionEditor(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(context.navigationTitle) },
+                title = { Text(context.navigationTitle, fontWeight = FontWeight.Bold) },
                 navigationIcon = {
-                    IconButton(onClick = onDismiss, enabled = !isSaving) {
-                        Text("Cancel", color = Color(0xFF007AFF), modifier = Modifier.padding(horizontal = 8.dp))
+                    TextButton(onClick = onDismiss, enabled = !isSaving) {
+                        Text("Cancel", color = AppleBlue, fontWeight = FontWeight.Medium)
                     }
                 },
                 actions = {
@@ -128,78 +131,94 @@ fun BusinessPromotionEditor(
                         onClick = savePromotion,
                         enabled = !isSaving && name.trim().isNotEmpty()
                     ) {
-                        if (isSaving) CircularProgressIndicator(modifier = Modifier.size(20.dp))
-                        else Text(context.saveButtonTitle, fontWeight = FontWeight.Bold, color = Color(0xFF007AFF))
+                        if (isSaving) CircularProgressIndicator(modifier = Modifier.size(20.dp), color = AppleBlue)
+                        else Text(context.saveButtonTitle, fontWeight = FontWeight.Bold, color = AppleBlue)
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Black, titleContentColor = Color.White)
             )
         },
-        containerColor = Color(0xFFF2F2F7)
+        containerColor = Color.Black
     ) { paddingValues ->
         LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(paddingValues).padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(24.dp)
+            modifier = Modifier.fillMaxSize().padding(paddingValues),
+            contentPadding = PaddingValues(bottom = 40.dp)
         ) {
+            item { LookSeeSectionHeader("Landmark") }
             item {
-                SettingsSection(header = "Landmark") {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text(landmark.label.ifEmpty { "Untitled Landmark" }, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                        Text(landmark.landmarkId, fontSize = 12.sp, color = Color.Gray)
-                    }
+                LookSeeCard(modifier = Modifier.padding(horizontal = 16.dp)) {
+                    Text(landmark.label.ifEmpty { "Untitled Landmark" }, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.White)
+                    Text(landmark.landmarkId, fontSize = 12.sp, color = Color.Gray)
                 }
             }
 
+            item { LookSeeSectionHeader("Promotion Details") }
             item {
-                SettingsSection(
-                    header = "Promotion Details",
-                    footer = "This promotion can be shown for this landmark when both the promotion and the landmark's Promotions Enabled setting are on."
-                ) {
+                LookSeeCard(modifier = Modifier.padding(horizontal = 16.dp)) {
                     OutlinedTextField(
                         value = name, onValueChange = { name = it },
-                        placeholder = { Text("Promotion name") },
+                        placeholder = { Text("Promotion name", color = Color.Gray) },
                         enabled = !isSaving,
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent)
                     )
+                    Spacer(Modifier.height(16.dp))
                     OutlinedTextField(
                         value = description, onValueChange = { description = it },
-                        placeholder = { Text("Promotion description") },
+                        placeholder = { Text("Promotion description", color = Color.Gray) },
                         enabled = !isSaving,
                         minLines = 3, maxLines = 4,
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent)
                     )
+                    Spacer(Modifier.height(16.dp))
                     OutlinedTextField(
                         value = imageUrl, onValueChange = { imageUrl = it },
-                        placeholder = { Text("Image URL (optional)") },
+                        placeholder = { Text("Image URL (optional)", color = Color.Gray) },
                         enabled = !isSaving,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, autoCorrectEnabled = false),
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent)
                     )
+                    Spacer(Modifier.height(16.dp))
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text("Enabled", fontSize = 16.sp)
-                        Switch(checked = enabled, onCheckedChange = { enabled = it }, enabled = !isSaving)
+                        Text("Enabled", fontSize = 16.sp, color = Color.White)
+                        Switch(
+                            checked = enabled,
+                            onCheckedChange = { enabled = it },
+                            enabled = !isSaving,
+                            colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFFFFA500), checkedTrackColor = Color(0xFFFFA500).copy(alpha = 0.5f))
+                        )
                     }
                 }
+                Text(
+                    "This promotion can be shown for this landmark when both the promotion and the landmark's Promotions Enabled setting are on.",
+                    fontSize = 13.sp, color = Color.Gray, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+                )
             }
 
+            item { LookSeeSectionHeader("Dates") }
             item {
-                SettingsSection(header = "Dates") {
+                LookSeeCard(modifier = Modifier.padding(horizontal = 16.dp)) {
                     Row(
-                        modifier = Modifier.fillMaxWidth().clickable(enabled = !isSaving) { showStartDatePicker = true }.padding(16.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        modifier = Modifier.fillMaxWidth().clickable(enabled = !isSaving) { showStartDatePicker = true }.padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Start Date", fontSize = 16.sp)
+                        Text("Start Date", fontSize = 16.sp, color = Color.White)
                         Text(startDate.format(dateFormatter), color = Color.Gray)
                     }
-                    HorizontalDivider()
+                    HorizontalDivider(Modifier.padding(vertical = 12.dp), color = Color.Gray.copy(alpha = 0.2f))
                     Row(
-                        modifier = Modifier.fillMaxWidth().clickable(enabled = !isSaving) { showEndDatePicker = true }.padding(16.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        modifier = Modifier.fillMaxWidth().clickable(enabled = !isSaving) { showEndDatePicker = true }.padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("End Date", fontSize = 16.sp)
+                        Text("End Date", fontSize = 16.sp, color = Color.White)
                         Text(endDate.format(dateFormatter), color = Color.Gray)
                     }
                 }
@@ -207,8 +226,8 @@ fun BusinessPromotionEditor(
 
             if (errorMessage != null) {
                 item {
-                    SettingsSection {
-                        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.Top) {
+                    LookSeeCard(modifier = Modifier.padding(16.dp)) {
+                        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
                             Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFFFA500))
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(errorMessage!!, fontSize = 13.sp, color = Color.Gray)
@@ -229,9 +248,9 @@ fun BusinessPromotionEditor(
                             startDate = Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate()
                         }
                         showStartDatePicker = false
-                    }) { Text("OK") }
+                    }) { Text("OK", color = AppleBlue) }
                 },
-                dismissButton = { TextButton(onClick = { showStartDatePicker = false }) { Text("Cancel") } }
+                dismissButton = { TextButton(onClick = { showStartDatePicker = false }) { Text("Cancel", color = AppleBlue) } }
             ) {
                 DatePicker(state = datePickerState)
             }
@@ -247,9 +266,9 @@ fun BusinessPromotionEditor(
                             endDate = Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate()
                         }
                         showEndDatePicker = false
-                    }) { Text("OK") }
+                    }) { Text("OK", color = AppleBlue) }
                 },
-                dismissButton = { TextButton(onClick = { showEndDatePicker = false }) { Text("Cancel") } }
+                dismissButton = { TextButton(onClick = { showEndDatePicker = false }) { Text("Cancel", color = AppleBlue) } }
             ) {
                 DatePicker(state = datePickerState)
             }

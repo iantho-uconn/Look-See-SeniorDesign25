@@ -9,6 +9,8 @@ subprocess.check_call([sys.executable, "-m", "pip", "install", "-U", "ultralytic
 import json
 import shutil
 import yaml
+import boto3
+from botocore.exceptions import ClientError
 from ultralytics import YOLO
 
 
@@ -301,6 +303,37 @@ def copy_artifacts_to_model_dir(
             )
 
 
+# 🚀 NEW: The DynamoDB UI Hook
+def notify_training_started(manifest):
+    """Pings DynamoDB the exact second the SageMaker GPU starts training."""
+    try:
+        print("\n🚀 Notifying DynamoDB: Setting pipeline status to TRAINING_MODEL...")
+        dynamodb = boto3.resource('dynamodb', region_name=os.environ.get("AWS_REGION", "us-east-1"))
+        table_name = os.environ.get("LANDMARKS_TABLE", "LookSeeLandmarks")
+        table = dynamodb.Table(table_name)
+        
+        landmarks = manifest.get("landmarks", {})
+        updated_count = 0
+        
+        for key, entry in landmarks.items():
+            landmark_id = entry.get("landmarkId")
+            if landmark_id:
+                try:
+                    table.update_item(
+                        Key={'landmarkId': landmark_id},
+                        UpdateExpression="SET #st = :s",
+                        ExpressionAttributeNames={'#st': 'status'},
+                        ExpressionAttributeValues={':s': 'TRAINING_MODEL'}
+                    )
+                    updated_count += 1
+                except ClientError as e:
+                    print(f" ⚠️ Failed to update {landmark_id}: {e}")
+                    
+        print(f"✅ Successfully flipped {updated_count} landmarks to 'In Training' status.")
+    except Exception as e:
+        print(f"⚠️ Notice: Could not update DynamoDB training status (Missing IAM Role Permissions?). Training will proceed normally. Error: {e}")
+
+
 def main():
     print("🚀 Starting YOLO SageMaker Training...")
 
@@ -328,6 +361,9 @@ def main():
     manifest = load_and_validate_landmark_manifest(
         landmark_manifest
     )
+
+    # 🚀 THE FIX: Instantly trigger the Yellow iOS Badge now that the GPU is awake!
+    notify_training_started(manifest)
 
     manifest_class_count = int(
         manifest["classCount"]
