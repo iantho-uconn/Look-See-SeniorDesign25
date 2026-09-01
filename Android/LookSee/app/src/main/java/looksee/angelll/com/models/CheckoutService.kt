@@ -5,7 +5,6 @@ import com.google.gson.Gson
 enum class CheckoutPurchaseType(val wireValue: String) {
     YEARLY_SUBSCRIPTION("yearly_subscription"),
     TOKEN_PACK("token_pack"),
-    SUBSCRIPTION("subscription"),
     CONFIRM_SUCCESS("confirm_success"),
 }
 
@@ -62,13 +61,19 @@ data class CheckoutPrepareRequest(
         fun businessSetup(
             account: SubscriptionAccountState,
             selectedPlanIndex: Int,
-        ) = CheckoutPrepareRequest(
-            purchaseType = CheckoutPurchaseType.SUBSCRIPTION.wireValue,
-            userId = account.userId,
-            userEmail = account.userEmail,
-            selectedPlanIndex = selectedPlanIndex,
-            stripeSubscriptionId = account.stripeSubscriptionId,
-        )
+        ): CheckoutPrepareRequest {
+            val plan = SubscriptionCatalog.plans.getOrNull(selectedPlanIndex)
+                ?: SubscriptionCatalog.plans[0]
+            return CheckoutPrepareRequest(
+                purchaseType = CheckoutPurchaseType.YEARLY_SUBSCRIPTION.wireValue,
+                userId = account.userId,
+                userEmail = account.userEmail,
+                planYears = plan.years,
+                planCents = plan.priceCents,
+                addOnCents = 0,
+                tokenCount = plan.baseTokens,
+            )
+        }
     }
 }
 

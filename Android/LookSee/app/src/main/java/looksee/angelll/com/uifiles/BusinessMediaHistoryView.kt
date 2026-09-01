@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -11,6 +12,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -19,6 +21,10 @@ import kotlinx.coroutines.launch
 import looksee.angelll.com.models.*
 import looksee.angelll.com.viewmodels.*
 import looksee.angelll.com.services.*
+import coil.compose.AsyncImage
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -144,52 +150,110 @@ fun BusinessMediaHistoryRow(
     retryError: String?,
     onRetry: () -> Unit
 ) {
-    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            BusinessMediaThumbnail(item)
+    Row(
+        modifier = Modifier
+            .padding(14.dp)
+            .fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        verticalAlignment = Alignment.Top
+    ) {
+        BusinessMediaThumbnail(item)
 
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(item.roleAndMediaTitle, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Icon(Icons.Default.AccountCircle, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(14.dp))
-                    Text(item.uploadedBy.displayText, fontSize = 12.sp, color = Color.Gray)
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+            Text(
+                text = item.roleAndMediaTitle,
+                fontWeight = FontWeight.Bold,
+                fontSize = 17.sp,
+                lineHeight = 22.sp
+            )
+
+            BusinessMediaStatusBadge(item)
+
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Icon(Icons.Default.AccountCircle, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(14.dp))
+                Text(item.uploadedBy.displayText, fontSize = 13.sp, color = Color.Gray)
+            }
+
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Icon(Icons.Default.CalendarToday, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(14.dp))
+                val dateText = remember(item.uploadInstant) {
+                    item.uploadInstant?.let {
+                        DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM)
+                            .withZone(ZoneId.systemDefault())
+                            .format(it)
+                    } ?: item.uploadedAtISO ?: "Date unavailable"
                 }
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Icon(Icons.Default.CalendarToday, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(14.dp))
-                    Text(item.uploadedAtISO ?: "Unknown date", fontSize = 12.sp, color = Color.Gray)
+                Text(dateText, fontSize = 13.sp, color = Color.Gray)
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("Submission ID", fontSize = 11.sp, color = Color.Gray)
+                Text(
+                    text = item.submissionId,
+                    fontSize = 12.sp,
+                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                    color = Color.White,
+                    maxLines = 1
+                )
+            }
+
+            if (item.displayFilename.isNotEmpty()) {
+                Text(
+                    text = item.displayFilename,
+                    fontSize = 12.sp,
+                    color = Color.Gray,
+                    maxLines = 1
+                )
+            }
+
+            if (item.isProcessingDelayed) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(Icons.Default.Error, contentDescription = null, tint = Color(0xFFFFA500), modifier = Modifier.size(14.dp))
+                    Text(
+                        "Processing longer than expected",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFFFFA500)
+                    )
                 }
             }
 
-            BusinessMediaStatusBadge(item)
-        }
-
-        if (item.submissionId.isNotEmpty()) {
-            Text("ID: ${item.submissionId}", fontSize = 11.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, color = Color.Gray)
-        }
-
-        if (item.displayFilename.isNotEmpty()) {
-            Text("File: ${item.displayFilename}", fontSize = 11.sp, color = Color.Gray)
-        }
-
-        if (item.isProcessingDelayed) {
-            Row(
-                modifier = Modifier.fillMaxWidth().background(Color(0xFFFFF9E6), RoundedCornerShape(8.dp)).padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Icon(Icons.Default.Error, contentDescription = null, tint = Color(0xFFFFA500), modifier = Modifier.size(18.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Processing is taking longer than expected.", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                    if (retryError != null) {
-                        Text(retryError, fontSize = 12.sp, color = Color.Red)
+            if (item.canRetryProcessing) {
+                Button(
+                    onClick = onRetry,
+                    enabled = !isRetrying,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.White.copy(alpha = 0.1f),
+                        contentColor = Color.White
+                    ),
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                    modifier = Modifier.height(32.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        if (isRetrying) {
+                            CircularProgressIndicator(modifier = Modifier.size(12.dp), strokeWidth = 2.dp, color = Color.White)
+                        } else {
+                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
+                        }
+                        Text(if (isRetrying) "Requeueing..." else "Retry Processing", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                     }
                 }
-                if (item.canRetryProcessing) {
-                    IconButton(onClick = onRetry, enabled = !isRetrying) {
-                        if (isRetrying) CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
-                        else Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-                    }
-                }
+            }
+
+            if (item.retryCount != null && item.retryCount > 0) {
+                Text(
+                    "Processing retried ${item.retryCount} time${if (item.retryCount == 1) "" else "s"}",
+                    fontSize = 11.sp,
+                    color = Color.Gray
+                )
+            }
+
+            if (retryError != null) {
+                Text(retryError, fontSize = 11.sp, color = Color.Red)
             }
         }
     }
@@ -200,19 +264,43 @@ fun BusinessMediaThumbnail(item: BusinessMediaHistoryItem) {
     Box(
         modifier = Modifier
             .size(width = 88.dp, height = 72.dp)
-            .background(Color(0xFFE5E5EA), RoundedCornerShape(8.dp)),
+            .clip(RoundedCornerShape(10.dp))
+            .background(Color.White.copy(alpha = 0.12f)),
         contentAlignment = Alignment.Center
     ) {
         val thumb = item.thumbnailUrl
-        if (thumb != null && thumb.isNotEmpty()) {
-            // In a real app, use Coil or similar to load the URL
-            // AsyncImage(model = thumb, contentDescription = null)
-            Icon(Icons.Default.Image, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(24.dp))
-        } else {
-            Icon(if (item.isVideo) Icons.Default.Videocam else Icons.Default.Image, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(24.dp))
+        if (!thumb.isNullOrEmpty()) {
+            AsyncImage(
+                model = thumb,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop
+            )
+        }
+ else {
+            Icon(
+                imageVector = if (item.isVideo) Icons.Default.Videocam else Icons.Default.Image,
+                contentDescription = null,
+                tint = Color.Gray,
+                modifier = Modifier.size(24.dp)
+            )
+        }
+
+        if (item.isVideo) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(5.dp)
+                    .size(20.dp)
+                    .background(Color.Black.copy(alpha = 0.65f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.White, modifier = Modifier.size(12.dp))
+            }
         }
     }
 }
+
 
 @Composable
 fun BusinessMediaStatusBadge(item: BusinessMediaHistoryItem) {

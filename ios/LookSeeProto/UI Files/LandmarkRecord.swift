@@ -69,7 +69,6 @@ struct LandmarkRecord: View {
     @State private var isStitchingVideos = false
     @State private var startrecording = false
     
-    // 🚀 THE FIX: New background queue alert replaces the old offline/completion ones
     @State private var showBackgroundUploadAlert = false
     @State private var capturedNegativeVideo: CapturedNegativeVideo? = nil
     @State private var showNegativeCamera = false
@@ -88,7 +87,6 @@ struct LandmarkRecord: View {
 
     private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00)
     
-    // 🚀 THE FIX: Converts the rounded ceiling Double directly into a pure Int
     private var uiTargetDuration: Int {
         if let needed = existingSecondsNeeded {
             return Int(ceil(needed))
@@ -98,7 +96,6 @@ struct LandmarkRecord: View {
         return 30
     }
     
-    // 🚀 THE FIX: Pure Int for the negative target duration
     private var negativeTargetDuration: Int {
         if existingLandmarkId != nil { return 1 }
         return 10
@@ -136,7 +133,7 @@ struct LandmarkRecord: View {
                     isActive: isActive,
                     isNavVisible: $isNavVisible,
                     uiTargetDuration: 90,
-                    minTotalTimeLimit: uiTargetDuration // 🚀 Passes pure Int here
+                    minTotalTimeLimit: uiTargetDuration
                 ) { urls in
                     pendingArchiveURLs = urls
                     processAndStitchPendingMedia()
@@ -244,7 +241,7 @@ struct LandmarkRecord: View {
         .fullScreenCover(isPresented: $showNegativeCamera) {
             NegativeVideoCameraView(
                 uiTargetDuration: 30,
-                minTotalTimeLimit: negativeTargetDuration // 🚀 Passes pure Int here
+                minTotalTimeLimit: negativeTargetDuration
             ) { video in
                 capturedNegativeVideo = video
                 if !hardNegativeUploadService.isUploading { hardNegativeUploadService.reset() }
@@ -252,7 +249,6 @@ struct LandmarkRecord: View {
         }
         .alert("Discard this upload?", isPresented: $showDiscardAlert) { Button("Discard", role: .destructive) { clearScreen() }; Button("Cancel", role: .cancel) { } } message: { Text("This will remove the media and clear the form.") }
         
-        // 🚀 THE FIX: Sleek background upload alert replaces network validation UI
         .alert("Upload Queued!", isPresented: $showBackgroundUploadAlert) {
             Button("Done", role: .cancel) {
                 clearScreen()
@@ -303,7 +299,6 @@ struct LandmarkRecord: View {
             VStack(spacing: 16) {
                 durationSummaryBanner
                 
-                // 🚀 THE FIX: Use indices instead of .enumerated() to avoid Tuple keypath crashes
                 ForEach(pickedVideoURLs.indices, id: \.self) { index in
                     let url = pickedVideoURLs[index]
                     ZStack(alignment: .topTrailing) {
@@ -579,7 +574,12 @@ struct LandmarkRecord: View {
                     
                     Button {
                         UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                        video.deleteLocalFile()
+                        
+                        // 🚀 THE FIX: Only delete it if it is a fresh camera recording, not a saved draft.
+                        if archivedMedia == nil {
+                            video.deleteLocalFile()
+                        }
+                        
                         capturedNegativeVideo = nil
                     } label: {
                         Image(systemName: "xmark")
@@ -654,7 +654,6 @@ struct LandmarkRecord: View {
         .padding(.horizontal)
     }
 
-    // 🚀 THE FIX: Always queues to the background immediately!
     private func startFullSubmission() {
         if completedPositiveResult == nil {
             if !vm.hasActiveSubscription {
@@ -677,7 +676,6 @@ struct LandmarkRecord: View {
             if businessLandmarkId == nil { businessLandmarkId = makeBusinessLandmarkId() }
             saveToArchiveFromForm()
             
-            // Tentatively deduct token locally so UI updates immediately
             if existingLandmarkId == nil {
                 Task { @MainActor in
                     vm.tokenBalance -= 1
@@ -686,10 +684,7 @@ struct LandmarkRecord: View {
             }
         }
         
-        // Wake up Auto Upload Manager to start right away
         AutoUploadManager.shared.forceRetry()
-        
-        // Show success alert
         showBackgroundUploadAlert = true
     }
 
@@ -830,9 +825,19 @@ struct LandmarkRecord: View {
 
     private func discardPendingMedia() { deleteAllTemporaryVideos(pendingArchiveURLs); pendingArchiveURLs = [] }
 
+    // 🚀 THE FIX: Safely handles Draft vs Temp files during cleanup
     private func clearScreen() {
-        deleteAllTemporaryVideos(pickedVideoURLs); capturedNegativeVideo?.deleteLocalFile(); pickedVideoURLs = []; clipDurations = [:]
-        pickedImage = nil; extractedLatitude = nil; extractedLongitude = nil;
+        deleteAllTemporaryVideos(pickedVideoURLs)
+        
+        // Only delete the negative video if it's a temporary camera file!
+        // This prevents the draft from deleting its own permanent negative video from the hard drive.
+        deleteTemporaryVideoIfNeeded(capturedNegativeVideo?.fileURL)
+        
+        pickedVideoURLs = []
+        clipDurations = [:]
+        pickedImage = nil
+        extractedLatitude = nil
+        extractedLongitude = nil
         
         if existingLandmarkId == nil {
             businessLandmarkId = nil
@@ -844,11 +849,14 @@ struct LandmarkRecord: View {
             shortDescription = existingDescription ?? ""
         }
         
-        capturedNegativeVideo = nil; completedPositiveResult = nil; completedLandmarkId = nil
+        capturedNegativeVideo = nil
+        completedPositiveResult = nil
+        completedLandmarkId = nil
         isFullSubmissionComplete = false
         withAnimation(.easeInOut(duration: 0.3)) { isFormVisible = false }
         statusText = String(localized: "No landmark media selected.")
-        uploadService.reset(); hardNegativeUploadService.reset()
+        uploadService.reset()
+        hardNegativeUploadService.reset()
     }
     
     private func resetForAnotherLandmark() { clearScreen() }
@@ -861,7 +869,13 @@ struct LandmarkRecord: View {
         statusText = pickedVideoURLs.isEmpty ? String(localized: "No media selected.") : String(localized: "Removed clip. \(pickedVideoURLs.count) remaining.")
     }
     
-    private func deleteTemporaryVideoIfNeeded(_ videoURL: URL?) { guard let url = videoURL, archivedMedia == nil else { return }; if url.standardizedFileURL.path.hasPrefix(FileManager.default.temporaryDirectory.standardizedFileURL.path) { try? FileManager.default.removeItem(at: url) } }
+    private func deleteTemporaryVideoIfNeeded(_ videoURL: URL?) {
+        guard let url = videoURL, archivedMedia == nil else { return }
+        if url.standardizedFileURL.path.hasPrefix(FileManager.default.temporaryDirectory.standardizedFileURL.path) {
+            try? FileManager.default.removeItem(at: url)
+        }
+    }
+    
     private func deleteAllTemporaryVideos(_ urls: [URL]) { urls.forEach { deleteTemporaryVideoIfNeeded($0) } }
 }
 

@@ -2,6 +2,7 @@ package looksee.angelll.com.uifiles
 
 import android.net.Uri
 import android.util.Log
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -548,6 +549,28 @@ fun Tier2LandmarkRecordScreen(
         }
     }
 
+    if (showVideoPicker) {
+        Tier2CameraView(
+            onVideoRecorded = { uri, location ->
+                pendingArchiveUri = uri
+                pendingArchiveLocation = location
+                showVideoPicker = false
+                showArchivePrompt = true
+            },
+            onDismiss = { showVideoPicker = false }
+        )
+    }
+
+    if (showNegativeCamera) {
+        NegativeVideoCameraView(
+            onDone = { video ->
+                capturedNegativeVideo = video
+                showNegativeCamera = false
+            },
+            onDismiss = { showNegativeCamera = false }
+        )
+    }
+
     if (showVideoDurationAlert) {
         AlertDialog(onDismissRequest = { showVideoDurationAlert = false }, confirmButton = { TextButton(onClick = { showVideoDurationAlert = false }) { Text("OK") } }, title = { Text("Invalid Video Length") }, text = { Text(videoDurationAlertMessage) })
     }
@@ -558,6 +581,68 @@ fun Tier2LandmarkRecordScreen(
 
     if (showAutoQueueAlert) {
         AlertDialog(onDismissRequest = { showAutoQueueAlert = false }, title = { Text("Connection Offline") }, text = { Text("You currently have no internet connection. This media has been securely added to your Upload Queue and will automatically sync when service returns!") }, confirmButton = { TextButton(onClick = { showAutoQueueAlert = false }) { Text("OK") } })
+    }
+}
+
+@Composable
+fun Tier2CameraView(
+    onVideoRecorded: (Uri, LookSeeLocationFix?) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var isRecording by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+
+    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+        // Camera Preview Placeholder
+        Box(modifier = Modifier.fillMaxSize().background(Color.DarkGray), contentAlignment = Alignment.Center) {
+            Text("Camera Preview", color = Color.White)
+            ViewfinderCircle()
+        }
+
+        // Guided Overlay
+        GuidedCaptureOverlay(
+            isNegative = false,
+            isRecording = isRecording
+        )
+
+        // UI Controls
+        Box(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier.align(Alignment.TopStart).background(Color.Black.copy(0.5f), CircleShape)
+            ) {
+                Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+            }
+
+            // Shutter Button
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 48.dp)
+                    .size(80.dp)
+                    .border(4.dp, Color.White, CircleShape)
+                    .padding(6.dp)
+                    .clip(CircleShape)
+                    .background(if (isRecording) Color.Red else Color.White)
+                    .clickable { isRecording = !isRecording },
+                contentAlignment = Alignment.Center
+            ) {
+                if (isRecording) {
+                    Box(modifier = Modifier.size(30.dp).background(Color.White, RoundedCornerShape(4.dp)))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ViewfinderCircle() {
+    Canvas(modifier = Modifier.size(240.dp)) {
+        drawCircle(
+            color = Color.White.copy(alpha = 0.3f),
+            radius = size.minDimension / 2,
+            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.dp.toPx())
+        )
     }
 }
 

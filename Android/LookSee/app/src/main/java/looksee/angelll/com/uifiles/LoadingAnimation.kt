@@ -11,10 +11,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.painterResource
@@ -118,13 +120,11 @@ fun LoadingAnimationScreen(
                 .size(260.dp)
                 .scale(glowScale.value)
                 .alpha(glowOpacity.value)
-                .blur(30.dp)
                 .background(
                     brush = Brush.radialGradient(
-                        colors = listOf(
-                            Color(0xFF387DFF).copy(alpha = 0.45f),
-                            Color.Transparent
-                        )
+                        0.0f to Color(0xFF387DFF).copy(alpha = 0.45f),
+                        0.5f to Color(0xFF387DFF).copy(alpha = 0.20f),
+                        1.0f to Color.Transparent
                     ),
                     shape = CircleShape
                 )
@@ -140,7 +140,11 @@ fun LoadingAnimationScreen(
             painter = painterResource(id = looksee.angelll.com.R.drawable.looksee_logo),
             contentDescription = "LookSee Logo",
             modifier = Modifier
-                .size(290.dp)
+                .size(340.dp) // Matched iOS width
+                .graphicsLayer(
+                    alpha = 1f,
+                    clip = true
+                )
                 .scale(if (breathing && !animationFinished) breathingScale else 1f)
                 .scale(logoScale.value)
         )

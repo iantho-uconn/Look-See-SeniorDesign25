@@ -68,6 +68,7 @@ struct BusinessLandmarksView: View {
                     emptyQueueCard
                 }
 
+                // MARK: - Section 1: Needs Attention (Red)
                 if !actionNeededLandmarks.isEmpty {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Needs Attention")
@@ -82,17 +83,33 @@ struct BusinessLandmarksView: View {
                         }
                     }
                 }
+                
+                // MARK: - Section 2: Processing & Training (Orange/Blue)
+                if !processingLandmarks.isEmpty {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Processing & Training")
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .foregroundStyle(.orange)
+                            .textCase(.uppercase)
+                            .padding(.horizontal, 20)
+                        
+                        ForEach(processingLandmarks) { landmark in
+                            landmarkRowLink(for: landmark)
+                                .padding(.horizontal)
+                        }
+                    }
+                }
 
-                // MARK: - Active Landmarks
+                // MARK: - Section 3: Active Landmarks (Green)
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
                         Text("Active Landmarks")
                             .font(.system(size: 14, weight: .bold, design: .rounded))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.green)
                             .textCase(.uppercase)
 
                         if !viewModel.landmarks.isEmpty {
-                            Text(healthyLandmarkCountText(healthyCount: healthyLandmarks.count))
+                            Text(activeLandmarkCountText(activeCount: activeLandmarks.count))
                                 .font(.system(size: 14, weight: .bold, design: .rounded))
                                 .foregroundStyle(.secondary)
                         }
@@ -127,10 +144,10 @@ struct BusinessLandmarksView: View {
                             .padding(.horizontal, 20)
                     } else if displayedLandmarks.isEmpty {
                         noSearchResultsView
-                    } else if healthyLandmarks.isEmpty && !actionNeededLandmarks.isEmpty {
+                    } else if activeLandmarks.isEmpty && (!actionNeededLandmarks.isEmpty || !processingLandmarks.isEmpty) {
                         EmptyView()
                     } else {
-                        ForEach(healthyLandmarks) { landmark in
+                        ForEach(activeLandmarks) { landmark in
                             landmarkRowLink(for: landmark)
                                 .padding(.horizontal)
                         }
@@ -310,19 +327,24 @@ struct BusinessLandmarksView: View {
 
     // MARK: - Internal UI Components (Selection, Search, etc.)
     
+    // 🚀 NEW PIPELINE CATEGORIES
     private var actionNeededLandmarks: [BusinessLandmark] {
         displayedLandmarks.filter { $0.status == "NEEDS_MORE_MEDIA" }
     }
     
-    private var healthyLandmarks: [BusinessLandmark] {
-        displayedLandmarks.filter { $0.status != "NEEDS_MORE_MEDIA" }
+    private var processingLandmarks: [BusinessLandmark] {
+        displayedLandmarks.filter { $0.isProcessing }
+    }
+    
+    private var activeLandmarks: [BusinessLandmark] {
+        displayedLandmarks.filter { $0.status != "NEEDS_MORE_MEDIA" && !$0.isProcessing }
     }
     
     private var cleanedSearchText: String { searchText.trimmingCharacters(in: .whitespacesAndNewlines) }
     
-    private func healthyLandmarkCountText(healthyCount: Int) -> String {
-        guard !cleanedSearchText.isEmpty else { return "(\(healthyCount))" }
-        return "(\(healthyCount) of \(viewModel.landmarks.filter { $0.status != "NEEDS_MORE_MEDIA" }.count))"
+    private func activeLandmarkCountText(activeCount: Int) -> String {
+        guard !cleanedSearchText.isEmpty else { return "(\(activeCount))" }
+        return "(\(activeCount) of \(viewModel.landmarks.filter { $0.status != "NEEDS_MORE_MEDIA" && !$0.isProcessing }.count))"
     }
 
     private var displayedLandmarks: [BusinessLandmark] {
@@ -598,6 +620,18 @@ private struct BusinessLandmarkRow: View {
     let onNeedsMediaTapped: () -> Void
 
     private let selectionColor = Color(red: 0.22, green: 0.49, blue: 1.00)
+    
+    // 🚀 THE FIX: Dynamic Badge Coloring now includes Purple for PENDING_TRAINING
+    private var badgeColor: Color {
+        switch landmark.status {
+        case "NEEDS_MORE_MEDIA": return .red
+        case "PREPARING_DATA": return .orange
+        case "PENDING_TRAINING": return .purple
+        case "TRAINING_MODEL": return .yellow
+        case "OPTIMIZING_MODEL": return .blue
+        default: return landmark.isActive == false ? .secondary : .green
+        }
+    }
 
     var body: some View {
         let needsMoreMedia = landmark.status == "NEEDS_MORE_MEDIA"
@@ -620,26 +654,15 @@ private struct BusinessLandmarkRow: View {
 
                         Spacer()
 
-                        if needsMoreMedia {
-                            Text("ACTION NEEDED")
-                                .font(.system(size: 11, weight: .bold, design: .rounded))
-                                .lineLimit(nil)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .padding(.horizontal, 10).padding(.vertical, 6)
-                                .background(Color.red.opacity(0.15))
-                                .foregroundColor(.red)
-                                .clipShape(Capsule())
-                        } else {
-                            Text(landmark.displayStatus)
-                                .font(.system(size: 11, weight: .bold, design: .rounded))
-                                .textCase(.uppercase)
-                                .lineLimit(nil)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .padding(.horizontal, 10).padding(.vertical, 6)
-                                .background(landmark.isActive == false ? Color.gray.opacity(0.15) : Color.green.opacity(0.15))
-                                .foregroundColor(landmark.isActive == false ? .secondary : .green)
-                                .clipShape(Capsule())
-                        }
+                        Text(landmark.displayStatus)
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .textCase(.uppercase)
+                            .lineLimit(nil)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.horizontal, 10).padding(.vertical, 6)
+                            .background(badgeColor.opacity(0.15))
+                            .foregroundColor(badgeColor)
+                            .clipShape(Capsule())
                     }
 
                     Text(landmark.displayDescription)

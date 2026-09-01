@@ -38,6 +38,11 @@ import looksee.angelll.com.detection.LocationManager
 import looksee.angelll.com.models.*
 import looksee.angelll.com.viewmodels.AuthViewModel
 import looksee.angelll.com.viewmodels.AuthState
+import looksee.angelll.com.ui.theme.AppleBlue
+import looksee.angelll.com.ui.theme.CardBackground
+import looksee.angelll.com.ui.theme.DarkBackground
+import looksee.angelll.com.ui.theme.LookSeeCard
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -64,7 +69,6 @@ fun ButtonsScreen(
     var showPromotion by remember { mutableStateOf(false) }
     var showBusinessAlert by remember { mutableStateOf(false) }
     var showSignUpPrompt by remember { mutableStateOf(false) }
-    var showSignUp by remember { mutableStateOf(false) }
 
     val pagerState = rememberPagerState(pageCount = { 2 })
     val currentTab = pagerState.currentPage
@@ -80,6 +84,7 @@ fun ButtonsScreen(
     var redoSecondsNeeded by remember { mutableStateOf<Double?>(null) }
 
     var chromeVisible by remember { mutableStateOf(true) }
+    var chromeFadeJob by remember { mutableStateOf<Job?>(null) }
     var isDetecting by remember { mutableStateOf(false) }
     var showTutorial by remember { mutableStateOf(false) }
     var isReticlePulsing by remember { mutableStateOf(false) }
@@ -92,19 +97,21 @@ fun ButtonsScreen(
 
     val isBusinessMode = vm.hasActiveSubscription
     val isScanTab = currentTab == 0
-    val topBarTitle = if (isScanTab) "LookSee" else "Explore"
+    val topBarTitle = if (isScanTab) "LookSee" else "Map"
 
     // Restoration logic
     val isScanCameraActive by remember {
         derivedStateOf {
-            currentTab == 0 && !showRecordSheet && !showSignUp && !showSignUpPrompt && !showTutorial && !showMyLandmarksFromAlert && !infoView.infoView
+            currentTab == 0 && !showRecordSheet && !showSignUpPrompt && !showTutorial && !showMyLandmarksFromAlert && !infoView.infoView
         }
     }
 
     fun scheduleChromeFadeIfNeeded() {
-        coroutineScope.launch {
-            delay(3500)
-            if (!isDetecting && currentTab == 0) {
+        chromeFadeJob?.cancel()
+        if (!isScanTab) return
+        chromeFadeJob = coroutineScope.launch {
+            delay(3000)
+            if (!isDetecting) {
                 chromeVisible = false
             }
         }
@@ -176,6 +183,15 @@ fun ButtonsScreen(
         }
     }
 
+    LaunchedEffect(isDetecting) {
+        if (isDetecting && isScanTab) {
+            chromeFadeJob?.cancel()
+            chromeVisible = false
+        } else if (!isDetecting && isScanTab) {
+            revealChromeThenFade()
+        }
+    }
+
     LaunchedEffect(Unit) {
         scheduleChromeFadeIfNeeded()
         isReticlePulsing = true
@@ -206,22 +222,23 @@ fun ButtonsScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Color.Black.copy(alpha = 0.8f))
+                        .background(Color.Black)
                         .statusBarsPadding()
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp, vertical = 12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.clickable {
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                showTutorial = true
-                            }
+                            modifier = Modifier
+                                .width(60.dp)
+                                .clickable {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    showTutorial = true
+                                }
                         ) {
                             Icon(Icons.Default.Info, contentDescription = "Info", tint = Color.White, modifier = Modifier.size(24.dp))
                             Text("Info", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
@@ -232,37 +249,27 @@ fun ButtonsScreen(
                             color = Color.White,
                             fontSize = 22.sp,
                             fontWeight = FontWeight.Black,
-                            letterSpacing = (-0.5).sp
+                            letterSpacing = (-0.5).sp,
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    if (isBusinessMode) showPromotion = true else showBusinessAlert = true
+                                },
+                            textAlign = TextAlign.Center
                         )
 
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.clickable {
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                onNavigate("Settings")
-                            }
-                        ) {
-                            Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.White, modifier = Modifier.size(24.dp))
-                            Text("Settings", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
-
-                    if (!isScanTab) {
-                        Surface(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 8.dp),
-                            color = Color(0xFF1C1C1E),
-                            shape = RoundedCornerShape(12.dp)
+                                .width(60.dp)
+                                .clickable {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    onNavigate("Settings")
+                                }
                         ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(Icons.Default.Search, contentDescription = "Search", tint = Color.Gray, modifier = Modifier.size(20.dp))
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Search landmarks...", color = Color.Gray, fontSize = 16.sp)
-                            }
+                            Icon(Icons.Default.Menu, contentDescription = "Menu", tint = Color.White, modifier = Modifier.size(24.dp))
+                            Text("Menu", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -285,13 +292,13 @@ fun ButtonsScreen(
                         modifier = Modifier
                             .width(320.dp)
                             .clip(CircleShape)
-                            .background(Color(0xFF1C1C1E).copy(alpha = 0.95f))
+                            .background(DarkBackground.copy(alpha = 0.8f))
                             .padding(horizontal = 8.dp, vertical = 8.dp),
                         horizontalArrangement = Arrangement.SpaceEvenly,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         TabButton("Scan", Icons.Default.CenterFocusStrong, currentTab == 0, false) {
-                            coroutineScope.launch { pagerState.animateScrollToPage(0) }
+                            coroutineScope.launch { pagerState.animateScrollToPage(0, animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f)) }
                         }
 
                         Column(
@@ -328,7 +335,7 @@ fun ButtonsScreen(
                         }
 
                         TabButton("Map", Icons.Default.Map, currentTab == 1, false) {
-                            coroutineScope.launch { pagerState.animateScrollToPage(1) }
+                            coroutineScope.launch { pagerState.animateScrollToPage(1, animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f)) }
                         }
                     }
                 }
@@ -348,7 +355,7 @@ fun ButtonsScreen(
                         isDetecting = isDetecting,
                         onIsDetectingChange = { isDetecting = it },
                         isNavVisible = chromeVisible,
-                        isScannerActive = isScanCameraActive
+                        isActive = isScanCameraActive
                     )
                 } else {
                     Box(modifier = Modifier.padding(paddingValues)) {
@@ -362,7 +369,7 @@ fun ButtonsScreen(
                 visible = showGenericNotification && isScanTab,
                 enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
                 exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut(),
-                modifier = Modifier.align(Alignment.TopCenter).padding(top = 100.dp).zIndex(100f)
+                modifier = Modifier.align(Alignment.TopCenter).padding(top = 70.dp).zIndex(100f)
             ) {
                 Row(
                     modifier = Modifier
@@ -403,28 +410,49 @@ fun ButtonsScreen(
 
             // Modals
             if (showSignUpPrompt) {
-                Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.4f)).pointerInput(Unit) { detectTapGestures { showSignUpPrompt = false; coroutineScope.launch { pagerState.animateScrollToPage(0) } } }, contentAlignment = Alignment.Center) {
-                    Column(
-                        modifier = Modifier.padding(24.dp).background(Color(0xFF1C1C1E), RoundedCornerShape(32.dp)).padding(30.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(24.dp)
-                    ) {
-                        Box(modifier = Modifier.size(70.dp).background(PrimaryBlue.copy(alpha = 0.15f), CircleShape), contentAlignment = Alignment.Center) {
-                            Icon(Icons.Default.ArrowCircleUp, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(32.dp))
-                        }
-                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("Sign up to upload", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                            Text("Create an account to start contributing landmarks and help improve recognition.", fontSize = 15.sp, color = Color.Gray, textAlign = TextAlign.Center)
-                        }
-                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Button(
-                                onClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); showSignUpPrompt = false; showSignUp = true },
-                                modifier = Modifier.fillMaxWidth().height(56.dp), colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue), shape = RoundedCornerShape(16.dp)
-                            ) { Text("Create Account", fontSize = 17.sp, fontWeight = FontWeight.Bold) }
-                            Button(
-                                onClick = { showSignUpPrompt = false; coroutineScope.launch { pagerState.animateScrollToPage(0) } },
-                                modifier = Modifier.fillMaxWidth().height(56.dp), colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray), shape = RoundedCornerShape(16.dp)
-                            ) { Text("Not now", color = Color.LightGray, fontSize = 17.sp, fontWeight = FontWeight.Bold) }
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.4f))
+                        .pointerInput(Unit) { detectTapGestures { showSignUpPrompt = false; coroutineScope.launch { pagerState.animateScrollToPage(0) } } },
+                    contentAlignment = Alignment.Center
+                ) {
+                    LookSeeCard(modifier = Modifier.padding(24.dp)) {
+                        Column(
+                            modifier = Modifier.padding(14.dp), // Additional padding for inside the card
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(24.dp)
+                        ) {
+                            Box(modifier = Modifier.size(70.dp).background(AppleBlue.copy(alpha = 0.15f), CircleShape), contentAlignment = Alignment.Center) {
+                                Icon(Icons.Default.ArrowCircleUp, contentDescription = null, tint = AppleBlue, modifier = Modifier.size(32.dp))
+                            }
+                            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("Sign up to upload", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                Text("Create an account to start contributing landmarks and help improve recognition.", fontSize = 15.sp, color = Color.Gray, textAlign = TextAlign.Center)
+                            }
+                            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Button(
+                                    onClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); showSignUpPrompt = false; onNavigate("guest_signup") },
+                                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = AppleBlue),
+                                    shape = RoundedCornerShape(16.dp)
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Text("Create Account", fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                                        Icon(Icons.Default.ArrowForward, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    }
+                                }
+                                Button(
+                                    onClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        showSignUpPrompt = false
+                                        coroutineScope.launch { pagerState.animateScrollToPage(0) }
+                                    },
+                                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.1f)),
+                                    shape = RoundedCornerShape(16.dp)
+                                ) { Text("Not now", color = Color.Gray, fontSize = 17.sp, fontWeight = FontWeight.Bold) }
+                            }
                         }
                     }
                 }
@@ -432,14 +460,14 @@ fun ButtonsScreen(
 
             if (showTutorial) {
                 Dialog(onDismissRequest = { showTutorial = false }) {
-                    Surface(shape = RoundedCornerShape(16.dp), color = Color.DarkGray) {
-                        Column(modifier = Modifier.padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(24.dp)) {
+                    LookSeeCard {
+                        Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(24.dp)) {
                             if (currentTab == 0) {
-                                ViewfinderCircle(tint = PrimaryBlue, modifier = Modifier.size(70.dp))
+                                ViewfinderCircle(tint = AppleBlue, modifier = Modifier.size(70.dp))
                                 Text("How to Scan", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color.White)
                                 Text("Point your camera at a landmark. Keep the object well-lit and steady. LookSee will identify it automatically.", fontSize = 16.sp, color = Color.Gray, textAlign = TextAlign.Center)
                             } else {
-                                Icon(Icons.Default.Map, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(60.dp))
+                                Icon(Icons.Default.Map, contentDescription = null, tint = AppleBlue, modifier = Modifier.size(60.dp))
                                 Text("Explore the Map", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color.White)
                                 Text("Find valid landmarks around you to scan. Use the search bar or filters to narrow down locations.", fontSize = 16.sp, color = Color.Gray, textAlign = TextAlign.Center)
                             }
@@ -472,26 +500,23 @@ fun ButtonsScreen(
         }
     }
 
-    if (showSignUp) {
-        Signup(
-            vm = vm,
-            onSignupSuccess = { showSignUp = false },
-            onGoToLogin = { showSignUp = false }
-        )
-    }
 }
 
 @Composable
 fun RowScope.TabButton(title: String, icon: androidx.compose.ui.graphics.vector.ImageVector, isSelected: Boolean, isLocked: Boolean, onClick: () -> Unit) {
+    val haptic = LocalHapticFeedback.current
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.weight(1f).clickable { onClick() }
+        modifier = Modifier.weight(1f).clickable {
+            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            onClick()
+        }
     ) {
         Box(contentAlignment = Alignment.TopEnd) {
-            Icon(icon, contentDescription = null, tint = if (isLocked) Color.DarkGray else if (isSelected) Color(0xFF387DFF) else Color.Gray, modifier = Modifier.size(22.dp))
+            Icon(icon, contentDescription = null, tint = if (isLocked) Color.DarkGray else if (isSelected) AppleBlue else Color.Gray, modifier = Modifier.size(22.dp))
             if (isLocked) Icon(Icons.Default.Lock, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(10.dp).offset(x = 8.dp, y = (-4).dp))
         }
-        Text(title, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (isLocked) Color.DarkGray else if (isSelected) Color(0xFF387DFF) else Color.Gray)
-        if (isSelected && !isLocked) Box(modifier = Modifier.padding(top = 4.dp).size(width = 24.dp, height = 3.dp).background(Color(0xFF387DFF), CircleShape))
+        Text(title, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (isLocked) Color.DarkGray else if (isSelected) AppleBlue else Color.Gray)
+        if (isSelected && !isLocked) Box(modifier = Modifier.padding(top = 4.dp).size(width = 24.dp, height = 3.dp).background(AppleBlue, CircleShape))
     }
 }

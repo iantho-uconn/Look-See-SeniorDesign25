@@ -11,6 +11,15 @@ enum class MediaKind {
     PHOTO,
 }
 
+/** User-facing upload stages for landmark submissions. Matches iOS SubmissionStage. */
+enum class SubmissionStage {
+    PENDING,
+    UPLOADING,
+    STITCHING,
+    COMPLETE,
+    FAILED,
+}
+
 /** Request sent before uploading positive media to the returned URL. */
 data class InitSubmissionRequest(
     val userEmail: String,

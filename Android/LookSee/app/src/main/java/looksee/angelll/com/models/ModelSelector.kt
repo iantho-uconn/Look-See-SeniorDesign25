@@ -397,8 +397,11 @@ class ModelSelector internal constructor(
                     .also { sharedInstance = it }
             }
 
-        private fun discoverBundledTestModels(context: Context): List<BundledTestModel> =
-            BundledModelAssetInstaller.discover(context)
+        private fun discoverBundledTestModels(context: Context): List<BundledTestModel> {
+            val assets = BundledModelAssetInstaller.discover(context)
+            val manual = ManualModelDiscovery.discover(context)
+            return (assets + manual).sortedBy(BundledTestModel::displayName)
+        }
 
         /** Pure Kotlin haversine distance keeps selector tests local/JVM-only. */
         private fun distanceMeters(from: Coordinate, to: Coordinate): Double {

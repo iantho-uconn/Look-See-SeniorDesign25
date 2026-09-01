@@ -40,12 +40,16 @@ class ActivePromotionService internal constructor(
 
     internal constructor(httpClient: BusinessHttpClient) : this(httpClient, Gson())
 
-    suspend fun fetchActivePromotions(landmarkId: String): List<ActivePromotion> {
+    suspend fun fetchActivePromotions(
+        landmarkId: String,
+        timeoutMillis: Int = DEFAULT_TIMEOUT_MILLIS,
+    ): List<ActivePromotion> {
         val response = httpClient.execute(
             BusinessHttpRequest(
                 method = "GET",
                 url = "$LOOKSEE_API_BASE_URL/landmarks/" +
                     "${encodedPathSegment(landmarkId)}/promotions/active",
+                timeoutMillis = timeoutMillis,
             ),
         )
         if (response.statusCode !in 200..299) {
@@ -57,4 +61,8 @@ class ActivePromotionService internal constructor(
 
     suspend fun fetchTopActivePromotion(landmarkId: String): ActivePromotion? =
         fetchActivePromotions(landmarkId).firstOrNull()
+
+    private companion object {
+        const val DEFAULT_TIMEOUT_MILLIS = 2500
+    }
 }

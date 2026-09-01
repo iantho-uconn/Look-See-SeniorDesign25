@@ -3,6 +3,9 @@ package looksee.angelll.com.uifiles
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -20,9 +23,12 @@ import looksee.angelll.com.R
 
 @Composable
 fun SplashScreen(onTimeout: () -> Unit) {
-    // Matches the iOS Splash Screen in Pics.pdf
+    // Matches the iOS Splash Screen in Splash.swift
     val splashGradient = Brush.verticalGradient(
-        colors = listOf(Color(0xFF0A1931), Color(0xFF000000))
+        colors = listOf(
+            Color(0xFF387DFF), // iOS primary blue
+            Color(0xFFF2359E)  // iOS pink
+        )
     )
 
     Box(
@@ -30,37 +36,53 @@ fun SplashScreen(onTimeout: () -> Unit) {
             .fillMaxSize()
             .background(splashGradient)
     ) {
-        // City Silhouette at the bottom (if you have the resource, otherwise a placeholder)
-        // Image(
-        //    painter = painterResource(id = R.drawable.city_silhouette),
-        //    contentDescription = null,
-        //    modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
-        //    contentScale = ContentScale.FillWidth
-        // )
-
         Column(
-            modifier = Modifier.align(Alignment.Center),
+            modifier = Modifier.fillMaxSize(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Image(
-                painter = painterResource(id = R.drawable.looksee_logo),
-                contentDescription = "LookSee Logo",
-                modifier = Modifier.size(140.dp)
-            )
+            Column(
+                modifier = Modifier.weight(1f),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Image(
+                    painter = painterResource(id = R.drawable.looksee_logo),
+                    contentDescription = "LookSee Logo",
+                    modifier = Modifier.size(150.dp)
+                )
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                Text(
+                    text = "LookSee",
+                    color = Color.White,
+                    fontSize = 32.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                
+                Text(
+                    text = "Explore landmarks and buildings around you",
+                    color = Color.White,
+                    fontSize = 16.sp
+                )
+            }
             
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            Text(
-                text = "LookSee",
-                color = Color.White,
-                fontSize = 32.sp,
-                fontWeight = FontWeight.Bold
-            )
+            Button(
+                onClick = onTimeout,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 32.dp)
+                    .height(64.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color.White),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text(
+                    text = "Get Started",
+                    color = Color(0xFF990FFC), // iOS purple
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp
+                )
+            }
         }
-    }
-
-    LaunchedEffect(Unit) {
-        delay(2000)
-        onTimeout()
     }
 }

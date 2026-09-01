@@ -3,7 +3,9 @@ package looksee.angelll.com.ui.theme
 import androidx.compose.ui.graphics.Color
 
 // Look-See Brand Colors (Inspired by iOS Version)
-val AppleBlue = Color(0xFF007AFF)
+val LookSeeBlue = Color(0xFF387DFF)
+val AppleBlue = Color(0xFF007AFF) // System Blue
+val AppleOrange = Color(0xFFFF9500)
 val DarkBackground = Color(0xFF1C1C1E)
 val CardBackground = Color(0xFF2C2C2E)
 val LightText = Color(0xFFFFFFFF)
