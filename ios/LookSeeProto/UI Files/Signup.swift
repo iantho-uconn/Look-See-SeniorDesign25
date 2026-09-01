@@ -13,7 +13,10 @@ struct Signup: View {
     @State private var username = ""
     @State private var email = ""
     @State private var password = ""
+    @State private var confirmPassword = ""
     @State private var verificationCode = ""
+    @State private var isPasswordVisible = false
+    @State private var isConfirmPasswordVisible = false
     
     @State private var message = ""
     @State private var isLoading = false
@@ -53,8 +56,12 @@ struct Signup: View {
                         if !showVerification {
                             // MARK: - SIGNUP FORM
                             VStack(alignment: .leading, spacing: 6) {
-                                Text("Unique Username").font(.caption).foregroundStyle(Color.white.opacity(0.5))
-                                TextField("username", text: $username)
+                                Text("Unique Username").font(.caption).foregroundStyle(Color.white.opacity(0.9))
+                                TextField(
+                                    "username",
+                                    text: $username,
+                                    prompt: Text("username").foregroundStyle(Color.white.opacity(0.6))
+                                )
                                     .textInputAutocapitalization(.never)
                                     .autocorrectionDisabled(true)
                                     .padding(14).background(Color(red: 0.18, green: 0.18, blue: 0.24)).foregroundStyle(.white).cornerRadius(12)
@@ -65,21 +72,95 @@ struct Signup: View {
                             }
                             
                             VStack(alignment: .leading, spacing: 6) {
-                                Text("Email").font(.caption).foregroundStyle(Color.white.opacity(0.5))
-                                TextField("you@example.com", text: $email)
+                                Text("Email").font(.caption).foregroundStyle(Color.white.opacity(0.9))
+                                TextField(
+                                    "Email",
+                                    text: $email,
+                                    prompt: Text("you@example.com").foregroundStyle(Color.white.opacity(0.6))
+                                )
                                     .keyboardType(.emailAddress).autocorrectionDisabled(true).textInputAutocapitalization(.never)
                                     .padding(14).background(Color(red: 0.18, green: 0.18, blue: 0.24)).foregroundStyle(.white).cornerRadius(12)
                                     .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color(red: 0.22, green: 0.49, blue: 1.00).opacity(0.3), lineWidth: 0.5)).colorScheme(.dark)
                             }
 
                             VStack(alignment: .leading, spacing: 6) {
-                                Text("Password").font(.caption).foregroundStyle(Color.white.opacity(0.5))
-                                SecureField("••••••••", text: $password)
-                                    .autocorrectionDisabled(true).padding(14).background(Color(red: 0.18, green: 0.18, blue: 0.24)).foregroundStyle(.white).cornerRadius(12)
+                                Text("Password").font(.caption).foregroundStyle(Color.white.opacity(0.9))
+                                HStack(spacing: 10) {
+                                    Group {
+                                        if isPasswordVisible {
+                                            TextField(
+                                                "Password",
+                                                text: $password,
+                                                prompt: Text("Enter your password").foregroundStyle(Color.white.opacity(0.6))
+                                            )
+                                        } else {
+                                            SecureField(
+                                                "Password",
+                                                text: $password,
+                                                prompt: Text("••••••••").foregroundStyle(Color.white.opacity(0.6))
+                                            )
+                                        }
+                                    }
+                                    .textContentType(.newPassword)
+                                    .textInputAutocapitalization(.never)
+                                    .autocorrectionDisabled(true)
+
+                                    Button {
+                                        isPasswordVisible.toggle()
+                                    } label: {
+                                        Image(systemName: isPasswordVisible ? "eye.slash.fill" : "eye.fill")
+                                            .foregroundStyle(Color.white.opacity(0.75))
+                                            .frame(width: 24, height: 24)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .accessibilityLabel(isPasswordVisible ? "Hide password" : "Show password")
+                                }
+                                    .padding(14).background(Color(red: 0.18, green: 0.18, blue: 0.24)).foregroundStyle(.white).cornerRadius(12)
                                     .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color(red: 0.22, green: 0.49, blue: 1.00).opacity(0.3), lineWidth: 0.5)).colorScheme(.dark)
                                 
                                 if !password.isEmpty && !isValidPassword(password) {
                                     Text("Requires 8+ chars, 1 uppercase, 1 lowercase, 1 number, and 1 special char.")
+                                        .font(.system(size: 11)).foregroundStyle(.red).padding(.leading, 4)
+                                }
+                            }
+
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Confirm Password").font(.caption).foregroundStyle(Color.white.opacity(0.9))
+                                HStack(spacing: 10) {
+                                    Group {
+                                        if isConfirmPasswordVisible {
+                                            TextField(
+                                                "Confirm Password",
+                                                text: $confirmPassword,
+                                                prompt: Text("Retype your password").foregroundStyle(Color.white.opacity(0.6))
+                                            )
+                                        } else {
+                                            SecureField(
+                                                "Confirm Password",
+                                                text: $confirmPassword,
+                                                prompt: Text("Retype your password").foregroundStyle(Color.white.opacity(0.6))
+                                            )
+                                        }
+                                    }
+                                    .textContentType(.newPassword)
+                                    .textInputAutocapitalization(.never)
+                                    .autocorrectionDisabled(true)
+
+                                    Button {
+                                        isConfirmPasswordVisible.toggle()
+                                    } label: {
+                                        Image(systemName: isConfirmPasswordVisible ? "eye.slash.fill" : "eye.fill")
+                                            .foregroundStyle(Color.white.opacity(0.75))
+                                            .frame(width: 24, height: 24)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .accessibilityLabel(isConfirmPasswordVisible ? "Hide confirmation password" : "Show confirmation password")
+                                }
+                                    .padding(14).background(Color(red: 0.18, green: 0.18, blue: 0.24)).foregroundStyle(.white).cornerRadius(12)
+                                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color(red: 0.22, green: 0.49, blue: 1.00).opacity(0.3), lineWidth: 0.5)).colorScheme(.dark)
+
+                                if !confirmPassword.isEmpty && password != confirmPassword {
+                                    Text("Passwords do not match.")
                                         .font(.system(size: 11)).foregroundStyle(.red).padding(.leading, 4)
                                 }
                             }
@@ -97,8 +178,12 @@ struct Signup: View {
                         } else {
                             // MARK: - VERIFICATION FORM
                             VStack(alignment: .leading, spacing: 6) {
-                                Text("Enter 6-Digit Code").font(.caption).foregroundStyle(Color.white.opacity(0.5))
-                                TextField("123456", text: $verificationCode)
+                                Text("Enter 6-Digit Code").font(.caption).foregroundStyle(Color.white.opacity(0.9))
+                                TextField(
+                                    "Verification Code",
+                                    text: $verificationCode,
+                                    prompt: Text("123456").foregroundStyle(Color.white.opacity(0.6))
+                                )
                                     .keyboardType(.numberPad)
                                     .font(.system(size: 24, weight: .bold, design: .monospaced))
                                     .multilineTextAlignment(.center)
@@ -123,9 +208,9 @@ struct Signup: View {
                                 }
                             }
                             .foregroundStyle(.white).frame(maxWidth: .infinity).padding(.vertical, 16).background(Color(red: 0.22, green: 0.49, blue: 1.00)).cornerRadius(14)
-                            .opacity(isLoading || (showVerification ? verificationCode.count < 6 : (email.isEmpty || username.isEmpty || !isValidPassword(password))) ? 0.5 : 1)
+                            .opacity(isLoading || (showVerification ? verificationCode.count < 6 : (email.isEmpty || username.isEmpty || !isValidPassword(password) || confirmPassword.isEmpty || password != confirmPassword)) ? 0.5 : 1)
                         }
-                        .disabled(isLoading || (showVerification ? verificationCode.count < 6 : (email.isEmpty || username.isEmpty || !isValidPassword(password))))
+                        .disabled(isLoading || (showVerification ? verificationCode.count < 6 : (email.isEmpty || username.isEmpty || !isValidPassword(password) || confirmPassword.isEmpty || password != confirmPassword)))
                         .padding(.top, 16)
 
                         if !showVerification {
@@ -147,6 +232,11 @@ struct Signup: View {
 
     // MARK: - AWS Logic
     func signUp() {
+        guard password == confirmPassword else {
+            message = "Passwords do not match."
+            return
+        }
+
         isLoading = true
         message = ""
         let group = isBusinessAccount ? "business-users" : "authenticated-users"

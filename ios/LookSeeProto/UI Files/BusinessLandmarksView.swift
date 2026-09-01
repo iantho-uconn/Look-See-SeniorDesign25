@@ -29,8 +29,11 @@ struct BusinessLandmarksView: View {
     @State private var landmarkNeedingMedia: BusinessLandmark?
     
     @State private var hasLoadedOnce = false
+    @State private var autoRefreshTask: Task<Void, Never>?
+
     private let promotionService = BusinessPromotionService()
     private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00)
+    private let autoRefreshIntervalNanoseconds: UInt64 = 90_000_000_000
 
     var body: some View {
         ScrollView {
@@ -177,38 +180,54 @@ struct BusinessLandmarksView: View {
         }
         .onAppear {
             uploadManager.attachAuthVM(vm)
+            startAutoRefresh()
+
             guard hasLoadedOnce else { return }
             Task { await refreshLandmarksAndSearchIndex() }
+        }
+        .onDisappear {
+            stopAutoRefresh()
         }
         .onChange(of: viewModel.landmarks.map(\.landmarkId)) { _, validIds in
             selectedLandmarkIds.formIntersection(Set(validIds))
         }
         .toolbar {
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                if isSelectionMode {
-                    selectionActionsMenu
+            if #available(iOS 26.0, *) {
+                ToolbarItem(placement: .topBarTrailing) {
+                    if isSelectionMode {
+                        selectionActionsMenu
+                    } else {
+                        refreshToolbarButton
+                    }
+                }
 
-                    Button("Done") {
-                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                        endSelectionMode()
-                    }
-                    .fontWeight(.bold)
-                } else {
-                    Button {
-                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                        Task { await refreshLandmarksAndSearchIndex() }
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 16, weight: .bold))
-                    }
-                    .disabled(viewModel.isLoading)
+                // iOS 26 Liquid Glass combines adjacent toolbar items into
+                // one shared capsule. A fixed ToolbarSpacer intentionally
+                // breaks that glass group so these render as distinct buttons.
+                ToolbarSpacer(.fixed, placement: .topBarTrailing)
 
-                    Button("Select") {
-                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                        isSelectionMode = true
+                ToolbarItem(placement: .topBarTrailing) {
+                    if isSelectionMode {
+                        doneToolbarButton
+                    } else {
+                        selectToolbarButton
                     }
-                    .fontWeight(.bold)
-                    .disabled(viewModel.landmarks.isEmpty)
+                }
+            } else {
+                ToolbarItem(placement: .topBarTrailing) {
+                    if isSelectionMode {
+                        selectionActionsMenu
+                    } else {
+                        refreshToolbarButton
+                    }
+                }
+
+                ToolbarItem(placement: .topBarTrailing) {
+                    if isSelectionMode {
+                        doneToolbarButton
+                    } else {
+                        selectToolbarButton
+                    }
                 }
             }
         }
@@ -407,6 +426,44 @@ struct BusinessLandmarksView: View {
         if failedIds.isEmpty { isSelectionMode = false }
     }
     
+    private func startAutoRefresh() {
+        autoRefreshTask?.cancel()
+
+        autoRefreshTask = Task {
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(nanoseconds: autoRefreshIntervalNanoseconds)
+                } catch {
+                    return
+                }
+
+                guard !Task.isCancelled else { return }
+                await autoRefreshLandmarks()
+            }
+        }
+    }
+
+    private func stopAutoRefresh() {
+        autoRefreshTask?.cancel()
+        autoRefreshTask = nil
+    }
+
+    @MainActor
+    private func autoRefreshLandmarks() async {
+        guard !viewModel.isLoading else { return }
+
+        await viewModel.refresh()
+
+        // Keep the search index aligned with newly added/removed landmarks,
+        // but do not refetch every promotion every 90 seconds.
+        await loadPromotionSearchIndex(forceReload: false)
+
+        NotificationCenter.default.post(
+            name: Notification.Name("CheckGlobalNotifications"),
+            object: nil
+        )
+    }
+
     @MainActor private func refreshLandmarksAndSearchIndex() async {
         await viewModel.refresh()
         await loadPromotionSearchIndex(forceReload: true)
@@ -459,6 +516,35 @@ struct BusinessLandmarksView: View {
     private var visibleSelectedCount: Int { selectedLandmarkIds.intersection(visibleLandmarkIds).count }
     private var hiddenSelectedCount: Int { selectedLandmarkIds.subtracting(visibleLandmarkIds).count }
     private var selectionCountText: String { let count = selectedLandmarks.count; return "\(count) landmark\(count == 1 ? "" : "s") selected" }
+
+    private var refreshToolbarButton: some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            Task { await refreshLandmarksAndSearchIndex() }
+        } label: {
+            Image(systemName: "arrow.clockwise")
+                .font(.system(size: 18, weight: .bold))
+        }
+        .accessibilityLabel("Refresh landmarks")
+        .disabled(viewModel.isLoading)
+    }
+
+    private var selectToolbarButton: some View {
+        Button("Select") {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            isSelectionMode = true
+        }
+        .font(.system(size: 17, weight: .bold, design: .rounded))
+        .disabled(viewModel.landmarks.isEmpty)
+    }
+
+    private var doneToolbarButton: some View {
+        Button("Done") {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            endSelectionMode()
+        }
+        .font(.system(size: 17, weight: .bold, design: .rounded))
+    }
 
     // MARK: - Row Views
     @ViewBuilder
@@ -522,7 +608,7 @@ struct BusinessLandmarksView: View {
     }
     
     private var selectionSummaryCard: some View { HStack(spacing: 12) { Image(systemName: selectedLandmarkIds.isEmpty ? "checkmark.circle" : "checkmark.circle.fill").font(.system(size: 22, weight: .semibold)).foregroundStyle(primaryColor); VStack(alignment: .leading, spacing: 3) { Text(selectionCountText).font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(.primary); if hiddenSelectedCount > 0 { Text("\(hiddenSelectedCount) selected landmark\(hiddenSelectedCount == 1 ? "" : "s") hidden by the current search").font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary) } else if !cleanedSearchText.isEmpty { Text("\(visibleSelectedCount) selected in these search results").font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary) } else { Text("Search for more landmarks without losing this selection.").font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary) } }; Spacer() }.padding(14).background(primaryColor.opacity(0.10)).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous)).overlay { RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(primaryColor.opacity(0.20), lineWidth: 1) }.padding(.horizontal) }
-    private var selectionActionsMenu: some View { Menu { Button { UIImpactFeedbackGenerator(style: .light).impactOccurred(); selectVisibleLandmarks() } label: { Label("Select Visible (\(displayedLandmarks.count))", systemImage: "checkmark.circle") }.disabled(displayedLandmarks.isEmpty); Button { UIImpactFeedbackGenerator(style: .light).impactOccurred(); deselectVisibleLandmarks() } label: { Label("Deselect Visible (\(visibleSelectedCount))", systemImage: "circle") }.disabled(visibleSelectedCount == 0); Divider(); Button(role: .destructive) { UIImpactFeedbackGenerator(style: .light).impactOccurred(); selectedLandmarkIds.removeAll() } label: { Label("Clear All Selection", systemImage: "xmark.circle") }.disabled(selectedLandmarkIds.isEmpty) } label: { Image(systemName: "ellipsis.circle").font(.system(size: 17, weight: .bold)) }.accessibilityLabel("Selection actions") }
+    private var selectionActionsMenu: some View { Menu { Button { UIImpactFeedbackGenerator(style: .light).impactOccurred(); selectVisibleLandmarks() } label: { Label("Select Visible (\(displayedLandmarks.count))", systemImage: "checkmark.circle") }.disabled(displayedLandmarks.isEmpty); Button { UIImpactFeedbackGenerator(style: .light).impactOccurred(); deselectVisibleLandmarks() } label: { Label("Deselect Visible (\(visibleSelectedCount))", systemImage: "circle") }.disabled(visibleSelectedCount == 0); Divider(); Button(role: .destructive) { UIImpactFeedbackGenerator(style: .light).impactOccurred(); selectedLandmarkIds.removeAll() } label: { Label("Clear All Selection", systemImage: "xmark.circle") }.disabled(selectedLandmarkIds.isEmpty) } label: { Image(systemName: "ellipsis") .font(.system(size: 18, weight: .bold)) }.accessibilityLabel("Selection actions") }
     private var selectionBottomBar: some View { VStack(spacing: 10) { HStack(spacing: 12) { VStack(alignment: .leading, spacing: 2) { Text(selectionCountText).font(.system(size: 15, weight: .bold, design: .rounded)); if hiddenSelectedCount > 0 { Text("\(hiddenSelectedCount) hidden by search").font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary) } else { Text("Selection stays active while searching").font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary) } }; Spacer(); Button("Clear") { UIImpactFeedbackGenerator(style: .light).impactOccurred(); selectedLandmarkIds.removeAll() }.font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.red).disabled(selectedLandmarkIds.isEmpty) }; HStack(spacing: 12) { Button { UIImpactFeedbackGenerator(style: .medium).impactOccurred(); beginBulkPromotion() } label: { Label("Add Promotion", systemImage: "tag.fill").font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white).frame(maxWidth: .infinity).padding(.vertical, 12).background(primaryColor).clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous)) }.buttonStyle(.plain).disabled(selectedLandmarkIds.isEmpty).opacity(selectedLandmarkIds.isEmpty ? 0.45 : 1); Button(role: .destructive) { UIImpactFeedbackGenerator(style: .heavy).impactOccurred(); beginBulkDelete() } label: { Label("Delete", systemImage: "trash.fill").font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.red).frame(maxWidth: .infinity).padding(.vertical, 12).background(Color.red.opacity(0.12)).clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous)) }.buttonStyle(.plain).disabled(selectedLandmarkIds.isEmpty).opacity(selectedLandmarkIds.isEmpty ? 0.45 : 1) } }.padding(.horizontal, 20).padding(.top, 12).padding(.bottom, 10).background(.ultraThinMaterial).overlay(alignment: .top) { Divider() } }
 }
 
