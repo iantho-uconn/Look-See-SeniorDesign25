@@ -37,11 +37,11 @@ class AutoUploadManager: ObservableObject {
             }
             .store(in: &cancellables)
         
+        // 🚀 THE FIX 1: Removed .dropFirst()!
+        // Now, it instantly registers that you have Wi-Fi on a cold app launch.
         NetworkMonitor.shared.$isConnected
-            .dropFirst()
             .sink { [weak self] isConnected in
                 if isConnected {
-                    // 🚀 THE FIX: Slight delay so network status stabilizes before hitting the DB
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                         Task { await self?.autoStartIfPossible() }
                     }
@@ -56,8 +56,6 @@ class AutoUploadManager: ObservableObject {
                     self?.currentlyUploadingId = nil
                 }
                 
-                // 🚀 THE FIX: Gives iOS 1.5 seconds to wake up the Camera and Network stack
-                // before we try to process the queue. Prevents main-thread freezing!
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                     Task { await self?.autoStartIfPossible() }
                 }
@@ -65,8 +63,15 @@ class AutoUploadManager: ObservableObject {
             .store(in: &cancellables)
     }
     
+    // 🚀 THE FIX 2: Instantly trigger an upload the moment the UI gives us your profile!
     func attachAuthVM(_ vm: AuthViewModel) {
+        let isFirstTime = (self.globalAuthVM == nil)
         self.globalAuthVM = vm
+        
+        // If this is a fresh launch and the queue was waiting for your profile to load, start it now!
+        if isFirstTime && !isPaused {
+            Task { await autoStartIfPossible() }
+        }
     }
     
     private func requestNotificationPermission() {
@@ -95,7 +100,6 @@ class AutoUploadManager: ObservableObject {
     private func autoStartIfPossible() async {
         guard !isPaused else { return }
         
-        // 🚀 THE FIX: Hard check for Wi-Fi/Cellular. If offline, abort immediately so the UI doesn't hang!
         guard NetworkMonitor.shared.isConnected else {
             print("⚠️ Device is offline. Pausing auto-upload queue.")
             return
@@ -148,7 +152,6 @@ class AutoUploadManager: ObservableObject {
         for media in pendingMedia {
             if isPaused { break }
             
-            // Double check connection right before uploading the heavy video
             if !NetworkMonitor.shared.isConnected {
                 print("⚠️ Connection lost. Pausing auto-upload queue.")
                 isPaused = true
