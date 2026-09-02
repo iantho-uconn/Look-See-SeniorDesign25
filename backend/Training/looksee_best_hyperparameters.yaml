@@ -1,0 +1,40 @@
+epochs: 100
+patience: 15
+lr0: 0.00514
+lrf: 0.00773
+momentum: 0.92824
+weight_decay: 0.00083
+warmup_epochs: 3.59852
+warmup_momentum: 0.61734
+box: 10.56415
+cls: 0.46526
+dfl: 1.78709
+
+# 🌙 NIGHTTIME FIX: Randomly darkens/lightens up to 80% to simulate shadows and dusk
+hsv_h: 0.01839
+hsv_s: 0.82563
+hsv_v: 0.80
+
+degrees: 15.0
+
+# 🌳 OCCLUSION FIX 1: Shifts the image off-screen to teach it what cut-off cars look like
+translate: 0.40    
+scale: 0.9
+shear: 0.1         
+perspective: 0.0
+flipud: 0.0
+
+# 🚗 SIDE-VIEW FIX: 50% chance to mirror the image so it learns both passenger & driver sides
+fliplr: 0.5 
+
+bgr: 0.0
+
+# 🌳 OCCLUSION FIX 2: Forces 4 images to stitch together, creating hard borders/cutoffs
+mosaic: 1.0
+
+# 👻 GHOSTING FIX: Disabled so the AI stops looking for transparent, see-through objects
+mixup: 0.0
+
+cutmix: 0.0
+copy_paste: 0.0
+close_mosaic: 10

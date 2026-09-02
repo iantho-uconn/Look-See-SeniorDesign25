@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx
+    version="1.1"
+    creator="LookSee"
+    xmlns="http://www.topografix.com/GPX/1/1"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="
+        http://www.topografix.com/GPX/1/1
+        http://www.topografix.com/GPX/1/1/gpx.xsd">
+
+    <wpt lat="41.36030983685599" lon="-71.96380145528974">
+        <name>LookSee Cluster 0 Test</name>
+
+    </wpt>
+
+</gpx>

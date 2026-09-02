@@ -16,6 +16,7 @@ enum MediaKind: String, Codable {
 struct InitSubmissionRequest: Codable {
     let userEmail: String
     let label: String
+    let landmarkId: String?     // 🚀 THE FIX: This tells AWS to use the existing S3 folder!
     let mediaKind: MediaKind
     let filename: String
     let contentType: String
@@ -44,4 +45,13 @@ struct CompleteSubmissionRequest: Codable {
     let latitude: Double?
     let longitude: Double?
     let horizontalAccuracy: Double?
+}
+
+// Returned locally after the positive submission has completed.
+// This is not decoded directly from the backend.
+struct PositiveSubmissionResult {
+    let submissionId: String
+    let landmarkId: String?
+    let mediaKind: MediaKind
+    let s3Key: String
 }

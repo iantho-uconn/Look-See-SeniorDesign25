@@ -11,105 +11,117 @@ struct ModelLoadingScreen: View {
     @State private var opacity: Double = 0
     @State private var statusMessage: String = "Getting your location…"
     @State private var failed: Bool = false
+    
+    @State private var showAnimation = true
+    @State private var showLoadingUI = false
+    @State private var loadingFinished = false
+    @State private var animationFinished = false
 
     var onComplete: () -> Void
 
     var body: some View {
         ZStack {
-            Color(red: 0.06, green: 0.06, blue: 0.10)
-                .ignoresSafeArea()
-
+            AnimatedBackground(
+                showLoadingUI: showLoadingUI
+            )
+            
             // Glow
             Circle()
                 .fill(Color(red: 0.22, green: 0.49, blue: 1.00).opacity(0.12))
                 .frame(width: 300, height: 300)
                 .blur(radius: 60)
-
-            VStack(spacing: 32) {
+            
+            VStack(spacing: 3) {
                 Spacer()
-
+                
                 // Logo
                 VStack(spacing: 14) {
-                    ZStack {
-                        Circle()
-                            .fill(Color(red: 0.22, green: 0.49, blue: 1.00).opacity(0.12))
-                            .frame(width: 110, height: 110)
-                        Image(systemName: "eye.square.fill")
-                            .font(.system(size: 58))
-                            .foregroundStyle(Color(red: 0.22, green: 0.49, blue: 1.00))
+                    LoadingAnimation {
+                        
+                        animationFinished = true
+                        
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                            
+                            withAnimation(.spring()) {
+                                
+                                showLoadingUI = true
+                                
+                            }
+                            
+                        }
+                        
                     }
-                    Text("LookSee")
-                        .font(.system(size: 32, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
                 }
-
+                
                 Spacer()
-
+                
                 // Loading state
-                VStack(spacing: 16) {
-                    if failed {
-                        // Error state
-                        VStack(spacing: 12) {
-                            Image(systemName: "exclamationmark.triangle")
-                                .font(.system(size: 28))
-                                .foregroundStyle(.orange)
-
-                            Text(statusMessage)
-                                .font(.subheadline)
-                                .foregroundStyle(Color.white.opacity(0.6))
-                                .multilineTextAlignment(.center)
-                                .padding(.horizontal, 40)
-
-                            Button {
-                                failed = false
-                                Task { await startLoading() }
-                            } label: {
-                                Text("Retry")
-                                    .font(.system(size: 15, weight: .semibold))
-                                    .foregroundStyle(.white)
-                                    .padding(.horizontal, 32)
-                                    .padding(.vertical, 12)
-                                    .background(Color(red: 0.22, green: 0.49, blue: 1.00))
-                                    .cornerRadius(12)
+                if showLoadingUI {
+                    VStack(spacing: 16) {
+                        if failed {
+                            // Error state
+                            VStack(spacing: 12) {
+                                Image(systemName: "exclamationmark.triangle")
+                                    .font(.system(size: 28))
+                                    .foregroundStyle(.orange)
+                                
+                                Text(statusMessage)
+                                    .font(.subheadline)
+                                    .foregroundStyle(Color.white.opacity(0.6))
+                                    .multilineTextAlignment(.center)
+                                    .padding(.horizontal, 40)
+                                
+                                Button {
+                                    failed = false
+                                    Task { await startLoading() }
+                                } label: {
+                                    Text("Retry")
+                                        .font(.system(size: 15, weight: .semibold))
+                                        .foregroundStyle(.white)
+                                        .padding(.horizontal, 32)
+                                        .padding(.vertical, 12)
+                                        .background(Color(red: 0.22, green: 0.49, blue: 1.00))
+                                        .cornerRadius(12)
+                                }
+                                
+                                Button {
+                                    onComplete()
+                                } label: {
+                                    Text("Continue without model")
+                                        .font(.system(size: 13))
+                                        .foregroundStyle(Color.white.opacity(0.35))
+                                }
                             }
-
-                            Button {
-                                onComplete()
-                            } label: {
-                                Text("Continue without model")
-                                    .font(.system(size: 13))
-                                    .foregroundStyle(Color.white.opacity(0.35))
+                        } else {
+                            // Progress state
+                            VStack(spacing: 12) {
+                                if case .loading = modelService.state {
+                                    ProgressView(value: modelService.downloadProgress)
+                                        .progressViewStyle(.linear)
+                                        .tint(Color(red: 0.22, green: 0.49, blue: 1.00))
+                                        .frame(width: 200)
+                                } else {
+                                    ProgressView()
+                                        .tint(Color.white.opacity(0.5))
+                                }
+                                
+                                Text(statusMessage)
+                                    .font(.subheadline)
+                                    .foregroundStyle(Color.white.opacity(0.5))
+                                    .multilineTextAlignment(.center)
+                                    .padding(.horizontal, 40)
+                                    .animation(.easeInOut, value: statusMessage)
                             }
-                        }
-                    } else {
-                        // Progress state
-                        VStack(spacing: 12) {
-                            if case .loading = modelService.state {
-                                ProgressView(value: modelService.downloadProgress)
-                                    .progressViewStyle(.linear)
-                                    .tint(Color(red: 0.22, green: 0.49, blue: 1.00))
-                                    .frame(width: 200)
-                            } else {
-                                ProgressView()
-                                    .tint(Color.white.opacity(0.5))
-                            }
-
-                            Text(statusMessage)
-                                .font(.subheadline)
-                                .foregroundStyle(Color.white.opacity(0.5))
-                                .multilineTextAlignment(.center)
-                                .padding(.horizontal, 40)
-                                .animation(.easeInOut, value: statusMessage)
                         }
                     }
+                    .padding(.bottom, 60)
                 }
-                .padding(.bottom, 60)
             }
-        }
-        .opacity(opacity)
-        .onAppear {
-            withAnimation(.easeIn(duration: 0.4)) { opacity = 1 }
-            Task { await startLoading() }
+            .opacity(opacity)
+            .onAppear {
+                withAnimation(.easeIn(duration: 0.4)) { opacity = 1 }
+                Task { await startLoading() }
+            }
         }
     }
 

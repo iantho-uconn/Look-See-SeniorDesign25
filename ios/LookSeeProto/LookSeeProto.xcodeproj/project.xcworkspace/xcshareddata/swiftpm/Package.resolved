@@ -1,5 +1,5 @@
 {
-  "originHash" : "ff0ecfe68cef74add0c6fb69137eb2e252753040a14f3c22cc2f8ea6c5445a3d",
+  "originHash" : "eb44cfc130aaa7dccfaaf9217b837bdb5972b5e88d8a916785aaef24f9b16025",
   "pins" : [
     {
       "identity" : "amplify-swift",
@@ -47,6 +47,15 @@
       }
     },
     {
+      "identity" : "sentry-cocoa",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/getsentry/sentry-cocoa",
+      "state" : {
+        "revision" : "a00a9784fff7193cbb0f9fae509fec8107e07744",
+        "version" : "9.26.1"
+      }
+    },
+    {
       "identity" : "smithy-swift",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/smithy-lang/smithy-swift",
@@ -62,6 +71,15 @@
       "state" : {
         "revision" : "392dd6058624d9f6c5b4c769d165ddd8c7293394",
         "version" : "0.15.4"
+      }
+    },
+    {
+      "identity" : "stripe-ios-spm",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/stripe/stripe-ios-spm",
+      "state" : {
+        "revision" : "03d261e01eb65d6ff17b90614179e885cb0316f0",
+        "version" : "26.3.0"
       }
     },
     {

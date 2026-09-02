@@ -11,6 +11,8 @@ import Combine
 
 final class LocationManager: NSObject, ObservableObject {
     private let manager = CLLocationManager()
+    
+
 
     @Published var latitude: Double?
     @Published var longitude: Double?
@@ -20,7 +22,6 @@ final class LocationManager: NSObject, ObservableObject {
     var isAuthorized: Bool {
         authorizationStatus == .authorizedAlways || authorizationStatus == .authorizedWhenInUse
     }
-
     override init() {
         super.init()
 
