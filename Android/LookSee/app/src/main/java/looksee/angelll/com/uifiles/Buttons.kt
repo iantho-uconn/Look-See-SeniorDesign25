@@ -27,12 +27,14 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.zIndex
+import androidx.core.app.ComponentActivity
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import looksee.angelll.com.detection.LocationManager
 import looksee.angelll.com.models.*
@@ -103,6 +105,17 @@ fun ButtonsScreen(
     val isScanCameraActive by remember {
         derivedStateOf {
             currentTab == 0 && !showRecordSheet && !showSignUpPrompt && !showTutorial && !showMyLandmarksFromAlert && !infoView.infoView
+        }
+    }
+
+    // Keep screen on during scan
+    val view = LocalView.current
+    DisposableEffect(isScanCameraActive) {
+        if (isScanCameraActive) {
+            view.keepScreenOn = true
+        }
+        onDispose {
+            view.keepScreenOn = false
         }
     }
 

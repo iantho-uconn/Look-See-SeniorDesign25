@@ -134,6 +134,17 @@ fun PositiveVideoCameraView(
     var isFinishing by remember { mutableStateOf(false) }
     var finishingErrorMessage by remember { mutableStateOf<String?>(null) }
 
+    // Keep screen on during recording
+    val view = androidx.compose.ui.platform.LocalView.current
+    DisposableEffect(flowState) {
+        if (flowState == CameraFlowState.RECORDING) {
+            view.keepScreenOn = true
+        }
+        onDispose {
+            view.keepScreenOn = false
+        }
+    }
+
     var zoomLevel by remember { mutableStateOf(1f) }
     var showZoomIndicator by remember { mutableStateOf(false) }
     var showZoomInstruction by remember { mutableStateOf(false) }

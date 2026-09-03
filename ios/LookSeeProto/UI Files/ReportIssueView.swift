@@ -5,7 +5,7 @@
 
 import SwiftUI
 import PhotosUI
-import Sentry // 🚀 ADDED: Sentry SDK
+import Sentry // 🚀 Sentry SDK integrated
 
 // MARK: - Report Models
 
@@ -294,8 +294,8 @@ struct ReportIssueView: View {
             guard !isResolvingIdentity else { return }
             isResolvingIdentity = true
 
-            // 🚀 Sends the Bug Report directly to your Sentry / Jira Dashboard silently!
-            SentrySDK.capture(message: "[\(category.displayName)] \(title)") { scope in
+            // 🚀 THE FIX: Explicit 'block:' syntax used here as well!
+            SentrySDK.capture(message: "[\(category.displayName)] \(title)", block: { scope in
                 scope.setExtra(value: description, key: "User Description")
                 scope.setTag(value: severity.displayName, key: "Severity")
                 scope.setTag(value: category.displayName, key: "Category")
@@ -305,7 +305,7 @@ struct ReportIssueView: View {
                     let attachment = Attachment(data: data, filename: "screenshot.jpg", contentType: "image/jpeg")
                     scope.addAttachment(attachment)
                 }
-            }
+            })
 
             isResolvingIdentity = false
             showSentConfirmation = true

@@ -133,6 +133,16 @@ fun BusinessLandmarksView(
         }
     }
 
+    // Auto-refresh logic (90 seconds)
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(90_000)
+            if (!viewModel.isLoading.value) {
+                refreshLandmarksAndSearchIndex()
+            }
+        }
+    }
+
     LaunchedEffect(Unit) {
         if (!hasLoadedOnce) {
             hasLoadedOnce = true
@@ -208,29 +218,47 @@ fun BusinessLandmarksView(
                 // Pending Uploads (Integrated Upload Queue)
                 if (archivedItems.isNotEmpty()) {
                     item {
-                        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("PENDING UPLOADS", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray, modifier = Modifier.padding(horizontal = 4.dp))
-                            LookSeeCard {
-                                archivedItems.forEachIndexed { index, item ->
-                                    Row(
-                                        modifier = Modifier.clickable { onNavigate("LandmarkRecord", item) }.padding(vertical = 12.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(16.dp)
-                                    ) {
-                                        Box(modifier = Modifier.size(48.dp).background(Color.White.copy(0.05f), RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {
-                                            Icon(if (item.isVideo) Icons.Default.Videocam else Icons.Default.Image, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
-                                        }
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(item.title, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                                            if (currentlyUploadingId == item.id) {
-                                                LinearProgressIndicator(progress = { currentUploadProgress.toFloat() }, modifier = Modifier.fillMaxWidth().padding(top = 4.dp).height(2.dp), color = PrimaryBlue)
-                                            } else {
-                                                Text("Queued", fontSize = 12.sp, color = Color(0xFFFFA500))
+                        Column(
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Text(
+                                "PENDING UPLOADS",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.Gray,
+                                modifier = Modifier.padding(horizontal = 4.dp)
+                            )
+                            LookSeeCard(modifier = Modifier.fillMaxWidth()) {
+                                Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
+                                    SyncBannerRow(
+                                        isUploading = currentlyUploadingId != null,
+                                        isOffline = !isOnline,
+                                        itemCount = archivedItems.size,
+                                        primaryColor = PrimaryBlue
+                                    )
+                                    HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                                    
+                                    archivedItems.forEachIndexed { index, item ->
+                                        PendingRow(
+                                            item = item,
+                                            isUploading = currentlyUploadingId == item.id,
+                                            progress = currentUploadProgress,
+                                            primaryColor = PrimaryBlue,
+                                            onNavigate = { onNavigate("LandmarkRecord", item) },
+                                            onDelete = {
+                                                coroutineScope.launch {
+                                                    offlineManager.deleteArchive(item)
+                                                }
                                             }
+                                        )
+                                        if (index < archivedItems.size - 1) {
+                                            HorizontalDivider(
+                                                color = Color.White.copy(alpha = 0.05f),
+                                                modifier = Modifier.padding(start = 64.dp)
+                                            )
                                         }
-                                        Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(16.dp))
                                     }
-                                    if (index < archivedItems.size - 1) HorizontalDivider(color = Color.White.copy(0.05f), modifier = Modifier.padding(start = 64.dp))
                                 }
                             }
                         }
@@ -269,7 +297,15 @@ fun BusinessLandmarksView(
 
                 // Processing & Training Section
                 if (processingLandmarks.isNotEmpty()) {
-                    item { Text("PROCESSING & TRAINING", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFFA500), modifier = Modifier.padding(horizontal = 20.dp)) }
+                    item { 
+                        Text(
+                            "PROCESSING & TRAINING", 
+                            fontSize = 13.sp, 
+                            fontWeight = FontWeight.Bold, 
+                            color = Color(0xFFFFA500), 
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+                        ) 
+                    }
                     items(processingLandmarks) { landmark ->
                         BusinessLandmarkRowWrapper(landmark, isSelectionMode, selectedLandmarkIds.contains(landmark.landmarkId), null, onNavigate) {
                             if (isSelectionMode) {
@@ -303,7 +339,7 @@ fun BusinessLandmarksView(
                 putExtra("id", it.landmarkId)
                 putExtra("label", it.label)
                 putExtra("description", it.shortDescription ?: "")
-                putExtra("secondsNeeded", it.secondsNeeded ?: 30.0)
+                putExtra("secondsNeeded", (it.secondsNeeded ?: 30).toDouble())
             }
             LocalBroadcastManager.getInstance(context).sendBroadcast(intent)
         }
@@ -340,6 +376,7 @@ private fun BusinessLandmarkRowWrapper(
                     val badgeColor = when (landmark.status) {
                         "NEEDS_MORE_MEDIA" -> Color(0xFFFF453A)
                         "PREPARING_DATA" -> Color(0xFFFF9F0A)
+                        "PENDING_TRAINING" -> Color(0xFFAF52DE) // iOS System Purple
                         "TRAINING_MODEL" -> Color(0xFFFFD60A)
                         "OPTIMIZING_MODEL" -> Color(0xFF64D2FF)
                         else -> if (landmark.isActive == false) Color.Gray else Color(0xFF32D74B)
@@ -347,6 +384,7 @@ private fun BusinessLandmarkRowWrapper(
                     val badgeBg = when (landmark.status) {
                         "NEEDS_MORE_MEDIA" -> Color(0xFF2C0E0E)
                         "PREPARING_DATA" -> Color(0xFF2C1E0E)
+                        "PENDING_TRAINING" -> Color(0xFF1E0E2C) // Dark Purple
                         "TRAINING_MODEL" -> Color(0xFF2C280E)
                         "OPTIMIZING_MODEL" -> Color(0xFF0E222C)
                         else -> if (landmark.isActive == false) Color(0xFF1C1C1E) else Color(0xFF0E2C14)
@@ -370,6 +408,104 @@ private fun BusinessLandmarkRowWrapper(
                 }
             }
             Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(16.dp).align(Alignment.CenterVertically))
+        }
+    }
+}
+
+@Composable
+private fun SyncBannerRow(isUploading: Boolean, isOffline: Boolean, itemCount: Int, primaryColor: Color) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(if (isUploading) primaryColor.copy(alpha = 0.05f) else Color.Transparent)
+            .padding(20.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Icon(
+            imageVector = if (isUploading) Icons.Default.CloudUpload else if (isOffline) Icons.Default.CloudOff else Icons.Default.PauseCircle,
+            contentDescription = null,
+            tint = if (isUploading) primaryColor else Color.Gray,
+            modifier = Modifier.size(24.dp)
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = if (isUploading) "Syncing to Cloud..." else if (isOffline) "Waiting for Connection" else "Queue Processing...",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White
+            )
+            Text(
+                text = "$itemCount items waiting to upload",
+                fontSize = 13.sp,
+                color = Color.Gray
+            )
+        }
+        if (isUploading) {
+            CircularProgressIndicator(modifier = Modifier.size(20.dp), color = primaryColor, strokeWidth = 2.dp)
+        }
+    }
+}
+
+@Composable
+private fun PendingRow(
+    item: ArchivedMedia,
+    isUploading: Boolean,
+    progress: Double,
+    primaryColor: Color,
+    onNavigate: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onNavigate() }
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(12.dp)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = if (item.isVideo) Icons.Default.Videocam else Icons.Default.Image,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(item.title, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+            if (isUploading) {
+                VStack(spacing = 4.dp) {
+                    Text("Uploading...", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = primaryColor)
+                    LinearProgressIndicator(
+                        progress = { progress.toFloat() },
+                        modifier = Modifier.fillMaxWidth().height(2.dp),
+                        color = primaryColor
+                    )
+                }
+            } else {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Icon(Icons.Default.Schedule, contentDescription = null, tint = Color(0xFFFFA500), modifier = Modifier.size(10.dp))
+                    Text("Queued", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFFA500))
+                }
+            }
+        }
+
+        if (!isUploading) {
+            IconButton(
+                onClick = onDelete,
+                modifier = Modifier
+                    .size(36.dp)
+                    .background(Color.Red.copy(alpha = 0.1f), CircleShape)
+            ) {
+                Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.Red, modifier = Modifier.size(16.dp))
+            }
         }
     }
 }

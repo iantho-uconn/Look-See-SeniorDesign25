@@ -209,6 +209,27 @@ fun LandmarkRecordScreen(
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Icon(if (hasMinimumClipDuration) Icons.Default.CheckCircle else Icons.Default.Schedule, contentDescription = null, tint = if (hasMinimumClipDuration) Color.Green else Color(0xFFFFA500), modifier = Modifier.size(16.dp))
                             Text("${String.format("%.1f", totalClipDuration)}s total — ready to upload", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = if (hasMinimumClipDuration) Color.Green else Color(0xFFFFA500))
+                            
+                            if (statusText.contains("Outbox", true) || statusText.contains("queued", true)) {
+                                Spacer(Modifier.weight(1f))
+                                Button(
+                                    onClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        coroutineScope.launch {
+                                            archivedMedia?.let {
+                                                OfflineMediaManager.shared(context).prioritizeAndRetry(it)
+                                                AutoUploadManager.shared(context).forceRetry()
+                                            }
+                                        }
+                                    },
+                                    modifier = Modifier.height(32.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color.Blue.copy(alpha = 0.15f), contentColor = Color.Blue),
+                                    shape = CircleShape
+                                ) {
+                                    Text("Retry", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
                         }
                         
                         pickedVideoUris.forEach { uri ->

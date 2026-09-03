@@ -5,7 +5,6 @@
 //  Created by Angel Pineda on 6/19/26.
 //
 
-
 import SwiftUI
 import MapKit
 import CoreLocation
@@ -30,15 +29,8 @@ struct LandmarkMapView: View {
     @FocusState private var IsKeyboard: Bool
     
     private let topChromeReservedHeight: CGFloat = 80
-
     private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00)
     private let promoColor = Color.orange
-
-    // Height reserved at the bottom of the map so MapKit's own Legal /
-    // attribution control clears the custom bottom tab bar. Kept in sync
-    // with the ~90pt safeAreaInset height Buttons.swift reserves for its
-    // bottom bar, but applied here directly so this view doesn't depend on
-    // that propagating correctly through any ancestor container.
     private let mapBottomReservedHeight: CGFloat = 50
 
     private var availableClusters: [String] {
@@ -49,8 +41,6 @@ struct LandmarkMapView: View {
             if let lhsNum = Int(lhs), let rhsNum = Int(rhs) {
                 return lhsNum < rhsNum
             }
-            // Fallback for any non-numeric cluster IDs, so this doesn't crash
-            // or silently misorder if a cluster ID is ever a non-integer string.
             return lhs < rhs
         }
     }
@@ -75,7 +65,30 @@ struct LandmarkMapView: View {
                         Annotation(landmark.label, coordinate: CLLocationCoordinate2D(latitude: landmark.latitude, longitude: landmark.longitude)) {
                             Button {
                                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                                withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) { selectedLandmark = landmark }
+                                withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                                    selectedLandmark = landmark
+                                }
+                                
+                                // 🚀 THE FIX: Passing the full rich UI variables to the popup!
+                                VariableContainer.shared.presentMapLandmark(
+                                    id: landmark.id,
+                                    name: landmark.label,
+                                    description: landmark.shortDescription,
+                                    latitude: landmark.latitude,
+                                    longitude: landmark.longitude,
+                                    promotionEnabled: landmark.promotionEnabled,
+                                    promotion: landmark.promotion,
+                                    ownerId: landmark.createdBy,
+                                    websiteUrl: landmark.websiteUrl,
+                                    promoName: landmark.promoName,
+                                    promoDescription: landmark.promoDescription,
+                                    promoImageUrl: landmark.promoImageUrl,
+                                    merchantName: landmark.merchantName,
+                                    merchantBio: landmark.merchantBio,
+                                    merchantPhone: landmark.merchantPhone,
+                                    merchantAddress: landmark.merchantAddress,
+                                    merchantLogoUrl: landmark.merchantLogoUrl
+                                )
                             } label: {
                                 VStack(spacing: 0) {
                                     if landmark.promotionEnabled {
@@ -90,8 +103,7 @@ struct LandmarkMapView: View {
                         }
                     }
                 }
-                .mapControls {
-                }
+                .mapControls {}
                 .safeAreaPadding(.bottom, mapBottomReservedHeight)
                 .ignoresSafeArea(edges: .top)
 
@@ -148,11 +160,6 @@ struct LandmarkMapView: View {
                     }
                     .padding(.trailing, 20)
                 }
-                // Dynamic top offset: device's own safe area (Dynamic Island vs
-                // notch vs none) + the fixed 45pt Buttons.swift reserves as its
-                // top safeAreaInset + the topBar's own rendered height + a
-                // small buffer, instead of one hardcoded constant that only
-                // matched one specific device.
                 .padding(.top, proxy.safeAreaInsets.top + topChromeReservedHeight)
             }
             .ignoresSafeArea(edges: .top)
@@ -162,15 +169,17 @@ struct LandmarkMapView: View {
             await vm.fetchUserEmail()
             await fetchMapData()
         }
-        .sheet(item: $selectedLandmark) { landmark in
-            landmarkDetailSheet(landmark)
-                .presentationDetents([.height(landmark.promotionEnabled ? 340 : 260)])
-                .presentationDragIndicator(.visible)
-                .presentationBackground(.regularMaterial)
-        }
         .sheet(isPresented: $showFilterSheet, onDismiss: { Task { await fetchMapData() } }) {
             filterMenuSheet
                 .presentationDetents([.fraction(0.85)])
+        }
+        // Deselects the pin smoothly when the master PopUp closes
+        .onChange(of: VariableContainer.shared.infoView) { _, isPopUpOpen in
+            if !isPopUpOpen {
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                    selectedLandmark = nil
+                }
+            }
         }
     }
     
@@ -194,7 +203,6 @@ struct LandmarkMapView: View {
                     .contentShape(Rectangle())
                     .simultaneousGesture(
                         TapGesture().onEnded {
-                            print("tap detected please work inside if ")
                             IsKeyboard = false
                         }
                     ).padding(20).background(Color(uiColor: .secondarySystemGroupedBackground)).clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
@@ -225,7 +233,6 @@ struct LandmarkMapView: View {
             .contentShape(Rectangle())
             .simultaneousGesture(
                 TapGesture().onEnded {
-                    print("tap detected please work")
                     IsKeyboard = false
                 }
             )
@@ -236,68 +243,9 @@ struct LandmarkMapView: View {
         }
     }
 
-    private func landmarkDetailSheet(_ landmark: NearbyLandmark) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
-            if landmark.promotionEnabled {
-                HStack {
-                    Image(systemName: "sparkles")
-                    Text(landmark.promotion ?? "Special Promotion Available!")
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
-                    Spacer()
-                }
-                .padding(12)
-                .background(promoColor.opacity(0.2))
-                .foregroundStyle(promoColor)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            }
-            
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(landmark.label)
-                        .font(.system(size: 24, weight: .bold, design: .rounded))
-                        .foregroundStyle(.primary)
-                    Text("\(String(format: "%.1f", landmark.distanceMeters / 1609.34)) miles away")
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
-                        .foregroundStyle(primaryColor)
-                }
-                Spacer()
-            }
-            
-            Text(landmark.shortDescription)
-                .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(.secondary)
-            
-            Spacer()
-            
-            // "Directions" is now the only button, taking up the full width.
-            Button {
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                openAppleMaps(for: landmark)
-            } label: {
-                HStack {
-                    Image(systemName: "location.fill")
-                    Text("Directions").fontWeight(.bold)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
-                .background(Color(uiColor: .tertiarySystemFill))
-                .foregroundStyle(.primary)
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            }
-            .padding(.bottom, 10)
-        }
-        .padding(24)
-    }
-
     private func fetchMapData() async {
         guard locationManager.isAuthorized, let lat = locationManager.latitude, let lon = locationManager.longitude else { return }
         let meters = (isGlobalSearch ? 50000.0 : searchRadiusMiles) * 1609.34
         await nearbyService.fetchNearby(latitude: lat, longitude: lon, radiusMeters: meters)
-    }
-    
-    private func openAppleMaps(for landmark: NearbyLandmark) {
-        let mapItem = MKMapItem(placemark: MKPlacemark(coordinate: CLLocationCoordinate2D(latitude: landmark.latitude, longitude: landmark.longitude)))
-        mapItem.name = landmark.label
-        mapItem.openInMaps(launchOptions: [MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeDriving])
     }
 }

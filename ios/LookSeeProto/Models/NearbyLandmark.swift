@@ -22,6 +22,17 @@ struct NearbyLandmark: Codable, Identifiable, Hashable {
     let promotion: String?
     let clusterId: String? // <-- THIS IS THE NEWEST ADDITION!
 
+    // 🚀 NEW: Rich UI fields pulled from the backend
+    let websiteUrl: String?
+    let promoName: String?        
+    let promoDescription: String?
+    let promoImageUrl: String?
+    let merchantName: String?
+    let merchantBio: String?
+    let merchantPhone: String?
+    let merchantAddress: String?
+    let merchantLogoUrl: String?
+
     var id: String { landmarkId }
 }
 

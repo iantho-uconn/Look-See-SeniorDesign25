@@ -8,11 +8,6 @@
 import SwiftUI
 import Combine
 
-/// Shared display state used by the landmark information popup.
-///
-/// The manifest-based detection flow resolves a `LandmarkManifestEntry`, then
-/// calls `presentLandmark(...)` to populate the same fields already consumed by
-/// `LandmarkInfo` and `PopUp`.
 @MainActor
 final class VariableContainer: ObservableObject {
     static let shared = VariableContainer()
@@ -27,8 +22,6 @@ final class VariableContainer: ObservableObject {
     @Published var landmarkURL: String = ""
     @Published var landmarkWebsiteUrl: String = ""
 
-    // Manifest/debugging identity. These are useful when confirming that a
-    // popup was resolved from the same cluster release as the active model.
     @Published var landmarkId: String = ""
     @Published var landmarkClassIndex: Int?
     @Published var landmarkClusterId: Int?
@@ -39,32 +32,31 @@ final class VariableContainer: ObservableObject {
     @Published var promoDescription: String = ""
     @Published var promoImageUrl: String = ""
     
-    // 🚀 NEW: Enterprise Merchant Profile Fields
     @Published var merchantName: String = ""
     @Published var merchantBio: String = ""
     @Published var merchantPhone: String = ""
     @Published var merchantWebsite: String = ""
     @Published var merchantAddress: String = ""
     @Published var merchantLogoUrl: String = ""
+    
+    // 🚀 NEW: Map Routing & Reporting Fields
+    @Published var isMapPin: Bool = false
+    @Published var mapLatitude: Double?
+    @Published var mapLongitude: Double?
+    @Published var reportedOwnerId: String?
 
     private init() {
         resetLandmarkDisplay()
     }
 
-    /// Populates and opens the popup using information resolved from a local
-    /// cluster landmark manifest.
-    ///
-    /// - Parameters:
-    ///   - entry: The manifest entry associated with the detected class index.
-    ///   - clusterId: Cluster whose model produced the detection.
-    ///   - trainingRunId: Immutable release identifier paired with the model.
-    ///   - detectionConfidence: Raw model confidence in the range 0...1.
     func presentLandmark(
         _ entry: LandmarkManifestEntry,
         clusterId: Int,
         trainingRunId: String,
         detectionConfidence: Float
     ) {
+        resetLandmarkDisplay()
+        
         landmarkId = entry.landmarkId
         landmarkClassIndex = entry.classIndex
         landmarkClusterId = clusterId
@@ -80,24 +72,12 @@ final class VariableContainer: ObservableObject {
             ? "No description is available for this landmark."
             : trimmedDescription
 
-        // Keep the existing UI field populated without exposing the S3 folder
-        // formatting directly to the user.
         landmarkCategory = entry.datasetClassName
             .replacingOccurrences(of: "_", with: " ")
 
         let clampedConfidence = min(max(detectionConfidence, 0), 1)
         landmarkConfidence = clampedConfidence * 100
-
-        // Live website/promotion data is fetched from the backend after the
-        // popup opens. Reset these so a previous landmark cannot leak into the
-        // newly displayed popup.
-        landmarkWebsiteUrl = ""
-        promoName = "No active promotion"
-        promoDescription = ""
-        promoImageUrl = ""
-        landmarkURL = ""
         
-        // 🚀 INSTANT CACHE LOAD: Load cached merchant details immediately to eliminate delay
         let cacheKey = "cached_merchant_\(entry.landmarkId)"
         if let cachedData = UserDefaults.standard.dictionary(forKey: cacheKey) {
             merchantName = cachedData["merchantName"] as? String ?? ""
@@ -106,37 +86,78 @@ final class VariableContainer: ObservableObject {
             merchantWebsite = cachedData["merchantWebsite"] as? String ?? ""
             merchantAddress = cachedData["merchantAddress"] as? String ?? ""
             merchantLogoUrl = cachedData["merchantLogoUrl"] as? String ?? ""
-        } else {
-            merchantName = ""
-            merchantBio = ""
-            merchantPhone = ""
-            merchantWebsite = ""
-            merchantAddress = ""
-            merchantLogoUrl = ""
         }
 
         infoView = true
-
-        print("""
-        ✅ [Local Manifest Popup] Presenting landmark
-            clusterId: \(clusterId)
-            trainingRunId: \(trainingRunId)
-            classIndex: \(entry.classIndex)
-            landmarkId: \(entry.landmarkId)
-            label: \(entry.label)
-            confidence: \(String(format: "%.1f", landmarkConfidence))%
-        """)
     }
 
-    /// Closes the popup while retaining the most recently displayed landmark
-    /// values for diagnostics.
+    // 🚀 NEW: Added promoName, promoDescription, and Merchant Cache lookup!
+    func presentMapLandmark(
+        id: String,
+        name: String,
+        description: String,
+        latitude: Double,
+        longitude: Double,
+        promotionEnabled: Bool,
+        promotion: String?,
+        ownerId: String?,
+        websiteUrl: String?,
+        promoName: String?,         // <-- NEW
+        promoDescription: String?,  // <-- NEW
+        promoImageUrl: String?,
+        merchantName: String?,
+        merchantBio: String?,
+        merchantPhone: String?,
+        merchantAddress: String?,
+        merchantLogoUrl: String?
+    ) {
+        resetLandmarkDisplay()
+        
+        self.landmarkId = id
+        self.landmarkName = name
+        
+        let trimmedDesc = description.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.landmarkDescription = trimmedDesc.isEmpty ? "No description is available for this landmark." : trimmedDesc
+        
+        self.isMapPin = true
+        self.mapLatitude = latitude
+        self.mapLongitude = longitude
+        self.reportedOwnerId = ownerId
+        
+        self.landmarkWebsiteUrl = websiteUrl ?? ""
+        
+        if promotionEnabled {
+            self.promoName = promoName ?? promotion ?? "Special Promotion Available!"
+            self.promoDescription = promoDescription ?? ""
+            self.promoImageUrl = promoImageUrl ?? ""
+        }
+        
+        // 🚀 THE FIX: Pull the Merchant Info from the exact same cache the Scanner uses!
+        let cacheKey = "cached_merchant_\(id)"
+        if let cachedData = UserDefaults.standard.dictionary(forKey: cacheKey) {
+            self.merchantName = cachedData["merchantName"] as? String ?? merchantName ?? ""
+            self.merchantBio = cachedData["merchantBio"] as? String ?? merchantBio ?? ""
+            self.merchantPhone = cachedData["merchantPhone"] as? String ?? merchantPhone ?? ""
+            self.merchantWebsite = cachedData["merchantWebsite"] as? String ?? merchantWebsite ?? ""
+            self.merchantAddress = cachedData["merchantAddress"] as? String ?? merchantAddress ?? ""
+            self.merchantLogoUrl = cachedData["merchantLogoUrl"] as? String ?? merchantLogoUrl ?? ""
+        } else {
+            self.merchantName = merchantName ?? ""
+            self.merchantBio = merchantBio ?? ""
+            self.merchantPhone = merchantPhone ?? ""
+            self.merchantWebsite = merchantWebsite ?? ""
+            self.merchantAddress = merchantAddress ?? ""
+            self.merchantLogoUrl = merchantLogoUrl ?? ""
+        }
+        
+        self.infoView = true
+    }
+
     func dismissLandmark() {
         infoView = false
         landmarkURL = ""
     }
 
-    /// Clears all landmark-specific state. This can be used when changing
-    /// active cluster releases or resetting the scan screen.
     func resetLandmarkDisplay() {
         infoView = false
         bboxCounter = 0
@@ -164,6 +185,11 @@ final class VariableContainer: ObservableObject {
         merchantWebsite = ""
         merchantAddress = ""
         merchantLogoUrl = ""
+        
+        isMapPin = false
+        mapLatitude = nil
+        mapLongitude = nil
+        reportedOwnerId = nil
     }
 
     func getlandmarkName() -> String {

@@ -37,7 +37,8 @@ struct BusinessLandmarksView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 24) {
+            // 🚀 THE FIX: Changed to LazyVStack for buttery smooth scrolling
+            LazyVStack(spacing: 24) {
                 
                 // MARK: - Pending Uploads
                 if !offlineManager.archivedItems.isEmpty {
@@ -48,7 +49,7 @@ struct BusinessLandmarksView: View {
                             .textCase(.uppercase)
                             .padding(.horizontal, 20)
                         
-                        VStack(spacing: 0) {
+                        LazyVStack(spacing: 0) {
                             syncBannerRow
                             Divider()
                             
@@ -70,7 +71,7 @@ struct BusinessLandmarksView: View {
 
                 // MARK: - Section 1: Needs Attention (Red)
                 if !actionNeededLandmarks.isEmpty {
-                    VStack(alignment: .leading, spacing: 12) {
+                    LazyVStack(alignment: .leading, spacing: 12) {
                         Text("Needs Attention")
                             .font(.system(size: 14, weight: .bold, design: .rounded))
                             .foregroundStyle(.red)
@@ -86,7 +87,7 @@ struct BusinessLandmarksView: View {
                 
                 // MARK: - Section 2: Processing & Training (Orange/Blue)
                 if !processingLandmarks.isEmpty {
-                    VStack(alignment: .leading, spacing: 12) {
+                    LazyVStack(alignment: .leading, spacing: 12) {
                         Text("Processing & Training")
                             .font(.system(size: 14, weight: .bold, design: .rounded))
                             .foregroundStyle(.orange)
@@ -101,8 +102,9 @@ struct BusinessLandmarksView: View {
                 }
 
                 // MARK: - Section 3: Active Landmarks (Green)
-                VStack(alignment: .leading, spacing: 12) {
+                LazyVStack(alignment: .leading, spacing: 12) {
                     HStack {
+                        // 🚀 THE FIX: Changed to .green to match the pill badges
                         Text("Active Landmarks")
                             .font(.system(size: 14, weight: .bold, design: .rounded))
                             .foregroundStyle(.green)
@@ -192,7 +194,7 @@ struct BusinessLandmarksView: View {
             selectedLandmarkIds.formIntersection(Set(validIds))
         }
         .toolbar {
-            if #available(iOS 26.0, *) {
+            if #available(iOS 16.0, *) {
                 ToolbarItem(placement: .topBarTrailing) {
                     if isSelectionMode {
                         selectionActionsMenu
@@ -201,9 +203,6 @@ struct BusinessLandmarksView: View {
                     }
                 }
 
-                // iOS 26 Liquid Glass combines adjacent toolbar items into
-                // one shared capsule. A fixed ToolbarSpacer intentionally
-                // breaks that glass group so these render as distinct buttons.
                 ToolbarSpacer(.fixed, placement: .topBarTrailing)
 
                 ToolbarItem(placement: .topBarTrailing) {
@@ -327,7 +326,6 @@ struct BusinessLandmarksView: View {
 
     // MARK: - Internal UI Components (Selection, Search, etc.)
     
-    // 🚀 NEW PIPELINE CATEGORIES
     private var actionNeededLandmarks: [BusinessLandmark] {
         displayedLandmarks.filter { $0.status == "NEEDS_MORE_MEDIA" }
     }

@@ -61,7 +61,6 @@ struct BusinessLandmark: Codable, Identifiable, Hashable {
         return value.isEmpty ? "No description available." : value
     }
 
-    // 🚀 THE FIX: Maps the new PENDING_TRAINING status
     var displayStatus: String {
         switch status {
         case "NEEDS_MORE_MEDIA": return "Action Needed"
@@ -73,7 +72,6 @@ struct BusinessLandmark: Codable, Identifiable, Hashable {
         }
     }
 
-    // 🚀 THE FIX: Grouping helper now includes PENDING_TRAINING
     var isProcessing: Bool {
         return status == "PREPARING_DATA" || status == "PENDING_TRAINING" || status == "TRAINING_MODEL" || status == "OPTIMIZING_MODEL"
     }
@@ -146,8 +144,6 @@ struct BusinessMediaUploadCompleteResponse: Decodable {
 }
 
 // MARK: - Business Hard Negative Models
-// These names are intentionally different from HardNegativeUploadService.swift
-// to avoid duplicate type declarations.
 
 struct BusinessHardNegativeInitResponse: Decodable {
     let message: String?
@@ -227,6 +223,7 @@ enum BusinessLandmarkServiceError: LocalizedError {
     case notSignedIn
     case tokensUnavailable
     case badStatus(Int, String)
+    case backendRejected(String)
     case invalidUploadURL
     case noHardNegativeUploadTarget
     case hardNegativeRetryFailed
@@ -239,6 +236,8 @@ enum BusinessLandmarkServiceError: LocalizedError {
             return "Cognito tokens were unavailable."
         case .badStatus(let code, let body):
             return "API error \(code): \(body)"
+        case .backendRejected(let message):
+            return message
         case .invalidUploadURL:
             return "The upload URL returned by the server was invalid."
         case .noHardNegativeUploadTarget:
@@ -404,7 +403,14 @@ final class BusinessLandmarkService {
             throw BusinessLandmarkServiceError.badStatus(statusCode, responseBody)
         }
 
-        return try JSONDecoder().decode(BusinessLandmarkDeleteResponse.self, from: data)
+        let decoded = try JSONDecoder().decode(BusinessLandmarkDeleteResponse.self, from: data)
+        
+        if !decoded.ok {
+            let errorMsg = decoded.message ?? "Backend refused to delete landmark."
+            throw BusinessLandmarkServiceError.backendRejected(errorMsg)
+        }
+        
+        return decoded
     }
 
     // MARK: - Unified Media Upload Entry Point
@@ -636,8 +642,6 @@ final class BusinessLandmarkService {
         return try JSONDecoder().decode(BusinessHardNegativeInitResponse.self, from: data)
     }
 
-    /// Requeues an existing hard-negative source object without uploading the
-    /// video again. The backend verifies ownership and source availability.
     func retryHardNegativeProcessing(
         landmarkId: String,
         batchId: String,

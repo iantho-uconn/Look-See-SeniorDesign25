@@ -49,13 +49,14 @@ data class BusinessLandmark(
         get() = when (status) {
             "NEEDS_MORE_MEDIA" -> "Action Needed"
             "PREPARING_DATA" -> "Preparing Data"
-            "TRAINING_MODEL" -> "Training Model"
+            "PENDING_TRAINING" -> "Waiting for Training"
+            "TRAINING_MODEL" -> "In Training"
             "OPTIMIZING_MODEL" -> "Optimizing for Android"
             else -> if (isActive == false) "Inactive" else "Active"
         }
 
     val isProcessing: Boolean
-        get() = status == "PREPARING_DATA" || status == "TRAINING_MODEL" || status == "OPTIMIZING_MODEL"
+        get() = status == "PREPARING_DATA" || status == "PENDING_TRAINING" || status == "TRAINING_MODEL" || status == "OPTIMIZING_MODEL"
 
     val displayPromotionStatus: String
         get() = if (promotionEnabled == true) {
