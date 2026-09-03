@@ -104,6 +104,9 @@ struct BusinessLandmarkDetailView: View {
         ScrollView {
             VStack(spacing: 24) {
 
+                // 🚀 NEW: Dynamic Status Banner
+                statusBanner
+                
                 // MARK: - Header
                 VStack(alignment: .leading, spacing: 12) {
                     Text(landmark.label.isEmpty ? "Untitled Landmark" : landmark.label)
@@ -602,6 +605,58 @@ struct BusinessLandmarkDetailView: View {
         }
     }
 
+    // 🚀 NEW: Dynamic Status Banner Refactored
+    @ViewBuilder
+    private var statusBanner: some View {
+        let config = bannerConfig
+        
+        HStack(alignment: .top, spacing: 14) {
+            Image(systemName: config.icon)
+                .font(.system(size: 24))
+                .foregroundColor(config.color)
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text(config.title)
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .textCase(.uppercase)
+                    .foregroundColor(config.color)
+                
+                Text(config.message)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(16)
+        .background(config.color.opacity(0.15))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .padding(.horizontal)
+    }
+
+    private var bannerConfig: (color: Color, icon: String, title: String, message: String) {
+        let status = landmark.status ?? ""
+        let isProcessing = landmark.isProcessing
+
+        if status == "NEEDS_MORE_MEDIA" {
+            return (.red, "exclamationmark.triangle.fill", landmark.displayStatus, "Not enough video data to train. Please record more media below.")
+        } else if isProcessing || ["PREPARING_DATA", "PENDING_TRAINING", "TRAINING_MODEL", "OPTIMIZING_MODEL"].contains(status) {
+            let bannerColor: Color
+            switch status {
+            case "PREPARING_DATA": bannerColor = .orange
+            case "PENDING_TRAINING": bannerColor = .purple
+            case "TRAINING_MODEL": bannerColor = .yellow
+            case "OPTIMIZING_MODEL": bannerColor = .blue
+            default: bannerColor = .orange
+            }
+            return (bannerColor, "hourglass.circle.fill", landmark.displayStatus, "Your landmark is currently in progress of being trained. Training is done overnight starting at 7 PM EST.")
+        } else if displayedIsActive {
+            return (.green, "checkmark.shield.fill", "ACTIVE", "Your landmark is trained and able to be detected by users.")
+        } else {
+            return (.secondary, "pause.circle.fill", "INACTIVE", "This landmark is currently disabled and cannot be detected.")
+        }
+    }
+
     private func sectionTitle(_ title: String) -> some View {
         Text(title)
             .font(.system(size: 13, weight: .bold, design: .rounded))
@@ -983,7 +1038,7 @@ struct BusinessLandmarkDetailView: View {
                         .foregroundStyle(.secondary)
                         .textCase(.uppercase)
                         .padding(.horizontal, 20)
-                    
+
                     TextEditor(text: $draftShortDescription)
                         .font(.system(size: 16, weight: .medium))
                         .frame(minHeight: 160)
@@ -992,7 +1047,7 @@ struct BusinessLandmarkDetailView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                         .padding(.horizontal)
                         .disabled(isSavingDescription)
-                    
+
                     Text("This description is shown to users when LookSee identifies this landmark.")
                         .font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary).padding(.horizontal, 20)
 
