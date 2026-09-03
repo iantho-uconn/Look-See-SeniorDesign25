@@ -278,7 +278,7 @@ def lambda_handler(event, context):
 
         print(f"✅ Absolute Total Frames in S3 for {folder_name}: {total_saved_frames}")
 
-        required_frames = int(item.get('minRequiredFrames', int(os.environ.get('MIN_IMAGES_PER_CLASS', 1800))))
+        required_frames = int(item.get('minRequiredFrames', int(os.environ.get('MIN_IMAGES_PER_CLASS', 2000))))
         
         if total_saved_frames < required_frames:
             missing_frames = required_frames - total_saved_frames

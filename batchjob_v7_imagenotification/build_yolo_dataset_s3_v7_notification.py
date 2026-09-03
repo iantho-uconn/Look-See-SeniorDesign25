@@ -37,8 +37,8 @@ HARD_NEG_RATIO = float(os.environ.get("HARD_NEG_RATIO", "0.25"))
 HARD_NEG_MAX_PER_LANDMARK = int(os.environ.get("HARD_NEG_MAX_PER_LANDMARK", "25"))
 
 BALANCE_STRATEGY = os.environ.get("BALANCE_STRATEGY", "none").lower()
-MAX_IMAGES_PER_CLASS = int(os.environ.get("MAX_IMAGES_PER_CLASS", "500"))
-MIN_IMAGES_PER_CLASS = int(os.environ.get("MIN_IMAGES_PER_CLASS", "1800"))
+MAX_IMAGES_PER_CLASS = int(os.environ.get("MAX_IMAGES_PER_CLASS", "2200"))
+MIN_IMAGES_PER_CLASS = int(os.environ.get("MIN_IMAGES_PER_CLASS", "2000"))
 
 LANDMARKS_TABLE = os.environ.get("LANDMARKS_TABLE", "LookSeeLandmarks")
 PUBLISHED_CLUSTER_MAPPINGS_TABLE = os.environ.get("PUBLISHED_CLUSTER_MAPPINGS_TABLE", "LookSeePublishedClusterMappings")
