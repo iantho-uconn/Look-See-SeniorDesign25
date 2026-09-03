@@ -772,7 +772,7 @@ struct NeedsMoreMediaSheet: View {
                     
                     VStack(spacing: 16) {
                         let processed = landmark.cleanFrameCount ?? 0
-                        let required = landmark.requiredFrames ?? 1800
+                        let required = landmark.requiredFrames ?? 2000
                         let seconds = landmark.secondsNeeded ?? 30
                         
                         HStack {

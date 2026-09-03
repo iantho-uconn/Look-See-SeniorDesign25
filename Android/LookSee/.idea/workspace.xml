@@ -16,15 +16,7 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="07f21855-e7c7-4afa-a99c-977bf161748a" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/models/BusinessLandmarkModels.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/models/BusinessLandmarkModels.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/models/OfflineMediaManager.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/models/OfflineMediaManager.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/BusinessLandmarksView.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/BusinessLandmarksView.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/Buttons.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/Buttons.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/LandmarkRecord.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/LandmarkRecord.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/PositiveVideoCameraView.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/PositiveVideoCameraView.kt" afterDir="false" />
-    </list>
+    <list default="true" id="07f21855-e7c7-4afa-a99c-977bf161748a" name="Changes" comment="" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
