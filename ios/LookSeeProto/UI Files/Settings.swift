@@ -151,6 +151,13 @@ struct Settings: View {
                                 settingsRow(icon: "building.2.crop.circle.fill", iconBg: primaryColor, title: "Manage My Landmarks", subtitle: "View the landmarks assigned to your account.")
                             }
                             Divider().padding(.leading, 68)
+                            
+                            // 🚀 NEW: History Tab Button Added Here
+                            NavigationLink { HistoryView().environmentObject(vm) } label: {
+                                settingsRow(icon: "clock.arrow.circlepath", iconBg: .blue, title: "Scan History", subtitle: "View your scanned landmarks.")
+                            }
+                            Divider().padding(.leading, 68)
+                            
                             Button {
                                 presenter.subscriptionStartingTab = 1
                                 presenter.showSubscriptionFlow = true

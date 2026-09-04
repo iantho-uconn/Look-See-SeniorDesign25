@@ -138,6 +138,8 @@
 		D079C5EE3038457E000A1237 /* BusinessPositiveVideoCameraView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D079C5EC3038457A000A1237 /* BusinessPositiveVideoCameraView.swift */; };
 		D079C5F1304062DB000A1237 /* Sentry in Frameworks */ = {isa = PBXBuildFile; productRef = D079C5F0304062DB000A1237 /* Sentry */; };
 		D079C5F3304062DB000A1237 /* SentrySwiftUI in Frameworks */ = {isa = PBXBuildFile; productRef = D079C5F2304062DB000A1237 /* SentrySwiftUI */; };
+		D079CA4A304A68AA000A1237 /* Historyview.swift in Sources */ = {isa = PBXBuildFile; fileRef = D079CA49304A68A3000A1237 /* Historyview.swift */; };
+		D079CA4B304A68AA000A1237 /* Historyview.swift in Sources */ = {isa = PBXBuildFile; fileRef = D079CA49304A68A3000A1237 /* Historyview.swift */; };
 		D0B0B12C2FE48EC100C75E25 /* OfflineMediaManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0B0B12B2FE48EBD00C75E25 /* OfflineMediaManager.swift */; };
 		D0B0B12E2FE48EF800C75E25 /* ArchiveView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0B0B12D2FE48EF500C75E25 /* ArchiveView.swift */; };
 		D0B0B1302FE51DBA00C75E25 /* LandmarkMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0B0B12F2FE51DB500C75E25 /* LandmarkMapView.swift */; };
@@ -232,6 +234,7 @@
 		B0DE8C0E2F51712F008E1512 /* ConfirmSignup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfirmSignup.swift; sourceTree = "<group>"; };
 		D079C5E9303844CE000A1237 /* BusinessNegativeVideoCameraView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BusinessNegativeVideoCameraView.swift; sourceTree = "<group>"; };
 		D079C5EC3038457A000A1237 /* BusinessPositiveVideoCameraView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BusinessPositiveVideoCameraView.swift; sourceTree = "<group>"; };
+		D079CA49304A68A3000A1237 /* Historyview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Historyview.swift; sourceTree = "<group>"; };
 		D0B0B12B2FE48EBD00C75E25 /* OfflineMediaManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineMediaManager.swift; sourceTree = "<group>"; };
 		D0B0B12D2FE48EF500C75E25 /* ArchiveView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchiveView.swift; sourceTree = "<group>"; };
 		D0B0B12F2FE51DB500C75E25 /* LandmarkMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LandmarkMapView.swift; sourceTree = "<group>"; };
@@ -404,6 +407,7 @@
 		56C3FA072EA6CA3100EA6153 /* UI Files */ = {
 			isa = PBXGroup;
 			children = (
+				D079CA49304A68A3000A1237 /* Historyview.swift */,
 				D079C5EC3038457A000A1237 /* BusinessPositiveVideoCameraView.swift */,
 				D079C5E9303844CE000A1237 /* BusinessNegativeVideoCameraView.swift */,
 				3CF3703D3006BE24005780B3 /* AccountSecurityView.swift */,
@@ -749,6 +753,7 @@
 				378CB4A9302BF54400805E32 /* ReportIssueView.swift in Sources */,
 				3CEB32B6302F8115001A4A7C /* Mysticfirsthalf.mlpackage in Sources */,
 				3C5BC5C6301E356400953451 /* NegativeGalleryPicker.swift in Sources */,
+				D079CA4A304A68AA000A1237 /* Historyview.swift in Sources */,
 				3C5BC5C7301E356400953451 /* BusinessBulkDeleteView.swift in Sources */,
 				3CEB2EDB302F6A89001A4A7C /* Detector.swift in Sources */,
 				3C5BC5C8301E356400953451 /* Splash.swift in Sources */,
@@ -826,6 +831,7 @@
 				D0B0B12E2FE48EF800C75E25 /* ArchiveView.swift in Sources */,
 				D079C5EB303844D2000A1237 /* BusinessNegativeVideoCameraView.swift in Sources */,
 				B0DE8C0F2F517138008E1512 /* ConfirmSignup.swift in Sources */,
+				D079CA4B304A68AA000A1237 /* Historyview.swift in Sources */,
 				3CEB32B8302F817C001A4A7C /* MysticSecondHalf.mlpackage in Sources */,
 				3C9020A82F3ABCE900EE30BF /* LocationManager.swift in Sources */,
 				3CF014A9300A994A009BD61F /* LoadingAnimation_2.swift in Sources */,

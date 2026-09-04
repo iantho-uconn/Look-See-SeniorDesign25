@@ -19,6 +19,9 @@ struct LandmarkScan: View {
     @StateObject private var detector = Detector()
     @ObservedObject private var infoView = VariableContainer.shared
     
+    // 🚀 NEW: View Model Injection for History
+    @EnvironmentObject var vm: AuthViewModel
+    
     @State private var zoomLevel: CGFloat = 1.0
     @State private var zoomIndicatorVisible = false
     @State private var zoomFadeTask: Task<Void, Never>?
@@ -97,7 +100,7 @@ struct LandmarkScan: View {
                     .zIndex(7)
                 }
                                 
-                                // --- Confidence Slider just for Matt will be removed when published---
+                // --- Confidence Slider just for Matt will be removed when published---
                 if isActive && !infoView.infoView && showThresholdControls {
                     HStack {
                         Spacer()
@@ -147,9 +150,6 @@ struct LandmarkScan: View {
                     .zIndex(6)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
                 }
-
-
-
 
                 // PopUp is presented by Buttons at the root level so it
                 // always appears above the app chrome.
@@ -206,6 +206,24 @@ struct LandmarkScan: View {
         }
     }
 
+    // 🚀 NEW: Helper to Geocode coordinates into a city/state name
+    private func getCityName(latitude: Double, longitude: Double) async -> String? {
+        let location = CLLocation(latitude: latitude, longitude: longitude)
+        let geocoder = CLGeocoder()
+        do {
+            let placemarks = try await geocoder.reverseGeocodeLocation(location)
+            if let place = placemarks.first {
+                let city = place.locality ?? ""
+                let state = place.administrativeArea ?? ""
+                if !city.isEmpty && !state.isEmpty { return "\(city), \(state)" }
+                return city.isEmpty ? state : city
+            }
+        } catch {
+            print("Geocoding error: \(error)")
+        }
+        return nil
+    }
+
     // MARK: - Internal Methods
     private func openPopup(for detection: Detection) {
         liveInfoFetchTask?.cancel()
@@ -232,6 +250,19 @@ struct LandmarkScan: View {
             trainingRunId: detection.modelVersion,
             detectionConfidence: detection.confidence
         )
+
+        // 🚀 NEW: Log history ONLY if the user is in the business tier
+        if vm.tier == "business" || vm.hasActiveSubscription {
+            let lat = entry.latitude
+            let lon = entry.longitude
+            let displayLabel = detection.displayLabel
+            let lId = entry.landmarkId
+
+            Task {
+                let cityString = await getCityName(latitude: lat, longitude: lon) ?? "Unknown Location"
+                await vm.logScanHistory(landmarkId: lId, label: displayLabel, location: cityString)
+            }
+        }
 
         let landmarkId = entry.landmarkId
             .trimmingCharacters(in: .whitespacesAndNewlines)

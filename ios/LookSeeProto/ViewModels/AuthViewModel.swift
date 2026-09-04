@@ -27,6 +27,10 @@ class AuthViewModel: ObservableObject {
     @Published var activePlanCents: Int = 0
     @Published var activePlanYears: Int = 0
     
+    // 🚀 NEW: History Trackers
+    @Published var tier: String = ""
+    @Published var scanHistory: [ScanHistoryItem] = []
+    
     // Personal User Identity
     @Published var username: String = ""
     @Published var profileImageUrl: String = ""
@@ -150,6 +154,8 @@ class AuthViewModel: ObservableObject {
                 self.stripeSubscriptionId = ""
                 self.activePlanCents = 0
                 self.activePlanYears = 0
+                self.tier = ""
+                self.scanHistory = []
                 self.username = ""
                 self.profileImageUrl = ""
                 self.storeName = ""
@@ -188,6 +194,8 @@ class AuthViewModel: ObservableObject {
                 self.activePlanCents = 0
                 self.activePlanYears = 0
                 self.stripeSubscriptionId = ""
+                self.tier = ""
+                self.scanHistory = []
             }
         }
     }
@@ -235,6 +243,7 @@ class AuthViewModel: ObservableObject {
                         
                         self.tokenBalance = max(self.tokenBalance, fetchedBalance)
                         self.activeLandmarksCount = fetchedLandmarks
+                        self.tier = fetchedTier // 🚀 NEW: Set Tier Status
                         
                         let isSubscribedOnBackend = fetchedSub || fetchedTier == "business" || !fetchedStripeId.isEmpty
                         self.hasActiveSubscription = self.hasActiveSubscription || isSubscribedOnBackend
@@ -262,6 +271,46 @@ class AuthViewModel: ObservableObject {
             }
         } catch {
             print("❌ Failed to fetch stats: \(error.localizedDescription)")
+        }
+    }
+
+    // 🚀 NEW: History API Functions
+    func logScanHistory(landmarkId: String, label: String, location: String) async {
+        guard !userId.isEmpty else { return }
+        guard let url = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/history") else { return }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let body: [String: Any] = [
+            "userId": userId,
+            "landmarkId": landmarkId,
+            "label": label,
+            "location": location
+        ]
+
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        _ = try? await URLSession.shared.data(for: request)
+    }
+
+    func fetchScanHistory() async {
+        guard !userId.isEmpty else { return }
+        guard let url = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/history?userId=\(userId)") else { return }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
+                let items = try JSONDecoder().decode([ScanHistoryItem].self, from: data)
+                await MainActor.run {
+                    self.scanHistory = items
+                }
+            }
+        } catch {
+            print("❌ Failed to fetch scan history: \(error)")
         }
     }
 
@@ -442,4 +491,13 @@ class AuthViewModel: ObservableObject {
         default: return String(localized: "Something went wrong. Please try again.")
         }
     }
+}
+
+// 🚀 NEW: Struct for History Storage
+struct ScanHistoryItem: Identifiable, Decodable {
+    var id: String { scannedAt }
+    let scannedAt: String
+    let landmarkId: String
+    let landmarkLabel: String
+    let locationString: String
 }
