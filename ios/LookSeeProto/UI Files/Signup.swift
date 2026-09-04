@@ -10,6 +10,8 @@ import SwiftUI
 import Amplify
 
 struct Signup: View {
+    @Environment(\.dismiss) private var dismiss
+
     @State private var username = ""
     @State private var email = ""
     @State private var password = ""
@@ -21,12 +23,27 @@ struct Signup: View {
     @State private var message = ""
     @State private var isLoading = false
     @State private var showVerification = false
-    @State private var isBusinessAccount = false
+    @State private var isBusinessAccount: Bool
     
     @EnvironmentObject var vm: AuthViewModel
+    @EnvironmentObject var authState: AuthState
 
-    var onSignupSuccess: (String) -> Void
+    var onSignupSuccess: (String, Bool) -> Void
     var onGoToLogin: () -> Void
+
+    init(
+        initialBusinessAccount: Bool = false,
+        onSignupSuccess: @escaping (String, Bool) -> Void,
+        onGoToLogin: @escaping () -> Void
+    ) {
+        _isBusinessAccount = State(initialValue: initialBusinessAccount)
+        self.onSignupSuccess = onSignupSuccess
+        self.onGoToLogin = onGoToLogin
+    }
+
+    private var sanitizedEmail: String {
+        email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
     
     private func isValidPassword(_ pass: String) -> Bool {
         let passwordRegex = "^(?=.*[A-Z])(?=.*[a-z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,}$"
@@ -168,7 +185,7 @@ struct Signup: View {
                             HStack {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text("Business Account").font(.subheadline).foregroundStyle(.white)
-                                    Text("Enables promotion management and video uploads").font(.caption).foregroundStyle(Color.white.opacity(0.4))
+                                    Text("Continue to business plans after verification").font(.caption).foregroundStyle(Color.white.opacity(0.4))
                                 }
                                 Spacer()
                                 Toggle("", isOn: $isBusinessAccount).tint(Color(red: 0.22, green: 0.49, blue: 1.00))
@@ -208,9 +225,9 @@ struct Signup: View {
                                 }
                             }
                             .foregroundStyle(.white).frame(maxWidth: .infinity).padding(.vertical, 16).background(Color(red: 0.22, green: 0.49, blue: 1.00)).cornerRadius(14)
-                            .opacity(isLoading || (showVerification ? verificationCode.count < 6 : (email.isEmpty || username.isEmpty || !isValidPassword(password) || confirmPassword.isEmpty || password != confirmPassword)) ? 0.5 : 1)
+                            .opacity(isLoading || (showVerification ? verificationCode.count < 6 : (sanitizedEmail.isEmpty || username.isEmpty || !isValidPassword(password) || confirmPassword.isEmpty || password != confirmPassword)) ? 0.5 : 1)
                         }
-                        .disabled(isLoading || (showVerification ? verificationCode.count < 6 : (email.isEmpty || username.isEmpty || !isValidPassword(password) || confirmPassword.isEmpty || password != confirmPassword)))
+                        .disabled(isLoading || (showVerification ? verificationCode.count < 6 : (sanitizedEmail.isEmpty || username.isEmpty || !isValidPassword(password) || confirmPassword.isEmpty || password != confirmPassword)))
                         .padding(.top, 16)
 
                         if !showVerification {
@@ -228,6 +245,15 @@ struct Signup: View {
             }
             .scrollDismissesKeyboard(.interactively)
         }
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button { dismiss() } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 24))
+                        .foregroundStyle(.gray.opacity(0.8))
+                }
+            }
+        }
     }
 
     // MARK: - AWS Logic
@@ -239,18 +265,16 @@ struct Signup: View {
 
         isLoading = true
         message = ""
-        let group = isBusinessAccount ? "business-users" : "authenticated-users"
         Task {
             do {
-                let result = try await AuthService.shared.signUp(username: email, password: password, email: email, group: group)
+                let result = try await AuthService.shared.signUp(
+                    username: sanitizedEmail,
+                    password: password,
+                    email: sanitizedEmail
+                )
                 
                 if result.isSignUpComplete {
-                    // 🚀 FIXED: Memorize username to be processed AFTER login!
-                    await MainActor.run { vm.pendingUsernameToSave = username }
-                    message = "Account created and verified! Routing to login..."
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-                        onSignupSuccess(email)
-                    }
+                    await completeSignupAndSignIn()
                 } else {
                     withAnimation { showVerification = true }
                     message = "Code sent! Please check your email."
@@ -267,14 +291,12 @@ struct Signup: View {
         message = ""
         Task {
             do {
-                let result = try await Amplify.Auth.confirmSignUp(for: email, confirmationCode: verificationCode)
+                let result = try await Amplify.Auth.confirmSignUp(
+                    for: sanitizedEmail,
+                    confirmationCode: verificationCode.trimmingCharacters(in: .whitespacesAndNewlines)
+                )
                 if result.isSignUpComplete {
-                    // 🚀 FIXED: Memorize username to be processed AFTER login!
-                    await MainActor.run { vm.pendingUsernameToSave = username }
-                    message = "Verification successful! Routing to login..."
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                        onSignupSuccess(email)
-                    }
+                    await completeSignupAndSignIn()
                 } else {
                     message = "Verification incomplete. Please check the code."
                 }
@@ -283,5 +305,31 @@ struct Signup: View {
             }
             isLoading = false
         }
+    }
+
+    private func completeSignupAndSignIn() async {
+        vm.pendingUsernameToSave = username
+        _ = await Amplify.Auth.signOut()
+
+        let signedIn = await vm.signInAndLoad(
+            username: sanitizedEmail,
+            password: password
+        )
+
+        guard signedIn else {
+            message = vm.errorMessage.isEmpty
+                ? "Account verified. Please sign in from the login screen."
+                : vm.errorMessage
+            return
+        }
+
+        await authState.resolveTier()
+
+        message = isBusinessAccount
+            ? "Account verified! Opening business plans..."
+            : "Account verified! You are signed in."
+
+        try? await Task.sleep(nanoseconds: 650_000_000)
+        onSignupSuccess(sanitizedEmail, isBusinessAccount)
     }
 }

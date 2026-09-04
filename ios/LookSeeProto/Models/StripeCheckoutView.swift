@@ -107,20 +107,23 @@ struct StripeCheckoutView: View {
                                 .foregroundStyle(.green)
                         }
                         
-                        Text("Upgrade Successful!")
+                        Text("Payment Method Saved")
                             .font(.system(size: 24, weight: .bold, design: .rounded))
                             .foregroundStyle(.white)
                         
-                        Text("Your profile group attribute has updated to business-users. LookSee tracking features are unlocked.")
+                        Text("Your business access will update after the LookSee backend confirms the subscription.")
                             .font(.system(size: 14))
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
                             .padding(.horizontal, 36)
                         
                         Button {
-                            authState.tier = .business
+                            Task {
+                                await authState.resolveTier()
+                                dismiss()
+                            }
                         } label: {
-                            Text("Get Started")
+                            Text("Done")
                                 .font(.system(size: 16, weight: .bold))
                                 .foregroundStyle(.white)
                                 .frame(maxWidth: .infinity)
@@ -144,6 +147,15 @@ struct StripeCheckoutView: View {
     private func preparePaymentSheet() async {
         var request = URLRequest(url: backendCheckoutUrl)
         request.httpMethod = "POST"
+
+        do {
+            let idToken = try await AuthService.shared.fetchIdToken()
+            request.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
+        } catch {
+            errorMessage = "Your session could not be verified. Please sign in again."
+            return
+        }
+
         do {
             let (data, _) = try await URLSession.shared.data(for: request)
             

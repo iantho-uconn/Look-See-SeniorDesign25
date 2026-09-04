@@ -11,6 +11,7 @@ import StripePaymentSheet
 struct SubscriptionPlans: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var vm: AuthViewModel
+    @EnvironmentObject var authState: AuthState
     @ObservedObject var presenter: SettingsPresenter
     
     @State private var selectedTab: Int
@@ -21,7 +22,7 @@ struct SubscriptionPlans: View {
     @State private var paymentStatusMessage: String?
     
     @State private var pendingTokenReward: Int = 0
-    @State private var pendingSubscriptionId: String? = nil
+    @State private var tokenBalanceBeforePurchase: Int = 0
     @State private var selectedAddOnIndex: Int = 0
     
     // Multi-Year Plan Tiers
@@ -258,6 +259,7 @@ struct SubscriptionPlans: View {
                 if !isFullyLoggedIn {
                     presenter.savedAddOnIndex = selectedAddOnIndex
                     presenter.resumeCheckoutAction = "yearly"
+                    presenter.signupStartsAsBusiness = true
                     dismiss()
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { presenter.showSignUpSheet = true }
                 } else {
@@ -332,6 +334,7 @@ struct SubscriptionPlans: View {
                 
                 if !isFullyLoggedIn {
                     presenter.resumeCheckoutAction = "trial"
+                    presenter.signupStartsAsBusiness = true
                     dismiss()
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { presenter.showSignUpSheet = true }
                 } else {
@@ -440,6 +443,7 @@ struct SubscriptionPlans: View {
                 presenter.savedTokenCount = tokens
                 presenter.savedTokenCents = amountCents
                 presenter.resumeCheckoutAction = "tokens"
+                presenter.signupStartsAsBusiness = true
                 dismiss()
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { presenter.showSignUpSheet = true }
             } else {
@@ -460,6 +464,7 @@ struct SubscriptionPlans: View {
     // 🚀 THE FIX: preparePaymentSheet now handles isFreeTrial safely
     private func preparePaymentSheet(purchaseType: String, amountCents: Int = 0, tokenCount: Int = 0, isFreeTrial: Bool = false) async {
         await vm.fetchUserDetails()
+        tokenBalanceBeforePurchase = vm.tokenBalance
         
         guard let url = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/checkout") else {
             isProcessing = false; paymentStatusMessage = String(localized: "Invalid API URL."); return
@@ -480,6 +485,14 @@ struct SubscriptionPlans: View {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let idToken = await vm.fetchIdToken()
+        guard !idToken.isEmpty else {
+            isProcessing = false
+            paymentStatusMessage = String(localized: "Your session could not be verified. Please sign in again.")
+            return
+        }
+        request.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
         
         var body: [String: Any] = ["purchaseType": purchaseType, "userId": vm.userId, "userEmail": vm.userEmail]
         
@@ -511,10 +524,6 @@ struct SubscriptionPlans: View {
                     return
                 }
                 
-                if let subId = json["subscriptionId"] as? String {
-                    self.pendingSubscriptionId = subId
-                }
-                
                 if let clientSecret = json["setupIntent"] as? String, let customerId = json["customer"] as? String, let ephemeralKeySecret = json["ephemeralKey"] as? String, let publishableKey = json["publishableKey"] as? String {
                     STPAPIClient.shared.publishableKey = publishableKey
                     var configuration = PaymentSheet.Configuration()
@@ -542,43 +551,25 @@ struct SubscriptionPlans: View {
         }
     }
     
-    private func confirmPurchaseOnBackend() async -> Bool {
-        guard let url = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/checkout") else { return false }
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        
-        var body: [String: Any] = [
-            "purchaseType": "confirm_success",
-            "userId": vm.userId,
-            "addTokens": pendingTokenReward,
-            "isBusiness": selectedTab != 1
-        ]
-        
-        if let subId = pendingSubscriptionId {
-            body["subscriptionId"] = subId
-        }
-        
-        if selectedTab == 0 {
-            let selectedPlan = plans[selectedPlanIndex]
-            body["planCents"] = selectedPlan.priceCents
-            body["planYears"] = selectedPlan.years
-        } else if selectedTab == 2 {
-            // 🚀 Ensure Tier 1 plan details are passed on free trial success
-            body["planCents"] = 1000
-            body["planYears"] = 1
-        }
-        
-        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        
-        do {
-            let (_, response) = try await URLSession.shared.data(for: request)
-            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
+    private func waitForWebhookConfirmation() async -> Bool {
+        for attempt in 0..<10 {
+            await vm.fetchUserUsageStats()
+            await authState.resolveTier()
+
+            if selectedTab == 1 {
+                let expectedBalance = tokenBalanceBeforePurchase + pendingTokenReward
+                if vm.tokenBalance >= expectedBalance {
+                    return true
+                }
+            } else if vm.hasActiveSubscription && authState.tier == .business {
                 return true
             }
-        } catch {
-            return false
+
+            if attempt < 9 {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+            }
         }
+
         return false
     }
     
@@ -588,17 +579,13 @@ struct SubscriptionPlans: View {
             UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
             
             Task {
-                let dbSuccess = await confirmPurchaseOnBackend()
+                let backendConfirmed = await waitForWebhookConfirmation()
                 
                 await MainActor.run {
-                    if dbSuccess {
+                    if backendConfirmed {
                         presenter.justPurchased = true
-                        // Note: This updates the local UI immediately. The webhook will permanently secure this in DynamoDB.
-                        vm.tokenBalance += pendingTokenReward
                         
                         if selectedTab != 1 {
-                            vm.hasActiveSubscription = true
-                            
                             if selectedTab == 0 {
                                 let selectedPlan = plans[selectedPlanIndex]
                                 vm.activePlanCents = selectedPlan.priceCents
@@ -619,6 +606,7 @@ struct SubscriptionPlans: View {
                         DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { presenter.justPurchased = false }
                         
                     } else {
+                        paymentStatusMessage = String(localized: "Payment received. LookSee is still confirming it with Stripe. Please check again shortly.")
                         isProcessing = false
                         presenter.resumeCheckoutAction = nil
                     }

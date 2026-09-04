@@ -33,6 +33,11 @@ class AuthViewModel: ObservableObject {
     
     // Memory variable to carry the username from Signup to Login
     @Published var pendingUsernameToSave: String = ""
+
+    var currentTier: UserTier {
+        guard isSignedIn else { return .guest }
+        return hasActiveSubscription ? .business : .authenticated
+    }
     
     // Website and Address properties
     @Published var storeName: String = ""
@@ -60,52 +65,65 @@ class AuthViewModel: ObservableObject {
     
     func signIn(username: String, password: String) {
         Task {
-            do {
-                let result = try await AuthService.shared.signIn(username: username, password: password)
-                if result.isSignedIn {
-                    isSignedIn = true
-                    requiresNewPassword = false
-                    errorMessage = ""
-                    
-                    // 🚀 THE FIX: Capture the typed email instantly to bypass Swift state delays
-                    let guaranteedEmail = username
-                    self.userEmail = guaranteedEmail
-                    
-                    if let user = try? await Amplify.Auth.getCurrentUser() {
-                        self.userId = user.userId
-                    }
-                    
-                    // 🚀 Force-feed the guaranteed email directly into the network payloads
-                    await initDatabaseRow(emailToSave: guaranteedEmail)
-                    
-                    if !pendingUsernameToSave.isEmpty {
-                        let _ = await updateUserIdentity(newUsername: pendingUsernameToSave, emailToSave: guaranteedEmail)
-                        pendingUsernameToSave = "" // Clear memory
-                    }
-                    
-                    await fetchUserDetails()
-                    await fetchUserUsageStats()
-                } else {
-                    switch result.nextStep {
-                    case .confirmSignInWithNewPassword:
-                        requiresNewPassword = true
-                        errorMessage = String(localized: "Please enter a new permanent password.")
-                    case .confirmSignUp:
-                        errorMessage = String(localized: "Account not verified. Please check your email for a confirmation code.")
-                    case .resetPassword:
-                        errorMessage = String(localized: "Password reset required.")
-                    default:
-                        errorMessage = String(localized: "Additional verification required.")
-                    }
-                    isSignedIn = false
+            _ = await signInAndLoad(username: username, password: password)
+        }
+    }
+
+    @discardableResult
+    func signInAndLoad(username: String, password: String) async -> Bool {
+        let normalizedEmail = username.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+
+        do {
+            let result = try await AuthService.shared.signIn(username: normalizedEmail, password: password)
+            guard result.isSignedIn else {
+                switch result.nextStep {
+                case .confirmSignInWithNewPassword:
+                    requiresNewPassword = true
+                    errorMessage = String(localized: "Please enter a new permanent password.")
+                case .confirmSignUp:
+                    errorMessage = String(localized: "Account not verified. Please check your email for a confirmation code.")
+                case .resetPassword:
+                    errorMessage = String(localized: "Password reset required.")
+                default:
+                    errorMessage = String(localized: "Additional verification required.")
                 }
-            } catch let error as AuthError {
-                errorMessage = friendlyMessage(for: error)
                 isSignedIn = false
-            } catch {
-                errorMessage = String(localized: "Something went wrong. Please try again.")
-                isSignedIn = false
+                return false
             }
+
+            isSignedIn = true
+            requiresNewPassword = false
+            errorMessage = ""
+            userEmail = normalizedEmail
+
+            if let user = try? await Amplify.Auth.getCurrentUser() {
+                userId = user.userId
+            }
+
+            await initDatabaseRow(emailToSave: normalizedEmail)
+
+            if !pendingUsernameToSave.isEmpty {
+                let usernameToSave = pendingUsernameToSave
+                let result = await updateUserIdentity(
+                    newUsername: usernameToSave,
+                    emailToSave: normalizedEmail
+                )
+                if result.success {
+                    pendingUsernameToSave = ""
+                }
+            }
+
+            await fetchUserDetails()
+            await fetchUserUsageStats()
+            return true
+        } catch let error as AuthError {
+            errorMessage = friendlyMessage(for: error)
+            isSignedIn = false
+            return false
+        } catch {
+            errorMessage = String(localized: "Something went wrong. Please try again.")
+            isSignedIn = false
+            return false
         }
     }
 
@@ -209,13 +227,24 @@ class AuthViewModel: ObservableObject {
         return ""
     }
 
+    private func authorizedJSONRequest(url: URL) async -> URLRequest {
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let idToken = await fetchIdToken()
+        if !idToken.isEmpty {
+            request.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
+        }
+
+        return request
+    }
+
     func fetchUserUsageStats() async {
         guard !userId.isEmpty else { return }
         guard let url = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/LookSeeGetUserStats") else { return }
         
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        var request = await authorizedJSONRequest(url: url)
         let body: [String: String] = ["userId": userId]
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         
@@ -237,7 +266,7 @@ class AuthViewModel: ObservableObject {
                         self.activeLandmarksCount = fetchedLandmarks
                         
                         let isSubscribedOnBackend = fetchedSub || fetchedTier == "business" || !fetchedStripeId.isEmpty
-                        self.hasActiveSubscription = self.hasActiveSubscription || isSubscribedOnBackend
+                        self.hasActiveSubscription = isSubscribedOnBackend
                         
                         self.activePlanCents = fetchedPlanCents
                         self.activePlanYears = fetchedPlanYears
@@ -269,9 +298,7 @@ class AuthViewModel: ObservableObject {
         guard !userId.isEmpty else { return false }
         guard let url = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/checkout") else { return false }
         
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        var request = await authorizedJSONRequest(url: url)
         
         let body: [String: Any] = [
             "purchaseType": "cancel_subscription",
@@ -302,9 +329,7 @@ class AuthViewModel: ObservableObject {
         guard !userId.isEmpty else { return (false, "User not found") }
         guard let url = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/checkout") else { return (false, "Invalid URL") }
         
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        var request = await authorizedJSONRequest(url: url)
         
         var body: [String: Any] = [
             "purchaseType": "update_user_identity",
@@ -354,9 +379,7 @@ class AuthViewModel: ObservableObject {
         guard !userId.isEmpty else { return false }
         guard let url = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/checkout") else { return false }
         
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        var request = await authorizedJSONRequest(url: url)
         
         var body: [String: Any] = [
             "purchaseType": "update_profile",
@@ -417,9 +440,7 @@ class AuthViewModel: ObservableObject {
         guard !userId.isEmpty else { return }
         guard let url = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/checkout") else { return }
         
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        var request = await authorizedJSONRequest(url: url)
         
         let body: [String: Any] = [
             "purchaseType": "init_user",
