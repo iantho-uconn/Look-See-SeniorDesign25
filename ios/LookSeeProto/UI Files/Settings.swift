@@ -15,6 +15,7 @@ class SettingsPresenter: ObservableObject {
     @Published var showLoginSheet = false
     @Published var showSignUpSheet = false
     @Published var showUserProfileEditor = false
+    @Published var signupStartsAsBusiness = false
     
     @Published var resumeCheckoutAction: String? = nil
     @Published var savedAddOnIndex: Int = 0
@@ -306,11 +307,36 @@ struct Settings: View {
                     presenter.showLoginSheet = false; dismiss()
                 }, onGoToSignup: {
                     presenter.showLoginSheet = false
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { presenter.showSignUpSheet = true }
+                    presenter.signupStartsAsBusiness = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        presenter.showSignUpSheet = true
+                    }
                 }, onContinueAsGuest: { presenter.showLoginSheet = false })
             }
         }
-        .sheet(isPresented: $presenter.showSignUpSheet) { GuestSignUpView() }
+        .sheet(isPresented: $presenter.showSignUpSheet) {
+            GuestSignUpView(
+                initialBusinessAccount: presenter.signupStartsAsBusiness,
+                onSignupSuccess: { _, wantsBusiness in
+                    presenter.showSignUpSheet = false
+                    presenter.signupStartsAsBusiness = false
+
+                    if wantsBusiness && presenter.resumeCheckoutAction == nil {
+                        presenter.subscriptionStartingTab = 0
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+                            presenter.showSubscriptionFlow = true
+                        }
+                    }
+                },
+                onGoToLogin: {
+                    presenter.showSignUpSheet = false
+                    presenter.signupStartsAsBusiness = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        presenter.showLoginSheet = true
+                    }
+                }
+            )
+        }
         .onChange(of: isFullyLoggedIn) { _, loggedIn in
             if loggedIn && presenter.resumeCheckoutAction != nil {
                 presenter.showLoginSheet = false
@@ -360,18 +386,46 @@ struct Settings: View {
                         Image(systemName: "crown.fill").foregroundStyle(.white).font(.system(size: 20))
                     }.frame(width: 48, height: 48).shadow(color: primaryColor.opacity(0.5), radius: 8, x: 0, y: 4)
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Join LookSee").font(.system(size: 18, weight: .bold, design: .rounded)).foregroundStyle(.white)
-                        Text("Upload landmarks and manage data. Free trail available.").font(.system(size: 14, weight: .medium)).foregroundStyle(.white.opacity(0.7))
+                        Text(isFullyLoggedIn ? "Upgrade to Business" : "Join LookSee")
+                            .font(.system(size: 18, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white)
+                        Text(
+                            isFullyLoggedIn
+                                ? "Unlock landmark management, uploads, promotions, and tokens."
+                                : "Create a free account to save your profile and future progress."
+                        )
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.7))
                     }
                 }
                 HStack(spacing: 12) {
-                    Button { presenter.showSubscriptionFlow = true } label: {
-                        Text("Sign up").font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(.white).frame(maxWidth: .infinity).padding(.vertical, 14).background(primaryColor).clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    Button {
+                        if isFullyLoggedIn {
+                            presenter.subscriptionStartingTab = 0
+                            presenter.showSubscriptionFlow = true
+                        } else {
+                            presenter.signupStartsAsBusiness = false
+                            presenter.showSignUpSheet = true
+                        }
+                    } label: {
+                        Text(isFullyLoggedIn ? "View Business Plans" : "Create Free Account")
+                            .font(.system(size: 15, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 64)
+                            .background(primaryColor)
+                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                     }.buttonStyle(.plain)
                     
                     if !isFullyLoggedIn {
                         Button { presenter.showLoginSheet = true } label: {
-                            Text("Log In").font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(.white).frame(maxWidth: .infinity).padding(.vertical, 14).background(Color.white.opacity(0.15)).clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            Text("Log In")
+                                .font(.system(size: 15, weight: .bold, design: .rounded))
+                                .foregroundStyle(.white)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 64)
+                                .background(Color.white.opacity(0.15))
+                                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                         }.buttonStyle(.plain)
                     }
                 }

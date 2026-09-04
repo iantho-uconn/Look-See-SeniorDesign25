@@ -4,6 +4,7 @@
 //
 //  Created by Sheenan Ahsan on 2/25/26.
 //
+import Foundation
 import Amplify
 import AWSCognitoAuthPlugin
 import AWSPluginsCore
@@ -16,24 +17,35 @@ class AuthService {
    
 
    // SIGN UP
-    func signUp(username: String, password: String, email: String, group: String) async throws -> AuthSignUpResult {
-       let options = AuthSignUpRequest.Options(
-           userAttributes: [
-               AuthUserAttribute(.email, value: email),
-               AuthUserAttribute(AuthUserAttributeKey(rawValue: "custom:group"), value: group)  // store desired group
-           ]
-       )
-       return try await Amplify.Auth.signUp(
-           username: email,
-           password: password,
-           options: options
-       )
-   }
+    func signUp(
+        username _: String,
+        password: String,
+        email: String,
+        group _: String = "authenticated-users"
+    ) async throws -> AuthSignUpResult {
+        let normalizedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+
+        let options = AuthSignUpRequest.Options(
+            userAttributes: [
+                AuthUserAttribute(.email, value: normalizedEmail),
+                AuthUserAttribute(
+                    AuthUserAttributeKey(rawValue: "custom:group"),
+                    value: "authenticated-users"
+                )
+            ]
+        )
+        return try await Amplify.Auth.signUp(
+            username: normalizedEmail,
+            password: password,
+            options: options
+        )
+    }
 
    // SIGN IN
    func signIn(username: String, password: String) async throws -> AuthSignInResult {
+       let normalizedUsername = username.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
        return try await Amplify.Auth.signIn(
-           username: username,
+           username: normalizedUsername,
            password: password
        )
    }
@@ -74,5 +86,3 @@ class AuthService {
     }
 
 }
-
-

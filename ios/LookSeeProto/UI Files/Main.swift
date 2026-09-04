@@ -7,8 +7,15 @@
 import SwiftUI
 
 struct Main: View {
+    @EnvironmentObject private var vm: AuthViewModel
+    @EnvironmentObject private var authState: AuthState
+
     var body: some View {
         Buttons()
+            .task {
+                await vm.checkSession()
+                await authState.resolveTier()
+            }
     }
 }
 

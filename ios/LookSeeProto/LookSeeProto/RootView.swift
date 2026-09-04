@@ -9,6 +9,9 @@ struct RootView: View {
     @EnvironmentObject var authState: AuthState
     @State private var appState: AppState = .checkingSession
     @State private var pendingEmail = ""
+    @State private var showBusinessPlans = false
+    @State private var presentBusinessPlansAfterLoad = false
+    @StateObject private var signupPresenter = SettingsPresenter()
 
     // NEW — coordinates the two concurrent tasks that both need to finish
     // before we're allowed to leave the loading screen.
@@ -24,7 +27,8 @@ struct RootView: View {
     }
 
     var body: some View {
-        switch appState {
+        Group {
+            switch appState {
         case .checkingSession:
             // Immediately hand off to loadingModel — the session check now
             // happens concurrently with model loading instead of blocking
@@ -55,8 +59,9 @@ struct RootView: View {
 
         case .signup:
             Signup(
-                onSignupSuccess: { email in
+                onSignupSuccess: { email, wantsBusiness in
                     pendingEmail = email
+                    presentBusinessPlansAfterLoad = wantsBusiness
                     appState = .loadingModel
                 },
                 onGoToLogin: {
@@ -94,6 +99,10 @@ struct RootView: View {
                         appState = .loadingModel
                     }
                 }
+            }
+        }
+        .sheet(isPresented: $showBusinessPlans) {
+            SubscriptionPlans(presenter: signupPresenter)
         }
     }
 
@@ -107,6 +116,14 @@ struct RootView: View {
         print("✅ [RootView] Both ready — advancing to .main")
         resetLoadingFlags()
         appState = .main
+
+        if presentBusinessPlansAfterLoad {
+            presentBusinessPlansAfterLoad = false
+            signupPresenter.subscriptionStartingTab = 0
+            DispatchQueue.main.async {
+                showBusinessPlans = true
+            }
+        }
     }
 
     private func resetLoadingFlags() {
