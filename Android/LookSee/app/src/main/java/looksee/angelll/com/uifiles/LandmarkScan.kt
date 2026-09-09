@@ -33,6 +33,7 @@ import kotlin.time.Duration.Companion.milliseconds
 
 @Composable
 fun LandmarkScan(
+    vm: looksee.angelll.com.viewmodels.AuthViewModel? = null,
     onTap: () -> Unit = {},
     onPinch: () -> Unit = {},
     isDetecting: Boolean,
@@ -107,6 +108,26 @@ fun LandmarkScan(
             trainingRunId = detection.modelVersion,
             detectionConfidence = detection.confidence
         )
+
+        // Log scan history for subscribed/business users
+        if (vm != null && vm.hasActiveSubscription) {
+            val lat = entry.latitude
+            val lon = entry.longitude
+            val displayLabel = detection.displayLabel()
+            val lId = entry.landmarkId
+            val cachedImg = infoView.merchantLogoUrl
+
+            coroutineScope.launch {
+                vm.logScanHistory(
+                    landmarkId = lId,
+                    label = displayLabel,
+                    location = "Unknown Location",
+                    latitude = lat,
+                    longitude = lon,
+                    imageUrl = cachedImg
+                )
+            }
+        }
 
         if (entry.landmarkId.isNotBlank()) {
             fetchLiveLandmarkInfo(entry.landmarkId)

@@ -40,6 +40,7 @@ fun Signup(
     var email by remember { mutableStateOf("") }
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var confirmPassword by remember { mutableStateOf("") }
     var verificationCode by remember { mutableStateOf("") }
     var isBusinessAccount by remember { mutableStateOf(false) }
 
@@ -210,6 +211,35 @@ fun Signup(
                         }
                     }
 
+                    VStackLabel(label = "Confirm Password") {
+                        OutlinedTextField(
+                            value = confirmPassword,
+                            onValueChange = { confirmPassword = it },
+                            placeholder = { Text("••••••••", color = Color.Gray) },
+                            modifier = Modifier.fillMaxWidth(),
+                            visualTransformation = PasswordVisualTransformation(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedContainerColor = Color(0xFF2D2D3D),
+                                unfocusedContainerColor = Color(0xFF2D2D3D),
+                                focusedBorderColor = Color(0xFF387DFF).copy(alpha = 0.3f),
+                                unfocusedBorderColor = Color(0xFF387DFF).copy(alpha = 0.3f)
+                            )
+                        )
+                        if (confirmPassword.isNotEmpty() && password != confirmPassword) {
+                            Text(
+                                "Passwords do not match.",
+                                color = Color.Red,
+                                fontSize = 11.sp,
+                                modifier = Modifier.padding(start = 4.dp, top = 4.dp)
+                            )
+                        }
+                    }
+
                     // Business Account Toggle
                     LookSeeCard {
                         Row(
@@ -218,7 +248,7 @@ fun Signup(
                         ) {
                             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                 Text("Business Account", color = Color.White, fontSize = 15.sp)
-                                Text("Enables promotion management and video uploads", color = Color.White.copy(alpha = 0.4f), fontSize = 12.sp)
+                                Text("Continue to business plans after verification", color = Color.White.copy(alpha = 0.4f), fontSize = 12.sp)
                             }
                             Switch(
                                 checked = isBusinessAccount,
@@ -263,7 +293,7 @@ fun Signup(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            val canSubmit = if (showVerification) verificationCode.length >= 6 else (email.isNotEmpty() && username.isNotEmpty() && isValidPassword(password))
+            val canSubmit = if (showVerification) verificationCode.length >= 6 else (email.isNotEmpty() && username.isNotEmpty() && isValidPassword(password) && confirmPassword.isNotEmpty() && password == confirmPassword)
 
             Button(
                 onClick = { if (showVerification) verifyCode() else signUp() },

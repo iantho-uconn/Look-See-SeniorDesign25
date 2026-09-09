@@ -256,7 +256,7 @@ struct PositiveVideoCameraView: View {
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 case .reviewingRecent(let url, let duration):
                     reviewingRecentControls(for: url, recordedDuration: duration)
-                        .padding(.bottom, 100)
+                        .padding(.bottom, 160) // 🚀 FIX: Lifted from 100 to 160 to expose AVPlayer controls
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 case .gallery:
                     EmptyView()
@@ -757,7 +757,7 @@ struct PositiveVideoCameraView: View {
         .overlay(RoundedRectangle(cornerRadius: 32, style: .continuous).stroke(Color.white.opacity(0.2), lineWidth: 0.5))
         .shadow(color: .black.opacity(0.15), radius: 20, x: 0, y: 10)
         .padding(.horizontal, 20)
-        .padding(.bottom, 40)
+        .padding(.bottom, 160) // 🚀 FIX: Lifted from 40 to 160 to expose AVPlayer controls
     }
 
     private func nextRequiredPhase() -> CameraPhase? {

@@ -2,8 +2,6 @@
 //  BusinessLandmarksView.swift
 //  LookSeeProto
 //
-//  Business user's landmark management entry point.
-//
 
 import SwiftUI
 
@@ -20,7 +18,6 @@ struct BusinessLandmarksView: View {
     @State private var promotionTitlesByLandmarkId: [String: [String]] = [:]
     @State private var isIndexingPromotionTitles = false
 
-    // Selection mode variables
     @State private var isSelectionMode = false
     @State private var selectedLandmarkIds: Set<String> = []
     @State private var bulkPromotionSelection: BulkLandmarkSelection?
@@ -37,10 +34,8 @@ struct BusinessLandmarksView: View {
 
     var body: some View {
         ScrollView {
-            // 🚀 THE FIX: Changed to LazyVStack for buttery smooth scrolling
             LazyVStack(spacing: 24) {
                 
-                // MARK: - Pending Uploads
                 if !offlineManager.archivedItems.isEmpty {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Pending Uploads")
@@ -52,7 +47,6 @@ struct BusinessLandmarksView: View {
                         LazyVStack(spacing: 0) {
                             syncBannerRow
                             Divider()
-                            
                             ForEach(offlineManager.archivedItems) { item in
                                 pendingRow(for: item)
                                 if item.id != offlineManager.archivedItems.last?.id {
@@ -69,7 +63,6 @@ struct BusinessLandmarksView: View {
                     emptyQueueCard
                 }
 
-                // MARK: - Section 1: Needs Attention (Red)
                 if !actionNeededLandmarks.isEmpty {
                     LazyVStack(alignment: .leading, spacing: 12) {
                         Text("Needs Attention")
@@ -85,26 +78,69 @@ struct BusinessLandmarksView: View {
                     }
                 }
                 
-                // MARK: - Section 2: Processing & Training (Orange/Blue)
-                if !processingLandmarks.isEmpty {
+                // 🚀 NEW: Chronological Pipeline Sections
+                if !preparingDataLandmarks.isEmpty {
                     LazyVStack(alignment: .leading, spacing: 12) {
-                        Text("Processing & Training")
+                        Text("Preparing Data")
                             .font(.system(size: 14, weight: .bold, design: .rounded))
                             .foregroundStyle(.orange)
                             .textCase(.uppercase)
                             .padding(.horizontal, 20)
                         
-                        ForEach(processingLandmarks) { landmark in
+                        ForEach(preparingDataLandmarks) { landmark in
+                            landmarkRowLink(for: landmark)
+                                .padding(.horizontal)
+                        }
+                    }
+                }
+                
+                if !pendingTrainingLandmarks.isEmpty {
+                    LazyVStack(alignment: .leading, spacing: 12) {
+                        Text("Waiting for Training")
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .foregroundStyle(.purple)
+                            .textCase(.uppercase)
+                            .padding(.horizontal, 20)
+                        
+                        ForEach(pendingTrainingLandmarks) { landmark in
+                            landmarkRowLink(for: landmark)
+                                .padding(.horizontal)
+                        }
+                    }
+                }
+                
+                if !trainingModelLandmarks.isEmpty {
+                    LazyVStack(alignment: .leading, spacing: 12) {
+                        Text("In Training")
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .foregroundStyle(.yellow)
+                            .textCase(.uppercase)
+                            .padding(.horizontal, 20)
+                        
+                        ForEach(trainingModelLandmarks) { landmark in
+                            landmarkRowLink(for: landmark)
+                                .padding(.horizontal)
+                        }
+                    }
+                }
+                
+                if !optimizingModelLandmarks.isEmpty {
+                    LazyVStack(alignment: .leading, spacing: 12) {
+                        Text("Optimizing for iOS")
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .foregroundStyle(.blue)
+                            .textCase(.uppercase)
+                            .padding(.horizontal, 20)
+                        
+                        ForEach(optimizingModelLandmarks) { landmark in
                             landmarkRowLink(for: landmark)
                                 .padding(.horizontal)
                         }
                     }
                 }
 
-                // MARK: - Section 3: Active Landmarks (Green)
                 LazyVStack(alignment: .leading, spacing: 12) {
                     HStack {
-                        // 🚀 THE FIX: Changed to .green to match the pill badges
                         Text("Active Landmarks")
                             .font(.system(size: 14, weight: .bold, design: .rounded))
                             .foregroundStyle(.green)
@@ -146,7 +182,7 @@ struct BusinessLandmarksView: View {
                             .padding(.horizontal, 20)
                     } else if displayedLandmarks.isEmpty {
                         noSearchResultsView
-                    } else if activeLandmarks.isEmpty && (!actionNeededLandmarks.isEmpty || !processingLandmarks.isEmpty) {
+                    } else if activeLandmarks.isEmpty && displayedLandmarks.contains(where: { $0.status == "NEEDS_MORE_MEDIA" || $0.isProcessing }) {
                         EmptyView()
                     } else {
                         ForEach(activeLandmarks) { landmark in
@@ -194,39 +230,19 @@ struct BusinessLandmarksView: View {
             selectedLandmarkIds.formIntersection(Set(validIds))
         }
         .toolbar {
-            if #available(iOS 16.0, *) {
-                ToolbarItem(placement: .topBarTrailing) {
-                    if isSelectionMode {
-                        selectionActionsMenu
-                    } else {
-                        refreshToolbarButton
-                    }
+            ToolbarItem(placement: .topBarTrailing) {
+                if isSelectionMode {
+                    selectionActionsMenu
+                } else {
+                    refreshToolbarButton
                 }
+            }
 
-                ToolbarSpacer(.fixed, placement: .topBarTrailing)
-
-                ToolbarItem(placement: .topBarTrailing) {
-                    if isSelectionMode {
-                        doneToolbarButton
-                    } else {
-                        selectToolbarButton
-                    }
-                }
-            } else {
-                ToolbarItem(placement: .topBarTrailing) {
-                    if isSelectionMode {
-                        selectionActionsMenu
-                    } else {
-                        refreshToolbarButton
-                    }
-                }
-
-                ToolbarItem(placement: .topBarTrailing) {
-                    if isSelectionMode {
-                        doneToolbarButton
-                    } else {
-                        selectToolbarButton
-                    }
+            ToolbarItem(placement: .topBarTrailing) {
+                if isSelectionMode {
+                    doneToolbarButton
+                } else {
+                    selectToolbarButton
                 }
             }
         }
@@ -263,14 +279,20 @@ struct BusinessLandmarksView: View {
                             ]
                         )
                     }
+                },
+                onForceTrain: {
+                    let success = await vm.forceTrainLandmark(landmarkId: landmark.landmarkId)
+                    if success {
+                        landmarkNeedingMedia = nil
+                        await refreshLandmarksAndSearchIndex()
+                    }
                 }
             )
-            .presentationDetents([.fraction(0.55)])
+            .presentationDetents([.fraction(0.65)])
             .presentationDragIndicator(.visible)
         }
     }
 
-    // MARK: - Row Helper
     @ViewBuilder
     private func landmarkRowLink(for landmark: BusinessLandmark) -> some View {
         if isSelectionMode {
@@ -323,17 +345,23 @@ struct BusinessLandmarksView: View {
             .buttonStyle(.plain)
         }
     }
-
-    // MARK: - Internal UI Components (Selection, Search, etc.)
     
+    // 🚀 NEW: Distinct Chronological Filters
     private var actionNeededLandmarks: [BusinessLandmark] {
         displayedLandmarks.filter { $0.status == "NEEDS_MORE_MEDIA" }
     }
-    
-    private var processingLandmarks: [BusinessLandmark] {
-        displayedLandmarks.filter { $0.isProcessing }
+    private var preparingDataLandmarks: [BusinessLandmark] {
+        displayedLandmarks.filter { $0.status == "PREPARING_DATA" }
     }
-    
+    private var pendingTrainingLandmarks: [BusinessLandmark] {
+        displayedLandmarks.filter { $0.status == "PENDING_TRAINING" }
+    }
+    private var trainingModelLandmarks: [BusinessLandmark] {
+        displayedLandmarks.filter { $0.status == "TRAINING_MODEL" }
+    }
+    private var optimizingModelLandmarks: [BusinessLandmark] {
+        displayedLandmarks.filter { $0.status == "OPTIMIZING_MODEL" }
+    }
     private var activeLandmarks: [BusinessLandmark] {
         displayedLandmarks.filter { $0.status != "NEEDS_MORE_MEDIA" && !$0.isProcessing }
     }
@@ -434,7 +462,6 @@ struct BusinessLandmarksView: View {
                 } catch {
                     return
                 }
-
                 guard !Task.isCancelled else { return }
                 await autoRefreshLandmarks()
             }
@@ -449,17 +476,9 @@ struct BusinessLandmarksView: View {
     @MainActor
     private func autoRefreshLandmarks() async {
         guard !viewModel.isLoading else { return }
-
         await viewModel.refresh()
-
-        // Keep the search index aligned with newly added/removed landmarks,
-        // but do not refetch every promotion every 90 seconds.
         await loadPromotionSearchIndex(forceReload: false)
-
-        NotificationCenter.default.post(
-            name: Notification.Name("CheckGlobalNotifications"),
-            object: nil
-        )
+        NotificationCenter.default.post(name: Notification.Name("CheckGlobalNotifications"), object: nil)
     }
 
     @MainActor private func refreshLandmarksAndSearchIndex() async {
@@ -508,7 +527,6 @@ struct BusinessLandmarksView: View {
         return searchablePromotionTitles(for: landmark).first { $0.localizedCaseInsensitiveContains(query) }
     }
     
-    // UI Helpers
     private var visibleLandmarkIds: Set<String> { Set(displayedLandmarks.map(\.landmarkId)) }
     private var selectedLandmarks: [BusinessLandmark] { viewModel.landmarks.filter { selectedLandmarkIds.contains($0.landmarkId) } }
     private var visibleSelectedCount: Int { selectedLandmarkIds.intersection(visibleLandmarkIds).count }
@@ -544,7 +562,6 @@ struct BusinessLandmarksView: View {
         .font(.system(size: 17, weight: .bold, design: .rounded))
     }
 
-    // MARK: - Row Views
     @ViewBuilder
     private var syncBannerRow: some View {
         let isUploading = uploadManager.currentlyUploadingId != nil
@@ -619,7 +636,6 @@ private struct BusinessLandmarkRow: View {
 
     private let selectionColor = Color(red: 0.22, green: 0.49, blue: 1.00)
     
-    // 🚀 THE FIX: Dynamic Badge Coloring now includes Purple for PENDING_TRAINING
     private var badgeColor: Color {
         switch landmark.status {
         case "NEEDS_MORE_MEDIA": return .red
@@ -744,6 +760,12 @@ struct NeedsMoreMediaSheet: View {
     let landmark: BusinessLandmark
     
     var onAddMedia: () -> Void
+    var onForceTrain: () async -> Void
+    
+    @State private var isForcingTrain = false
+    @State private var showingForceTrainAlert = false
+    
+    private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00)
     
     var body: some View {
         VStack(spacing: 0) {
@@ -780,7 +802,7 @@ struct NeedsMoreMediaSheet: View {
                                 Text("Frames Extracted").font(.caption).foregroundStyle(.secondary)
                                 Text("\(processed) / \(required)")
                                     .font(.system(size: 18, weight: .bold, design: .monospaced))
-                                    .foregroundStyle(.primary)
+                                    .foregroundStyle(processed < 1500 ? .red : .orange)
                                     .minimumScaleFactor(0.5)
                                     .lineLimit(1)
                             }
@@ -797,7 +819,7 @@ struct NeedsMoreMediaSheet: View {
                         
                         Divider()
                         
-                        Text("Capture about **\(seconds) more seconds** of video capturing your landmark. Once uploaded, training will resume automatically. This will not cost a token.")
+                        Text("Capture about **\(seconds) more seconds** of video capturing your landmark. Once uploaded, training will resume automatically. This will not cost a token. Alternatively, if this is a small or flat object where taking more video is impossible, you can force the AI to train anyway.")
                             .font(.system(size: 14))
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -812,20 +834,43 @@ struct NeedsMoreMediaSheet: View {
                 }
             }
             
-            VStack {
+            VStack(spacing: 12) {
                 Button {
                     UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
                     dismiss()
                     onAddMedia()
                 } label: {
                     Text("Add Media Now")
-                        .font(.system(size: 17, weight: .bold, design: .rounded))
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)
-                        .background(Color.red)
+                        .background(primaryColor)
                         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }
+                .disabled(isForcingTrain)
+                
+                Button {
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    showingForceTrainAlert = true
+                } label: {
+                    if isForcingTrain {
+                        ProgressView().tint(.red)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
+                            .background(Color.red.opacity(0.15))
+                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    } else {
+                        Text("Force Train Anyway")
+                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .foregroundStyle(.red)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
+                            .background(Color.red.opacity(0.15))
+                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    }
+                }
+                .disabled(isForcingTrain)
             }
             .padding(.horizontal, 20)
             .padding(.top, 12)
@@ -833,6 +878,19 @@ struct NeedsMoreMediaSheet: View {
             .background(Color(uiColor: .systemGroupedBackground))
         }
         .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea(edges: .bottom))
+        .alert("Force Train Landmark?", isPresented: $showingForceTrainAlert) {
+            Button("Cancel", role: .cancel) { }
+            Button("Train", role: .destructive) {
+                Task {
+                    isForcingTrain = true
+                    await onForceTrain()
+                    isForcingTrain = false
+                    dismiss()
+                }
+            }
+        } message: {
+            Text("This landmark has less than the recommended 2,000 frames. Detection reliability may be reduced. Are you sure you want to train it anyway?")
+        }
     }
 }
 

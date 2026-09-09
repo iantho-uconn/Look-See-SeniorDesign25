@@ -73,7 +73,6 @@ struct Settings: View {
                                 ZStack {
                                     Circle().fill(primaryColor.opacity(0.15))
                                     if let url = URL(string: vm.profileImageUrl), !vm.profileImageUrl.isEmpty {
-                                        // 🚀 THE FIX: Handles the network dropping gracefully!
                                         AsyncImage(url: url) { phase in
                                             switch phase {
                                             case .empty:
@@ -153,9 +152,14 @@ struct Settings: View {
                             }
                             Divider().padding(.leading, 68)
                             
-                            // 🚀 NEW: History Tab Button Added Here
                             NavigationLink { HistoryView().environmentObject(vm) } label: {
                                 settingsRow(icon: "clock.arrow.circlepath", iconBg: .blue, title: "Scan History", subtitle: "View your scanned landmarks.")
+                            }
+                            Divider().padding(.leading, 68)
+                            
+                            // 🚀 NEW: Analytics Tab Button
+                            NavigationLink { BusinessAnalyticsView().environmentObject(vm) } label: {
+                                settingsRow(icon: "chart.bar.fill", iconBg: .indigo, title: "Analytics", subtitle: "Track daily views and engagement.")
                             }
                             Divider().padding(.leading, 68)
                             
@@ -252,7 +256,7 @@ struct Settings: View {
                                     presenter.showSubscriptionFlow = true
                                 } label: {
                                     if !vm.hasActiveSubscription {
-                                        Text("sign Up").font(.system(size: 15, weight: .bold, design: .rounded)).frame(maxWidth: .infinity).padding(.vertical, 12).background(primaryColor.opacity(0.1)).foregroundStyle(primaryColor).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                        Text("Sign Up").font(.system(size: 15, weight: .bold, design: .rounded)).frame(maxWidth: .infinity).padding(.vertical, 12).background(primaryColor.opacity(0.1)).foregroundStyle(primaryColor).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                                     } else {
                                         Text("Manage Plan").font(.system(size: 15, weight: .bold, design: .rounded)).frame(maxWidth: .infinity).padding(.vertical, 12).background(primaryColor.opacity(0.1)).foregroundStyle(primaryColor).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                                     }
@@ -1097,7 +1101,6 @@ struct UserProfileEditSheet: View {
                                     base64String = compressedImage.jpegData(compressionQuality: 0.6)?.base64EncodedString()
                                 }
                                 
-                                // 🚀 THE FIX IS RIGHT HERE 🚀
                                 let result = await vm.updateUserIdentity(newUsername: draftUsername, emailToSave: vm.userEmail, profileBase64: base64String)
                                 isSaving = false
                                 if result.success {

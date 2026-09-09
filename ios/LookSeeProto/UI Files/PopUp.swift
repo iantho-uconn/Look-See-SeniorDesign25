@@ -30,6 +30,28 @@ struct PopUp: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         }
         .environment(\.colorScheme, .dark)
+        // 🚀 NEW: Silent Analytics Ping
+        .onAppear {
+            let currentLandmarkId = infoView.landmarkId
+            let currentOwnerId = infoView.reportedOwnerId ?? "unknown"
+            
+            // Fire-and-forget background ping so it doesn't slow down the UI
+            Task.detached(priority: .background) {
+                guard let url = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/analytics/click") else { return }
+                
+                var request = URLRequest(url: url)
+                request.httpMethod = "POST"
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                
+                let body: [String: Any] = [
+                    "landmarkId": currentLandmarkId,
+                    "ownerUserId": currentOwnerId
+                ]
+                
+                request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+                _ = try? await URLSession.shared.data(for: request)
+            }
+        }
         .sheet(item: $selectedPromotionImage) { item in
             promotionImagePreview(url: item.url)
         }

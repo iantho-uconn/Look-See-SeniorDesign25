@@ -364,6 +364,7 @@ fun ButtonsScreen(
             ) { page ->
                 if (page == 0) {
                     LandmarkScan(
+                        vm = vm,
                         onTap = { revealChromeThenFade() },
                         isDetecting = isDetecting,
                         onIsDetectingChange = { isDetecting = it },

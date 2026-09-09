@@ -311,6 +311,15 @@ fun SettingsScreen(
                 // 5. GENERAL SETTINGS
                 LookSeeSectionHeader("General")
                 LookSeeCard(modifier = Modifier.padding(horizontal = 16.dp)) {
+                    LookSeeRow(
+                        icon = Icons.Default.History,
+                        iconContainerColor = AppleBlue,
+                        title = "Scan History",
+                        subtitle = "View your previous landmark scans."
+                    ) {
+                        onNavigate("HistoryView")
+                    }
+                    HorizontalDivider(modifier = Modifier.padding(start = 52.dp), color = Color.White.copy(alpha = 0.1f))
                     LookSeeRow(icon = Icons.Default.BugReport, iconContainerColor = Color.Red, title = "Report a Bug") {
                         onNavigate("ReportIssueView")
                     }

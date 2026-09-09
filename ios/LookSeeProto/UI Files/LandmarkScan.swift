@@ -253,14 +253,16 @@ struct LandmarkScan: View {
 
         // 🚀 NEW: Log history ONLY if the user is in the business tier
         if vm.tier == "business" || vm.hasActiveSubscription {
-            let lat = entry.latitude
-            let lon = entry.longitude
+            let lat = entry.latitude ?? 0.0
+            let lon = entry.longitude ?? 0.0
             let displayLabel = detection.displayLabel
             let lId = entry.landmarkId
+            
+            let cachedImg = infoView.merchantLogoUrl
 
             Task {
                 let cityString = await getCityName(latitude: lat, longitude: lon) ?? "Unknown Location"
-                await vm.logScanHistory(landmarkId: lId, label: displayLabel, location: cityString)
+                await vm.logScanHistory(landmarkId: lId, label: displayLabel, location: cityString, latitude: lat, longitude: lon, imageUrl: cachedImg)
             }
         }
 

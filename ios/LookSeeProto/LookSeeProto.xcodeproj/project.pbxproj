@@ -140,6 +140,8 @@
 		D079C5F3304062DB000A1237 /* SentrySwiftUI in Frameworks */ = {isa = PBXBuildFile; productRef = D079C5F2304062DB000A1237 /* SentrySwiftUI */; };
 		D079CA4A304A68AA000A1237 /* Historyview.swift in Sources */ = {isa = PBXBuildFile; fileRef = D079CA49304A68A3000A1237 /* Historyview.swift */; };
 		D079CA4B304A68AA000A1237 /* Historyview.swift in Sources */ = {isa = PBXBuildFile; fileRef = D079CA49304A68A3000A1237 /* Historyview.swift */; };
+		D079CAEB30518602000A1237 /* BusinessAnalyticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D079CAEA305185FD000A1237 /* BusinessAnalyticsView.swift */; };
+		D079CAEC30518602000A1237 /* BusinessAnalyticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D079CAEA305185FD000A1237 /* BusinessAnalyticsView.swift */; };
 		D0B0B12C2FE48EC100C75E25 /* OfflineMediaManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0B0B12B2FE48EBD00C75E25 /* OfflineMediaManager.swift */; };
 		D0B0B12E2FE48EF800C75E25 /* ArchiveView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0B0B12D2FE48EF500C75E25 /* ArchiveView.swift */; };
 		D0B0B1302FE51DBA00C75E25 /* LandmarkMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0B0B12F2FE51DB500C75E25 /* LandmarkMapView.swift */; };
@@ -235,6 +237,7 @@
 		D079C5E9303844CE000A1237 /* BusinessNegativeVideoCameraView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BusinessNegativeVideoCameraView.swift; sourceTree = "<group>"; };
 		D079C5EC3038457A000A1237 /* BusinessPositiveVideoCameraView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BusinessPositiveVideoCameraView.swift; sourceTree = "<group>"; };
 		D079CA49304A68A3000A1237 /* Historyview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Historyview.swift; sourceTree = "<group>"; };
+		D079CAEA305185FD000A1237 /* BusinessAnalyticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BusinessAnalyticsView.swift; sourceTree = "<group>"; };
 		D0B0B12B2FE48EBD00C75E25 /* OfflineMediaManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineMediaManager.swift; sourceTree = "<group>"; };
 		D0B0B12D2FE48EF500C75E25 /* ArchiveView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchiveView.swift; sourceTree = "<group>"; };
 		D0B0B12F2FE51DB500C75E25 /* LandmarkMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LandmarkMapView.swift; sourceTree = "<group>"; };
@@ -407,6 +410,7 @@
 		56C3FA072EA6CA3100EA6153 /* UI Files */ = {
 			isa = PBXGroup;
 			children = (
+				D079CAEA305185FD000A1237 /* BusinessAnalyticsView.swift */,
 				D079CA49304A68A3000A1237 /* Historyview.swift */,
 				D079C5EC3038457A000A1237 /* BusinessPositiveVideoCameraView.swift */,
 				D079C5E9303844CE000A1237 /* BusinessNegativeVideoCameraView.swift */,
@@ -723,6 +727,7 @@
 				3C5BC5AB301E356400953451 /* CapturedNegativePhoto.swift in Sources */,
 				378CB4C5302C0CE600805E32 /* privacypolicy.swift in Sources */,
 				3C5BC5AC301E356400953451 /* Login.swift in Sources */,
+				D079CAEC30518602000A1237 /* BusinessAnalyticsView.swift in Sources */,
 				3C5BC5AD301E356400953451 /* AuthService.swift in Sources */,
 				3C5BC5AE301E356400953451 /* OfflineMediaManager.swift in Sources */,
 				3C5BC5AF301E356400953451 /* ForgotPasswordView.swift in Sources */,
@@ -788,6 +793,7 @@
 				3C7452BD301187DB0016E21D /* BusinessMediaHistoryNavigationRow.swift in Sources */,
 				562DAAB32F2A89600083A71E /* LandmarkScan.swift in Sources */,
 				3C63C8A82F91875E0006C5DD /* VariableContainer.swift in Sources */,
+				D079CAEB30518602000A1237 /* BusinessAnalyticsView.swift in Sources */,
 				D0CA58423017C5A200058BB3 /* MerchantCard.swift in Sources */,
 				D0E78B7D300545F500E5FE00 /* NetworkMonitor.swift in Sources */,
 				3C4E57072FE443E70045B2D4 /* LandmarkRecord.swift in Sources */,
@@ -1098,7 +1104,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = C66T6ZH83N;
+				DEVELOPMENT_TEAM = ZLBPU9JP27;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -1117,7 +1123,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = looksee.ian.com;
+				PRODUCT_BUNDLE_IDENTIFIER = looksee.angelll.com;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -1139,7 +1145,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = C66T6ZH83N;
+				DEVELOPMENT_TEAM = ZLBPU9JP27;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -1158,7 +1164,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = looksee.ian.com;
+				PRODUCT_BUNDLE_IDENTIFIER = looksee.angelll.com;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
