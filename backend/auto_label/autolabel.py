@@ -279,18 +279,21 @@ while True:
     if landmark_id:
         landmarks_table = dynamodb.Table(LANDMARKS_TABLE_NAME)
         
-        print(f"✅ AUTOLABELING COMPLETE: {labeled_count} frames successfully labeled. Handing off to SageMaker!")
+        # 🚀 THE FIX: Explicitly mark as NEEDS_MORE_MEDIA if no frames were found
+        final_status = 'PENDING_TRAINING' if labeled_count > 0 else 'NEEDS_MORE_MEDIA'
+        
+        print(f"✅ AUTOLABELING COMPLETE: {labeled_count} frames successfully labeled. Status -> {final_status}")
         try:
             landmarks_table.update_item(
                 Key={'landmarkId': landmark_id},
                 UpdateExpression="SET #st = :s, finalLabeledCount = :c",
                 ExpressionAttributeNames={'#st': 'status'},
                 ExpressionAttributeValues={
-                    ':s': 'PENDING_TRAINING', 
+                    ':s': final_status, 
                     ':c': labeled_count
                 }
             )
-            print("💾 Successfully updated DynamoDB landmark status to 'PENDING_TRAINING'.") # THE FIX: Fixed print statement
+            print(f"💾 Successfully updated DynamoDB landmark status to '{final_status}'.")
         except Exception as e:
             print(f"⚠️ Failed to update DynamoDB success status: {e}")
     else:

@@ -303,7 +303,7 @@ def copy_artifacts_to_model_dir(
             )
 
 
-# 🚀 NEW: The DynamoDB UI Hook
+# 🚀 THE FIX: The DynamoDB UI Guardrail
 def notify_training_started(manifest):
     """Pings DynamoDB the exact second the SageMaker GPU starts training."""
     try:
@@ -317,7 +317,14 @@ def notify_training_started(manifest):
         
         for key, entry in landmarks.items():
             landmark_id = entry.get("landmarkId")
+            # 🚀 GUARDRAIL: Do not update status if the landmark squeezed in with 0 frames
+            labeled_count = entry.get("finalLabeledCount", 1)
+            
             if landmark_id:
+                if labeled_count == 0:
+                    print(f" ⚠️ Skipping DynamoDB update for {landmark_id}: 0 labeled frames.")
+                    continue
+                    
                 try:
                     table.update_item(
                         Key={'landmarkId': landmark_id},
@@ -362,7 +369,7 @@ def main():
         landmark_manifest
     )
 
-    # 🚀 THE FIX: Instantly trigger the Yellow iOS Badge now that the GPU is awake!
+    # 🚀 Trigger the Yellow iOS Badge now that the GPU is awake!
     notify_training_started(manifest)
 
     manifest_class_count = int(

@@ -78,7 +78,6 @@ struct BusinessLandmarksView: View {
                     }
                 }
                 
-                // 🚀 NEW: Chronological Pipeline Sections
                 if !preparingDataLandmarks.isEmpty {
                     LazyVStack(alignment: .leading, spacing: 12) {
                         Text("Preparing Data")
@@ -346,31 +345,50 @@ struct BusinessLandmarksView: View {
         }
     }
     
-    // 🚀 NEW: Distinct Chronological Filters
+    // 🚀 NEW: Distinct Chronological Filters with Strict Boundaries
     private var actionNeededLandmarks: [BusinessLandmark] {
-        displayedLandmarks.filter { $0.status == "NEEDS_MORE_MEDIA" }
+        displayedLandmarks.filter { landmark in
+            landmark.status == "NEEDS_MORE_MEDIA"
+        }
     }
+    
     private var preparingDataLandmarks: [BusinessLandmark] {
         displayedLandmarks.filter { $0.status == "PREPARING_DATA" }
     }
+    
     private var pendingTrainingLandmarks: [BusinessLandmark] {
         displayedLandmarks.filter { $0.status == "PENDING_TRAINING" }
     }
+    
     private var trainingModelLandmarks: [BusinessLandmark] {
         displayedLandmarks.filter { $0.status == "TRAINING_MODEL" }
     }
+    
     private var optimizingModelLandmarks: [BusinessLandmark] {
         displayedLandmarks.filter { $0.status == "OPTIMIZING_MODEL" }
     }
+    
     private var activeLandmarks: [BusinessLandmark] {
-        displayedLandmarks.filter { $0.status != "NEEDS_MORE_MEDIA" && !$0.isProcessing }
+        let pipelineStates = ["NEEDS_MORE_MEDIA", "PREPARING_DATA", "PENDING_TRAINING", "TRAINING_MODEL", "OPTIMIZING_MODEL"]
+        
+        return displayedLandmarks.filter { landmark in
+            !pipelineStates.contains(landmark.status ?? "") &&
+            !landmark.isProcessing
+        }
     }
     
     private var cleanedSearchText: String { searchText.trimmingCharacters(in: .whitespacesAndNewlines) }
     
     private func activeLandmarkCountText(activeCount: Int) -> String {
         guard !cleanedSearchText.isEmpty else { return "(\(activeCount))" }
-        return "(\(activeCount) of \(viewModel.landmarks.filter { $0.status != "NEEDS_MORE_MEDIA" && !$0.isProcessing }.count))"
+        
+        let pipelineStates = ["NEEDS_MORE_MEDIA", "PREPARING_DATA", "PENDING_TRAINING", "TRAINING_MODEL", "OPTIMIZING_MODEL"]
+        let totalActive = viewModel.landmarks.filter { landmark in
+            !pipelineStates.contains(landmark.status ?? "") &&
+            !landmark.isProcessing
+        }.count
+        
+        return "(\(activeCount) of \(totalActive))"
     }
 
     private var displayedLandmarks: [BusinessLandmark] {
@@ -682,14 +700,14 @@ private struct BusinessLandmarkRow: View {
 
                         Spacer()
 
-                        Text(landmark.displayStatus)
+                        Text(needsMoreMedia ? "NEEDS MEDIA" : landmark.displayStatus)
                             .font(.system(size: 11, weight: .bold, design: .rounded))
                             .textCase(.uppercase)
                             .lineLimit(nil)
                             .fixedSize(horizontal: false, vertical: true)
                             .padding(.horizontal, 10).padding(.vertical, 6)
-                            .background(badgeColor.opacity(0.15))
-                            .foregroundColor(badgeColor)
+                            .background(needsMoreMedia ? Color.red.opacity(0.15) : badgeColor.opacity(0.15))
+                            .foregroundColor(needsMoreMedia ? .red : badgeColor)
                             .clipShape(Capsule())
                     }
 

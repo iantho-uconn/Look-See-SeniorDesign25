@@ -206,6 +206,47 @@ struct BusinessLandmarkDetailView: View {
                 .shadow(color: .black.opacity(0.03), radius: 10, x: 0, y: 4)
                 .padding(.horizontal)
 
+                // 🚀 NEW: Training Dataset Card
+                VStack(alignment: .leading, spacing: 8) {
+                    sectionTitle("Training Dataset")
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        let processed = landmark.cleanFrameCount ?? 0
+                        let required = landmark.requiredFrames ?? 2000
+                        
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Total Labeled Frames")
+                                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                                    .foregroundStyle(.secondary)
+                                    .textCase(.uppercase)
+                                
+                                Text("\(processed)")
+                                    .font(.system(size: 32, weight: .heavy, design: .rounded))
+                                    .foregroundStyle(processed >= required ? .green : (processed > 0 ? .orange : .red))
+                            }
+                            
+                            Spacer()
+                            
+                            Image(systemName: "photo.on.rectangle.angled")
+                                .font(.system(size: 32))
+                                .foregroundStyle(primaryColor.opacity(0.2))
+                        }
+                        
+                        if processed < required {
+                            Divider().padding(.vertical, 4)
+                            Text("We recommend reaching \(required) frames for optimal AI detection accuracy. You can upload more media below.")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(20)
+                    .background(Color(uiColor: .secondarySystemGroupedBackground))
+                    .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                    .shadow(color: .black.opacity(0.03), radius: 10, x: 0, y: 4)
+                    .padding(.horizontal)
+                }
+
                 // MARK: - Management
                 VStack(alignment: .leading, spacing: 8) {
                     sectionTitle("Management")
