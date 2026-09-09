@@ -272,7 +272,7 @@ class AuthViewModel: ObservableObject {
                         
                         self.tokenBalance = max(self.tokenBalance, fetchedBalance)
                         self.activeLandmarksCount = fetchedLandmarks
-                        self.tier = fetchedTier // 🚀 NEW: Set Tier Status
+                        self.tier = fetchedTier
                         
                         let isSubscribedOnBackend = fetchedSub || fetchedTier == "business" || !fetchedStripeId.isEmpty
                         self.hasActiveSubscription = isSubscribedOnBackend
@@ -303,8 +303,7 @@ class AuthViewModel: ObservableObject {
         }
     }
 
-    // 🚀 NEW: History API Functions
-    func logScanHistory(landmarkId: String, label: String, location: String) async {
+    func logScanHistory(landmarkId: String, label: String, location: String, latitude: Double, longitude: Double, imageUrl: String) async {
         guard !userId.isEmpty else { return }
         guard let url = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/history") else { return }
 
@@ -316,7 +315,10 @@ class AuthViewModel: ObservableObject {
             "userId": userId,
             "landmarkId": landmarkId,
             "label": label,
-            "location": location
+            "location": location,
+            "latitude": latitude,
+            "longitude": longitude,
+            "imageUrl": imageUrl
         ]
 
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
@@ -341,6 +343,27 @@ class AuthViewModel: ObservableObject {
         } catch {
             print("❌ Failed to fetch scan history: \(error)")
         }
+    }
+    
+    func deleteScanHistory(scannedAt: String) async {
+        guard !userId.isEmpty else { return }
+        
+        await MainActor.run {
+            self.scanHistory.removeAll { $0.scannedAt == scannedAt }
+        }
+
+        guard let url = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/history") else { return }
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let body: [String: Any] = [
+            "userId": userId,
+            "scannedAt": scannedAt
+        ]
+
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        _ = try? await URLSession.shared.data(for: request)
     }
 
     func cancelSubscription() async -> Bool {
@@ -383,7 +406,7 @@ class AuthViewModel: ObservableObject {
         var body: [String: Any] = [
             "purchaseType": "update_user_identity",
             "userId": userId,
-            "userEmail": emailToSave, // 🚀 Forced parameter injection
+            "userEmail": emailToSave,
             "username": newUsername,
             "currentUsername": self.username,
             "profileImageUrl": self.profileImageUrl
@@ -422,6 +445,40 @@ class AuthViewModel: ObservableObject {
             return (false, error.localizedDescription)
         }
         return (false, "Network error")
+    }
+
+    // 🚀 FIXED: Pointing to the correct /business/landmarks/ URL!
+    func forceTrainLandmark(landmarkId: String) async -> Bool {
+        guard !userId.isEmpty else { return false }
+        
+        // Using the exact structure found in BusinessLandmarkService.swift
+        guard let url = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/business/landmarks/\(landmarkId)") else { return false }
+        
+        var request = await authorizedJSONRequest(url: url)
+        
+        let body: [String: Any] = [
+            "forceTrainEnabled": true
+        ]
+        
+        request.httpMethod = "PATCH"
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse {
+                if httpResponse.statusCode == 200 {
+                    print("✅ Force Train API Success!")
+                    return true
+                } else {
+                    let err = String(data: data, encoding: .utf8) ?? "Unknown Error"
+                    print("❌ Force Train Failed (\(httpResponse.statusCode)): \(err)")
+                    return false
+                }
+            }
+        } catch {
+            print("❌ Force Train Network Error: \(error)")
+        }
+        return false
     }
 
     func updateBusinessProfile(storeName: String, phoneNumber: String, storeWebsite: String, storeAddress: String, storeBio: String, storeLogoUrl: String, storeLogoBase64: String? = nil) async -> Bool {
@@ -484,7 +541,6 @@ class AuthViewModel: ObservableObject {
         return false
     }
     
-    // 🚀 NEW: Signature forces an email string to be passed in
     func initDatabaseRow(emailToSave: String) async {
         guard !userId.isEmpty else { return }
         guard let url = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/checkout") else { return }
@@ -494,7 +550,7 @@ class AuthViewModel: ObservableObject {
         let body: [String: Any] = [
             "purchaseType": "init_user",
             "userId": userId,
-            "userEmail": emailToSave // 🚀 Forced parameter injection
+            "userEmail": emailToSave
         ]
         
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
@@ -514,11 +570,23 @@ class AuthViewModel: ObservableObject {
     }
 }
 
-// 🚀 NEW: Struct for History Storage
 struct ScanHistoryItem: Identifiable, Decodable {
     var id: String { scannedAt }
     let scannedAt: String
     let landmarkId: String
     let landmarkLabel: String
     let locationString: String
+    let latitude: String?
+    let longitude: String?
+    let imageUrl: String?
+    
+    var latAsDouble: Double? {
+        if let latStr = latitude, let val = Double(latStr) { return val }
+        return nil
+    }
+    
+    var lonAsDouble: Double? {
+        if let lonStr = longitude, let val = Double(lonStr) { return val }
+        return nil
+    }
 }

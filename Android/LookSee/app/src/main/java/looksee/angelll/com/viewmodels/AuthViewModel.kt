@@ -12,9 +12,12 @@ import com.amplifyframework.auth.AuthException
 import com.amplifyframework.auth.cognito.AWSCognitoAuthSession
 import com.amplifyframework.auth.result.step.AuthSignInStep
 import com.amplifyframework.kotlin.core.Amplify // 🚀 THE MAGIC FIX: Using the Kotlin Facade
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import looksee.angelll.com.models.ScanHistoryItem
 import org.json.JSONObject
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
@@ -45,6 +48,9 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
 
     // Memory variable to carry the username from Signup to Login
     var pendingUsernameToSave by mutableStateOf("")
+
+    // Scan History
+    var scanHistory by mutableStateOf<List<ScanHistoryItem>>(emptyList())
 
     // Website and Address properties
     var storeName by mutableStateOf("")
@@ -406,6 +412,81 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         makePostRequest(url, body)
     }
 
+    // MARK: - Scan History APIs
+
+    suspend fun logScanHistory(
+        landmarkId: String,
+        label: String,
+        location: String,
+        latitude: Double,
+        longitude: Double,
+        imageUrl: String = ""
+    ) {
+        if (userId.isEmpty()) return
+        val url = "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/history"
+        val body = JSONObject().apply {
+            put("userId", userId)
+            put("landmarkId", landmarkId)
+            put("label", label)
+            put("location", location)
+            put("latitude", latitude)
+            put("longitude", longitude)
+            put("imageUrl", imageUrl)
+        }
+        makePostRequest(url, body)
+    }
+
+    suspend fun fetchScanHistory() {
+        if (userId.isEmpty()) return
+        val url = "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/history?userId=$userId"
+        val (code, data) = makeGetRequest(url)
+        if (code == 200 && data != null) {
+            try {
+                val listType = object : TypeToken<List<ScanHistoryItem>>() {}.type
+                val items: List<ScanHistoryItem> = Gson().fromJson(data, listType) ?: emptyList()
+                withContext(Dispatchers.Main) {
+                    scanHistory = items
+                }
+            } catch (e: Exception) {
+                println("❌ Failed to parse scan history: ${e.message}")
+            }
+        } else {
+            println("❌ Failed to fetch scan history ($code): $data")
+        }
+    }
+
+    suspend fun deleteScanHistory(scannedAt: String) {
+        if (userId.isEmpty()) return
+        withContext(Dispatchers.Main) {
+            scanHistory = scanHistory.filterNot { it.scannedAt == scannedAt }
+        }
+        val url = "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/history"
+        val body = JSONObject().apply {
+            put("userId", userId)
+            put("scannedAt", scannedAt)
+        }
+        makeHttpRequest("DELETE", url, body)
+    }
+
+    // MARK: - Force Train Landmark API
+
+    suspend fun forceTrainLandmark(landmarkId: String): Boolean {
+        if (userId.isEmpty()) return false
+        val token = fetchIdToken()
+        val url = "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/business/landmarks/$landmarkId"
+        val body = JSONObject().apply {
+            put("forceTrainEnabled", true)
+        }
+        val (code, data) = makeHttpRequest("PATCH", url, body, idToken = token)
+        return if (code == 200) {
+            println("✅ Force Train API Success!")
+            true
+        } else {
+            println("❌ Force Train Failed ($code): $data")
+            false
+        }
+    }
+
     private fun friendlyMessage(error: AuthException): String {
         val fullMessage = "${error.message} ${error.recoverySuggestion}".lowercase()
 
@@ -418,15 +499,31 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // MARK: - Native Android Network Helper (No Retrofit Required)
-    private suspend fun makePostRequest(urlStr: String, body: JSONObject): Pair<Int, String?> = withContext(Dispatchers.IO) {
+    private suspend fun makePostRequest(urlStr: String, body: JSONObject): Pair<Int, String?> =
+        makeHttpRequest("POST", urlStr, body)
+
+    private suspend fun makeGetRequest(urlStr: String): Pair<Int, String?> =
+        makeHttpRequest("GET", urlStr, null)
+
+    private suspend fun makeHttpRequest(
+        method: String,
+        urlStr: String,
+        body: JSONObject? = null,
+        idToken: String? = null
+    ): Pair<Int, String?> = withContext(Dispatchers.IO) {
         try {
             val url = URL(urlStr)
             val conn = url.openConnection() as HttpURLConnection
-            conn.requestMethod = "POST"
+            conn.requestMethod = method
             conn.setRequestProperty("Content-Type", "application/json")
-            conn.doOutput = true
+            if (!idToken.isNullOrEmpty()) {
+                conn.setRequestProperty("Authorization", "Bearer $idToken")
+            }
 
-            OutputStreamWriter(conn.outputStream).use { it.write(body.toString()) }
+            if (body != null && (method == "POST" || method == "PATCH" || method == "PUT" || method == "DELETE")) {
+                conn.doOutput = true
+                OutputStreamWriter(conn.outputStream).use { it.write(body.toString()) }
+            }
 
             val responseCode = conn.responseCode
             val responseData = if (responseCode in 200..299) {

@@ -333,16 +333,29 @@ fun BusinessLandmarksView(
     }
 
     if (landmarkNeedingMedia != null) {
-        NeedsMoreMediaSheet(landmark = landmarkNeedingMedia!!, onDismiss = { landmarkNeedingMedia = null }) {
-            landmarkNeedingMedia = null
-            val intent = Intent("TriggerRedoRecord").apply {
-                putExtra("id", it.landmarkId)
-                putExtra("label", it.label)
-                putExtra("description", it.shortDescription ?: "")
-                putExtra("secondsNeeded", (it.secondsNeeded ?: 30).toDouble())
+        NeedsMoreMediaSheet(
+            landmark = landmarkNeedingMedia!!,
+            onDismiss = { landmarkNeedingMedia = null },
+            onForceTrain = {
+                coroutineScope.launch {
+                    val success = vm.forceTrainLandmark(landmarkNeedingMedia!!.landmarkId)
+                    if (success) {
+                        viewModel.refresh()
+                    }
+                    landmarkNeedingMedia = null
+                }
+            },
+            onAddMedia = {
+                landmarkNeedingMedia = null
+                val intent = Intent("TriggerRedoRecord").apply {
+                    putExtra("id", it.landmarkId)
+                    putExtra("label", it.label)
+                    putExtra("description", it.shortDescription ?: "")
+                    putExtra("secondsNeeded", (it.secondsNeeded ?: 30).toDouble())
+                }
+                LocalBroadcastManager.getInstance(context).sendBroadcast(intent)
             }
-            LocalBroadcastManager.getInstance(context).sendBroadcast(intent)
-        }
+        )
     }
     
     if (showBulkPromotionSheet) { Dialog(onDismissRequest = { showBulkPromotionSheet = false }) { BusinessBulkPromotionEditor(selectedLandmarks, onCompleted = { showBulkPromotionSheet = false }, onDismiss = { showBulkPromotionSheet = false }) } }
@@ -549,21 +562,146 @@ private fun EmptyQueueCard() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun NeedsMoreMediaSheet(landmark: BusinessLandmark, onDismiss: () -> Unit, onAddMedia: (BusinessLandmark) -> Unit) {
+fun NeedsMoreMediaSheet(
+    landmark: BusinessLandmark,
+    onDismiss: () -> Unit,
+    onForceTrain: () -> Unit,
+    onAddMedia: (BusinessLandmark) -> Unit
+) {
+    var isForcingTrain by remember { mutableStateOf(false) }
+    var showForceTrainAlert by remember { mutableStateOf(false) }
+
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Color(0xFF1C1C1E)) {
-        Column(modifier = Modifier.padding(20.dp).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(24.dp)) {
-            Box(modifier = Modifier.size(80.dp).background(Color.Red.copy(0.15f), CircleShape), contentAlignment = Alignment.Center) {
-                Icon(Icons.Default.Warning, contentDescription = null, tint = Color.Red, modifier = Modifier.size(36.dp))
+        Column(
+            modifier = Modifier
+                .padding(20.dp)
+                .fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(20.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(80.dp)
+                    .background(Color.Red.copy(0.15f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = Color.Red,
+                    modifier = Modifier.size(36.dp)
+                )
             }
+
             Text("More Media Required", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color.White)
-            Text("We couldn't extract enough unique frames of ${landmark.label} to train a reliable model.", fontSize = 14.sp, color = Color.Gray, textAlign = TextAlign.Center)
-            Button(
-                onClick = { onAddMedia(landmark) },
-                modifier = Modifier.fillMaxWidth().height(56.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
-                shape = RoundedCornerShape(16.dp)
-            ) { Text("Add Media Now", fontWeight = FontWeight.Bold) }
-            Spacer(Modifier.height(20.dp))
+            Text(
+                "We couldn't extract enough unique frames of ${landmark.label} to train a reliable model.",
+                fontSize = 14.sp,
+                color = Color.Gray,
+                textAlign = TextAlign.Center
+            )
+
+            val processed = landmark.cleanFrameCount ?: 0
+            val required = landmark.requiredFrames ?: 2000
+            val seconds = landmark.secondsNeeded ?: 30
+
+            LookSeeCard(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column {
+                            Text("Frames Extracted", fontSize = 12.sp, color = Color.Gray)
+                            Text(
+                                "$processed / $required",
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (processed < 1500) Color.Red else Color(0xFFFFA500)
+                            )
+                        }
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text("Target Video", fontSize = 12.sp, color = Color.Gray)
+                            Text("~$seconds Secs", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.Red)
+                        }
+                    }
+
+                    HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+
+                    Text(
+                        "Capture about $seconds more seconds of video. Once uploaded, training will resume automatically. Alternatively, if this is a small or flat object, you can force the AI to train anyway.",
+                        fontSize = 13.sp,
+                        color = Color.Gray,
+                        lineHeight = 18.sp
+                    )
+                }
+            }
+
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Button(
+                    onClick = { onAddMedia(landmark) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = looksee.angelll.com.ui.theme.LookSeeBlue),
+                    shape = RoundedCornerShape(14.dp),
+                    enabled = !isForcingTrain
+                ) {
+                    Text("Add Media Now", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                }
+
+                Button(
+                    onClick = { showForceTrainAlert = true },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.Red.copy(0.15f),
+                        contentColor = Color.Red
+                    ),
+                    shape = RoundedCornerShape(14.dp),
+                    enabled = !isForcingTrain
+                ) {
+                    if (isForcingTrain) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.Red, strokeWidth = 2.dp)
+                    } else {
+                        Text("Force Train Anyway", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
         }
+    }
+
+    if (showForceTrainAlert) {
+        AlertDialog(
+            onDismissRequest = { showForceTrainAlert = false },
+            title = { Text("Force Train Landmark?") },
+            text = { Text("This landmark has less than the recommended 2,000 frames. Detection reliability may be reduced. Are you sure you want to train it anyway?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showForceTrainAlert = false
+                        isForcingTrain = true
+                        onForceTrain()
+                    }
+                ) {
+                    Text("Train Anyway", color = Color.Red, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showForceTrainAlert = false }) {
+                    Text("Cancel", color = Color.Gray)
+                }
+            },
+            containerColor = Color(0xFF1C1C1E)
+        )
     }
 }

@@ -29,9 +29,10 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.amplifyframework.core.Amplify
+import com.amplifyframework.kotlin.core.Amplify
 import com.amplifyframework.auth.AuthException
 import com.amplifyframework.auth.result.step.*
+import kotlinx.coroutines.launch
 import looksee.angelll.com.models.*
 import looksee.angelll.com.viewmodels.*
 import looksee.angelll.com.services.*
@@ -150,8 +151,98 @@ fun LoginScreen(
             
             Spacer(modifier = Modifier.height(14.dp))
 
+            var showVerificationDialog by remember { mutableStateOf(false) }
+            var verificationCode by remember { mutableStateOf("") }
+            var verificationMessage by remember { mutableStateOf("") }
+            val coroutineScope = rememberCoroutineScope()
+
             if (vm.errorMessage.isNotEmpty()) {
-                Text(vm.errorMessage, color = Color.Red, fontSize = 12.sp, modifier = Modifier.fillMaxWidth())
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(vm.errorMessage, color = Color.Red, fontSize = 12.sp)
+
+                    if (vm.errorMessage.contains("verif", ignoreCase = true)) {
+                        Text(
+                            text = "Account unverified? Tap here to enter code.",
+                            color = Color(0xFF387DFF),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.clickable {
+                                focusManager.clearFocus()
+                                showVerificationDialog = true
+                            }
+                        )
+                    }
+                }
+            }
+
+            if (showVerificationDialog) {
+                AlertDialog(
+                    onDismissRequest = { showVerificationDialog = false },
+                    title = { Text("Verify Email") },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text("Enter the 6-digit code sent to $email.", fontSize = 13.sp, color = Color.Gray)
+                            OutlinedTextField(
+                                value = verificationCode,
+                                onValueChange = { if (it.length <= 6) verificationCode = it },
+                                placeholder = { Text("123456", color = Color.Gray) },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                            )
+                            if (verificationMessage.isNotEmpty()) {
+                                Text(verificationMessage, fontSize = 12.sp, color = if (verificationMessage.contains("sent", ignoreCase = true)) Color.Green else Color.Red)
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                coroutineScope.launch {
+                                    try {
+                                        val result = Amplify.Auth.confirmSignUp(email, verificationCode)
+                                        if (result.isSignUpComplete) {
+                                            showVerificationDialog = false
+                                            vm.errorMessage = ""
+                                            vm.signIn(email, password)
+                                        } else {
+                                            verificationMessage = "Verification incomplete. Please check the code."
+                                        }
+                                    } catch (e: Exception) {
+                                        verificationMessage = e.localizedMessage ?: "Verification failed."
+                                    }
+                                }
+                            }
+                        ) {
+                            Text("Verify", color = Color(0xFF387DFF), fontWeight = FontWeight.Bold)
+                        }
+                    },
+                    dismissButton = {
+                        Row {
+                            TextButton(
+                                onClick = {
+                                    coroutineScope.launch {
+                                        try {
+                                            Amplify.Auth.resendSignUpCode(email)
+                                            verificationMessage = "A new code was sent! Check your email."
+                                        } catch (e: Exception) {
+                                            verificationMessage = e.localizedMessage ?: "Failed to resend code."
+                                        }
+                                    }
+                                }
+                            ) {
+                                Text("Resend Code", color = Color.Gray)
+                            }
+                            TextButton(onClick = { showVerificationDialog = false }) {
+                                Text("Cancel", color = Color.Gray)
+                            }
+                        }
+                    },
+                    containerColor = Color(0xFF1C1C1E)
+                )
             }
             
             Spacer(modifier = Modifier.height(14.dp))

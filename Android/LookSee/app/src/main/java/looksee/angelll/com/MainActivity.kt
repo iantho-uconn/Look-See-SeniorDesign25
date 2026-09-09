@@ -91,7 +91,8 @@ enum class AppState {
     BusinessLandmarkDetail,
     AccountSecurity,
     BusinessProfile,
-    GuestSignUp
+    GuestSignUp,
+    ScanHistory
 }
 
 @Composable
@@ -155,6 +156,7 @@ fun RootView(vm: AuthViewModel, authState: AuthState) {
                         "login" -> appState = AppState.Login
                         "signup" -> appState = AppState.Signup
                         "guest_signup" -> appState = AppState.GuestSignUp
+                        "HistoryView" -> appState = AppState.ScanHistory
                     }
                 }
             )
@@ -237,6 +239,10 @@ fun RootView(vm: AuthViewModel, authState: AuthState) {
 
         AppState.Archive -> {
             ArchiveView(vm = vm, onBack = { appState = AppState.Settings })
+        }
+
+        AppState.ScanHistory -> {
+            HistoryView(vm = vm, onBack = { appState = AppState.Settings })
         }
 
         AppState.ReportIssue -> {
