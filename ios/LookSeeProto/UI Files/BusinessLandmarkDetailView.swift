@@ -8,7 +8,7 @@
 import SwiftUI
 import PhotosUI
 import UniformTypeIdentifiers
-import AVFoundation // 🚀 Boss's fix: Required to read video length
+import AVFoundation
 
 struct BusinessLandmarkDetailView: View {
     let landmark: BusinessLandmark
@@ -70,7 +70,7 @@ struct BusinessLandmarkDetailView: View {
     private let promotionService = BusinessPromotionService()
     private let maxSelectionCount = 10
     
-    // 🚀 Boss's fix: Max gallery video duration
+    //  Max gallery video duration
     private let maximumGalleryVideoDuration: TimeInterval = 90
     
     private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00)
@@ -1416,7 +1416,7 @@ struct BusinessLandmarkDetailView: View {
         }
     }
 
-    // 🚀 BOSS'S FIX: Integrated duration limit logic for Gallery items
+    // Integrated duration limit logic for Gallery items
     private func uploadSelectedMediaItems(items: [PhotosPickerItem], datasetRole: BusinessDatasetRole) async {
         guard !isUploadingMedia else { return }
         guard !items.isEmpty else { return }
@@ -1522,7 +1522,7 @@ struct BusinessLandmarkDetailView: View {
         return .photo
     }
 
-    // 🚀 BOSS'S FIX: New Content Type Helper
+    // New Content Type Helper
     private func preferredContentType(for item: PhotosPickerItem) -> UTType {
         if let videoType = item.supportedContentTypes.first(where: {
             $0.conforms(to: .movie) || $0.conforms(to: .video)
@@ -1539,7 +1539,7 @@ struct BusinessLandmarkDetailView: View {
         return item.supportedContentTypes.first ?? .data
     }
 
-    // 🚀 BOSS'S FIX: New Video Duration Checker
+    // New Video Duration Checker
     private func validateGalleryVideoDuration(
         data: Data,
         contentType: UTType
@@ -1706,7 +1706,7 @@ struct BusinessLandmarkDetailView: View {
     }
 }
 
-// 🚀 BOSS'S FIX: Expanded Error Enum for duration checks
+// Expanded Error Enum for duration checks
 private enum MediaSelectionError: LocalizedError {
     case couldNotLoadMedia
     case couldNotReadVideoDuration
