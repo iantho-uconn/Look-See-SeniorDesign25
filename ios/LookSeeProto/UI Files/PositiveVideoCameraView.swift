@@ -20,7 +20,7 @@ enum CameraPhase: Equatable {
     var title: String {
         switch self {
         case .mandatory(let idx):
-            if idx == 1 { return "Capture Video of The Landmark" }
+            if idx == 1 { return "Record Landmark" }
             if idx == 2 { return "Step 2: Second Angle" }
             if idx == 3 { return "Step 3: Third Angle" }
             return "Step \(idx): Fourth Angle"
@@ -32,10 +32,10 @@ enum CameraPhase: Equatable {
     var instruction: String {
         switch self {
         case .mandatory(let idx):
-            if idx == 1 { return "These videos should be taken from ALL typical places where users may see the landmark" }
-            return "Move to a different side or angle and pan across the landmark."
+            if idx == 1 { return "Capture all common viewing angles." }
+            return "Move to another angle and pan slowly."
         case .optional:
-            return "Pan across to capture missing details.\n\nTip: Have you tried standing farther back to get the whole object?"
+            return "Capture missing details. Step back to fit the whole landmark."
         }
     }
     
@@ -433,41 +433,42 @@ struct PositiveVideoCameraView: View {
     }
     
     private var instructionTopPrompt: some View {
-        HStack(alignment: .top, spacing: 16) {
+        HStack(alignment: .top, spacing: 10) {
             Image(systemName: "camera.viewfinder")
-                .font(.system(size: 24, weight: .light))
+                .font(.system(size: 20, weight: .light))
                 .foregroundStyle(Color(red: 0.22, green: 0.49, blue: 1.00))
-                .padding(.top, 4)
-            
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Capture Positive Media")
-                    .font(.system(size: 17, weight: .bold, design: .rounded))
+                .padding(.top, 2)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Capture Landmark")
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
-                Text("Follow the on-screen steps to capture the different angles of the landmark. This video should be from a typical place where a user may see the landmark.")
-                    .font(.system(size: 14, weight: .regular))
-                    .foregroundStyle(.white.opacity(0.8))
-                    .lineSpacing(2)
+                Text("Film from places people normally view it.")
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(.white.opacity(0.9))
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            Spacer()
+            Spacer(minLength: 0)
         }
-        .padding(20)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.white.opacity(0.2), lineWidth: 0.5))
         .padding(.horizontal, 20)
         .transition(.move(edge: .top).combined(with: .opacity))
     }
-    
+
     private var instructionBottomCard: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 8) {
             Text(currentPhase.title)
-                .font(.system(size: 20, weight: .bold, design: .rounded))
+                .font(.system(size: 17, weight: .bold, design: .rounded))
                 .foregroundStyle(Color(.white))
             
             Text(currentPhase.instruction)
-                .font(.system(size: 15, weight: .medium, design: .rounded))
+                .font(.system(size: 13, weight: .medium, design: .rounded))
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.white.opacity(0.9))
-                .padding(.horizontal, 10)
+                .fixedSize(horizontal: false, vertical: true)
             
             Button {
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
@@ -478,15 +479,16 @@ struct PositiveVideoCameraView: View {
                 startTimer()
             } label: {
                 Text("Start Recording")
-                    .font(.system(size: 17, weight: .bold, design: .rounded))
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
+                    .padding(.vertical, 12)
+                    .frame(minHeight: 44)
                     .background(Color(red: 0.22, green: 0.49, blue: 1.00))
                     .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                     .shadow(color: Color(red: 0.22, green: 0.49, blue: 1.00).opacity(0.3), radius: 8, x: 0, y: 4)
             }
-            .padding(.top, 12)
+            .padding(.top, 4)
             
             if !recordedClips.isEmpty {
                 Button {
@@ -494,20 +496,21 @@ struct PositiveVideoCameraView: View {
                     gallerySelection = recordedClips.last?.id ?? ""
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { flowState = .gallery }
                 } label: {
-                    Text("Cancel & View Captured Clips")
-                        .font(.system(size: 17, weight: .semibold, design: .rounded))
+                    Text("View Captured Clips")
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
                         .foregroundStyle(.primary)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
+                        .padding(.vertical, 12)
+                        .frame(minHeight: 44)
                         .background(Color(.systemBackground))
                         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }
                 .padding(.top, 4)
             }
         }
-        .padding(24)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 32, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 32, style: .continuous).stroke(Color.white.opacity(0.2), lineWidth: 0.5))
+        .padding(14)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Color.white.opacity(0.2), lineWidth: 0.5))
         .shadow(color: .black.opacity(0.15), radius: 20, x: 0, y: 10)
         .padding(.horizontal, 20)
     }

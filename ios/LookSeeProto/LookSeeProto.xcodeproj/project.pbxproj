@@ -14,6 +14,12 @@
 		378CB4B3302C094F00805E32 /* termsofservice.swift in Sources */ = {isa = PBXBuildFile; fileRef = 378CB4B1302C093700805E32 /* termsofservice.swift */; };
 		378CB4C5302C0CE600805E32 /* privacypolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 378CB4C4302C0CD600805E32 /* privacypolicy.swift */; };
 		378CB4C6302C0CE600805E32 /* privacypolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 378CB4C4302C0CD600805E32 /* privacypolicy.swift */; };
+		3C14A9083051A27C00907E77 /* GoogleMobileAds in Frameworks */ = {isa = PBXBuildFile; productRef = 3C14A9073051A27C00907E77 /* GoogleMobileAds */; };
+		3C14A90E3051AE6F00907E77 /* GoogleUserMessagingPlatform in Frameworks */ = {isa = PBXBuildFile; productRef = 3C14A90D3051AE6F00907E77 /* GoogleUserMessagingPlatform */; };
+		3C14A9103051AF8B00907E77 /* AdConsentManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C14A90F3051AF7900907E77 /* AdConsentManager.swift */; };
+		3C14A9113051AF8B00907E77 /* AdConsentManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C14A90F3051AF7900907E77 /* AdConsentManager.swift */; };
+		3C14A9133051B35D00907E77 /* AdBannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C14A9123051B35800907E77 /* AdBannerView.swift */; };
+		3C14A9143051B35D00907E77 /* AdBannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C14A9123051B35800907E77 /* AdBannerView.swift */; };
 		3C19EB412F981FA400D1AA43 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = 3C19EB402F981FA400D1AA43 /* ZIPFoundation */; };
 		3C1FC9CC2F42C9E70006C1D3 /* PhotoPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C1FC9CB2F42C9DA0006C1D3 /* PhotoPicker.swift */; };
 		3C3D161E2FFCA97900C8A544 /* BusinessLandmarksView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C3D161D2FFCA97200C8A544 /* BusinessLandmarksView.swift */; };
@@ -185,6 +191,8 @@
 		378CB4A8302BF53D00805E32 /* ReportIssueView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReportIssueView.swift; sourceTree = "<group>"; };
 		378CB4B1302C093700805E32 /* termsofservice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = termsofservice.swift; sourceTree = "<group>"; };
 		378CB4C4302C0CD600805E32 /* privacypolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = privacypolicy.swift; sourceTree = "<group>"; };
+		3C14A90F3051AF7900907E77 /* AdConsentManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdConsentManager.swift; sourceTree = "<group>"; };
+		3C14A9123051B35800907E77 /* AdBannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdBannerView.swift; sourceTree = "<group>"; };
 		3C1FC9CB2F42C9DA0006C1D3 /* PhotoPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoPicker.swift; sourceTree = "<group>"; };
 		3C3D161D2FFCA97200C8A544 /* BusinessLandmarksView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BusinessLandmarksView.swift; sourceTree = "<group>"; };
 		3C3D161F2FFCA9B700C8A544 /* BusinessLandmarkDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BusinessLandmarkDetailView.swift; sourceTree = "<group>"; };
@@ -253,6 +261,23 @@
 		D0E78BE13008FF8D00E5FE00 /* GuestSignUpView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuestSignUpView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		3C14A90A3051A63700907E77 /* Exceptions for "LookSeeProto" folder in "LookSeeProto" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 3C918F9C2E9ECE5F00AF5DAF /* LookSeeProto */;
+		};
+		3C14A90B3051A63700907E77 /* Exceptions for "LookSeeProto" folder in "LookSee Preview" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 3C5BC595301E356400953451 /* LookSee Preview */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
 		3C5BC616301E398600953451 /* Exceptions for "LookSeeProto" folder in "Compile Sources" phase from "LookSee Preview" target */ = {
 			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
@@ -280,6 +305,8 @@
 		3C918F9F2E9ECE5F00AF5DAF /* LookSeeProto */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
+				3C14A90A3051A63700907E77 /* Exceptions for "LookSeeProto" folder in "LookSeeProto" target */,
+				3C14A90B3051A63700907E77 /* Exceptions for "LookSeeProto" folder in "LookSee Preview" target */,
 				3C5BC616301E398600953451 /* Exceptions for "LookSeeProto" folder in "Compile Sources" phase from "LookSee Preview" target */,
 			);
 			path = LookSeeProto;
@@ -331,8 +358,10 @@
 				D079C5F3304062DB000A1237 /* SentrySwiftUI in Frameworks */,
 				D0E78BDB3008C6E800E5FE00 /* StripePaymentSheet in Frameworks */,
 				B02344EB2F46355C00F4230E /* Amplify in Frameworks */,
+				3C14A9083051A27C00907E77 /* GoogleMobileAds in Frameworks */,
 				B02344ED2F46356400F4230E /* AWSCognitoAuthPlugin in Frameworks */,
 				3C19EB412F981FA400D1AA43 /* ZIPFoundation in Frameworks */,
+				3C14A90E3051AE6F00907E77 /* GoogleUserMessagingPlatform in Frameworks */,
 				D079C5F1304062DB000A1237 /* Sentry in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -410,6 +439,7 @@
 		56C3FA072EA6CA3100EA6153 /* UI Files */ = {
 			isa = PBXGroup;
 			children = (
+				3C14A9123051B35800907E77 /* AdBannerView.swift */,
 				D079CAEA305185FD000A1237 /* BusinessAnalyticsView.swift */,
 				D079CA49304A68A3000A1237 /* Historyview.swift */,
 				D079C5EC3038457A000A1237 /* BusinessPositiveVideoCameraView.swift */,
@@ -474,6 +504,7 @@
 		B0DC9CA52F4F849A004A9452 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				3C14A90F3051AF7900907E77 /* AdConsentManager.swift */,
 				D0E7888E2FF39A9500E5FE00 /* NegativeGalleryPicker.swift */,
 				D0B0B12B2FE48EBD00C75E25 /* OfflineMediaManager.swift */,
 				B0DC9CA42F4F849A004A9452 /* AuthService.swift */,
@@ -550,6 +581,8 @@
 				D0CA58433017C93600058BB3 /* AWSS3StoragePlugin */,
 				D079C5F0304062DB000A1237 /* Sentry */,
 				D079C5F2304062DB000A1237 /* SentrySwiftUI */,
+				3C14A9073051A27C00907E77 /* GoogleMobileAds */,
+				3C14A90D3051AE6F00907E77 /* GoogleUserMessagingPlatform */,
 			);
 			productName = LookSeeProto;
 			productReference = 3C918F9D2E9ECE5F00AF5DAF /* LookSeeProto.app */;
@@ -642,6 +675,8 @@
 				3C19EB3F2F981FA400D1AA43 /* XCRemoteSwiftPackageReference "ZIPFoundation" */,
 				D0E78BD93008C65A00E5FE00 /* XCRemoteSwiftPackageReference "stripe-ios-spm" */,
 				D079C5EF304062DB000A1237 /* XCRemoteSwiftPackageReference "sentry-cocoa" */,
+				3C14A9063051A27C00907E77 /* XCRemoteSwiftPackageReference "swift-package-manager-google-mobile-ads" */,
+				3C14A90C3051AE6F00907E77 /* XCRemoteSwiftPackageReference "swift-package-manager-google-user-messaging-platform" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 3C918F9E2E9ECE5F00AF5DAF /* Products */;
@@ -761,6 +796,8 @@
 				D079CA4A304A68AA000A1237 /* Historyview.swift in Sources */,
 				3C5BC5C7301E356400953451 /* BusinessBulkDeleteView.swift in Sources */,
 				3CEB2EDB302F6A89001A4A7C /* Detector.swift in Sources */,
+				3C14A9143051B35D00907E77 /* AdBannerView.swift in Sources */,
+				3C14A9103051AF8B00907E77 /* AdConsentManager.swift in Sources */,
 				3C5BC5C8301E356400953451 /* Splash.swift in Sources */,
 				3C5BC5C9301E356400953451 /* LandmarkInfo.swift in Sources */,
 				3C5BC5CA301E356400953451 /* NegativeVideoCameraService.swift in Sources */,
@@ -802,6 +839,8 @@
 				B0DC9CA62F4F849A004A9452 /* AuthService.swift in Sources */,
 				3CEB2A02302D2224001A4A7C /* 1500framesTest.mlpackage in Sources */,
 				D0B0B12C2FE48EC100C75E25 /* OfflineMediaManager.swift in Sources */,
+				3C14A9133051B35D00907E77 /* AdBannerView.swift in Sources */,
+				3C14A9113051AF8B00907E77 /* AdConsentManager.swift in Sources */,
 				3CF370423006BE7F005780B3 /* ForgotPasswordView.swift in Sources */,
 				378CB4AA302BF54400805E32 /* ReportIssueView.swift in Sources */,
 				D0B0B1322FE59F0300C75E25 /* QuickUploadView.swift in Sources */,
@@ -1108,6 +1147,7 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = LookSeeProto/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Camera is used to scan objects in real time.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Location services are used to tags scans made in app and help strengthen model data.";
@@ -1149,6 +1189,7 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = LookSeeProto/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Camera is used to scan objects in real time.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Location services are used to tags scans made in app and help strengthen model data.";
@@ -1312,6 +1353,22 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		3C14A9063051A27C00907E77 /* XCRemoteSwiftPackageReference "swift-package-manager-google-mobile-ads" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/googleads/swift-package-manager-google-mobile-ads.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 13.9.0;
+			};
+		};
+		3C14A90C3051AE6F00907E77 /* XCRemoteSwiftPackageReference "swift-package-manager-google-user-messaging-platform" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/googleads/swift-package-manager-google-user-messaging-platform.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 3.1.0;
+			};
+		};
 		3C19EB3F2F981FA400D1AA43 /* XCRemoteSwiftPackageReference "ZIPFoundation" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/weichsel/ZIPFoundation.git";
@@ -1371,6 +1428,16 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		3C14A9073051A27C00907E77 /* GoogleMobileAds */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 3C14A9063051A27C00907E77 /* XCRemoteSwiftPackageReference "swift-package-manager-google-mobile-ads" */;
+			productName = GoogleMobileAds;
+		};
+		3C14A90D3051AE6F00907E77 /* GoogleUserMessagingPlatform */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 3C14A90C3051AE6F00907E77 /* XCRemoteSwiftPackageReference "swift-package-manager-google-user-messaging-platform" */;
+			productName = GoogleUserMessagingPlatform;
+		};
 		3C19EB402F981FA400D1AA43 /* ZIPFoundation */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 3C19EB3F2F981FA400D1AA43 /* XCRemoteSwiftPackageReference "ZIPFoundation" */;

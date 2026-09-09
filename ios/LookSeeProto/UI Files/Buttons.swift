@@ -9,6 +9,7 @@ import Combine
 struct Buttons: View {
     @EnvironmentObject var vm: AuthViewModel
     @EnvironmentObject var authState: AuthState
+    @EnvironmentObject private var adConsentManager: AdConsentManager
     
     @Environment(\.scenePhase) var scenePhase
     
@@ -76,6 +77,15 @@ struct Buttons: View {
     var isScanCameraActive: Bool {
         if showRecordSheet || isRecordSheetAnimating || showMyLandmarksFromAlert { return false }
         return true
+    }
+
+    private var shouldShowBanner: Bool {
+        isActive
+            && isScanTab
+            && isScanCameraActive
+            && !infoView.infoView
+            && !showSignUpPrompt
+            && adConsentManager.adsReady
     }
 
     var body: some View {
@@ -219,6 +229,14 @@ struct Buttons: View {
                     .spring(response: 0.35, dampingFraction: 0.82),
                     value: infoView.infoView
                 )
+            }
+            .padding(.bottom, shouldShowBanner ? 62 : 0)
+            .overlay(alignment: .bottom) {
+                if shouldShowBanner {
+                    AdBannerView()
+                        .padding(.top, 12)
+                        .background(Color(uiColor: .systemBackground))
+                }
             }
             .fullScreenCover(isPresented: $showMyLandmarksFromAlert) {
                 LazyView(

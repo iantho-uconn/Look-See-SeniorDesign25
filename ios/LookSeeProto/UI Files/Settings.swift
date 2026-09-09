@@ -29,10 +29,13 @@ struct Settings: View {
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var vm: AuthViewModel
     @EnvironmentObject var authState: AuthState
+    @EnvironmentObject private var adConsentManager: AdConsentManager
 
     @StateObject private var presenter = SettingsPresenter()
     @State private var showCancelAlert = false
     @State private var isCancelling = false
+    @State private var isOpeningPrivacyOptions = false
+    @State private var showPrivacyOptionsError = false
 
     private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00)
 
@@ -290,6 +293,9 @@ struct Settings: View {
                     ReportIssueButton()
                     NavigationLink { Text("Help & Support Center") } label: { settingsRow(icon: "questionmark.circle.fill", iconBg: .orange, title: "Help & Support", showDivider: true) }
                     NavigationLink { PrivacyPolicyView() } label: { settingsRow(icon: "hand.raised.fill", iconBg: .purple, title: "Privacy Policy", showDivider: true) }
+                    if adConsentManager.isPrivacyOptionsRequired {
+                        adPrivacyOptionsRow
+                    }
                     NavigationLink { TermsOfServiceView() } label: { settingsRow(icon: "doc.text.fill", iconBg: .green, title: "Terms of Service", showDivider: true) }
                     NavigationLink { DeepSettingsView(isFullyLoggedIn: isFullyLoggedIn).environmentObject(vm) } label: { settingsRow(icon: "gearshape.fill", iconBg: .gray, title: "Settings & Preferences", showDivider: false) }
                 }
@@ -302,6 +308,11 @@ struct Settings: View {
         }
         .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
         .navigationTitle("Menu")
+        .alert("Privacy Options Unavailable", isPresented: $showPrivacyOptionsError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("We couldn't open your ad privacy options. Please check your connection and try again.")
+        }
         .onChange(of: authState.didSignOut) { _, didSignOut in if didSignOut { dismiss() } }
         .sheet(isPresented: $presenter.showSubscriptionFlow) { SubscriptionPlans(presenter: presenter) }
         .sheet(isPresented: $presenter.showUserProfileEditor) { UserProfileEditSheet().environmentObject(vm) }
@@ -363,6 +374,34 @@ struct Settings: View {
         }
     }
     
+    private var adPrivacyOptionsRow: some View {
+        Button {
+            guard !isOpeningPrivacyOptions else { return }
+            isOpeningPrivacyOptions = true
+            showPrivacyOptionsError = false
+
+            Task { @MainActor in
+                defer { isOpeningPrivacyOptions = false }
+                await adConsentManager.showPrivacyOptions()
+                if adConsentManager.lastError != nil {
+                    showPrivacyOptionsError = true
+                }
+            }
+        } label: {
+            settingsRow(
+                icon: "slider.horizontal.3",
+                iconBg: .indigo,
+                title: "Privacy Options",
+                subtitle: isOpeningPrivacyOptions
+                    ? "Opening privacy options…"
+                    : "Manage your ad privacy choices.",
+                showDivider: true
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(isOpeningPrivacyOptions)
+    }
+
     private func settingsRow(icon: String, iconBg: Color, title: LocalizedStringKey, subtitle: LocalizedStringKey? = nil, showDivider: Bool = false) -> some View {
         VStack(spacing: 0) {
             HStack(spacing: 16) {

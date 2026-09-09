@@ -402,17 +402,31 @@ struct BusinessLandmarksView: View {
     }
 
     private var emptyQueueCard: some View {
-        VStack(spacing: 16) {
-            ZStack {
-                Circle().fill(Color.green.opacity(0.1)).frame(width: 70, height: 70)
-                Image(systemName: "checkmark.icloud.fill").font(.system(size: 32)).foregroundColor(.green)
+        HStack(spacing: 12) {
+            Image(systemName: "checkmark.icloud.fill")
+                .font(.system(size: 22))
+                .foregroundStyle(.green)
+                .frame(width: 40, height: 40)
+                .background(Color.green.opacity(0.1), in: Circle())
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("All Caught Up!")
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .foregroundStyle(.primary)
+                Text("No uploads waiting.")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.secondary)
             }
-            VStack(spacing: 4) {
-                Text("All Caught Up!").font(.system(size: 18, weight: .bold, design: .rounded))
-                Text("There is no media waiting in the queue.\nEverything is securely synced to LookSee.").font(.system(size: 14, weight: .medium)).foregroundColor(.secondary).multilineTextAlignment(.center)
-            }
+            .fixedSize(horizontal: false, vertical: true)
+
+            Spacer(minLength: 0)
         }
-        .padding(30).frame(maxWidth: .infinity).background(Color(uiColor: .secondarySystemGroupedBackground)).clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous)).padding(.horizontal)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(uiColor: .secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .padding(.horizontal)
     }
 
     private var loadingView: some View {

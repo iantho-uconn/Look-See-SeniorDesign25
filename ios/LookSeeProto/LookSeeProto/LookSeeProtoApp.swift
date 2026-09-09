@@ -10,11 +10,14 @@ import Amplify
 import AWSCognitoAuthPlugin
 import AWSS3StoragePlugin
 import Sentry // 🚀 ADDED: Sentry SDK
+import GoogleMobileAds
+import UserMessagingPlatform
 
 @main
 struct LookSeeProtoApp: App {
     @StateObject private var authState = AuthState()
     @StateObject private var authViewModel = AuthViewModel()
+    @StateObject private var adConsentManager = AdConsentManager()
     
     // 🚀 THE FIX: In-app language selector storage
     @AppStorage("selectedLanguage") private var selectedLanguage: String = "en"
@@ -57,8 +60,14 @@ struct LookSeeProtoApp: App {
             RootView()
                 .environmentObject(authState)
                 .environmentObject(authViewModel)
-                // 🚀 THE FIX: Forces the entire app to render in the user's chosen language
-                .environment(\.locale, Locale(identifier: selectedLanguage))
+                .environmentObject(adConsentManager)
+                .environment(
+                    \.locale,
+                    Locale(identifier: selectedLanguage)
+                )
+                .task {
+                    await adConsentManager.start()
+                }
         }
     }
 }
