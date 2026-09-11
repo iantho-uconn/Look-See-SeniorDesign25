@@ -253,6 +253,8 @@ enum BusinessLandmarkServiceError: LocalizedError {
 final class BusinessLandmarkService {
     private let baseURL = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev")!
 
+    static let shared = BusinessLandmarkService()
+    
     private func getCognitoIDToken() async throws -> String {
         let session = try await Amplify.Auth.fetchAuthSession()
 
@@ -555,6 +557,86 @@ final class BusinessLandmarkService {
         }
 
         return try JSONDecoder().decode(BusinessMediaUploadCompleteResponse.self, from: data)
+    }
+    
+    // 🚀 NEW: The custom Global Negatives Uploader
+    func uploadGlobalNegativeVideo(fileURL: URL) async throws {
+        print("🚀 [GLOBAL NEGATIVE] Initiating network request for: \(fileURL.lastPathComponent)")
+        let idToken = try await getCognitoIDToken()
+        let fileName = fileURL.lastPathComponent
+        
+        let initUrl = baseURL
+            .appendingPathComponent("submissions")
+            .appendingPathComponent("init")
+        
+        var initRequest = URLRequest(url: initUrl)
+        initRequest.httpMethod = "POST"
+        initRequest.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
+        initRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        initRequest.setValue("application/json", forHTTPHeaderField: "Accept")
+        
+        let initPayload: [String: Any] = [
+            "filename": fileName,
+            "mediaKind": "video",
+            "contentType": "video/quicktime",
+            "datasetRole": "global_negative",
+            "label": "Global Negative Admin"
+        ]
+        
+        initRequest.httpBody = try JSONSerialization.data(withJSONObject: initPayload)
+        
+        let (initData, initResponse) = try await URLSession.shared.data(for: initRequest)
+        let initStatusCode = (initResponse as? HTTPURLResponse)?.statusCode ?? -1
+        let initBody = String(data: initData, encoding: .utf8) ?? ""
+        
+        print("🚀 [GLOBAL NEGATIVE] Init Response: \(initStatusCode) | Body: \(initBody)")
+        
+        guard (200...299).contains(initStatusCode) else {
+            throw BusinessLandmarkServiceError.badStatus(initStatusCode, initBody)
+        }
+        
+        guard let json = try JSONSerialization.jsonObject(with: initData) as? [String: Any],
+              let uploadUrlString = json["uploadUrl"] as? String,
+              let s3Key = json["s3Key"] as? String,
+              let submissionId = json["submissionId"] as? String else {
+            print("❌ [GLOBAL NEGATIVE] Failed to parse S3 URL from JSON.")
+            throw BusinessLandmarkServiceError.invalidUploadURL
+        }
+        
+        print("🚀 [GLOBAL NEGATIVE] S3 URL Received. Uploading video data...")
+        let videoData = try Data(contentsOf: fileURL)
+        try await uploadToPresignedURL(
+            uploadUrl: uploadUrlString,
+            contentType: "video/quicktime",
+            data: videoData
+        )
+        
+        print("🚀 [GLOBAL NEGATIVE] S3 Upload Finished! Notifying API to complete...")
+        let completeUrl = baseURL
+            .appendingPathComponent("submissions")
+            .appendingPathComponent("complete")
+            
+        var completeRequest = URLRequest(url: completeUrl)
+        completeRequest.httpMethod = "POST"
+        completeRequest.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
+        completeRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        completeRequest.setValue("application/json", forHTTPHeaderField: "Accept")
+        
+        let completePayload: [String: Any] = [
+            "submissionId": submissionId,
+            "s3Key": s3Key,
+            "datasetRole": "global_negative"
+        ]
+        completeRequest.httpBody = try JSONSerialization.data(withJSONObject: completePayload)
+        
+        let (completeData, completeNetResponse) = try await URLSession.shared.data(for: completeRequest)
+        let completeStatusCode = (completeNetResponse as? HTTPURLResponse)?.statusCode ?? -1
+        
+        print("🚀 [GLOBAL NEGATIVE] Complete Response: \(completeStatusCode)")
+        
+        guard (200...299).contains(completeStatusCode) else {
+            throw BusinessLandmarkServiceError.badStatus(completeStatusCode, String(data: completeData, encoding: .utf8) ?? "")
+        }
     }
 
     // MARK: - Existing Hard Negative Upload Flow

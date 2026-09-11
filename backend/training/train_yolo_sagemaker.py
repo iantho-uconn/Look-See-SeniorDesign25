@@ -10,6 +10,7 @@ import json
 import shutil
 import yaml
 import boto3
+import random
 from botocore.exceptions import ClientError
 from ultralytics import YOLO
 
@@ -22,6 +23,16 @@ SM_CHANNEL_TRAINING = os.environ.get(
 SM_MODEL_DIR = os.environ.get(
     "SM_MODEL_DIR",
     "/opt/ml/model",
+)
+
+# 🚀 NEW: The master pool bucket and path for Global Negatives
+GLOBAL_NEGATIVES_BUCKET = os.environ.get(
+    "GLOBAL_NEGATIVES_BUCKET", 
+    "looksee-models"
+)
+GLOBAL_NEGATIVES_PREFIX = os.environ.get(
+    "GLOBAL_NEGATIVES_PREFIX", 
+    "global-negatives/images/"
 )
 
 
@@ -303,7 +314,7 @@ def copy_artifacts_to_model_dir(
             )
 
 
-# 🚀 THE FIX: The DynamoDB UI Guardrail
+# 🚀 The DynamoDB UI Guardrail
 def notify_training_started(manifest):
     """Pings DynamoDB the exact second the SageMaker GPU starts training."""
     try:
@@ -339,6 +350,89 @@ def notify_training_started(manifest):
         print(f"✅ Successfully flipped {updated_count} landmarks to 'In Training' status.")
     except Exception as e:
         print(f"⚠️ Notice: Could not update DynamoDB training status (Missing IAM Role Permissions?). Training will proceed normally. Error: {e}")
+
+
+# 🚀 NEW: The dynamic 5% background injector
+def inject_global_negatives(train_dir):
+    """
+    Counts positive frames, calculates 5%, randomly pulls that many
+    global negative frames from S3, and injects them straight into YOLO
+    with dynamically generated empty .txt label files.
+    """
+    print("\n🌍 Initializing Global Negative Injection...")
+    
+    if not os.path.isdir(train_dir):
+        print("⚠️ Train directory not found. Skipping global negatives.")
+        return
+
+    # 🚀 YOLO expects labels to be in a parallel directory to images
+    labels_dir = train_dir.replace("/images/", "/labels/")
+    os.makedirs(labels_dir, exist_ok=True)
+
+    # Count how many positive frames are currently in the training folder
+    positive_count = 0
+    for filename in os.listdir(train_dir):
+        if filename.lower().endswith((".jpg", ".png", ".jpeg")):
+            positive_count += 1
+            
+    if positive_count == 0:
+        print("⚠️ No positive frames found. Skipping global negatives.")
+        return
+
+    # Calculate 5% of the total dataset size (Minimum 10 images, Maximum 500)
+    target_negative_count = max(10, min(500, int(positive_count * 0.05)))
+    
+    print(f"📊 Dataset Size: {positive_count} images.")
+    print(f"🎯 Target Global Negatives (5%): {target_negative_count} images.")
+    
+    s3_client = boto3.client("s3")
+    
+    try:
+        # Fetch the master list of all available global negatives from S3
+        response = s3_client.list_objects_v2(
+            Bucket=GLOBAL_NEGATIVES_BUCKET,
+            Prefix=GLOBAL_NEGATIVES_PREFIX
+        )
+        
+        available_files = [
+            obj['Key'] for obj in response.get('Contents', []) 
+            if obj['Key'].lower().endswith((".jpg", ".png", ".jpeg"))
+        ]
+        
+        if not available_files:
+            print("⚠️ S3 Global Negatives pool is empty. Skipping injection.")
+            return
+            
+        print(f"📦 Found {len(available_files)} total images in the master S3 pool.")
+        
+        sample_size = min(target_negative_count, len(available_files))
+        selected_files = random.sample(available_files, sample_size)
+        
+        download_count = 0
+        for s3_key in selected_files:
+            filename = os.path.basename(s3_key)
+            base_name = os.path.splitext(filename)[0]
+            
+            # Prepend 'global_neg_' so we can easily identify them
+            local_image_path = os.path.join(train_dir, f"global_neg_{filename}")
+            local_label_path = os.path.join(labels_dir, f"global_neg_{base_name}.txt")
+            
+            try:
+                # 1. Download the image into /images/train/
+                s3_client.download_file(GLOBAL_NEGATIVES_BUCKET, s3_key, local_image_path)
+                
+                # 2. 🚀 Create the completely empty .txt file in /labels/train/ so YOLOv8 doesn't skip it
+                with open(local_label_path, "w", encoding="utf-8") as empty_txt:
+                    pass 
+                    
+                download_count += 1
+            except ClientError as e:
+                print(f"⚠️ Failed to download negative {filename}: {e}")
+                
+        print(f"✅ Successfully injected {download_count} Global Negatives (with empty .txt labels) into the YOLO training batch!")
+        
+    except ClientError as e:
+        print(f"⚠️ Failed to access S3 Global Negatives pool (IAM Role issue?): {e}")
 
 
 def main():
@@ -442,6 +536,11 @@ def main():
         data_yaml,
         expected_class_count=manifest_class_count,
     )
+
+    # 🚀 INJECT GLOBAL NEGATIVES HERE
+    # At this point, train_dir exists and is populated with standard images.
+    # We drop the blank backgrounds into the exact same folder right before training.
+    inject_global_negatives(train_dir)
 
     model = YOLO("yolo26s.pt")
 

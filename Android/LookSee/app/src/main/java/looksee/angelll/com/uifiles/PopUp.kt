@@ -209,6 +209,49 @@ fun PopUp() {
 
                     // Merchant Card
                     MerchantCardView()
+
+                    // Map Action Buttons
+                    if (infoView.isMapPin) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
+                            Button(
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    val lat = infoView.mapLatitude
+                                    val lon = infoView.mapLongitude
+                                    if (lat != null && lon != null) {
+                                        val uri = Uri.parse("google.navigation:q=$lat,$lon")
+                                        val intent = Intent(Intent.ACTION_VIEW, uri)
+                                        intent.setPackage("com.google.android.apps.maps")
+                                        if (intent.resolveActivity(context.packageManager) != null) {
+                                            context.startActivity(intent)
+                                        } else {
+                                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://maps.google.com/?q=$lat,$lon")))
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.weight(1f).height(56.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(0.1f), contentColor = AppleBlue),
+                                shape = RoundedCornerShape(16.dp)
+                            ) {
+                                Icon(Icons.Default.LocationOn, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("Directions", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                            }
+
+                            Button(
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    // TODO: Show Report Sheet (can wire up to ReportIssueView)
+                                },
+                                modifier = Modifier.size(56.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(0.15f), contentColor = Color.Red),
+                                shape = RoundedCornerShape(16.dp),
+                                contentPadding = PaddingValues(0.dp)
+                            ) {
+                                Icon(Icons.Default.Flag, contentDescription = null, modifier = Modifier.size(24.dp))
+                            }
+                        }
+                    }
                 }
 
                 HorizontalDivider(color = Color.White.copy(alpha = 0.18f))

@@ -33,9 +33,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.ui.zIndex
 import androidx.core.app.ComponentActivity
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
+import com.google.accompanist.permissions.ExperimentalPermissionsApi
+import com.google.accompanist.permissions.isGranted
+import com.google.accompanist.permissions.rememberPermissionState
+import looksee.angelll.com.models.ModelAutoRefreshService
 import looksee.angelll.com.detection.LocationManager
 import looksee.angelll.com.models.*
 import looksee.angelll.com.viewmodels.AuthViewModel
@@ -48,7 +53,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalPermissionsApi::class)
 @Composable
 fun ButtonsScreen(
     vm: AuthViewModel,
@@ -108,6 +113,12 @@ fun ButtonsScreen(
         }
     }
 
+    val shouldShowBanner by remember {
+        derivedStateOf {
+            isScanCameraActive && !infoView.infoView && !showSignUpPrompt && currentTab == 0
+        }
+    }
+
     // Keep screen on during scan
     val view = LocalView.current
     DisposableEffect(isScanCameraActive) {
@@ -116,6 +127,35 @@ fun ButtonsScreen(
         }
         onDispose {
             view.keepScreenOn = false
+        }
+    }
+
+    // Permissions & Location
+    val locationPermissionState = rememberPermissionState(
+        android.Manifest.permission.ACCESS_FINE_LOCATION
+    )
+
+    LaunchedEffect(Unit) {
+        if (!locationPermissionState.status.isGranted) {
+            locationPermissionState.launchPermissionRequest()
+        }
+    }
+
+    LaunchedEffect(locationPermissionState.status) {
+        if (locationPermissionState.status.isGranted) {
+            locationManager.start()
+        }
+    }
+
+    val locationState by locationManager.state.collectAsState()
+    LaunchedEffect(locationState) {
+        if (locationState is looksee.angelll.com.detection.LookSeeLocationState.Ready) {
+            val fix = (locationState as looksee.angelll.com.detection.LookSeeLocationState.Ready).fix
+            ModelAutoRefreshService.shared(context).updateLocation(
+                latitude = fix.latitude,
+                longitude = fix.longitude
+            )
+            ModelAutoRefreshService.shared(context).start()
         }
     }
 
@@ -235,7 +275,6 @@ fun ButtonsScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Color.Black)
                         .statusBarsPadding()
                 ) {
                     Row(
@@ -253,7 +292,7 @@ fun ButtonsScreen(
                                     showTutorial = true
                                 }
                         ) {
-                            Icon(Icons.Default.Info, contentDescription = "Info", tint = Color.White, modifier = Modifier.size(24.dp))
+                            Icon(Icons.Outlined.Info, contentDescription = "Info", tint = Color.White, modifier = Modifier.size(24.dp).background(Color.Black.copy(0.4f), CircleShape))
                             Text("Info", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
 
@@ -281,7 +320,7 @@ fun ButtonsScreen(
                                     onNavigate("Settings")
                                 }
                         ) {
-                            Icon(Icons.Default.Menu, contentDescription = "Menu", tint = Color.White, modifier = Modifier.size(24.dp))
+                            Icon(Icons.Default.Menu, contentDescription = "Menu", tint = Color.White, modifier = Modifier.size(24.dp).background(Color.Black.copy(0.4f), RoundedCornerShape(6.dp)))
                             Text("Menu", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                     }
@@ -289,68 +328,82 @@ fun ButtonsScreen(
             }
         },
         bottomBar = {
-            AnimatedVisibility(
-                visible = chromeVisible || !isScanTab,
-                enter = fadeIn() + slideInVertically(initialOffsetY = { it }),
-                exit = fadeOut() + slideOutVertically(targetOffsetY = { it })
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .navigationBarsPadding()
-                        .padding(bottom = 24.dp),
-                    contentAlignment = Alignment.Center
+            Column(modifier = Modifier.fillMaxWidth()) {
+                AnimatedVisibility(
+                    visible = chromeVisible || !isScanTab,
+                    enter = fadeIn() + slideInVertically(initialOffsetY = { it }),
+                    exit = fadeOut() + slideOutVertically(targetOffsetY = { it })
                 ) {
-                    Row(
+                    Box(
                         modifier = Modifier
-                            .width(320.dp)
-                            .clip(CircleShape)
-                            .background(DarkBackground.copy(alpha = 0.8f))
-                            .padding(horizontal = 8.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceEvenly,
-                        verticalAlignment = Alignment.CenterVertically
+                            .fillMaxWidth()
+                            .padding(bottom = if (shouldShowBanner) 12.dp else 24.dp),
+                        contentAlignment = Alignment.Center
                     ) {
-                        TabButton("Scan", Icons.Default.CenterFocusStrong, currentTab == 0, false) {
-                            coroutineScope.launch { pagerState.animateScrollToPage(0, animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f)) }
-                        }
-
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
+                        Row(
                             modifier = Modifier
-                                .weight(1f)
-                                .clickable {
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    if (!isBusinessMode) showSignUpPrompt = true else showRecordSheet = true
-                                }
+                                .width(320.dp)
+                                .clip(CircleShape)
+                                .background(DarkBackground.copy(alpha = 0.8f))
+                                .padding(horizontal = 8.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceEvenly,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Box(contentAlignment = Alignment.TopEnd) {
-                                Icon(
-                                    Icons.Default.Videocam,
-                                    contentDescription = null,
-                                    tint = if (isBusinessMode) Color.White else Color.Gray,
-                                    modifier = Modifier.size(26.dp)
-                                )
-                                if (!isBusinessMode) {
-                                    Icon(
-                                        Icons.Default.Lock,
-                                        contentDescription = null,
-                                        tint = Color.Gray,
-                                        modifier = Modifier.size(10.dp).offset(x = 12.dp, y = (-4).dp)
-                                    )
-                                }
+                            TabButton("Scan", Icons.Default.CenterFocusStrong, currentTab == 0, false) {
+                                coroutineScope.launch { pagerState.animateScrollToPage(0, animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f)) }
                             }
-                            Text(
-                                "Record",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (isBusinessMode) Color.White else Color.Gray
-                            )
-                        }
 
-                        TabButton("Map", Icons.Default.Map, currentTab == 1, false) {
-                            coroutineScope.launch { pagerState.animateScrollToPage(1, animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f)) }
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        if (!isBusinessMode) showSignUpPrompt = true else showRecordSheet = true
+                                    }
+                            ) {
+                                Box(contentAlignment = Alignment.TopEnd) {
+                                    Icon(
+                                        Icons.Default.Videocam,
+                                        contentDescription = null,
+                                        tint = if (isBusinessMode) Color.White else Color.Gray,
+                                        modifier = Modifier.size(26.dp)
+                                    )
+                                    if (!isBusinessMode) {
+                                        Icon(
+                                            Icons.Default.Lock,
+                                            contentDescription = null,
+                                            tint = Color.Gray,
+                                            modifier = Modifier.size(10.dp).offset(x = 12.dp, y = (-4).dp)
+                                        )
+                                    }
+                                }
+                                Text(
+                                    "Record",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isBusinessMode) Color.White else Color.Gray
+                                )
+                            }
+
+                            TabButton("Map", Icons.Default.Map, currentTab == 1, false) {
+                                coroutineScope.launch { pagerState.animateScrollToPage(1, animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f)) }
+                            }
                         }
                     }
+                }
+
+                if (shouldShowBanner) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .navigationBarsPadding(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        AdBannerView()
+                    }
+                } else {
+                    Spacer(Modifier.navigationBarsPadding())
                 }
             }
         },
@@ -473,8 +526,14 @@ fun ButtonsScreen(
             }
 
             if (showTutorial) {
-                Dialog(onDismissRequest = { showTutorial = false }) {
-                    LookSeeCard {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.4f))
+                        .pointerInput(Unit) { detectTapGestures { showTutorial = false } },
+                    contentAlignment = Alignment.BottomCenter
+                ) {
+                    LookSeeCard(modifier = Modifier.padding(24.dp).padding(bottom = 60.dp)) {
                         Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(24.dp)) {
                             if (currentTab == 0) {
                                 ViewfinderCircle(tint = AppleBlue, modifier = Modifier.size(70.dp))

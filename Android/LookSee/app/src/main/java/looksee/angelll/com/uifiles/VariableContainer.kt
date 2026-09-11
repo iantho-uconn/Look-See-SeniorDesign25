@@ -57,6 +57,12 @@ class VariableContainer private constructor() {
     var merchantAddress by mutableStateOf("")
     var merchantLogoUrl by mutableStateOf("")
 
+    // Map Routing & Reporting Fields
+    var isMapPin by mutableStateOf(false)
+    var mapLatitude by mutableStateOf<Double?>(null)
+    var mapLongitude by mutableStateOf<Double?>(null)
+    var reportedOwnerId by mutableStateOf<String?>(null)
+
     init {
         resetLandmarkDisplay()
     }
@@ -151,6 +157,11 @@ class VariableContainer private constructor() {
         landmarkName = landmark.label
         landmarkDescription = landmark.shortDescription.ifEmpty { "No description is available for this landmark." }
         
+        isMapPin = true
+        mapLatitude = landmark.latitude
+        mapLongitude = landmark.longitude
+        reportedOwnerId = landmark.createdBy
+
         promoName = landmark.promotion ?: "No active promotion"
         
         infoView = true

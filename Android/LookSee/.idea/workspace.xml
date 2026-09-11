@@ -17,7 +17,23 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="07f21855-e7c7-4afa-a99c-977bf161748a" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/MainActivity.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/MainActivity.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/subscription/SubscriptionPlans.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/subscription/SubscriptionPlans.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/AccountSecurityView.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/AccountSecurityView.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/Buttons.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/Buttons.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/HistoryView.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/HistoryView.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/ModelLoadingScreen.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/ModelLoadingScreen.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/PopUp.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/PopUp.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/PositiveVideoCameraView.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/PositiveVideoCameraView.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/ReportIssueView.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/ReportIssueView.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/Settings.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/Settings.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/VariableContainer.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/VariableContainer.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../backend/training/train_yolo_sagemaker.py" beforeDir="false" afterPath="$PROJECT_DIR$/../../backend/training/train_yolo_sagemaker.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/LookSeeProto/Localizable.xcstrings" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/LookSeeProto/Localizable.xcstrings" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/Models/BusinessLandmarkService.swift" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/Models/BusinessLandmarkService.swift" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/UI Files/NegativeVideoCameraView.swift" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/UI Files/NegativeVideoCameraView.swift" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/UI Files/Settings.swift" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/UI Files/Settings.swift" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />

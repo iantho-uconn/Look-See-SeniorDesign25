@@ -160,7 +160,6 @@ struct Settings: View {
                             }
                             Divider().padding(.leading, 68)
                             
-                            // 🚀 NEW: Analytics Tab Button
                             NavigationLink { BusinessAnalyticsView().environmentObject(vm) } label: {
                                 settingsRow(icon: "chart.bar.fill", iconBg: .indigo, title: "Analytics", subtitle: "Track daily views and engagement.")
                             }
@@ -493,6 +492,10 @@ struct DeepSettingsView: View {
     @State private var isReloading = false
     @State private var showReloadSuccess = false
     
+    // 🚀 NEW: State for camera and uploading overlay
+    @State private var showGlobalNegativeCamera = false
+    @State private var isUploadingGlobalNegative = false
+    
     private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00)
 
     var body: some View {
@@ -553,6 +556,52 @@ struct DeepSettingsView: View {
                                         .lineLimit(1)
                                 }
 
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundStyle(.tertiary)
+                            }
+                            .padding(16)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color(uiColor: .secondarySystemGroupedBackground))
+                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2)
+                        }
+                        .padding(.horizontal)
+                    }
+                }
+                
+                // 🚀 NEW: Admin-Only Global Negatives Tool
+                let adminEmails = ["angelgabriel2828@icloud.com", "angelgabriel0846@gmail.com", "nisargdpatel04@gmail.com", "matt@informationoutpost.com"]
+                if adminEmails.contains(vm.userEmail.lowercased()) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Admin Tools")
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .foregroundStyle(.secondary)
+                            .textCase(.uppercase)
+                            .padding(.horizontal, 20)
+                        
+                        Button {
+                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                            showGlobalNegativeCamera = true
+                        } label: {
+                            HStack(spacing: 14) {
+                                Image(systemName: "camera.filters")
+                                    .font(.system(size: 17, weight: .semibold))
+                                    .foregroundStyle(.white)
+                                    .frame(width: 36, height: 36)
+                                    .background(Color.orange)
+                                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("Record Global Negatives")
+                                        .font(.system(size: 16, weight: .semibold))
+                                        .foregroundStyle(.primary)
+                                    Text("Capture empty spaces for the AI dataset")
+                                        .font(.system(size: 13))
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
                                 Spacer()
                                 Image(systemName: "chevron.right")
                                     .font(.system(size: 13, weight: .semibold))
@@ -631,6 +680,59 @@ struct DeepSettingsView: View {
         }
         .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
         .navigationTitle("Settings")
+        .fullScreenCover(isPresented: $showGlobalNegativeCamera) {
+            // 🚀 The correct limits are injected here
+            NegativeVideoCameraView(
+                uiTargetDuration: 10,
+                minTotalTimeLimit: 2,
+                maxTotalTimeLimit: 10
+            ) { video in
+                print("🚀 [GLOBAL NEGATIVE] Camera dismissed. Starting Task...")
+                Task {
+                    isUploadingGlobalNegative = true
+                    print("🚀 [GLOBAL NEGATIVE] Overlay should be visible now.")
+                    
+                    do {
+                        guard let fileURL = video.fileURL as URL? else {
+                            print("❌ [GLOBAL NEGATIVE] Video fileURL is missing.")
+                            isUploadingGlobalNegative = false
+                            showGlobalNegativeCamera = false
+                            return
+                        }
+                        
+                        print("🚀 [GLOBAL NEGATIVE] Calling BusinessLandmarkService...")
+                        try await BusinessLandmarkService.shared.uploadGlobalNegativeVideo(fileURL: fileURL)
+                        print("✅ [GLOBAL NEGATIVE] Upload complete via Service!")
+                    } catch {
+                        print("❌ [GLOBAL NEGATIVE] Upload failed: \(error)")
+                    }
+                    
+                    isUploadingGlobalNegative = false
+                    video.deleteLocalFile()
+                    showGlobalNegativeCamera = false
+                }
+            }
+        }
+        .overlay {
+            // Visual feedback while the Admin upload processes
+            if isUploadingGlobalNegative {
+                ZStack {
+                    Color.black.opacity(0.6).ignoresSafeArea()
+                    VStack(spacing: 16) {
+                        ProgressView().tint(.white).scaleEffect(1.5)
+                        Text("Uploading Global Negative...")
+                            .font(.headline)
+                            .foregroundStyle(.white)
+                        Text("Please keep app open")
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.7))
+                    }
+                    .padding(32)
+                    .background(.ultraThinMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                }
+            }
+        }
     }
 }
 

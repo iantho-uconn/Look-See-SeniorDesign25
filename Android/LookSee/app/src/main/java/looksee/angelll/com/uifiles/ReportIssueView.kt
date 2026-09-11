@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.rounded.HelpOutline
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -285,10 +286,10 @@ fun CategoryChip(
     onClick: () -> Unit
 ) {
     val icon = when (option) {
-        ReportCategory.UI_BUG -> Icons.Default.Layers // Closest to rectangle.on.rectangle.slash
-        ReportCategory.DETECTION_BUG -> Icons.Default.CenterFocusStrong // Closest to viewfinder.circle
-        ReportCategory.UPLOAD_BUG -> Icons.Default.ArrowCircleUp // Closest to arrow.up.circle
-        ReportCategory.OTHER -> Icons.Default.QuestionMark // Closest to questionmark.circle
+        ReportCategory.UI_BUG -> Icons.Default.WebAssetOff
+        ReportCategory.DETECTION_BUG -> Icons.Default.CenterFocusStrong
+        ReportCategory.UPLOAD_BUG -> Icons.Default.ArrowCircleUp
+        ReportCategory.OTHER -> Icons.Rounded.HelpOutline
     }
 
     Column(
@@ -304,7 +305,7 @@ fun CategoryChip(
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = if (isSelected) Color.White else Color.White,
+            tint = Color.White,
             modifier = Modifier.size(24.dp)
         )
         Spacer(modifier = Modifier.height(8.dp))
@@ -312,7 +313,7 @@ fun CategoryChip(
             text = option.displayName,
             fontSize = 13.sp,
             fontWeight = FontWeight.Bold,
-            color = if (isSelected) Color.White else Color.White,
+            color = Color.White,
             textAlign = TextAlign.Center
         )
     }

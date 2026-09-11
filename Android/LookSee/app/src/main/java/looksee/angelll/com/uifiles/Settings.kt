@@ -25,7 +25,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
+import android.content.Intent
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
@@ -61,6 +63,12 @@ class SettingsPresenter {
     var showSubscriptionFlow by mutableStateOf(false)
     var subscriptionStartingTab by mutableIntStateOf(0)
     var showUserProfileEditor by mutableStateOf(false)
+    var signupStartsAsBusiness by mutableStateOf(false)
+    
+    var showGlobalNegativeCamera by mutableStateOf(false)
+    var isReloadingModels by mutableStateOf(false)
+    var showReloadSuccess by mutableStateOf(false)
+    var isUploadingGlobalNegative by mutableStateOf(false)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -78,6 +86,7 @@ fun SettingsScreen(
 
     var showCancelAlert by remember { mutableStateOf(false) }
     var isCancelling by remember { mutableStateOf(false) }
+    var showSignOutAlert by remember { mutableStateOf(false) }
 
     val isFullyLoggedIn = vm.isSignedIn && vm.userEmail.isNotEmpty()
 
@@ -180,9 +189,9 @@ fun SettingsScreen(
                 }
 
                 // 2. BUSINESS MANAGEMENT
-                LookSeeSectionHeader("Business Management")
-                LookSeeCard(modifier = Modifier.padding(horizontal = 16.dp)) {
-                    if (isFullyLoggedIn && vm.hasActiveSubscription) {
+                if (isFullyLoggedIn && vm.hasActiveSubscription) {
+                    LookSeeSectionHeader("Business Management")
+                    LookSeeCard(modifier = Modifier.padding(horizontal = 16.dp)) {
                         if (prefs.getBoolean("isFreeTrial_${vm.userEmail}", false)) {
                             TrialWarningCard()
                             Spacer(Modifier.height(16.dp))
@@ -198,6 +207,24 @@ fun SettingsScreen(
                         }
                         HorizontalDivider(modifier = Modifier.padding(start = 52.dp), color = Color.White.copy(alpha = 0.1f))
                         LookSeeRow(
+                            icon = Icons.Default.History,
+                            iconContainerColor = AppleBlue,
+                            title = "Scan History",
+                            subtitle = "View your scanned landmarks."
+                        ) {
+                            onNavigate("HistoryView")
+                        }
+                        HorizontalDivider(modifier = Modifier.padding(start = 52.dp), color = Color.White.copy(alpha = 0.1f))
+                        LookSeeRow(
+                            icon = Icons.Default.BarChart,
+                            iconContainerColor = Color(0xFF5A27D5),
+                            title = "Analytics",
+                            subtitle = "Track daily views and engagement."
+                        ) {
+                            onNavigate("BusinessAnalyticsView")
+                        }
+                        HorizontalDivider(modifier = Modifier.padding(start = 52.dp), color = Color.White.copy(alpha = 0.1f))
+                        LookSeeRow(
                             icon = Icons.Default.Token,
                             iconContainerColor = Color(0xFFFFA500),
                             title = "Tokens (${vm.tokenBalance})",
@@ -207,7 +234,10 @@ fun SettingsScreen(
                             presenter.subscriptionStartingTab = 1
                             presenter.showSubscriptionFlow = true
                         }
-                    } else {
+                    }
+                } else {
+                    LookSeeSectionHeader("Business Management")
+                    LookSeeCard(modifier = Modifier.padding(horizontal = 16.dp)) {
                         LookSeeRow(
                             icon = Icons.Default.Lock,
                             iconContainerColor = Color.Gray,
@@ -311,15 +341,6 @@ fun SettingsScreen(
                 // 5. GENERAL SETTINGS
                 LookSeeSectionHeader("General")
                 LookSeeCard(modifier = Modifier.padding(horizontal = 16.dp)) {
-                    LookSeeRow(
-                        icon = Icons.Default.History,
-                        iconContainerColor = AppleBlue,
-                        title = "Scan History",
-                        subtitle = "View your previous landmark scans."
-                    ) {
-                        onNavigate("HistoryView")
-                    }
-                    HorizontalDivider(modifier = Modifier.padding(start = 52.dp), color = Color.White.copy(alpha = 0.1f))
                     LookSeeRow(icon = Icons.Default.BugReport, iconContainerColor = Color.Red, title = "Report a Bug") {
                         onNavigate("ReportIssueView")
                     }
@@ -336,8 +357,137 @@ fun SettingsScreen(
                         onNavigate("TermsOfService")
                     }
                     HorizontalDivider(modifier = Modifier.padding(start = 52.dp), color = Color.White.copy(alpha = 0.1f))
-                    LookSeeRow(icon = Icons.Default.Settings, iconContainerColor = Color.Gray, title = "Settings & Preferences") {
-                        onNavigate("DeepSettings")
+                    LookSeeRow(icon = Icons.Default.Settings, iconContainerColor = Color.Gray, title = "System Settings", subtitle = "App Language") {
+                        val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                            data = android.net.Uri.fromParts("package", context.packageName, null)
+                        }
+                        context.startActivity(intent)
+                    }
+                }
+                
+                // Admin Tools
+                val adminEmails = listOf("angelgabriel2828@icloud.com", "angelgabriel0846@gmail.com")
+                if (vm.userEmail.lowercase() in adminEmails) {
+                    LookSeeSectionHeader("Admin Tools")
+                    LookSeeCard(modifier = Modifier.padding(horizontal = 16.dp)) {
+                        LookSeeRow(
+                            icon = Icons.Default.CameraAlt,
+                            iconContainerColor = Color(0xFFFFA500),
+                            title = "Record Global Negatives",
+                            subtitle = "Capture empty spaces for the AI dataset"
+                        ) {
+                            presenter.showGlobalNegativeCamera = true
+                        }
+                    }
+                }
+
+                // Reload Model
+                Spacer(Modifier.height(16.dp))
+                Column(modifier = Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = {
+                            coroutineScope.launch {
+                                presenter.isReloadingModels = true
+                                kotlinx.coroutines.delay(1500)
+                                looksee.angelll.com.models.ModelAutoRefreshService.shared(context).start()
+                                presenter.showReloadSuccess = true
+                                presenter.isReloadingModels = false
+                                kotlinx.coroutines.delay(2500)
+                                presenter.showReloadSuccess = false
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().height(56.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = if (presenter.showReloadSuccess) Color.Green else AppleBlue),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        if (presenter.isReloadingModels) {
+                            CircularProgressIndicator(color = Color.White, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(12.dp))
+                            Text("Fetching Clusters...")
+                        } else if (presenter.showReloadSuccess) {
+                            Icon(Icons.Default.CheckCircle, contentDescription = null)
+                            Spacer(Modifier.width(12.dp))
+                            Text("Models Reloaded!")
+                        } else {
+                            Icon(Icons.Default.Sync, contentDescription = null)
+                            Spacer(Modifier.width(12.dp))
+                            Text("Reload Model")
+                        }
+                    }
+                    val detector = looksee.angelll.com.detection.Detector.shared(context)
+                    val activeLabel by detector.currentLabel.collectAsState()
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(start = 8.dp)) {
+                        Icon(Icons.Default.Memory, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(16.dp))
+                        Text(if (activeLabel == null) "No Model Loaded" else "Active Model: $activeLabel", color = Color.Gray, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                if (isFullyLoggedIn) {
+                    Spacer(Modifier.height(24.dp))
+                    Button(
+                        onClick = { showSignOutAlert = true },
+                        modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth().height(56.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(0.1f)),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.AutoMirrored.Rounded.ExitToApp, contentDescription = null, tint = Color.Red)
+                            Text("Sign Out", color = Color.Red, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+
+        if (showSignOutAlert) {
+            AlertDialog(
+                onDismissRequest = { showSignOutAlert = false },
+                title = { Text("Sign Out") },
+                text = { Text("Are you sure you want to sign out?") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showSignOutAlert = false
+                        vm.signOut()
+                    }) { Text("Sign Out", color = Color.Red) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showSignOutAlert = false }) { Text("Cancel", color = Color(0xFF007AFF)) }
+                },
+                containerColor = Color(0xFF1C1C1E)
+            )
+        }
+        
+        if (presenter.showGlobalNegativeCamera) {
+            NegativeVideoCameraView(
+                uiTargetDuration = 10,
+                minTotalTimeLimit = 2,
+                onDone = { video ->
+                    coroutineScope.launch {
+                        presenter.isUploadingGlobalNegative = true
+                        try {
+                            looksee.angelll.com.models.BusinessLandmarkService().uploadGlobalNegativeVideo(video.file)
+                        } catch (e: Exception) {
+                            // Ignored for now
+                        } finally {
+                            presenter.isUploadingGlobalNegative = false
+                            video.deleteLocalFile()
+                            presenter.showGlobalNegativeCamera = false
+                        }
+                    }
+                },
+                onDismiss = { presenter.showGlobalNegativeCamera = false }
+            )
+            
+            if (presenter.isUploadingGlobalNegative) {
+                Box(
+                    modifier = Modifier.fillMaxSize().background(Color.Black.copy(0.6f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    LookSeeCard {
+                        Column(modifier = Modifier.padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                            CircularProgressIndicator(color = Color.White)
+                            Text("Uploading Global Negative...", color = Color.White, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
@@ -451,25 +601,48 @@ fun GuestPromoCard(presenter: SettingsPresenter, isFullyLoggedIn: Boolean, onNav
     ) {
         Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(modifier = Modifier.size(48.dp).clip(CircleShape).background(AppleBlue), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Default.Stars, contentDescription = null, tint = Color.White)
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .shadow(8.dp, CircleShape, ambientColor = AppleBlue, spotColor = AppleBlue)
+                        .clip(CircleShape)
+                        .background(AppleBlue),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Default.WorkspacePremium, contentDescription = null, tint = Color.White)
                 }
                 Column {
-                    Text("Join LookSee", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                    Text("Upload landmarks and manage data. Free trail available.", fontSize = 14.sp, color = Color.White.copy(alpha = 0.7f))
+                    Text(
+                        if (isFullyLoggedIn) "Upgrade to Business" else "Join LookSee",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    Text(
+                        if (isFullyLoggedIn) "Unlock landmark management, uploads, promotions, and tokens."
+                        else "Create a free account to save your profile and future progress.",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color.White.copy(alpha = 0.7f)
+                    )
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Button(
                     onClick = {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        presenter.showSubscriptionFlow = true
+                        if (isFullyLoggedIn) {
+                            presenter.subscriptionStartingTab = 0
+                            presenter.showSubscriptionFlow = true
+                        } else {
+                            onNavigate("signup")
+                        }
                     },
                     modifier = Modifier.weight(1f).height(48.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = AppleBlue),
                     shape = RoundedCornerShape(14.dp)
                 ) {
-                    Text("Sign up", fontWeight = FontWeight.Bold)
+                    Text(if (isFullyLoggedIn) "View Plans" else "Create Free Account", fontWeight = FontWeight.Bold)
                 }
                 if (!isFullyLoggedIn) {
                     Button(

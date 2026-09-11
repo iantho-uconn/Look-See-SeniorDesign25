@@ -345,7 +345,7 @@ fun PositiveVideoCameraView(
 
             // Bottom Controls
             AnimatedVisibility(visible = true, enter = slideInVertically(initialOffsetY = { it }) + fadeIn(), exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()) {
-                Box(modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 100.dp).fillMaxWidth().background(Color.Black.copy(0.6f), RoundedCornerShape(32.dp)).border(0.5.dp, Color.White.copy(0.2f), RoundedCornerShape(32.dp)).padding(24.dp)) {
+                Box(modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = if (isReviewingRecent) 160.dp else 100.dp).fillMaxWidth().background(Color.Black.copy(0.6f), RoundedCornerShape(32.dp)).border(0.5.dp, Color.White.copy(0.2f), RoundedCornerShape(32.dp)).padding(24.dp)) {
 
                     when (flowState) {
                         CameraFlowState.INSTRUCTION -> {

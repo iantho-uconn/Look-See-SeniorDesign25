@@ -67,19 +67,19 @@ fun AccountSecurityView(
         refreshAccount()
     }
 
-    Box(modifier = Modifier.fillMaxSize().background(Color(0xFFF2F2F7))) {
+    Box(modifier = Modifier.fillMaxSize().background(Color(0xFF000000))) {
         when (currentScreen) {
             SecurityScreen.MAIN -> {
                 LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp)) {
                     item {
-                        Text("Account & Security", fontSize = 28.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 16.dp))
+                        Text("Account & Security", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Color.White, modifier = Modifier.padding(bottom = 16.dp))
                     }
 
                     // Email Section
                     item {
                         SettingsSection(header = "Email", footer = "Cognito will send a verification code to the new email address before completing the change.") {
                             SettingsRow(title = "Current email", value = if (currentEmail.isEmpty()) "Not set" else currentEmail)
-                            HorizontalDivider()
+                            HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
                             SettingsRow(title = "Change Email", icon = Icons.Default.Email, onClick = { currentScreen = SecurityScreen.EMAIL })
                         }
                     }
@@ -148,8 +148,8 @@ fun AccountSecurityView(
         if (showDeleteAlert) {
             AlertDialog(
                 onDismissRequest = { showDeleteAlert = false },
-                title = { Text("Delete Account?") },
-                text = { Text("Are you sure you want to permanently delete your account? This cannot be undone.") },
+                title = { Text("Delete Account?", color = Color.White) },
+                text = { Text("Are you sure you want to permanently delete your account? This cannot be undone.", color = Color.LightGray) },
                 confirmButton = {
                     TextButton(onClick = {
                         showDeleteAlert = false
@@ -160,17 +160,17 @@ fun AccountSecurityView(
                             } catch (e: Exception) {
                                 println("Failed to delete user: ${e.message}")
                             } finally {
-                                // 🚀 YOUR FIX: Removed 'authState' argument to match teammate's viewmodel
                                 vm.signOut()
                                 isDeleting = false
                                 onDismiss()
                             }
                         }
-                    }) { Text("Delete", color = Color.Red) }
+                    }) { Text("Delete", color = Color.Red, fontWeight = FontWeight.Bold) }
                 },
                 dismissButton = {
-                    TextButton(onClick = { showDeleteAlert = false }) { Text("Cancel") }
-                }
+                    TextButton(onClick = { showDeleteAlert = false }) { Text("Cancel", color = Color(0xFF007AFF)) }
+                },
+                containerColor = Color(0xFF1C1C1E)
             )
         }
 
@@ -264,9 +264,9 @@ fun UpdateEmailView(currentEmail: String, onCompleted: () -> Unit, onBack: () ->
         }
     }
 
-    LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+    LazyColumn(modifier = Modifier.fillMaxSize().background(Color(0xFF000000)).padding(16.dp)) {
         item {
-            Text("Change Email", fontSize = 28.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 16.dp))
+            Text("Change Email", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Color.White, modifier = Modifier.padding(bottom = 16.dp))
         }
 
         if (currentEmail.isNotEmpty()) {
@@ -286,22 +286,38 @@ fun UpdateEmailView(currentEmail: String, onCompleted: () -> Unit, onBack: () ->
                     OutlinedTextField(
                         value = confirmationCode,
                         onValueChange = { confirmationCode = it },
-                        placeholder = { Text("Verification code") },
+                        placeholder = { Text("Verification code", color = Color.Gray) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = Color(0xFF007AFF),
+                            unfocusedBorderColor = Color.Transparent,
+                            focusedContainerColor = Color(0xFF1C1C1E),
+                            unfocusedContainerColor = Color(0xFF1C1C1E)
+                        ),
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
                     )
                     Button(onClick = confirmEmailChange, enabled = !isWorking && confirmationCode.isNotBlank(), modifier = Modifier.fillMaxWidth().padding(16.dp)) {
                         Text("Verify Email")
                     }
                     TextButton(onClick = resendCode, enabled = !isWorking, modifier = Modifier.fillMaxWidth()) {
-                        Text("Resend Code")
+                        Text("Resend Code", color = Color(0xFF007AFF))
                     }
                 } else {
                     OutlinedTextField(
                         value = newEmail,
                         onValueChange = { newEmail = it },
-                        placeholder = { Text("New email address") },
+                        placeholder = { Text("New email address", color = Color.Gray) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = Color(0xFF007AFF),
+                            unfocusedBorderColor = Color.Transparent,
+                            focusedContainerColor = Color(0xFF1C1C1E),
+                            unfocusedContainerColor = Color(0xFF1C1C1E)
+                        ),
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
                     )
                     Button(onClick = beginEmailChange, enabled = !isWorking && newEmail.isNotBlank(), modifier = Modifier.fillMaxWidth().padding(16.dp)) {
@@ -372,9 +388,9 @@ fun ChangePasswordView(onBack: () -> Unit) {
         }
     }
 
-    LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+    LazyColumn(modifier = Modifier.fillMaxSize().background(Color(0xFF000000)).padding(16.dp)) {
         item {
-            Text("Change Password", fontSize = 28.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 16.dp))
+            Text("Change Password", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Color.White, modifier = Modifier.padding(bottom = 16.dp))
         }
 
         if (passwordChanged) {
@@ -395,20 +411,44 @@ fun ChangePasswordView(onBack: () -> Unit) {
                 SettingsSection(header = "Password", footer = "The new password must satisfy the password policy configured in your Cognito user pool.") {
                     OutlinedTextField(
                         value = currentPassword, onValueChange = { currentPassword = it },
-                        placeholder = { Text("Current password") },
+                        placeholder = { Text("Current password", color = Color.Gray) },
                         visualTransformation = PasswordVisualTransformation(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = Color(0xFF007AFF),
+                            unfocusedBorderColor = Color.Transparent,
+                            focusedContainerColor = Color(0xFF1C1C1E),
+                            unfocusedContainerColor = Color(0xFF1C1C1E)
+                        ),
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
                     )
                     OutlinedTextField(
                         value = newPassword, onValueChange = { newPassword = it },
-                        placeholder = { Text("New password") },
+                        placeholder = { Text("New password", color = Color.Gray) },
                         visualTransformation = PasswordVisualTransformation(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = Color(0xFF007AFF),
+                            unfocusedBorderColor = Color.Transparent,
+                            focusedContainerColor = Color(0xFF1C1C1E),
+                            unfocusedContainerColor = Color(0xFF1C1C1E)
+                        ),
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
                     )
                     OutlinedTextField(
                         value = confirmedPassword, onValueChange = { confirmedPassword = it },
-                        placeholder = { Text("Confirm new password") },
+                        placeholder = { Text("Confirm new password", color = Color.Gray) },
                         visualTransformation = PasswordVisualTransformation(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = Color(0xFF007AFF),
+                            unfocusedBorderColor = Color.Transparent,
+                            focusedContainerColor = Color(0xFF1C1C1E),
+                            unfocusedContainerColor = Color(0xFF1C1C1E)
+                        ),
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
                     )
                     Button(
@@ -459,7 +499,7 @@ fun SettingsSection(header: String? = null, footer: String? = null, content: @Co
         if (header != null) {
             Text(header.uppercase(), fontSize = 13.sp, color = Color.Gray, modifier = Modifier.padding(start = 16.dp, bottom = 8.dp))
         }
-        Column(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Color.White)) {
+        Column(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Color(0xFF1C1C1E))) {
             content()
         }
         if (footer != null) {
@@ -477,7 +517,7 @@ fun SettingsRow(title: String, value: String? = null, icon: androidx.compose.ui.
         if (icon != null) {
             Icon(icon, contentDescription = null, tint = Color(0xFF007AFF), modifier = Modifier.padding(end = 12.dp))
         }
-        Text(title, fontSize = 17.sp, modifier = Modifier.weight(1f))
+        Text(title, fontSize = 17.sp, color = Color.White, modifier = Modifier.weight(1f))
         if (value != null) {
             Text(value, fontSize = 17.sp, color = Color.Gray)
         }
