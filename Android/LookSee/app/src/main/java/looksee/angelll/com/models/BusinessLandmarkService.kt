@@ -166,6 +166,62 @@ class BusinessLandmarkService internal constructor(
         )
     }
 
+    suspend fun uploadGlobalNegativeVideo(file: java.io.File) {
+        val fileName = file.name
+        val initPayload = mapOf(
+            "filename" to fileName,
+            "mediaKind" to "video",
+            "contentType" to "video/mp4",
+            "datasetRole" to "global_negative",
+            "label" to "Global Negative Admin"
+        )
+        val initBody = gson.toJson(initPayload)
+        
+        val token = try {
+            tokenProvider.idToken()
+        } catch (_: Exception) { "" }
+
+        val initRequest = BusinessHttpRequest(
+            method = "POST",
+            url = "$LOOKSEE_API_BASE_URL/submissions/init",
+            authorization = "Bearer $token",
+            contentType = "application/json",
+            body = initBody.toByteArray(Charsets.UTF_8)
+        )
+        
+        val initResponse = httpClient.execute(initRequest)
+        validate(initResponse)
+        
+        val initJson = org.json.JSONObject(initResponse.bodyText)
+        val uploadUrl = initJson.optString("uploadUrl")
+        val s3Key = initJson.optString("s3Key")
+        val submissionId = initJson.optString("submissionId")
+        
+        if (uploadUrl.isEmpty() || s3Key.isEmpty() || submissionId.isEmpty()) {
+            throw BusinessLandmarkServiceError.InvalidResponse
+        }
+        
+        uploadToPresignedUrl(uploadUrl, "video/mp4", file.readBytes())
+        
+        val completePayload = mapOf(
+            "submissionId" to submissionId,
+            "s3Key" to s3Key,
+            "datasetRole" to "global_negative"
+        )
+        val completeBody = gson.toJson(completePayload)
+        
+        val completeRequest = BusinessHttpRequest(
+            method = "POST",
+            url = "$LOOKSEE_API_BASE_URL/submissions/complete",
+            authorization = "Bearer $token",
+            contentType = "application/json",
+            body = completeBody.toByteArray(Charsets.UTF_8)
+        )
+        
+        val completeResponse = httpClient.execute(completeRequest)
+        validate(completeResponse)
+    }
+
     private suspend fun uploadHardNegativeMedia(
         landmarkId: String,
         filename: String,

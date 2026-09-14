@@ -932,8 +932,8 @@ private struct BusinessPositiveSafeVideoPlayer: UIViewControllerRepresentable, E
     }
     func updateUIViewController(_ uiViewController: AVPlayerViewController, context: Context) {}
     static func dismantleUIViewController(_ uiViewController: AVPlayerViewController, coordinator: ()) {
-        let player = uiViewController.player
-        uiViewController.player = nil
-        DispatchQueue.global(qos: .background).async { player?.pause() }
-    }
+            let player = uiViewController.player
+            uiViewController.player = nil
+            player?.pause()
+        }
 }

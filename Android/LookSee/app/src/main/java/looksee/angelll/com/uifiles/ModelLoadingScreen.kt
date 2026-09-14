@@ -71,7 +71,7 @@ fun ModelLoadingScreen(
         // Step 1 — wait for location
         var attempts = 0
         while (!locationPermissionState.status.isGranted || locationState !is LookSeeLocationState.Ready) {
-            if (locationPermissionState.status.isGranted && !locationManager.hasLocationPermission()) {
+            if (locationPermissionState.status.isGranted) {
                 locationManager.start()
             }
             delay(500)

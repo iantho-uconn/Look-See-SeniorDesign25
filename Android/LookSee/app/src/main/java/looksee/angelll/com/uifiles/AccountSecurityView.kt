@@ -121,7 +121,8 @@ fun AccountSecurityView(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable { showDeleteAlert = true }
-                                    .padding(16.dp)
+                                    .padding(16.dp),
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
                             )
                         }
                     }

@@ -53,7 +53,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalFoundationApi::class, ExperimentalPermissionsApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalPermissionsApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun ButtonsScreen(
     vm: AuthViewModel,
@@ -275,6 +275,7 @@ fun ButtonsScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .let { if (isScanTab) it.background(Color.Transparent) else it.background(Color.Black) }
                         .statusBarsPadding()
                 ) {
                     Row(
@@ -526,23 +527,36 @@ fun ButtonsScreen(
             }
 
             if (showTutorial) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.4f))
-                        .pointerInput(Unit) { detectTapGestures { showTutorial = false } },
-                    contentAlignment = Alignment.BottomCenter
+                ModalBottomSheet(
+                    onDismissRequest = { showTutorial = false },
+                    containerColor = Color.Transparent,
+                    dragHandle = { BottomSheetDefaults.DragHandle() },
+                    contentWindowInsets = { WindowInsets(0, 0, 0, 0) }
                 ) {
-                    LookSeeCard(modifier = Modifier.padding(24.dp).padding(bottom = 60.dp)) {
-                        Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(24.dp)) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFF1C1C1E).copy(alpha = 0.95f), RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+                            .padding(horizontal = 32.dp)
+                            .padding(top = 32.dp, bottom = 48.dp),
+                        contentAlignment = Alignment.TopCenter
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(24.dp)
+                        ) {
                             if (currentTab == 0) {
-                                ViewfinderCircle(tint = AppleBlue, modifier = Modifier.size(70.dp))
-                                Text("How to Scan", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                                Text("Point your camera at a landmark. Keep the object well-lit and steady. LookSee will identify it automatically.", fontSize = 16.sp, color = Color.Gray, textAlign = TextAlign.Center)
+                                Icon(Icons.Default.CenterFocusStrong, contentDescription = null, tint = AppleBlue, modifier = Modifier.size(70.dp))
+                                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text("How to Scan", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                    Text("Point your camera at a landmark. Keep the object well-lit and steady. LookSee will identify it automatically.", fontSize = 16.sp, color = Color.Gray, textAlign = TextAlign.Center)
+                                }
                             } else {
                                 Icon(Icons.Default.Map, contentDescription = null, tint = AppleBlue, modifier = Modifier.size(60.dp))
-                                Text("Explore the Map", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                                Text("Find valid landmarks around you to scan. Use the search bar or filters to narrow down locations.", fontSize = 16.sp, color = Color.Gray, textAlign = TextAlign.Center)
+                                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text("Explore the Map", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                    Text("Find valid landmarks around you to scan. Use the search bar or filters to narrow down locations.", fontSize = 16.sp, color = Color.Gray, textAlign = TextAlign.Center)
+                                }
                             }
                         }
                     }

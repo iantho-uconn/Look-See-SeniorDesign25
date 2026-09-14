@@ -192,13 +192,16 @@ private fun HistoryRowItem(
     onClick: () -> Unit,
     onDelete: () -> Unit
 ) {
-    val dismissState = rememberSwipeToDismissBoxState()
-
-    if (dismissState.currentValue == SwipeToDismissBoxValue.EndToStart) {
-        LaunchedEffect(Unit) {
-            onDelete()
+    val dismissState = rememberSwipeToDismissBoxState(
+        confirmValueChange = {
+            if (it == SwipeToDismissBoxValue.EndToStart) {
+                onDelete()
+                true
+            } else {
+                false
+            }
         }
-    }
+    )
 
     SwipeToDismissBox(
         state = dismissState,

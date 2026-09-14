@@ -357,9 +357,9 @@ fun SettingsScreen(
                         onNavigate("TermsOfService")
                     }
                     HorizontalDivider(modifier = Modifier.padding(start = 52.dp), color = Color.White.copy(alpha = 0.1f))
-                    LookSeeRow(icon = Icons.Default.Settings, iconContainerColor = Color.Gray, title = "System Settings", subtitle = "App Language") {
+                    LookSeeRow(icon = Icons.Default.Settings, iconContainerColor = Color.Gray, title = "App Language", subtitle = "System Settings") {
                         val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                            data = android.net.Uri.fromParts("package", context.packageName, null)
+                            data = Uri.fromParts("package", context.packageName, null)
                         }
                         context.startActivity(intent)
                     }
@@ -431,7 +431,7 @@ fun SettingsScreen(
                         shape = RoundedCornerShape(16.dp)
                     ) {
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.AutoMirrored.Rounded.ExitToApp, contentDescription = null, tint = Color.Red)
+                            Icon(Icons.Default.ExitToApp, contentDescription = null, tint = Color.Red)
                             Text("Sign Out", color = Color.Red, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                         }
                     }

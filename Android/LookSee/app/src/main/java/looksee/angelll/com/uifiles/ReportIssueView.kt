@@ -17,7 +17,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.rounded.HelpOutline
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -289,7 +288,7 @@ fun CategoryChip(
         ReportCategory.UI_BUG -> Icons.Default.WebAssetOff
         ReportCategory.DETECTION_BUG -> Icons.Default.CenterFocusStrong
         ReportCategory.UPLOAD_BUG -> Icons.Default.ArrowCircleUp
-        ReportCategory.OTHER -> Icons.Rounded.HelpOutline
+        ReportCategory.OTHER -> Icons.Default.QuestionMark
     }
 
     Column(
