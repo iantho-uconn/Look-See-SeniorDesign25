@@ -85,6 +85,7 @@ struct Buttons: View {
             && isScanCameraActive
             && !infoView.infoView
             && !showSignUpPrompt
+            && vm.isEligibleForBannerAds
             && adConsentManager.adsReady
     }
 
