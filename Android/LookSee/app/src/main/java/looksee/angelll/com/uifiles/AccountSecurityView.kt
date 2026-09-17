@@ -11,6 +11,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -67,13 +68,40 @@ fun AccountSecurityView(
         refreshAccount()
     }
 
-    Box(modifier = Modifier.fillMaxSize().background(Color(0xFF000000))) {
-        when (currentScreen) {
-            SecurityScreen.MAIN -> {
-                LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-                    item {
-                        Text("Account & Security", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Color.White, modifier = Modifier.padding(bottom = 16.dp))
+    Scaffold(
+        topBar = {
+            @OptIn(ExperimentalMaterial3Api::class)
+            TopAppBar(
+                title = { Text(
+                    when (currentScreen) {
+                        SecurityScreen.MAIN -> "Account & Security"
+                        SecurityScreen.EMAIL -> "Change Email"
+                        SecurityScreen.PASSWORD -> "Change Password"
+                    },
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold
+                ) },
+                navigationIcon = {
+                    IconButton(onClick = { 
+                        if (currentScreen != SecurityScreen.MAIN) {
+                            currentScreen = SecurityScreen.MAIN
+                        } else {
+                            onDismiss()
+                        }
+                    }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
                     }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF000000))
+            )
+        },
+        containerColor = Color(0xFF000000)
+    ) { paddingValues ->
+        Box(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
+            when (currentScreen) {
+                SecurityScreen.MAIN -> {
+                    LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+                        item { Spacer(Modifier.height(16.dp)) }
 
                     // Email Section
                     item {
@@ -196,6 +224,7 @@ fun AccountSecurityView(
             }
         }
     }
+}
 }
 
 @Composable

@@ -250,7 +250,7 @@ class AuthViewModel: ObservableObject {
 
     func fetchUserUsageStats() async {
         guard !userId.isEmpty else { return }
-        guard let url = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/LookSeeGetUserStats") else { return }
+        guard let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/LookSeeGetUserStats") else { return }
         
         var request = await authorizedJSONRequest(url: url)
         let body: [String: String] = ["userId": userId]
@@ -305,7 +305,7 @@ class AuthViewModel: ObservableObject {
 
     func logScanHistory(landmarkId: String, label: String, location: String, latitude: Double, longitude: Double, imageUrl: String) async {
         guard !userId.isEmpty else { return }
-        guard let url = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/history") else { return }
+        guard let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/history") else { return }
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -327,7 +327,7 @@ class AuthViewModel: ObservableObject {
 
     func fetchScanHistory() async {
         guard !userId.isEmpty else { return }
-        guard let url = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/history?userId=\(userId)") else { return }
+        guard let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/history?userId=\(userId)") else { return }
 
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
@@ -352,7 +352,7 @@ class AuthViewModel: ObservableObject {
             self.scanHistory.removeAll { $0.scannedAt == scannedAt }
         }
 
-        guard let url = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/history") else { return }
+        guard let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/history") else { return }
         var request = URLRequest(url: url)
         request.httpMethod = "DELETE"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -368,7 +368,7 @@ class AuthViewModel: ObservableObject {
 
     func cancelSubscription() async -> Bool {
         guard !userId.isEmpty else { return false }
-        guard let url = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/checkout") else { return false }
+        guard let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/checkout") else { return false }
         
         var request = await authorizedJSONRequest(url: url)
         
@@ -399,7 +399,7 @@ class AuthViewModel: ObservableObject {
 
     func updateUserIdentity(newUsername: String, emailToSave: String, profileBase64: String? = nil) async -> (success: Bool, error: String?) {
         guard !userId.isEmpty else { return (false, "User not found") }
-        guard let url = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/checkout") else { return (false, "Invalid URL") }
+        guard let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/checkout") else { return (false, "Invalid URL") }
         
         var request = await authorizedJSONRequest(url: url)
         
@@ -452,7 +452,7 @@ class AuthViewModel: ObservableObject {
         guard !userId.isEmpty else { return false }
         
         // Using the exact structure found in BusinessLandmarkService.swift
-        guard let url = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/business/landmarks/\(landmarkId)") else { return false }
+        guard let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/business/landmarks/\(landmarkId)") else { return false }
         
         var request = await authorizedJSONRequest(url: url)
         
@@ -483,7 +483,7 @@ class AuthViewModel: ObservableObject {
 
     func updateBusinessProfile(storeName: String, phoneNumber: String, storeWebsite: String, storeAddress: String, storeBio: String, storeLogoUrl: String, storeLogoBase64: String? = nil) async -> Bool {
         guard !userId.isEmpty else { return false }
-        guard let url = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/checkout") else { return false }
+        guard let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/checkout") else { return false }
         
         var request = await authorizedJSONRequest(url: url)
         
@@ -543,7 +543,7 @@ class AuthViewModel: ObservableObject {
     
     func initDatabaseRow(emailToSave: String) async {
         guard !userId.isEmpty else { return }
-        guard let url = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/checkout") else { return }
+        guard let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/checkout") else { return }
         
         var request = await authorizedJSONRequest(url: url)
         

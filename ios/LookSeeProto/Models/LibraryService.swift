@@ -37,7 +37,7 @@ final class LibraryService: ObservableObject {
     @Published var isLoading = false
     @Published var errorMessage: String?
 
-    private let baseURL = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev")!
+    private let baseURL = URL(string: "https://d11vl3v9w133rh.cloudfront.net")!
     private var observerTask: Task<Void, Never>? = nil
 
     private init() {

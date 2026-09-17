@@ -52,7 +52,7 @@ final class UploadService: ObservableObject {
     @Published private(set) var stage: PositiveUploadStage = .idle
 
     // MARK: API configuration
-    private let baseURL = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev")!
+    private let baseURL = URL(string: "https://d11vl3v9w133rh.cloudfront.net")!
     private let apiTimeout: TimeInterval = 60
     private let mediaUploadTimeout: TimeInterval = 300
     
@@ -169,7 +169,7 @@ final class UploadService: ObservableObject {
                     detail: String(localized: "Keep LookSee open while your photo is uploaded.")
                 )
 
-                try await putToS3(presignedURL: initResponse.uploadUrl, contentType: contentType, videoURL: nil, image: image)
+                try await postToS3(presignedPost: initResponse.uploadUrl, contentType: contentType, videoURL: nil, image: image)
 
                 updateStage(
                     .finalizing,
@@ -225,7 +225,7 @@ final class UploadService: ObservableObject {
                 detail: String(localized: "Videos can take a little longer. Keep LookSee open until the upload finishes.")
             )
 
-            try await putToS3(presignedURL: initResponse.uploadUrl, contentType: contentType, videoURL: mergedURL, image: nil)
+            try await postToS3(presignedPost: initResponse.uploadUrl, contentType: contentType, videoURL: mergedURL, image: nil)
 
             updateStage(
                 .finalizing,
@@ -324,32 +324,61 @@ final class UploadService: ObservableObject {
         }
     }
 
-    private func putToS3(presignedURL: String, contentType: String, videoURL: URL?, image: UIImage?) async throws {
-        guard let url = URL(string: presignedURL) else { throw UploadError.invalidURL }
+    // 🚀 NEW: The S3 Multipart POST Upload logic
+    private func postToS3(presignedPost: S3PresignedPost, contentType: String, videoURL: URL?, image: UIImage?) async throws {
+        guard let url = URL(string: presignedPost.url) else { throw UploadError.invalidURL }
+        
         var request = URLRequest(url: url)
-        request.httpMethod = "PUT"
+        request.httpMethod = "POST"
         request.timeoutInterval = mediaUploadTimeout
-        request.setValue(contentType, forHTTPHeaderField: "Content-Type")
+        
+        let boundary = "Boundary-\(UUID().uuidString)"
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
 
-        if let videoURL {
+        var body = Data()
+        
+        // AWS REQUIRES all S3 security parameters to come BEFORE the file
+        for (key, value) in presignedPost.fields {
+            body.append("--\(boundary)\r\n".data(using: .utf8)!)
+            body.append("Content-Disposition: form-data; name=\"\(key)\"\r\n\r\n".data(using: .utf8)!)
+            body.append("\(value)\r\n".data(using: .utf8)!)
+        }
+
+        if let videoURL = videoURL {
             guard FileManager.default.fileExists(atPath: videoURL.path) else { throw UploadError.noMediaSelected }
-            let (_, response) = try await URLSession.shared.upload(for: request, fromFile: videoURL)
-            try validateS3Response(response)
-            return
+            let videoData = try Data(contentsOf: videoURL)
+            let filename = videoURL.lastPathComponent
+            
+            body.append("--\(boundary)\r\n".data(using: .utf8)!)
+            body.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(filename)\"\r\n".data(using: .utf8)!)
+            body.append("Content-Type: \(contentType)\r\n\r\n".data(using: .utf8)!)
+            body.append(videoData)
+            body.append("\r\n".data(using: .utf8)!)
+            
+        } else if let image = image {
+            guard let imageData = image.jpegData(compressionQuality: 0.9) else { throw UploadError.missingImageData }
+            
+            body.append("--\(boundary)\r\n".data(using: .utf8)!)
+            body.append("Content-Disposition: form-data; name=\"file\"; filename=\"photo.jpg\"\r\n".data(using: .utf8)!)
+            body.append("Content-Type: \(contentType)\r\n\r\n".data(using: .utf8)!)
+            body.append(imageData)
+            body.append("\r\n".data(using: .utf8)!)
+        } else {
+            throw UploadError.noMediaSelected
         }
 
-        if let image {
-            guard let imageData = image.jpegData(compressionQuality: 0.9) else { throw UploadError.missingImageData }
-            let (_, response) = try await URLSession.shared.upload(for: request, from: imageData)
-            try validateS3Response(response)
-            return
-        }
-        throw UploadError.noMediaSelected
+        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+
+        let (responseData, response) = try await URLSession.shared.upload(for: request, from: body)
+        try validateS3Response(response, data: responseData)
     }
 
-    private func validateS3Response(_ response: URLResponse) throws {
+    private func validateS3Response(_ response: URLResponse, data: Data? = nil) throws {
         guard let httpResponse = response as? HTTPURLResponse else { throw UploadError.invalidResponse }
         guard (200...299).contains(httpResponse.statusCode) else {
+            if let data = data, let errorString = String(data: data, encoding: .utf8) {
+                print("❌ S3 ERROR: \(errorString)")
+            }
             throw UploadError.badStatus(httpResponse.statusCode, String(localized: "The S3 media upload failed."))
         }
     }

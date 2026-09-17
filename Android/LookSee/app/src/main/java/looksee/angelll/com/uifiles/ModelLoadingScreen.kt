@@ -57,8 +57,10 @@ fun ModelLoadingScreen(
         android.Manifest.permission.ACCESS_FINE_LOCATION
     )
 
-    LaunchedEffect(Unit) {
-        if (!locationPermissionState.status.isGranted) {
+    LaunchedEffect(locationPermissionState.status.isGranted) {
+        if (locationPermissionState.status.isGranted) {
+            locationManager.start()
+        } else {
             locationPermissionState.launchPermissionRequest()
         }
     }
@@ -71,9 +73,6 @@ fun ModelLoadingScreen(
         // Step 1 — wait for location
         var attempts = 0
         while (!locationPermissionState.status.isGranted || locationState !is LookSeeLocationState.Ready) {
-            if (locationPermissionState.status.isGranted) {
-                locationManager.start()
-            }
             delay(500)
             attempts++
             if (attempts > 20) {

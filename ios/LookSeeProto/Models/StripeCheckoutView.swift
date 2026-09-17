@@ -18,7 +18,7 @@ struct StripeCheckoutView: View {
     @State private var paymentSuccess = false
     @State private var errorMessage: String?
     
-    let backendCheckoutUrl = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/checkout")!
+    let backendCheckoutUrl = URL(string: "https://d11vl3v9w133rh.cloudfront.net/checkout")!
     
     var body: some View {
         ZStack {

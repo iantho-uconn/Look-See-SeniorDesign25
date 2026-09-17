@@ -147,7 +147,7 @@ fun SettingsScreen(
                             )
                             Column(modifier = Modifier.weight(1f)) {
                                 Text("Guest User", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                                Text("Sign in to sync your data", fontSize = 14.sp, color = Color.Gray)
+                        Text("Browsing anonymously", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Color.Gray)
                             }
                             Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(20.dp))
                         }
@@ -357,83 +357,12 @@ fun SettingsScreen(
                         onNavigate("TermsOfService")
                     }
                     HorizontalDivider(modifier = Modifier.padding(start = 52.dp), color = Color.White.copy(alpha = 0.1f))
-                    LookSeeRow(icon = Icons.Default.Settings, iconContainerColor = Color.Gray, title = "App Language", subtitle = "System Settings") {
-                        val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                            data = Uri.fromParts("package", context.packageName, null)
-                        }
-                        context.startActivity(intent)
-                    }
-                }
-                
-                // Admin Tools
-                val adminEmails = listOf("angelgabriel2828@icloud.com", "angelgabriel0846@gmail.com")
-                if (vm.userEmail.lowercase() in adminEmails) {
-                    LookSeeSectionHeader("Admin Tools")
-                    LookSeeCard(modifier = Modifier.padding(horizontal = 16.dp)) {
-                        LookSeeRow(
-                            icon = Icons.Default.CameraAlt,
-                            iconContainerColor = Color(0xFFFFA500),
-                            title = "Record Global Negatives",
-                            subtitle = "Capture empty spaces for the AI dataset"
-                        ) {
-                            presenter.showGlobalNegativeCamera = true
-                        }
-                    }
-                }
-
-                // Reload Model
-                Spacer(Modifier.height(16.dp))
-                Column(modifier = Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(
-                        onClick = {
-                            coroutineScope.launch {
-                                presenter.isReloadingModels = true
-                                kotlinx.coroutines.delay(1500)
-                                looksee.angelll.com.models.ModelAutoRefreshService.shared(context).start()
-                                presenter.showReloadSuccess = true
-                                presenter.isReloadingModels = false
-                                kotlinx.coroutines.delay(2500)
-                                presenter.showReloadSuccess = false
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth().height(56.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = if (presenter.showReloadSuccess) Color.Green else AppleBlue),
-                        shape = RoundedCornerShape(16.dp)
+                    LookSeeRow(
+                        icon = Icons.Default.Settings,
+                        iconContainerColor = Color.Gray,
+                        title = "Settings & Preferences"
                     ) {
-                        if (presenter.isReloadingModels) {
-                            CircularProgressIndicator(color = Color.White, modifier = Modifier.size(20.dp))
-                            Spacer(Modifier.width(12.dp))
-                            Text("Fetching Clusters...")
-                        } else if (presenter.showReloadSuccess) {
-                            Icon(Icons.Default.CheckCircle, contentDescription = null)
-                            Spacer(Modifier.width(12.dp))
-                            Text("Models Reloaded!")
-                        } else {
-                            Icon(Icons.Default.Sync, contentDescription = null)
-                            Spacer(Modifier.width(12.dp))
-                            Text("Reload Model")
-                        }
-                    }
-                    val detector = looksee.angelll.com.detection.Detector.shared(context)
-                    val activeLabel by detector.currentLabel.collectAsState()
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(start = 8.dp)) {
-                        Icon(Icons.Default.Memory, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(16.dp))
-                        Text(if (activeLabel == null) "No Model Loaded" else "Active Model: $activeLabel", color = Color.Gray, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-
-                if (isFullyLoggedIn) {
-                    Spacer(Modifier.height(24.dp))
-                    Button(
-                        onClick = { showSignOutAlert = true },
-                        modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth().height(56.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(0.1f)),
-                        shape = RoundedCornerShape(16.dp)
-                    ) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.ExitToApp, contentDescription = null, tint = Color.Red)
-                            Text("Sign Out", color = Color.Red, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                        }
+                        onNavigate("DeepSettings")
                     }
                 }
             }
@@ -638,11 +567,11 @@ fun GuestPromoCard(presenter: SettingsPresenter, isFullyLoggedIn: Boolean, onNav
                             onNavigate("signup")
                         }
                     },
-                    modifier = Modifier.weight(1f).height(48.dp),
+                    modifier = Modifier.weight(1.3f).height(48.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = AppleBlue),
                     shape = RoundedCornerShape(14.dp)
                 ) {
-                    Text(if (isFullyLoggedIn) "View Plans" else "Create Free Account", fontWeight = FontWeight.Bold)
+                    Text(if (isFullyLoggedIn) "View Plans" else "Create Free Account", fontWeight = FontWeight.Bold, maxLines = 1)
                 }
                 if (!isFullyLoggedIn) {
                     Button(
@@ -650,11 +579,11 @@ fun GuestPromoCard(presenter: SettingsPresenter, isFullyLoggedIn: Boolean, onNav
                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             onNavigate("login")
                         },
-                        modifier = Modifier.weight(1f).height(48.dp),
+                        modifier = Modifier.weight(0.9f).height(48.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.15f)),
                         shape = RoundedCornerShape(14.dp)
                     ) {
-                        Text("Log In", fontWeight = FontWeight.Bold)
+                        Text("Log In", fontWeight = FontWeight.Bold, maxLines = 1)
                     }
                 }
             }
@@ -730,6 +659,13 @@ fun UserProfileEditSheet(vm: AuthViewModel, onDismiss: () -> Unit) {
                         singleLine = true,
                         shape = RoundedCornerShape(16.dp),
                         modifier = Modifier.fillMaxWidth()
+                    )
+                    Text(
+                        "Usernames must be letters, numbers, and underscores only.",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color.White.copy(alpha = 0.4f),
+                        modifier = Modifier.padding(start = 4.dp)
                     )
                 }
 

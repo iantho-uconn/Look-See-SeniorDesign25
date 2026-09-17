@@ -37,7 +37,7 @@ struct PopUp: View {
             
             // Fire-and-forget background ping so it doesn't slow down the UI
             Task.detached(priority: .background) {
-                guard let url = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/analytics/click") else { return }
+                guard let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/analytics/click") else { return }
                 
                 var request = URLRequest(url: url)
                 request.httpMethod = "POST"

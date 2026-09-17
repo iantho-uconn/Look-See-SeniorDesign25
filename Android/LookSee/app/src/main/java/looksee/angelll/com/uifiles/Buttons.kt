@@ -7,6 +7,7 @@ import android.content.IntentFilter
 import androidx.compose.animation.*
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -284,17 +285,9 @@ fun ButtonsScreen(
                             .padding(horizontal = 16.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier
-                                .width(60.dp)
-                                .clickable {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    showTutorial = true
-                                }
-                        ) {
-                            Icon(Icons.Outlined.Info, contentDescription = "Info", tint = Color.White, modifier = Modifier.size(24.dp).background(Color.Black.copy(0.4f), CircleShape))
-                            Text("Info", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        NavButton(icon = Icons.Outlined.Info, label = "Info") {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            showTutorial = true
                         }
 
                         Text(
@@ -312,17 +305,9 @@ fun ButtonsScreen(
                             textAlign = TextAlign.Center
                         )
 
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier
-                                .width(60.dp)
-                                .clickable {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    onNavigate("Settings")
-                                }
-                        ) {
-                            Icon(Icons.Default.Menu, contentDescription = "Menu", tint = Color.White, modifier = Modifier.size(24.dp).background(Color.Black.copy(0.4f), RoundedCornerShape(6.dp)))
-                            Text("Menu", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        NavButton(icon = Icons.Default.Menu, label = "Menu") {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onNavigate("Settings")
                         }
                     }
                 }
@@ -587,6 +572,33 @@ fun ButtonsScreen(
         }
     }
 
+}
+
+@Composable
+fun NavButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    onClick: () -> Unit
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .width(60.dp)
+            .clickable { onClick() }
+    ) {
+        Box(
+            modifier = Modifier
+                .size(42.dp)
+                .clip(CircleShape)
+                .background(Color.White.copy(alpha = 0.2f))
+                .border(0.5.dp, Color.White.copy(alpha = 0.2f), CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(icon, contentDescription = label, tint = Color.White, modifier = Modifier.size(20.dp))
+        }
+        Spacer(Modifier.height(2.dp))
+        Text(label, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+    }
 }
 
 @Composable

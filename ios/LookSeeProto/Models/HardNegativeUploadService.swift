@@ -14,7 +14,7 @@ final class HardNegativeUploadService: ObservableObject {
     @Published private(set) var progress: Double = 0
     @Published private(set) var isUploading = false
 
-    private let baseURL = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev")!
+    private let baseURL = URL(string: "https://d11vl3v9w133rh.cloudfront.net")!
 
     enum UploadError: LocalizedError {
         case noVideo
@@ -69,7 +69,7 @@ final class HardNegativeUploadService: ObservableObject {
             }
 
             progress = 1
-            let backendStatus = completeResponse.processed.first?.status
+            let backendStatus = completeResponse.processed?.first?.status
                 .trimmingCharacters(in: .whitespacesAndNewlines)
                 .uppercased()
 
@@ -112,28 +112,48 @@ final class HardNegativeUploadService: ObservableObject {
         return try JSONDecoder().decode(HardNegativeInitResponse.self, from: data)
     }
 
-    // MARK: - Presigned S3 uploads
+    // MARK: - Presigned S3 uploads (🚀 CHANGED to POST)
 
     private func uploadVideo(_ video: CapturedNegativeVideo, to target: HardNegativeUploadTarget) async throws {
         guard FileManager.default.fileExists(atPath: video.fileURL.path) else {
             throw UploadError.missingLocalFile(video.filename)
         }
-        guard let url = URL(string: target.uploadUrl) else {
+        guard let url = URL(string: target.uploadUrl.url) else {
             throw UploadError.invalidURL
         }
 
-        var request = URLRequest(url: url)
-        request.httpMethod = "PUT"
-        request.setValue(target.contentType, forHTTPHeaderField: "Content-Type")
+        let videoData = try Data(contentsOf: video.fileURL)
+        let boundary = "Boundary-\(UUID().uuidString)"
 
-        let (_, response) = try await URLSession.shared.upload(for: request, fromFile: video.fileURL)
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+
+        var body = Data()
+        
+        for (key, value) in target.uploadUrl.fields {
+            body.append("--\(boundary)\r\n".data(using: .utf8)!)
+            body.append("Content-Disposition: form-data; name=\"\(key)\"\r\n\r\n".data(using: .utf8)!)
+            body.append("\(value)\r\n".data(using: .utf8)!)
+        }
+
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(video.filename)\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: \(target.contentType)\r\n\r\n".data(using: .utf8)!)
+        body.append(videoData)
+        body.append("\r\n".data(using: .utf8)!)
+        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+
+        let (responseData, response) = try await URLSession.shared.upload(for: request, from: body)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw UploadError.invalidResponse
         }
 
         guard (200...299).contains(httpResponse.statusCode) else {
-            throw UploadError.badStatus(httpResponse.statusCode, "S3 PUT failed for \(video.filename)")
+            let errorString = String(data: responseData, encoding: .utf8) ?? ""
+            print("❌ S3 PUT failed for \(video.filename). Msg: \(errorString)")
+            throw UploadError.badStatus(httpResponse.statusCode, "S3 Upload failed")
         }
     }
 
@@ -187,7 +207,7 @@ private struct HardNegativeInitResponse: Decodable {
 
 private struct HardNegativeUploadTarget: Decodable {
     let negativeId: String
-    let uploadUrl: String
+    let uploadUrl: S3PresignedPost // 🚀 CHANGED
     let sourceBucket: String
     let sourceKey: String
     let contentType: String
@@ -207,15 +227,15 @@ struct HardNegativeCompleteResponse: Decodable {
     let processedCount: Int
     let failedCount: Int
     let dirtyMarked: Bool
-    let processed: [HardNegativeProcessedItem]
-    let failed: [HardNegativeFailedItem]
+    let processed: [HardNegativeProcessedItem]?
+    let failed: [HardNegativeFailedItem]?
 }
 
 struct HardNegativeProcessedItem: Decodable {
     let negativeId: String
     let status: String
-    let datasetImageKey: String
-    let datasetLabelKey: String
+    let datasetImageKey: String?
+    let datasetLabelKey: String?
 }
 
 struct HardNegativeFailedItem: Decodable {

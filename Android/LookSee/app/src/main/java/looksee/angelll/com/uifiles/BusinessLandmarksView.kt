@@ -525,37 +525,32 @@ private fun PendingRow(
 
 @Composable
 private fun EmptyQueueCard() {
-    LookSeeCard(modifier = Modifier.padding(horizontal = 16.dp)) {
-        Column(
-            modifier = Modifier.padding(vertical = 14.dp).fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        color = Color(0xFF1C1C1E),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
-                modifier = Modifier.size(70.dp).background(Color(0xFF32D74B).copy(alpha = 0.1f), CircleShape),
+                modifier = Modifier
+                    .size(40.dp)
+                    .background(Color.Green.copy(alpha = 0.1f), CircleShape),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    Icons.Default.CloudDone,
-                    contentDescription = null,
-                    tint = Color(0xFF32D74B),
-                    modifier = Modifier.size(32.dp)
-                )
+                Icon(Icons.Default.CloudDone, contentDescription = null, tint = Color.Green, modifier = Modifier.size(22.dp))
             }
-            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    "All Caught Up!",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
-                Text(
-                    "There is no media waiting in the queue.\nEverything is securely synced to LookSee.",
-                    fontSize = 14.sp,
-                    color = Color.Gray,
-                    textAlign = TextAlign.Center
-                )
+
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("All Caught Up!", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                Text("No uploads waiting.", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Color.Gray)
             }
+            Spacer(modifier = Modifier.weight(1f))
         }
     }
 }

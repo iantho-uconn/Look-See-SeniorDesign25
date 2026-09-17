@@ -31,7 +31,7 @@ enum BusinessMediaHistoryServiceError: LocalizedError {
 
 final class BusinessMediaHistoryService {
     private let baseURL = URL(
-        string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev"
+        string: "https://d11vl3v9w133rh.cloudfront.net"
     )!
 
     private func getCognitoIDToken() async throws -> String {

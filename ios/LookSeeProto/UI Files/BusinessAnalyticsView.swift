@@ -98,7 +98,7 @@ class BusinessAnalyticsViewModel: ObservableObject {
     func fetchAnalytics(vm: AuthViewModel) async {
         guard !vm.userId.isEmpty else { return }
         
-        guard let url = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/analytics") else { return }
+        guard let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/analytics") else { return }
         
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
