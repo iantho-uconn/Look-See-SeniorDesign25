@@ -50,6 +50,16 @@
             ReferencedContainer = "container:LookSeeProto.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
+      <CommandLineArguments>
+         <CommandLineArgument
+            argument = "-LookSeeConsentEEA"
+            isEnabled = "YES">
+         </CommandLineArgument>
+         <CommandLineArgument
+            argument = "-LookSeeResetConsent"
+            isEnabled = "NO">
+         </CommandLineArgument>
+      </CommandLineArguments>
       <LocationScenarioReference
          identifier = "../../ITlo.gpx"
          referenceType = "0">

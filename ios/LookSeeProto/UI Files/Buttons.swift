@@ -85,6 +85,7 @@ struct Buttons: View {
             && isScanCameraActive
             && !infoView.infoView
             && !showSignUpPrompt
+            && vm.isEligibleForBannerAds
             && adConsentManager.adsReady
     }
 
@@ -645,7 +646,7 @@ struct Buttons: View {
         guard isScanTab else { return }
         chromeFadeTask = Task {
             try? await Task.sleep(nanoseconds: 3_000_000_000)
-            guard !Task.isCancelled else { return }
+             guard !Task.isCancelled else { return }
             await MainActor.run {
                 if !isDetecting {
                     withAnimation(.easeOut(duration: 0.3)) { chromeVisible = false }

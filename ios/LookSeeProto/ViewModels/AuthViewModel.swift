@@ -11,10 +11,30 @@ import AWSPluginsCore
 @MainActor
 class AuthViewModel: ObservableObject {
 
-    @Published var isSignedIn = false
+    @Published var isSignedIn = false {
+        didSet {
+            if !isSignedIn { subscriptionStatusUserId = nil }
+        }
+    }
     @Published var errorMessage = ""
     @Published var userEmail = ""
-    @Published var userId = ""
+    @Published var userId = "" {
+        didSet {
+            if userId != oldValue { subscriptionStatusUserId = nil }
+        }
+    }
+
+    @Published private var subscriptionStatusUserId: String?
+    @Published private var sessionChecksInProgress = 0
+    @Published private var hasCheckedSession = false
+
+    var isEligibleForBannerAds: Bool {
+        guard hasCheckedSession, sessionChecksInProgress == 0 else { return false }
+        guard isSignedIn else { return true }
+        return !userId.isEmpty
+            && subscriptionStatusUserId == userId
+            && !hasActiveSubscription
+    }
     
     @Published var requiresNewPassword = false
     
@@ -52,6 +72,11 @@ class AuthViewModel: ObservableObject {
     @Published var storeLogoUrl: String = ""
     
     func checkSession() async {
+        sessionChecksInProgress += 1
+        defer {
+            sessionChecksInProgress -= 1
+            hasCheckedSession = true
+        }
         do {
             let session = try await Amplify.Auth.fetchAuthSession()
             isSignedIn = session.isSignedIn
@@ -75,6 +100,7 @@ class AuthViewModel: ObservableObject {
 
     @discardableResult
     func signInAndLoad(username: String, password: String) async -> Bool {
+        subscriptionStatusUserId = nil
         let normalizedEmail = username.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
 
         do {
@@ -252,8 +278,9 @@ class AuthViewModel: ObservableObject {
         guard !userId.isEmpty else { return }
         guard let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/LookSeeGetUserStats") else { return }
         
+        let requestedUserId = userId
         var request = await authorizedJSONRequest(url: url)
-        let body: [String: String] = ["userId": userId]
+        let body: [String: String] = ["userId": requestedUserId]
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         
         do {
@@ -261,9 +288,10 @@ class AuthViewModel: ObservableObject {
             if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
                 if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
                     await MainActor.run {
+                        guard self.isSignedIn, self.userId == requestedUserId else { return }
                         let fetchedBalance = json["tokenBalance"] as? Int ?? 0
                         let fetchedLandmarks = json["activeLandmarksCount"] as? Int ?? 0
-                        let fetchedSub = json["hasActiveSubscription"] as? Bool ?? false
+                        let fetchedSub = json["hasActiveSubscription"] as? Bool
                         let fetchedTier = json["tier"] as? String ?? ""
                         let fetchedStripeId = json["stripeSubscriptionId"] as? String ?? ""
                         
@@ -274,8 +302,16 @@ class AuthViewModel: ObservableObject {
                         self.activeLandmarksCount = fetchedLandmarks
                         self.tier = fetchedTier
                         
-                        let isSubscribedOnBackend = fetchedSub || fetchedTier == "business" || !fetchedStripeId.isEmpty
-                        self.hasActiveSubscription = isSubscribedOnBackend
+                        if let fetchedSub {
+                            // An explicit backend status wins over old tier/Stripe metadata.
+                            self.hasActiveSubscription = fetchedSub
+                            self.subscriptionStatusUserId = requestedUserId
+                        } else {
+                            // Preserve legacy business behavior, but do not assume ad eligibility.
+                            self.hasActiveSubscription = fetchedTier == "business" || !fetchedStripeId.isEmpty
+                            self.subscriptionStatusUserId = nil
+                            print("[AdMob] Waiting for explicit subscription status from backend")
+                        }
                         
                         self.activePlanCents = fetchedPlanCents
                         self.activePlanYears = fetchedPlanYears
