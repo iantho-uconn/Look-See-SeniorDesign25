@@ -258,10 +258,12 @@ class UploadService(
             "Uploading your landmark photo",
             "Keep LookSee open while your photo is uploaded.",
         )
+        val client = httpClient as UrlConnectionUploadHttpClient
         validateS3Response(
-            httpClient.putBytes(
-                url = initResponse.uploadUrl,
+            client.postMultipartBytes(
+                presignedPost = initResponse.uploadUrl,
                 contentType = contentType,
+                filename = "photo.jpg",
                 bytes = imageJpegData,
                 timeoutMillis = MEDIA_UPLOAD_TIMEOUT_MILLIS,
             ),
@@ -349,10 +351,12 @@ class UploadService(
                 "Uploading your landmark video",
                 "Videos can take a little longer. Keep LookSee open until the upload finishes.",
             )
+            val client = httpClient as UrlConnectionUploadHttpClient
             validateS3Response(
-                httpClient.putFile(
-                    url = initResponse.uploadUrl,
+                client.postMultipartFile(
+                    presignedPost = initResponse.uploadUrl,
                     contentType = descriptor.contentType,
+                    filename = descriptor.uploadFilename,
                     file = mergedVideo.file,
                     timeoutMillis = MEDIA_UPLOAD_TIMEOUT_MILLIS,
                 ),
@@ -487,7 +491,7 @@ class UploadService(
 
     companion object {
         private const val BASE_URL =
-            "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev"
+            "https://d11vl3v9w133rh.cloudfront.net"
         private const val API_TIMEOUT_MILLIS = 60_000
         private const val MEDIA_UPLOAD_TIMEOUT_MILLIS = 300_000
         private const val MINIMUM_COMBINED_VIDEO_DURATION_SECONDS = 1.0
@@ -570,6 +574,76 @@ class UrlConnectionUploadHttpClient : UploadHttpClient {
             connection.doOutput = true
             connection.setFixedLengthStreamingMode(bytes.size)
             connection.outputStream.use { it.write(bytes) }
+        }
+    }
+
+    suspend fun postMultipartBytes(
+        presignedPost: S3PresignedPost,
+        contentType: String,
+        filename: String,
+        bytes: ByteArray,
+        timeoutMillis: Int,
+    ): UploadHttpResponse = withContext(Dispatchers.IO) {
+        execute(presignedPost.url, "POST", timeoutMillis) { connection ->
+            val boundary = "Boundary-${java.util.UUID.randomUUID()}"
+            connection.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+            connection.doOutput = true
+            
+            connection.outputStream.use { output ->
+                val writer = output.bufferedWriter(Charsets.UTF_8)
+                
+                for ((key, value) in presignedPost.fields) {
+                    writer.write("--$boundary\r\n")
+                    writer.write("Content-Disposition: form-data; name=\"$key\"\r\n\r\n")
+                    writer.write("$value\r\n")
+                }
+                
+                writer.write("--$boundary\r\n")
+                writer.write("Content-Disposition: form-data; name=\"file\"; filename=\"$filename\"\r\n")
+                writer.write("Content-Type: $contentType\r\n\r\n")
+                writer.flush()
+                
+                output.write(bytes)
+                output.flush()
+                
+                writer.write("\r\n--$boundary--\r\n")
+                writer.flush()
+            }
+        }
+    }
+
+    suspend fun postMultipartFile(
+        presignedPost: S3PresignedPost,
+        contentType: String,
+        filename: String,
+        file: File,
+        timeoutMillis: Int,
+    ): UploadHttpResponse = withContext(Dispatchers.IO) {
+        execute(presignedPost.url, "POST", timeoutMillis) { connection ->
+            val boundary = "Boundary-${java.util.UUID.randomUUID()}"
+            connection.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+            connection.doOutput = true
+            
+            connection.outputStream.use { output ->
+                val writer = output.bufferedWriter(Charsets.UTF_8)
+                
+                for ((key, value) in presignedPost.fields) {
+                    writer.write("--$boundary\r\n")
+                    writer.write("Content-Disposition: form-data; name=\"$key\"\r\n\r\n")
+                    writer.write("$value\r\n")
+                }
+                
+                writer.write("--$boundary\r\n")
+                writer.write("Content-Disposition: form-data; name=\"file\"; filename=\"$filename\"\r\n")
+                writer.write("Content-Type: $contentType\r\n\r\n")
+                writer.flush()
+                
+                file.inputStream().use { it.copyTo(output) }
+                output.flush()
+                
+                writer.write("\r\n--$boundary--\r\n")
+                writer.flush()
+            }
         }
     }
 

@@ -94,17 +94,20 @@ struct NegativeVideoCameraView: View {
 
     private let onDone: (CapturedNegativeVideo) -> Void
     
-    private let maxTotalTimeLimit: Int = 30
+    // 🚀 FIXED: maxTotalTimeLimit is now configurable, defaulting to 30 for backwards compatibility
+    private let maxTotalTimeLimit: Int
     private let uiTargetDuration: Int
     private let minTotalTimeLimit: Int
 
     init(
         uiTargetDuration: Int = 10,
         minTotalTimeLimit: Int = 10,
+        maxTotalTimeLimit: Int = 30, // Defaults to 30 so nothing else breaks
         onDone: @escaping (CapturedNegativeVideo) -> Void
     ) {
         self.uiTargetDuration = uiTargetDuration
         self.minTotalTimeLimit = minTotalTimeLimit
+        self.maxTotalTimeLimit = maxTotalTimeLimit
         self.onDone = onDone
     }
 
@@ -371,7 +374,6 @@ struct NegativeVideoCameraView: View {
                 HStack(spacing: 6) {
                     Image(systemName: progress.isReady ? "checkmark.circle.fill" : "clock.fill")
                         .foregroundStyle(progress.isReady ? .green : .orange)
-                    // 🚀 THE FIX: Restored UI label to show the TRUE 30s max limit to the user
                     Text("\(progress.totalDuration)s / \(maxTotalTimeLimit)")
                         .font(.system(size: 14, weight: .bold, design: .monospaced))
                         .foregroundStyle(.white)
@@ -635,7 +637,6 @@ struct NegativeVideoCameraView: View {
             let timeRemaining = maxTotalTimeLimit - totalDurationElapsedInt
             
             HStack {
-                // 🚀 THE FIX: Restored UI label to show the TRUE 30s max limit to the user
                 Text("Total: \(totalDurationElapsedInt)s / \(maxTotalTimeLimit)s")
                     .font(.system(size: 14, weight: .bold, design: .monospaced))
                     .foregroundStyle(.secondary)
@@ -939,6 +940,7 @@ private struct NegativeSafeVideoPlayer: UIViewControllerRepresentable, Equatable
     static func dismantleUIViewController(_ uiViewController: AVPlayerViewController, coordinator: ()) {
         let player = uiViewController.player
         uiViewController.player = nil
-        DispatchQueue.global(qos: .background).async { player?.pause() }
+        player?.pause()
     }
 }
+

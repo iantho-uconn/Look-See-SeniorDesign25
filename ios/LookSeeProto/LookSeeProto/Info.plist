@@ -4,6 +4,28 @@
 <dict>
 	<key>GADApplicationIdentifier</key>
 	<string>ca-app-pub-5429140774219116~2396588229</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>Pinned Domains</key>
+		<dict>
+			<key>d11vl3v9w133rh.cloudfront.net</key>
+			<dict>
+				<key>NSIncludesSubdomains</key>
+				<true/>
+				<key>Pinned Leaf Identities</key>
+				<array>
+					<dict>
+						<key>SPKI-SHA256-BASE64</key>
+						<string>dExBlAvT1n9yGuq8/3TYV0mGSoCBmqDo+95Hxr2avEE=</string>
+					</dict>
+					<dict>
+						<key>SPKI-SHA256-BASE64</key>
+						<string>++MBgDH5WGvL9Bcn5Be30cRcL0f5O+NyoXuWtQdX1aI=</string>
+					</dict>
+				</array>
+			</dict>
+		</dict>
+	</dict>
 	<key>SKAdNetworkItems</key>
 	<array>
 		<dict>

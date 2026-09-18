@@ -294,21 +294,55 @@ struct ReportIssueView: View {
             guard !isResolvingIdentity else { return }
             isResolvingIdentity = true
 
-            // 🚀 THE FIX: Explicit 'block:' syntax used here as well!
-            SentrySDK.capture(message: "[\(category.displayName)] \(title)", block: { scope in
-                scope.setExtra(value: description, key: "User Description")
-                scope.setTag(value: severity.displayName, key: "Severity")
-                scope.setTag(value: category.displayName, key: "Category")
-                scope.setExtra(value: vm.userEmail, key: "User Email")
+            let safeEmail = vm.userEmail
+            let safeCategory = category.displayName
+            let safeTitle = title
+            let safeDesc = description
+            let safeSeverity = severity.displayName
+            let safeScreenshot = screenshot
+            
+            // 🚀 Generates a 100% unique ID for this exact report submission
+            let uniqueReportTicket = UUID().uuidString
 
-                if let screenshot = screenshot, let data = screenshot.jpegData(compressionQuality: 0.8) {
-                    let attachment = Attachment(data: data, filename: "screenshot.jpg", contentType: "image/jpeg")
-                    scope.addAttachment(attachment)
+            Task {
+                let attachmentData = await Task.detached(priority: .userInitiated) {
+                    guard let image = safeScreenshot else { return nil as Data? }
+                    
+                    let maxDimension: CGFloat = 800
+                    let size = image.size
+                    if size.width <= maxDimension && size.height <= maxDimension {
+                        return image.jpegData(compressionQuality: 0.3)
+                    }
+                    
+                    let ratio = min(maxDimension / size.width, maxDimension / size.height)
+                    let newSize = CGSize(width: size.width * ratio, height: size.height * ratio)
+                    let renderer = UIGraphicsImageRenderer(size: newSize)
+                    let resized = renderer.image { _ in image.draw(in: CGRect(origin: .zero, size: newSize)) }
+                    
+                    return resized.jpegData(compressionQuality: 0.3)
+                }.value
+
+                SentrySDK.capture(message: "[\(safeCategory)] \(safeTitle)", block: { scope in
+                    
+                    // 🚀 Overrides Sentry's default grouping so this creates a brand NEW issue
+                    scope.setFingerprint([uniqueReportTicket])
+                    
+                    scope.setExtra(value: safeDesc, key: "User Description")
+                    scope.setTag(value: safeSeverity, key: "Severity")
+                    scope.setTag(value: safeCategory, key: "Category")
+                    scope.setExtra(value: safeEmail, key: "User Email")
+
+                    if let data = attachmentData {
+                        let attachment = Attachment(data: data, filename: "screenshot.jpg", contentType: "image/jpeg")
+                        scope.addAttachment(attachment)
+                    }
+                })
+
+                await MainActor.run {
+                    isResolvingIdentity = false
+                    showSentConfirmation = true
                 }
-            })
-
-            isResolvingIdentity = false
-            showSentConfirmation = true
+            }
 
         } label: {
             HStack(spacing: 10) {
@@ -339,54 +373,46 @@ struct ReportIssueView: View {
     }
 }
 
-// MARK: - Report Button + Screenshot Capture
-// This handles the screenshot capture and opens the Report Issue sheet.
-
+// MARK: - Report Button
 struct ReportIssueButton: View {
     @State private var showReportSheet = false
-    @State private var capturedScreenshot: UIImage?
 
     var body: some View {
-        Button {
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            capturedScreenshot = Self.captureCurrentScreen()
-            showReportSheet = true
-        } label: {
-            HStack(spacing: 16) {
-                Image(systemName: "ladybug.fill")
-                    .font(.system(size: 18))
-                    .foregroundStyle(.white)
-                    .frame(width: 36, height: 36)
-                    .background(Color.red)
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Report a Bug")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(.primary)
+        VStack(spacing: 0) {
+            Button {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                self.showReportSheet = true
+            } label: {
+                HStack(spacing: 16) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(Color.blue)
+                            .frame(width: 36, height: 36)
+                        
+                        Image(systemName: "ladybug.fill")
+                            .font(.system(size: 18))
+                            .foregroundStyle(.white)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Report a Bug")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(.primary)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(Color(uiColor: .tertiaryLabel))
                 }
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(Color(uiColor: .tertiaryLabel))
+                .padding(16)
+                .contentShape(Rectangle()) // 🚀 Makes the entire row clickable
             }
-            .padding(16)
+            .buttonStyle(.plain)
+            
+            Divider().padding(.leading, 68)
         }
-        Divider().padding(.leading, 68)
         .sheet(isPresented: $showReportSheet) {
-            ReportIssueView(initialScreenshot: capturedScreenshot)
-        }
-    }
-
-    private static func captureCurrentScreen() -> UIImage? {
-        guard
-            let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-            let window = scene.windows.first(where: { $0.isKeyWindow })
-        else { return nil }
-
-        let renderer = UIGraphicsImageRenderer(bounds: window.bounds)
-        return renderer.image { _ in
-            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+            ReportIssueView(initialScreenshot: nil)
         }
     }
 }

@@ -20,11 +20,13 @@ struct LandmarkMapView: View {
     @State private var showFilterSheet = false
     
     @State private var searchText: String = ""
-    @State private var isGlobalSearch: Bool = true
+    @State private var isGlobalSearch: Bool = false
     @State private var searchRadiusMiles: Double = 10.0
     @State private var myUploadsOnly = false
     @State private var promotedOnly = false
     @State private var selectedClusters: Set<String> = []
+    
+    @State private var filteredLandmarks: [NearbyLandmark] = []
     
     @FocusState private var IsKeyboard: Bool
     
@@ -45,31 +47,33 @@ struct LandmarkMapView: View {
         }
     }
 
-    private var activeLandmarks: [NearbyLandmark] {
-        nearbyService.items.filter { landmark in
-            let matchesUser = myUploadsOnly ? (landmark.createdBy == vm.userEmail) : true
-            let matchesPromo = promotedOnly ? landmark.promotionEnabled : true
-            let matchesCluster = selectedClusters.isEmpty ? true : (landmark.clusterId != nil && selectedClusters.contains(landmark.clusterId!))
-            let matchesSearch = searchText.isEmpty ? true : landmark.label.localizedCaseInsensitiveContains(searchText)
-            
-            return matchesUser && matchesPromo && matchesCluster && matchesSearch
-        }
-    }
-
     var body: some View {
         GeometryReader { proxy in
             ZStack(alignment: .top) {
                 Map(position: $cameraPosition) {
                     UserAnnotation()
-                    ForEach(activeLandmarks) { landmark in
+                    
+                    ForEach(filteredLandmarks) { landmark in
                         Annotation(landmark.label, coordinate: CLLocationCoordinate2D(latitude: landmark.latitude, longitude: landmark.longitude)) {
-                            Button {
+                            
+                            // 🚀 THE FIX: We use a passive VStack with onTapGesture instead of a Button.
+                            // A Button actively eats gesture inputs, blocking your pinch/zooms!
+                            VStack(spacing: 0) {
+                                if landmark.promotionEnabled {
+                                    Image(systemName: "crown.fill").font(.title3).foregroundStyle(.white).padding(8).background(Circle().fill(promoColor)).shadow(color: promoColor.opacity(0.8), radius: 6, x: 0, y: 2)
+                                } else {
+                                    Image(systemName: "mappin.circle.fill").font(.title).foregroundStyle(.white, primaryColor).background(Circle().fill(.white)).shadow(color: .black.opacity(0.3), radius: 4, x: 0, y: 2)
+                                }
+                                Image(systemName: "triangle.fill").font(.caption2).foregroundStyle(landmark.promotionEnabled ? promoColor : primaryColor).rotationEffect(.degrees(180)).offset(y: -2)
+                            }
+                            .scaleEffect(selectedLandmark?.id == landmark.id ? 1.3 : 1.0)
+                            .onTapGesture {
                                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                                 withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
                                     selectedLandmark = landmark
                                 }
                                 
-                                // 🚀 THE FIX: Passing the full rich UI variables to the popup!
+                                // 🚀 Removed DispatchQueue wrapper so it opens INSTANTLY
                                 VariableContainer.shared.presentMapLandmark(
                                     id: landmark.id,
                                     name: landmark.label,
@@ -89,21 +93,10 @@ struct LandmarkMapView: View {
                                     merchantAddress: landmark.merchantAddress,
                                     merchantLogoUrl: landmark.merchantLogoUrl
                                 )
-                            } label: {
-                                VStack(spacing: 0) {
-                                    if landmark.promotionEnabled {
-                                        Image(systemName: "crown.fill").font(.title3).foregroundStyle(.white).padding(8).background(Circle().fill(promoColor)).shadow(color: promoColor.opacity(0.8), radius: 6, x: 0, y: 2)
-                                    } else {
-                                        Image(systemName: "mappin.circle.fill").font(.title).foregroundStyle(.white, primaryColor).background(Circle().fill(.white)).shadow(color: .black.opacity(0.3), radius: 4, x: 0, y: 2)
-                                    }
-                                    Image(systemName: "triangle.fill").font(.caption2).foregroundStyle(landmark.promotionEnabled ? promoColor : primaryColor).rotationEffect(.degrees(180)).offset(y: -2)
-                                }
-                                .scaleEffect(selectedLandmark?.id == landmark.id ? 1.3 : 1.0)
                             }
                         }
                     }
                 }
-                .mapControls {}
                 .safeAreaPadding(.bottom, mapBottomReservedHeight)
                 .ignoresSafeArea(edges: .top)
 
@@ -119,7 +112,7 @@ struct LandmarkMapView: View {
                             .autocorrectionDisabled()
                             .submitLabel(.search)
                             .onSubmit {
-                                if let firstMatch = activeLandmarks.first {
+                                if let firstMatch = filteredLandmarks.first {
                                     withAnimation(.easeInOut(duration: 1.0)) {
                                         cameraPosition = .region(MKCoordinateRegion(center: CLLocationCoordinate2D(latitude: firstMatch.latitude, longitude: firstMatch.longitude), span: MKCoordinateSpan(latitudeDelta: 0.02, longitudeDelta: 0.02)))
                                     }
@@ -173,7 +166,6 @@ struct LandmarkMapView: View {
             filterMenuSheet
                 .presentationDetents([.fraction(0.85)])
         }
-        // Deselects the pin smoothly when the master PopUp closes
         .onChange(of: VariableContainer.shared.infoView) { _, isPopUpOpen in
             if !isPopUpOpen {
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
@@ -181,6 +173,11 @@ struct LandmarkMapView: View {
                 }
             }
         }
+        .onChange(of: nearbyService.items) { _, _ in applyFilters() }
+        .onChange(of: searchText) { _, _ in applyFilters() }
+        .onChange(of: selectedClusters) { _, _ in applyFilters() }
+        .onChange(of: myUploadsOnly) { _, _ in applyFilters() }
+        .onChange(of: promotedOnly) { _, _ in applyFilters() }
     }
     
     private var filterMenuSheet: some View {
@@ -247,5 +244,17 @@ struct LandmarkMapView: View {
         guard locationManager.isAuthorized, let lat = locationManager.latitude, let lon = locationManager.longitude else { return }
         let meters = (isGlobalSearch ? 50000.0 : searchRadiusMiles) * 1609.34
         await nearbyService.fetchNearby(latitude: lat, longitude: lon, radiusMeters: meters)
+    }
+    
+    private func applyFilters() {
+        let currentEmail = vm.userEmail
+        filteredLandmarks = nearbyService.items.filter { landmark in
+            let matchesUser = myUploadsOnly ? (landmark.createdBy == currentEmail) : true
+            let matchesPromo = promotedOnly ? landmark.promotionEnabled : true
+            let matchesCluster = selectedClusters.isEmpty ? true : (landmark.clusterId != nil && selectedClusters.contains(landmark.clusterId!))
+            let matchesSearch = searchText.isEmpty ? true : landmark.label.localizedCaseInsensitiveContains(searchText)
+
+            return matchesUser && matchesPromo && matchesCluster && matchesSearch
+        }
     }
 }

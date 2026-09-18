@@ -17,7 +17,14 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="07f21855-e7c7-4afa-a99c-977bf161748a" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/LookSeeProto.xcodeproj/xcshareddata/xcschemes/LookSeeProto 1.xcscheme" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/LookSeeProto.xcodeproj/xcshareddata/xcschemes/LookSeeProto 1.xcscheme" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/LookSeeProto/Localizable.xcstrings" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/LookSeeProto/Localizable.xcstrings" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/UI Files/LandmarkMapView.swift" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/UI Files/LandmarkMapView.swift" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/UI Files/LandmarkScan.swift" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/UI Files/LandmarkScan.swift" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/UI Files/PopUp.swift" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/UI Files/PopUp.swift" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/UI Files/ReportIssueView.swift" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/UI Files/ReportIssueView.swift" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/UI Files/Settings.swift" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/UI Files/Settings.swift" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -96,20 +103,20 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;Android App.app.executor&quot;: &quot;Run&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.cidr.known.project.marker&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.readMode.enableVisualFormatting&quot;: &quot;true&quot;,
-    &quot;cf.first.check.clang-format&quot;: &quot;false&quot;,
-    &quot;cidr.known.project.marker&quot;: &quot;true&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;detector-fix&quot;,
-    &quot;kotlin-language-version-configured&quot;: &quot;true&quot;,
-    &quot;settings.editor.selected.configurable&quot;: &quot;templates.modelproviders.configurable&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "Android App.app.executor": "Run",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.cidr.known.project.marker": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "RunOnceActivity.readMode.enableVisualFormatting": "true",
+    "cf.first.check.clang-format": "false",
+    "cidr.known.project.marker": "true",
+    "git-widget-placeholder": "detector-fix-preview",
+    "kotlin-language-version-configured": "true",
+    "settings.editor.selected.configurable": "templates.modelproviders.configurable"
   }
-}</component>
+}]]></component>
   <component name="RecentsManager">
     <key name="MoveFile.RECENT_KEYS">
       <recent name="$PROJECT_DIR$/app/src/main/res/drawable" />
@@ -198,12 +205,12 @@
       <map>
         <entry key="looksee.angelll.com">
           <value>
-            <CheckInfo lastCheckTimestamp="1788263408470" />
+            <CheckInfo lastCheckTimestamp="1789718652739" />
           </value>
         </entry>
         <entry key="looksee.angelll.com.test">
           <value>
-            <CheckInfo lastCheckTimestamp="1788263408471" />
+            <CheckInfo lastCheckTimestamp="1789718652763" />
           </value>
         </entry>
       </map>

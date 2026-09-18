@@ -212,7 +212,11 @@ fun SubscriptionPlans(
                         onStartTrial = { beginTrialCheckout() },
                         modifier = Modifier.weight(1f)
                     )
-                    else -> {}
+                    SubscriptionTab.TOKENS -> TokenContent(
+                        account, isProcessing,
+                        onBuy = { beginTokenCheckout(it) },
+                        modifier = Modifier.weight(1f)
+                    )
                 }
 
                 paymentStatusMessage?.let {
@@ -283,9 +287,20 @@ private fun PlanContent(account: SubscriptionAccountState, selectedPlanIndex: In
     val selectedAddOn = SubscriptionCatalog.addOns[selectedAddOnIndex]
     val unavailable = account.hasActiveSubscription && !account.isFreeTrial && selectedPlan.priceCents <= account.normalizedActivePlanCents
 
-    LazyColumn(modifier = modifier.padding(horizontal = 24.dp)) {
+    LazyColumn(
+        modifier = modifier
+            .padding(horizontal = 24.dp)
+            .padding(top = 12.dp, bottom = 24.dp)
+            .background(Color.White.copy(0.04f), RoundedCornerShape(24.dp))
+            .border(
+                width = if (account.hasActiveSubscription && !account.isFreeTrial) 2.5.dp else 1.5.dp,
+                color = if (account.hasActiveSubscription && !account.isFreeTrial) Color.Green.copy(0.8f) else LookSeeBlue.copy(0.8f),
+                shape = RoundedCornerShape(24.dp)
+            )
+            .padding(horizontal = 24.dp)
+    ) {
         item {
-            Column(modifier = Modifier.padding(vertical = 16.dp)) {
+            Column(modifier = Modifier.padding(vertical = 8.dp)) {
                 Text("Business Membership", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
                 Text("Select plan duration and included tokens.", color = Color.Gray, fontSize = 13.sp)
             }
@@ -296,17 +311,21 @@ private fun PlanContent(account: SubscriptionAccountState, selectedPlanIndex: In
                     PlanTierCard(plan, selectedPlanIndex == index, { onPlanSelected(index) }, Modifier.weight(1f))
                 }
             }
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(16.dp))
         }
         item {
+            HorizontalDivider(color = Color.White.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 14.dp))
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 FeatureRow("${selectedPlan.baseTokens} Tokens included instantly")
                 FeatureRow("Add or swap landmarks anytime")
                 FeatureRow("Unlock promotion dashboard")
             }
-            HorizontalDivider(color = Color.White.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 20.dp))
+            HorizontalDivider(color = Color.White.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 14.dp))
         }
-        item { Text("Optional Token Add-on", color = Color.Gray, fontSize = 12.sp, fontWeight = FontWeight.Bold); Spacer(Modifier.height(8.dp)) }
+        item { 
+            Text("OPTIONAL TOKEN ADD-ON", color = Color.Gray, fontSize = 12.sp, fontWeight = FontWeight.Bold); 
+            Spacer(Modifier.height(8.dp)) 
+        }
         item {
             var expanded by remember { mutableStateOf(false) }
             Box {
@@ -325,10 +344,29 @@ private fun PlanContent(account: SubscriptionAccountState, selectedPlanIndex: In
             Spacer(Modifier.height(32.dp))
         }
         item {
-            Button(onClick = onSubscribe, enabled = !unavailable && !isProcessing, modifier = Modifier.fillMaxWidth().height(56.dp), shape = RoundedCornerShape(14.dp), colors = ButtonDefaults.buttonColors(containerColor = LookSeeBlue)) {
+            Button(
+                onClick = onSubscribe, 
+                enabled = !unavailable && !isProcessing, 
+                modifier = Modifier.fillMaxWidth().height(56.dp), 
+                shape = RoundedCornerShape(14.dp), 
+                colors = ButtonDefaults.buttonColors(containerColor = if (unavailable) Color.White.copy(0.1f) else LookSeeBlue)
+            ) {
                 val total = selectedPlan.priceCents + selectedAddOn.priceCents
                 val totalStr = (total / 100.0).let { String.format(Locale.US, "%.2f", it) }
-                Text(if (unavailable && selectedPlan.priceCents == account.normalizedActivePlanCents) "Current Plan" else if (unavailable) "Included in Active Plan" else if (account.hasActiveSubscription) "Upgrade to ${selectedPlan.label} - \$$totalStr" else "Subscribe - \$$totalStr", fontWeight = FontWeight.Bold)
+                
+                if (account.hasActiveSubscription) {
+                    if (account.isFreeTrial) {
+                        Text("Upgrade to ${selectedPlan.label} - \$$totalStr", fontWeight = FontWeight.Bold, color = Color.White)
+                    } else if (selectedPlan.priceCents > account.normalizedActivePlanCents) {
+                        Text("Upgrade to ${selectedPlan.label} - \$$totalStr", fontWeight = FontWeight.Bold, color = Color.White)
+                    } else if (selectedPlan.priceCents == account.normalizedActivePlanCents) {
+                        Text("Current Plan", fontWeight = FontWeight.Bold, color = Color.Gray)
+                    } else {
+                        Text("Included in Active Plan", fontWeight = FontWeight.Bold, color = Color.Gray)
+                    }
+                } else {
+                    Text("Subscribe - \$$totalStr", fontWeight = FontWeight.Bold, color = Color.White)
+                }
             }
         }
     }
@@ -337,7 +375,7 @@ private fun PlanContent(account: SubscriptionAccountState, selectedPlanIndex: In
 @Composable
 private fun PlanTierCard(plan: SubscriptionPlan, isSelected: Boolean, onClick: () -> Unit, modifier: Modifier) {
     Surface(onClick = onClick, color = if (isSelected) LookSeeBlue.copy(0.2f) else Color.White.copy(0.05f), shape = RoundedCornerShape(12.dp), border = BorderStroke(if (isSelected) 2.dp else 1.dp, if (isSelected) LookSeeBlue else Color.White.copy(0.1f)), modifier = modifier) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(vertical = 12.dp)) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(vertical = 10.dp)) {
             Text(plan.label, color = if (isSelected) Color.White else Color.Gray, fontSize = 13.sp, fontWeight = FontWeight.Bold)
             Text(plan.priceLabel.replace(".00", ""), color = if (isSelected) LookSeeBlue else Color.White, fontSize = 18.sp, fontWeight = FontWeight.Black)
             Text("${plan.baseTokens} Tokens", color = Color.Gray, fontSize = 10.sp)
@@ -355,42 +393,86 @@ private fun FeatureRow(text: String) {
 
 @Composable
 private fun TrialContent(account: SubscriptionAccountState, isProcessing: Boolean, onStartTrial: () -> Unit, modifier: Modifier) {
-    Column(modifier = modifier.padding(24.dp).background(Color.White.copy(0.04f), RoundedCornerShape(24.dp)).border(1.dp, Color.White.copy(0.1f), RoundedCornerShape(24.dp)).padding(24.dp), verticalArrangement = Arrangement.spacedBy(0.dp)) {
+    Column(modifier = modifier.padding(24.dp).background(Color.White.copy(0.04f), RoundedCornerShape(24.dp)).border(if (account.hasActiveSubscription && account.isFreeTrial) 2.5.dp else 1.5.dp, if (account.hasActiveSubscription && account.isFreeTrial) Color(0xFF32D74B).copy(0.8f) else Color(0xFFFFA500).copy(0.5f), RoundedCornerShape(24.dp)).padding(24.dp), verticalArrangement = Arrangement.spacedBy(0.dp)) {
         Text("14-Day Free Trial", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(2.dp), modifier = Modifier.padding(top = 4.dp)) {
             Text("$0", color = Color.White, fontSize = 34.sp, fontWeight = FontWeight.Black)
             Text("/14 days", color = Color.Gray, fontSize = 14.sp, modifier = Modifier.padding(bottom = 6.dp))
         }
         Text("Test out the platform risk-free with zero commitment.", color = Color.Gray, fontSize = 13.sp, modifier = Modifier.padding(top = 2.dp))
-        HorizontalDivider(color = Color.White.copy(0.12f), modifier = Modifier.padding(vertical = 20.dp))
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) { FeatureRow("Includes exactly 2 Tokens"); FeatureRow("Full access to business tools"); FeatureRow("Auto-renews to 1-Year Plan ($10)") }
+        HorizontalDivider(color = Color.White.copy(0.12f), modifier = Modifier.padding(vertical = 14.dp))
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) { 
+            FeatureRow("Includes exactly 2 Tokens")
+            FeatureRow("Full access to business tools")
+            FeatureRow("Auto-renews to 1-Year Plan ($10)") 
+        }
         Spacer(Modifier.weight(1f))
         Text("Payment information is required to start your trial. You will not be charged today. If you do not cancel before your 14 days are up, you will be billed $10 for the 1-Year Business Plan. Cancel anytime.", color = Color.Gray, fontSize = 11.sp, modifier = Modifier.padding(bottom = 16.dp))
-        Button(onClick = onStartTrial, enabled = account.isEligibleForTrial && !isProcessing, modifier = Modifier.fillMaxWidth().height(56.dp), shape = RoundedCornerShape(14.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFA500))) {
-            Text(if (account.isEligibleForTrial) "Start Free Trial" else if (account.isFreeTrial) "Active (Free Trial)" else "Unavailable", fontWeight = FontWeight.Bold)
+        Button(onClick = onStartTrial, enabled = account.isEligibleForTrial && !isProcessing, modifier = Modifier.fillMaxWidth().height(56.dp), shape = RoundedCornerShape(14.dp), colors = ButtonDefaults.buttonColors(containerColor = if (account.hasActiveSubscription || !account.isEligibleForTrial) Color.White.copy(0.1f) else Color(0xFFFFA500))) {
+            Text(if (account.hasActiveSubscription) { if (account.isFreeTrial) "Active (Free Trial)" else "Unavailable for Active Accounts" } else if (!account.isEligibleForTrial) "Not Eligible for Free Trial" else "Start Free Trial", fontWeight = FontWeight.Bold, color = if (account.hasActiveSubscription || !account.isEligibleForTrial) Color.Gray else Color.White)
         }
     }
 }
 
 @Composable
 private fun TokenContent(account: SubscriptionAccountState, isProcessing: Boolean, onBuy: (TokenAddOn) -> Unit, modifier: Modifier) {
-    LazyColumn(modifier = modifier.padding(top = 4.dp, bottom = 16.dp, start = 24.dp, end = 24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    LazyColumn(
+        modifier = modifier
+            .padding(top = 4.dp, bottom = 16.dp, start = 24.dp, end = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
         item {
-            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.fillMaxWidth().padding(vertical = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 Icon(Icons.Default.GeneratingTokens, null, tint = LookSeeBlue, modifier = Modifier.size(48.dp))
                 Text("${account.tokenBalance}", color = Color.White, fontSize = 42.sp, fontWeight = FontWeight.Black)
                 Text("TOKENS AVAILABLE", color = Color.Gray, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                Text("Use a token to add a landmark or swap an existing landmark. Removing one is free.", color = Color.Gray, textAlign = TextAlign.Center, fontSize = 13.sp, modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp))
+                Text("What are tokens?", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.padding(top = 12.dp))
+                Text("A token can be used to add another landmark to your account or swap an existing one out. Removing a landmark is free.", color = Color.Gray, textAlign = TextAlign.Center, fontSize = 13.sp, modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp))
             }
         }
         if (!account.isFullyLoggedIn || !account.hasActiveSubscription || account.isFreeTrial) {
-            item { Text(if (account.isFreeTrial) "Token add-ons become available after upgrading from the free trial." else "Subscribe to a paid Business plan to purchase tokens.", color = Color.Gray, textAlign = TextAlign.Center, fontSize = 14.sp, modifier = Modifier.fillMaxWidth().padding(24.dp)) }
+            item {
+                Text(
+                    if (account.isFreeTrial) "Token add-ons become available after upgrading from the free trial." else "Subscribe to a paid Business plan to purchase tokens.",
+                    color = Color.Gray,
+                    textAlign = TextAlign.Center,
+                    fontSize = 14.sp,
+                    modifier = Modifier.fillMaxWidth().padding(24.dp)
+                )
+            }
         } else {
             item { Text("BUY TOKEN PACKS", color = Color.Gray, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp)) }
-            items(SubscriptionCatalog.tokenPacks) { pack ->
-                Row(modifier = Modifier.fillMaxWidth().background(Color.White.copy(0.04f), RoundedCornerShape(20.dp)).clickable(enabled = !isProcessing) { onBuy(pack) }.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(modifier = Modifier.size(36.dp).background(LookSeeBlue.copy(0.15f), CircleShape), contentAlignment = Alignment.Center) { Text("${pack.tokens}", color = LookSeeBlue, fontWeight = FontWeight.Bold, fontSize = 14.sp) }
-                    Spacer(modifier = Modifier.width(14.dp)); Text("${pack.tokens} Tokens", color = Color.White, modifier = Modifier.weight(1f), fontSize = 16.sp, fontWeight = FontWeight.SemiBold); Text(pack.priceCents.asUsd(), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            item {
+                Surface(
+                    color = Color.White.copy(0.04f),
+                    shape = RoundedCornerShape(20.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column {
+                        SubscriptionCatalog.tokenPacks.forEachIndexed { index, pack ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable(enabled = !isProcessing) { onBuy(pack) }
+                                    .padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(modifier = Modifier.size(36.dp).background(LookSeeBlue.copy(0.15f), CircleShape), contentAlignment = Alignment.Center) {
+                                    Text("${pack.tokens}", color = LookSeeBlue, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                }
+                                Spacer(modifier = Modifier.width(14.dp))
+                                Text("${pack.tokens} Tokens", color = Color.White, modifier = Modifier.weight(1f), fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                                Text(pack.priceCents.asUsd(), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                            }
+                            if (index < SubscriptionCatalog.tokenPacks.size - 1) {
+                                HorizontalDivider(color = Color.White.copy(0.1f), modifier = Modifier.padding(start = 66.dp))
+                            }
+                        }
+                    }
                 }
             }
         }

@@ -285,10 +285,10 @@ fun CategoryChip(
     onClick: () -> Unit
 ) {
     val icon = when (option) {
-        ReportCategory.UI_BUG -> Icons.Default.Layers // Closest to rectangle.on.rectangle.slash
-        ReportCategory.DETECTION_BUG -> Icons.Default.CenterFocusStrong // Closest to viewfinder.circle
-        ReportCategory.UPLOAD_BUG -> Icons.Default.ArrowCircleUp // Closest to arrow.up.circle
-        ReportCategory.OTHER -> Icons.Default.QuestionMark // Closest to questionmark.circle
+        ReportCategory.UI_BUG -> Icons.Default.WebAssetOff
+        ReportCategory.DETECTION_BUG -> Icons.Default.CenterFocusStrong
+        ReportCategory.UPLOAD_BUG -> Icons.Default.ArrowCircleUp
+        ReportCategory.OTHER -> Icons.Default.QuestionMark
     }
 
     Column(
@@ -304,7 +304,7 @@ fun CategoryChip(
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = if (isSelected) Color.White else Color.White,
+            tint = Color.White,
             modifier = Modifier.size(24.dp)
         )
         Spacer(modifier = Modifier.height(8.dp))
@@ -312,7 +312,7 @@ fun CategoryChip(
             text = option.displayName,
             fontSize = 13.sp,
             fontWeight = FontWeight.Bold,
-            color = if (isSelected) Color.White else Color.White,
+            color = Color.White,
             textAlign = TextAlign.Center
         )
     }

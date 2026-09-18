@@ -30,10 +30,15 @@ data class InitSubmissionRequest(
     val contentType: String,
 )
 
+data class S3PresignedPost(
+    val url: String,
+    val fields: Map<String, String>,
+)
+
 /** Upload destination returned by the submission initialization endpoint. */
 data class InitSubmissionResponse(
     val submissionId: String,
-    val uploadUrl: String,
+    val uploadUrl: S3PresignedPost,
     val s3Key: String,
 )
 

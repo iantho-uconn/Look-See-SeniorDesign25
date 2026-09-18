@@ -25,7 +25,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
+import android.content.Intent
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
@@ -61,6 +63,12 @@ class SettingsPresenter {
     var showSubscriptionFlow by mutableStateOf(false)
     var subscriptionStartingTab by mutableIntStateOf(0)
     var showUserProfileEditor by mutableStateOf(false)
+    var signupStartsAsBusiness by mutableStateOf(false)
+    
+    var showGlobalNegativeCamera by mutableStateOf(false)
+    var isReloadingModels by mutableStateOf(false)
+    var showReloadSuccess by mutableStateOf(false)
+    var isUploadingGlobalNegative by mutableStateOf(false)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -78,6 +86,7 @@ fun SettingsScreen(
 
     var showCancelAlert by remember { mutableStateOf(false) }
     var isCancelling by remember { mutableStateOf(false) }
+    var showSignOutAlert by remember { mutableStateOf(false) }
 
     val isFullyLoggedIn = vm.isSignedIn && vm.userEmail.isNotEmpty()
 
@@ -138,7 +147,7 @@ fun SettingsScreen(
                             )
                             Column(modifier = Modifier.weight(1f)) {
                                 Text("Guest User", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                                Text("Sign in to sync your data", fontSize = 14.sp, color = Color.Gray)
+                        Text("Browsing anonymously", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Color.Gray)
                             }
                             Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(20.dp))
                         }
@@ -180,9 +189,9 @@ fun SettingsScreen(
                 }
 
                 // 2. BUSINESS MANAGEMENT
-                LookSeeSectionHeader("Business Management")
-                LookSeeCard(modifier = Modifier.padding(horizontal = 16.dp)) {
-                    if (isFullyLoggedIn && vm.hasActiveSubscription) {
+                if (isFullyLoggedIn && vm.hasActiveSubscription) {
+                    LookSeeSectionHeader("Business Management")
+                    LookSeeCard(modifier = Modifier.padding(horizontal = 16.dp)) {
                         if (prefs.getBoolean("isFreeTrial_${vm.userEmail}", false)) {
                             TrialWarningCard()
                             Spacer(Modifier.height(16.dp))
@@ -198,6 +207,24 @@ fun SettingsScreen(
                         }
                         HorizontalDivider(modifier = Modifier.padding(start = 52.dp), color = Color.White.copy(alpha = 0.1f))
                         LookSeeRow(
+                            icon = Icons.Default.History,
+                            iconContainerColor = AppleBlue,
+                            title = "Scan History",
+                            subtitle = "View your scanned landmarks."
+                        ) {
+                            onNavigate("HistoryView")
+                        }
+                        HorizontalDivider(modifier = Modifier.padding(start = 52.dp), color = Color.White.copy(alpha = 0.1f))
+                        LookSeeRow(
+                            icon = Icons.Default.BarChart,
+                            iconContainerColor = Color(0xFF5A27D5),
+                            title = "Analytics",
+                            subtitle = "Track daily views and engagement."
+                        ) {
+                            onNavigate("BusinessAnalyticsView")
+                        }
+                        HorizontalDivider(modifier = Modifier.padding(start = 52.dp), color = Color.White.copy(alpha = 0.1f))
+                        LookSeeRow(
                             icon = Icons.Default.Token,
                             iconContainerColor = Color(0xFFFFA500),
                             title = "Tokens (${vm.tokenBalance})",
@@ -207,7 +234,10 @@ fun SettingsScreen(
                             presenter.subscriptionStartingTab = 1
                             presenter.showSubscriptionFlow = true
                         }
-                    } else {
+                    }
+                } else {
+                    LookSeeSectionHeader("Business Management")
+                    LookSeeCard(modifier = Modifier.padding(horizontal = 16.dp)) {
                         LookSeeRow(
                             icon = Icons.Default.Lock,
                             iconContainerColor = Color.Gray,
@@ -311,15 +341,6 @@ fun SettingsScreen(
                 // 5. GENERAL SETTINGS
                 LookSeeSectionHeader("General")
                 LookSeeCard(modifier = Modifier.padding(horizontal = 16.dp)) {
-                    LookSeeRow(
-                        icon = Icons.Default.History,
-                        iconContainerColor = AppleBlue,
-                        title = "Scan History",
-                        subtitle = "View your previous landmark scans."
-                    ) {
-                        onNavigate("HistoryView")
-                    }
-                    HorizontalDivider(modifier = Modifier.padding(start = 52.dp), color = Color.White.copy(alpha = 0.1f))
                     LookSeeRow(icon = Icons.Default.BugReport, iconContainerColor = Color.Red, title = "Report a Bug") {
                         onNavigate("ReportIssueView")
                     }
@@ -336,8 +357,66 @@ fun SettingsScreen(
                         onNavigate("TermsOfService")
                     }
                     HorizontalDivider(modifier = Modifier.padding(start = 52.dp), color = Color.White.copy(alpha = 0.1f))
-                    LookSeeRow(icon = Icons.Default.Settings, iconContainerColor = Color.Gray, title = "Settings & Preferences") {
+                    LookSeeRow(
+                        icon = Icons.Default.Settings,
+                        iconContainerColor = Color.Gray,
+                        title = "Settings & Preferences"
+                    ) {
                         onNavigate("DeepSettings")
+                    }
+                }
+            }
+        }
+
+        if (showSignOutAlert) {
+            AlertDialog(
+                onDismissRequest = { showSignOutAlert = false },
+                title = { Text("Sign Out") },
+                text = { Text("Are you sure you want to sign out?") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showSignOutAlert = false
+                        vm.signOut()
+                    }) { Text("Sign Out", color = Color.Red) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showSignOutAlert = false }) { Text("Cancel", color = Color(0xFF007AFF)) }
+                },
+                containerColor = Color(0xFF1C1C1E)
+            )
+        }
+        
+        if (presenter.showGlobalNegativeCamera) {
+            NegativeVideoCameraView(
+                uiTargetDuration = 10,
+                minTotalTimeLimit = 2,
+                onDone = { video ->
+                    coroutineScope.launch {
+                        presenter.isUploadingGlobalNegative = true
+                        try {
+                            looksee.angelll.com.models.BusinessLandmarkService().uploadGlobalNegativeVideo(video.file)
+                        } catch (e: Exception) {
+                            // Ignored for now
+                        } finally {
+                            presenter.isUploadingGlobalNegative = false
+                            video.deleteLocalFile()
+                            presenter.showGlobalNegativeCamera = false
+                        }
+                    }
+                },
+                onDismiss = { presenter.showGlobalNegativeCamera = false }
+            )
+            
+            if (presenter.isUploadingGlobalNegative) {
+                Box(
+                    modifier = Modifier.fillMaxSize().background(Color.Black.copy(0.6f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    LookSeeCard {
+                        Column(modifier = Modifier.padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                            CircularProgressIndicator(color = Color.White)
+                            Text("Uploading Global Negative...", color = Color.White, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
@@ -451,25 +530,48 @@ fun GuestPromoCard(presenter: SettingsPresenter, isFullyLoggedIn: Boolean, onNav
     ) {
         Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(modifier = Modifier.size(48.dp).clip(CircleShape).background(AppleBlue), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Default.Stars, contentDescription = null, tint = Color.White)
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .shadow(8.dp, CircleShape, ambientColor = AppleBlue, spotColor = AppleBlue)
+                        .clip(CircleShape)
+                        .background(AppleBlue),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Default.WorkspacePremium, contentDescription = null, tint = Color.White)
                 }
                 Column {
-                    Text("Join LookSee", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                    Text("Upload landmarks and manage data. Free trail available.", fontSize = 14.sp, color = Color.White.copy(alpha = 0.7f))
+                    Text(
+                        if (isFullyLoggedIn) "Upgrade to Business" else "Join LookSee",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    Text(
+                        if (isFullyLoggedIn) "Unlock landmark management, uploads, promotions, and tokens."
+                        else "Create a free account to save your profile and future progress.",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color.White.copy(alpha = 0.7f)
+                    )
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Button(
                     onClick = {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        presenter.showSubscriptionFlow = true
+                        if (isFullyLoggedIn) {
+                            presenter.subscriptionStartingTab = 0
+                            presenter.showSubscriptionFlow = true
+                        } else {
+                            onNavigate("signup")
+                        }
                     },
-                    modifier = Modifier.weight(1f).height(48.dp),
+                    modifier = Modifier.weight(1.2f).height(64.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = AppleBlue),
                     shape = RoundedCornerShape(14.dp)
                 ) {
-                    Text("Sign up", fontWeight = FontWeight.Bold)
+                    Text(if (isFullyLoggedIn) "View Business Plans" else "Create Free Account", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                 }
                 if (!isFullyLoggedIn) {
                     Button(
@@ -477,11 +579,11 @@ fun GuestPromoCard(presenter: SettingsPresenter, isFullyLoggedIn: Boolean, onNav
                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             onNavigate("login")
                         },
-                        modifier = Modifier.weight(1f).height(48.dp),
+                        modifier = Modifier.weight(1f).height(64.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.15f)),
                         shape = RoundedCornerShape(14.dp)
                     ) {
-                        Text("Log In", fontWeight = FontWeight.Bold)
+                        Text("Log In", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                     }
                 }
             }
@@ -557,6 +659,13 @@ fun UserProfileEditSheet(vm: AuthViewModel, onDismiss: () -> Unit) {
                         singleLine = true,
                         shape = RoundedCornerShape(16.dp),
                         modifier = Modifier.fillMaxWidth()
+                    )
+                    Text(
+                        "Usernames must be letters, numbers, and underscores only.",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color.White.copy(alpha = 0.4f),
+                        modifier = Modifier.padding(start = 4.dp)
                     )
                 }
 

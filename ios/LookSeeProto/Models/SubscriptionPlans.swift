@@ -466,7 +466,7 @@ struct SubscriptionPlans: View {
         await vm.fetchUserDetails()
         tokenBalanceBeforePurchase = vm.tokenBalance
         
-        guard let url = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/checkout") else {
+        guard let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/checkout") else {
             isProcessing = false; paymentStatusMessage = String(localized: "Invalid API URL."); return
         }
         

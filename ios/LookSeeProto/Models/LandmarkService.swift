@@ -30,7 +30,7 @@ final class LandmarkService: ObservableObject {
     @Published var isLoading = false
     @Published var errorMessage: String? = nil
 
-    private let baseURL = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev")!
+    private let baseURL = URL(string: "https://d11vl3v9w133rh.cloudfront.net")!
 
     // MARK: - Fetch landmarks owned by this user
     // Calls GET /landmarks/by-user?userEmail=...

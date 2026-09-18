@@ -444,7 +444,7 @@ private class UrlConnectionAutoUploadStatsClient(
 
     private companion object {
         const val USER_STATS_URL =
-            "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/LookSeeGetUserStats"
+            "https://d11vl3v9w133rh.cloudfront.net/LookSeeGetUserStats"
         const val TIMEOUT_MILLIS = 60_000
     }
 }

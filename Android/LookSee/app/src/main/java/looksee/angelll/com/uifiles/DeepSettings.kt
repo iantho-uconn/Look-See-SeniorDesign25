@@ -48,12 +48,12 @@ fun DeepSettingsView(
     val isFullyLoggedIn = vm.isSignedIn && vm.userEmail.isNotEmpty()
 
     Scaffold(
-        containerColor = Color(0xFF0F0F1A),
+        containerColor = Color(0xFF000000),
         topBar = {
             TopAppBar(
                 title = { Text("Settings", fontSize = 18.sp, color = Color.White) },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color(0xFF0F0F1A),
+                    containerColor = Color(0xFF000000),
                     navigationIconContentColor = Color.White
                 ),
                 navigationIcon = {
@@ -75,15 +75,20 @@ fun DeepSettingsView(
             // App Language (Placeholder/System Link)
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    "App Language",
+                    "APP LANGUAGE",
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.Gray
                 )
                 
                 Surface(
-                    onClick = { /* Open System Settings logic */ },
-                    color = Color.White.copy(alpha = 0.05f),
+                    onClick = {
+                        val intent = android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                            data = android.net.Uri.fromParts("package", context.packageName, null)
+                        }
+                        context.startActivity(intent)
+                    },
+                    color = Color(0xFF1C1C1E),
                     shape = RoundedCornerShape(16.dp)
                 ) {
                     Row(
@@ -104,7 +109,7 @@ fun DeepSettingsView(
             if (BuildConfig.DEBUG) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        "Testing",
+                        "TESTING",
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.Gray
@@ -112,7 +117,7 @@ fun DeepSettingsView(
 
                     Surface(
                         onClick = { onNavigate("ModelSelectionView") },
-                        color = Color.White.copy(alpha = 0.05f),
+                        color = Color(0xFF1C1C1E),
                         shape = RoundedCornerShape(16.dp)
                     ) {
                         Row(
@@ -138,6 +143,37 @@ fun DeepSettingsView(
                 }
             }
 
+            // Admin Tools
+            val adminEmails = listOf("angelgabriel2828@icloud.com", "angelgabriel0846@gmail.com", "nisargdpatel04@gmail.com", "matt@informationoutpost.com")
+            if (vm.userEmail.lowercase() in adminEmails) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("ADMIN TOOLS", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                    Surface(
+                        onClick = { onNavigate("global_negatives") },
+                        color = Color(0xFF1C1C1E),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier.size(36.dp).background(Color(0xFFFFA500), RoundedCornerShape(10.dp)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.CameraAlt, contentDescription = null, tint = Color.White, modifier = Modifier.size(17.dp))
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Record Global Negatives", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                                Text("Capture empty spaces for the AI dataset", color = Color.Gray, fontSize = 13.sp, maxLines = 1)
+                            }
+                            Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = Color.Gray.copy(alpha = 0.5f), modifier = Modifier.size(13.dp))
+                        }
+                    }
+                }
+            }
+
             // Reload Model Button
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Button(
@@ -145,6 +181,7 @@ fun DeepSettingsView(
                         isReloading = true
                         coroutineScope.launch {
                             delay(1500)
+                            looksee.angelll.com.models.ModelAutoRefreshService.shared(context).start()
                             isReloading = false
                             showReloadSuccess = true
                             delay(2500)
@@ -179,8 +216,9 @@ fun DeepSettingsView(
                 ) {
                     Icon(Icons.Default.Memory, contentDescription = null, modifier = Modifier.size(12.dp), tint = Color.Gray)
                     Spacer(Modifier.width(6.dp))
+                    val activeLabel by looksee.angelll.com.detection.Detector.shared(context).currentLabel.collectAsState()
                     Text(
-                        if (activeRelease == null) "No Model Loaded" else "Active Model: ${modelSelector.activeDisplayName}",
+                        if (activeLabel == null) "No Model Loaded" else "Active Model: $activeLabel",
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.Gray

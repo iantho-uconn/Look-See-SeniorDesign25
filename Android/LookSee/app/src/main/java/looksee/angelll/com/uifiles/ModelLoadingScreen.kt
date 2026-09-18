@@ -26,7 +26,11 @@ import kotlinx.coroutines.launch
 import looksee.angelll.com.detection.*
 import looksee.angelll.com.models.*
 import looksee.angelll.com.viewmodels.*
+import com.google.accompanist.permissions.ExperimentalPermissionsApi
+import com.google.accompanist.permissions.isGranted
+import com.google.accompanist.permissions.rememberPermissionState
 
+@OptIn(ExperimentalPermissionsApi::class)
 @Composable
 fun ModelLoadingScreen(
     onComplete: () -> Unit
@@ -49,6 +53,18 @@ fun ModelLoadingScreen(
     var showLoadingUI by remember { mutableStateOf(false) }
     var animationFinished by remember { mutableStateOf(false) }
 
+    val locationPermissionState = rememberPermissionState(
+        android.Manifest.permission.ACCESS_FINE_LOCATION
+    )
+
+    LaunchedEffect(locationPermissionState.status.isGranted) {
+        if (locationPermissionState.status.isGranted) {
+            locationManager.start()
+        } else {
+            locationPermissionState.launchPermissionRequest()
+        }
+    }
+
     // MARK: - Loading sequence
     suspend fun startLoading() {
         failed = false
@@ -56,10 +72,7 @@ fun ModelLoadingScreen(
         
         // Step 1 — wait for location
         var attempts = 0
-        while (!locationManager.hasLocationPermission() || locationState !is LookSeeLocationState.Ready) {
-            if (!locationManager.hasLocationPermission()) {
-                locationManager.start()
-            }
+        while (!locationPermissionState.status.isGranted || locationState !is LookSeeLocationState.Ready) {
             delay(500)
             attempts++
             if (attempts > 20) {

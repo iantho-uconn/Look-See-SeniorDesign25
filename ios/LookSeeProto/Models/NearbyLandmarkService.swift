@@ -14,7 +14,7 @@ final class NearbyLandmarkService: ObservableObject {
     @Published var isLoading = false
     @Published var errorMessage: String?
 
-    private let baseURL = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev")!
+    private let baseURL = URL(string: "https://d11vl3v9w133rh.cloudfront.net")!
 
     // NEW: Added `limit` with a default of 100
     func fetchNearby(latitude: Double, longitude: Double, radiusMeters: Double = 100, limit: Int = 100) async {

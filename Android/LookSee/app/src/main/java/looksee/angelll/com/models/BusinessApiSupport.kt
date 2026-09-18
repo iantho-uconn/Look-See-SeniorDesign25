@@ -11,7 +11,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 internal const val LOOKSEE_API_BASE_URL =
-    "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev"
+    "https://d11vl3v9w133rh.cloudfront.net"
 
 sealed class BusinessAuthenticationError(message: String) : Exception(message) {
     data object NotSignedIn :

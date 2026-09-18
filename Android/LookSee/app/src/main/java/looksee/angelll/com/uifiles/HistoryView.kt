@@ -185,102 +185,129 @@ fun HistoryView(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun HistoryRowItem(
     item: ScanHistoryItem,
     onClick: () -> Unit,
     onDelete: () -> Unit
 ) {
-    LookSeeCard(
-        modifier = Modifier
-            .padding(horizontal = 16.dp, vertical = 4.dp)
-            .clickable { onClick() }
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding( vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            // Thumbnail or Initial Avatar
-            if (!item.imageUrl.isNullOrBlank()) {
-                Image(
-                    painter = rememberAsyncImagePainter(item.imageUrl),
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .size(50.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                )
+    val dismissState = rememberSwipeToDismissBoxState(
+        confirmValueChange = {
+            if (it == SwipeToDismissBoxValue.EndToStart) {
+                onDelete()
+                true
             } else {
-                Box(
-                    modifier = Modifier
-                        .size(50.dp)
-                        .background(LookSeeBlue.copy(alpha = 0.15f), CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = item.landmarkLabel.take(1).uppercase(),
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = LookSeeBlue
-                    )
-                }
-            }
-
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Text(
-                    text = item.landmarkLabel.ifBlank { "Landmark" },
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Place,
-                        contentDescription = null,
-                        tint = LookSeeBlue,
-                        modifier = Modifier.size(13.dp)
-                    )
-                    Text(
-                        text = item.locationString.ifBlank { "Unknown Location" },
-                        fontSize = 13.sp,
-                        color = Color.Gray,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-
-                Text(
-                    text = formatTimeOnly(item.scannedAt),
-                    fontSize = 11.sp,
-                    color = Color.Gray.copy(alpha = 0.7f)
-                )
-            }
-
-            IconButton(
-                onClick = onDelete,
-                modifier = Modifier.size(36.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Delete,
-                    contentDescription = "Delete",
-                    tint = Color.Red.copy(alpha = 0.7f),
-                    modifier = Modifier.size(18.dp)
-                )
+                false
             }
         }
-    }
+    )
+
+    SwipeToDismissBox(
+        state = dismissState,
+        enableDismissFromStartToEnd = false,
+        backgroundContent = {
+            val color = if (dismissState.targetValue == SwipeToDismissBoxValue.EndToStart) Color.Red else Color.Transparent
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp, vertical = 4.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(color),
+                contentAlignment = Alignment.CenterEnd
+            ) {
+                if (dismissState.targetValue == SwipeToDismissBoxValue.EndToStart || dismissState.currentValue == SwipeToDismissBoxValue.EndToStart) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.padding(end = 24.dp)
+                    ) {
+                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.White)
+                        Text("Delete", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        },
+        content = {
+            LookSeeCard(
+                modifier = Modifier
+                    .padding(horizontal = 16.dp, vertical = 4.dp)
+                    .clickable { onClick() }
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding( vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    // Thumbnail or Initial Avatar
+                    if (!item.imageUrl.isNullOrBlank()) {
+                        Image(
+                            painter = rememberAsyncImagePainter(item.imageUrl),
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .size(50.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                        )
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .size(50.dp)
+                                .background(LookSeeBlue.copy(alpha = 0.15f), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = item.landmarkLabel.take(1).uppercase(),
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = LookSeeBlue
+                            )
+                        }
+                    }
+
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = item.landmarkLabel.ifBlank { "Landmark" },
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Place,
+                                contentDescription = null,
+                                tint = LookSeeBlue,
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Text(
+                                text = item.locationString.ifBlank { "Unknown Location" },
+                                fontSize = 13.sp,
+                                color = Color.Gray,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+
+                        Text(
+                            text = formatTimeOnly(item.scannedAt),
+                            fontSize = 11.sp,
+                            color = Color.Gray.copy(alpha = 0.7f)
+                        )
+                    }
+                }
+            }
+        }
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

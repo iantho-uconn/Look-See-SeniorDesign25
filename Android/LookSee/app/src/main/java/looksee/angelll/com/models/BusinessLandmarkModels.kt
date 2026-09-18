@@ -123,7 +123,7 @@ enum class BusinessMediaKind(val wireValue: String) {
 
 data class BusinessMediaUploadInitResponse(
     val submissionId: String = "",
-    val uploadUrl: String = "",
+    val uploadUrl: S3PresignedPost,
     val s3Key: String = "",
     val bucket: String? = null,
     val datasetRole: String = "",
@@ -153,7 +153,7 @@ internal data class BusinessHardNegativeInitResponse(
 
 internal data class BusinessHardNegativeUploadTarget(
     val negativeId: String = "",
-    val uploadUrl: String = "",
+    val uploadUrl: S3PresignedPost,
     val sourceBucket: String? = null,
     val sourceKey: String = "",
     val contentType: String = "",

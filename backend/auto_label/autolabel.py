@@ -7,6 +7,7 @@ import gc
 import time 
 import sys
 import math
+import signal
 import numpy as np
 from botocore.exceptions import ClientError
 
@@ -15,6 +16,20 @@ sys.stdout.reconfigure(line_buffering=True)
 
 from autodistill_grounding_dino import GroundingDINO
 from autodistill.detection import CaptionOntology
+
+# -----------------------------------------
+# GRACEFUL AUTO-SCALING SHUTDOWN HANDLER
+# -----------------------------------------
+shutdown_requested = False
+
+def handle_sigterm(signum, frame):
+    global shutdown_requested
+    print("\n🛑 AWS AUTO-SCALER REQUESTED SHUTDOWN. Finishing current video, then terminating gracefully...")
+    shutdown_requested = True
+
+# Listen for AWS termination signals
+signal.signal(signal.SIGTERM, handle_sigterm)
+signal.signal(signal.SIGINT, handle_sigterm)
 
 # -----------------------------------------
 # AWS SETUP
@@ -29,7 +44,7 @@ LANDMARKS_TABLE_NAME = os.environ.get('LANDMARKS_TABLE', 'LookSeeLandmarks')
 
 if not QUEUE_URL:
     print("❌ Error: No QUEUE_URL environment variable found.")
-    exit(1)
+    sys.exit(1)
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"🚀 Booting up LookSee Worker on {device}. Checking SQS queue for tasks...")
@@ -37,7 +52,7 @@ print(f"🚀 Booting up LookSee Worker on {device}. Checking SQS queue for tasks
 # -----------------------------------------
 # SQS POLLING LOOP
 # -----------------------------------------
-while True:
+while not shutdown_requested:
     # 1. PULL MESSAGE FROM SQS
     response = sqs.receive_message(
         QueueUrl=QUEUE_URL,
@@ -46,9 +61,11 @@ while True:
     )
 
     if 'Messages' not in response:
-        print("Queue is empty. Waiting for new tasks (30s sleep)...")
-        time.sleep(30)
-        continue 
+        if shutdown_requested:
+            print("🛑 Queue is empty and safe shutdown requested. Exiting container.")
+        else:
+            print("🛑 Queue is empty. Shutting down worker container so EC2 can terminate.")
+        sys.exit(0)
 
     message = response['Messages'][0]
     receipt_handle = message['ReceiptHandle']
@@ -304,3 +321,10 @@ while True:
     # -----------------------------------------
     sqs.delete_message(QueueUrl=QUEUE_URL, ReceiptHandle=receipt_handle)
     print(f"🗑️ SUCCESS: Removed {SUBMISSION_FOLDER} from queue.")
+    
+    # -----------------------------------------
+    # CHECK FOR PENDING SHUTDOWN BEFORE NEXT LOOP
+    # -----------------------------------------
+    if shutdown_requested:
+        print("🛑 Safe shutdown triggered. Exiting worker container.")
+        sys.exit(0)

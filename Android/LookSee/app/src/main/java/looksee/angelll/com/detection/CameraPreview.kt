@@ -574,9 +574,12 @@ private fun DetectionOverlay(
                 style = Stroke(width = boxStroke),
             )
 
+            val confidencePercent = (target.detection.confidence * 100).toInt()
+            val labelText = "${target.label} $confidencePercent%"
+
             val metrics = labelPaint.fontMetrics
             val textHeight = metrics.descent - metrics.ascent
-            val textWidth = labelPaint.measureText(target.label)
+            val textWidth = labelPaint.measureText(labelText)
             val badgeLeft = max(box.left, labelMinimumLeft)
             val badgeTop = max(
                 box.top - textHeight - labelVerticalPadding * 2f - labelGap,
@@ -593,7 +596,7 @@ private fun DetectionOverlay(
             )
             drawIntoCanvas { canvas ->
                 canvas.nativeCanvas.drawText(
-                    target.label,
+                    labelText,
                     badgeLeft + labelHorizontalPadding,
                     badgeTop + labelVerticalPadding - metrics.ascent,
                     labelPaint,

@@ -36,6 +36,8 @@ struct Settings: View {
     @State private var isCancelling = false
     @State private var isOpeningPrivacyOptions = false
     @State private var showPrivacyOptionsError = false
+    
+    @State private var showReportSheet = false
 
     private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00)
 
@@ -151,19 +153,24 @@ struct Settings: View {
                         
                         VStack(spacing: 0) {
                             NavigationLink { BusinessLandmarksView() } label: {
-                                settingsRow(icon: "building.2.crop.circle.fill", iconBg: primaryColor, title: "Manage My Landmarks", subtitle: "View the landmarks assigned to your account.")
+                                settingsRow(icon: "building.2.crop.circle.fill", iconBg: .blue, title: "Manage My Landmarks", subtitle: "View the landmarks assigned to your account.")
                             }
+                            .buttonStyle(.plain)
+                            
                             Divider().padding(.leading, 68)
                             
                             NavigationLink { HistoryView().environmentObject(vm) } label: {
                                 settingsRow(icon: "clock.arrow.circlepath", iconBg: .blue, title: "Scan History", subtitle: "View your scanned landmarks.")
                             }
+                            .buttonStyle(.plain)
+                            
                             Divider().padding(.leading, 68)
                             
-                            // 🚀 NEW: Analytics Tab Button
                             NavigationLink { BusinessAnalyticsView().environmentObject(vm) } label: {
                                 settingsRow(icon: "chart.bar.fill", iconBg: .indigo, title: "Analytics", subtitle: "Track daily views and engagement.")
                             }
+                            .buttonStyle(.plain)
+                            
                             Divider().padding(.leading, 68)
                             
                             Button {
@@ -172,6 +179,7 @@ struct Settings: View {
                             } label: {
                                 settingsRow(icon: "circle.hexagongrid.fill", iconBg: .orange, title: "Tokens (\(vm.tokenBalance))", subtitle: "Buy tokens to update your inventory.", showDivider: false)
                             }
+                            .buttonStyle(.plain)
                         }
                         .background(Color(uiColor: .secondarySystemGroupedBackground)).clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                         .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2).padding(.horizontal)
@@ -186,6 +194,7 @@ struct Settings: View {
                             } label: {
                                 settingsRow(icon: "lock.fill", iconBg: .gray, title: "Business Tools Locked", subtitle: "Subscribe to a plan to unlock landmarks and tokens.", showDivider: false)
                             }
+                            .buttonStyle(.plain)
                         }
                         .background(Color(uiColor: .secondarySystemGroupedBackground)).clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                         .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2).padding(.horizontal)
@@ -206,6 +215,7 @@ struct Settings: View {
                                         settingsRow(icon: "storefront.fill", iconBg: .blue, title: "Business Profile", subtitle: LocalizedStringKey(vm.storeName))
                                     }
                                 }
+                                .buttonStyle(.plain)
                             } else {
                                 Button {
                                     presenter.subscriptionStartingTab = 0
@@ -213,12 +223,14 @@ struct Settings: View {
                                 } label: {
                                     settingsRow(icon: "lock.fill", iconBg: .gray, title: "Business Profile Locked", subtitle: "Subscribe to edit your public store info.", showDivider: false)
                                 }
+                                .buttonStyle(.plain)
                             }
                             
                             Divider().padding(.leading, 68)
                             NavigationLink { AccountSecurityView().environmentObject(vm) } label: {
                                 settingsRow(icon: "person.badge.key.fill", iconBg: .gray, title: "Account & Security", subtitle: "Change your email or password.", showDivider: false)
                             }
+                            .buttonStyle(.plain)
                         }
                         .background(Color(uiColor: .secondarySystemGroupedBackground))
                         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
@@ -290,14 +302,30 @@ struct Settings: View {
 
                 // 5. OTHER SETTINGS
                 VStack(spacing: 0) {
-                    ReportIssueButton()
+                    
+                    Button {
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        showReportSheet = true
+                    } label: {
+                        settingsRow(icon: "ladybug.fill", iconBg: .blue, title: "Report a Bug", showDivider: true)
+                    }
+                    .buttonStyle(.plain)
+
                     NavigationLink { Text("Help & Support Center") } label: { settingsRow(icon: "questionmark.circle.fill", iconBg: .orange, title: "Help & Support", showDivider: true) }
+                    .buttonStyle(.plain)
+                    
                     NavigationLink { PrivacyPolicyView() } label: { settingsRow(icon: "hand.raised.fill", iconBg: .purple, title: "Privacy Policy", showDivider: true) }
+                    .buttonStyle(.plain)
+                    
                     if adConsentManager.isPrivacyOptionsRequired {
                         adPrivacyOptionsRow
                     }
+                    
                     NavigationLink { TermsOfServiceView() } label: { settingsRow(icon: "doc.text.fill", iconBg: .green, title: "Terms of Service", showDivider: true) }
+                    .buttonStyle(.plain)
+                    
                     NavigationLink { DeepSettingsView(isFullyLoggedIn: isFullyLoggedIn).environmentObject(vm) } label: { settingsRow(icon: "gearshape.fill", iconBg: .gray, title: "Settings & Preferences", showDivider: false) }
+                    .buttonStyle(.plain)
                 }
                 .background(Color(uiColor: .secondarySystemGroupedBackground)).clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                 .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2).padding(.horizontal)
@@ -314,6 +342,7 @@ struct Settings: View {
             Text("We couldn't open your ad privacy options. Please check your connection and try again.")
         }
         .onChange(of: authState.didSignOut) { _, didSignOut in if didSignOut { dismiss() } }
+        .sheet(isPresented: $showReportSheet) { ReportIssueView(initialScreenshot: nil) }
         .sheet(isPresented: $presenter.showSubscriptionFlow) { SubscriptionPlans(presenter: presenter) }
         .sheet(isPresented: $presenter.showUserProfileEditor) { UserProfileEditSheet().environmentObject(vm) }
         .sheet(isPresented: $presenter.showLoginSheet) {
@@ -407,12 +436,16 @@ struct Settings: View {
             HStack(spacing: 16) {
                 Image(systemName: icon).font(.system(size: 18)).foregroundStyle(.white).frame(width: 36, height: 36).background(iconBg).clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.system(size: 16, weight: .semibold)).foregroundStyle(.primary)
-                    if let subtitle { Text(subtitle).font(.system(size: 13, weight: .regular)).foregroundStyle(.secondary) }
+                    Text(title).font(.system(size: 16, weight: .semibold)).foregroundStyle(.primary) // 🚀 White text
+                    if let subtitle {
+                        Text(subtitle).font(.system(size: 13, weight: .regular)).foregroundStyle(.secondary) // 🚀 Gray text
+                    }
                 }
                 Spacer()
-                Image(systemName: "chevron.right").font(.system(size: 14, weight: .bold)).foregroundStyle(Color(uiColor: .tertiaryLabel))
-            }.padding(16)
+                Image(systemName: "chevron.right").font(.system(size: 14, weight: .bold)).foregroundStyle(Color.gray.opacity(0.5))
+            }
+            .padding(16)
+            .contentShape(Rectangle())
             if showDivider { Divider().padding(.leading, 68) }
         }
     }
@@ -493,6 +526,9 @@ struct DeepSettingsView: View {
     @State private var isReloading = false
     @State private var showReloadSuccess = false
     
+    @State private var showGlobalNegativeCamera = false
+    @State private var isUploadingGlobalNegative = false
+    
     private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00)
 
     var body: some View {
@@ -523,7 +559,6 @@ struct DeepSettingsView: View {
                     .padding(.horizontal)
                 }
 
-                // MARK: Temporary model-testing entry point
                 if ModelTestingConfiguration.isEnabled {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Testing")
@@ -553,6 +588,51 @@ struct DeepSettingsView: View {
                                         .lineLimit(1)
                                 }
 
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundStyle(.tertiary)
+                            }
+                            .padding(16)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color(uiColor: .secondarySystemGroupedBackground))
+                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2)
+                        }
+                        .padding(.horizontal)
+                    }
+                }
+                
+                let adminEmails = ["angelgabriel2828@icloud.com", "angelgabriel0846@gmail.com", "nisargdpatel04@gmail.com", "matt@informationoutpost.com"]
+                if adminEmails.contains(vm.userEmail.lowercased()) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Admin Tools")
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .foregroundStyle(.secondary)
+                            .textCase(.uppercase)
+                            .padding(.horizontal, 20)
+                        
+                        Button {
+                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                            showGlobalNegativeCamera = true
+                        } label: {
+                            HStack(spacing: 14) {
+                                Image(systemName: "camera.filters")
+                                    .font(.system(size: 17, weight: .semibold))
+                                    .foregroundStyle(.white)
+                                    .frame(width: 36, height: 36)
+                                    .background(Color.orange)
+                                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("Record Global Negatives")
+                                        .font(.system(size: 16, weight: .semibold))
+                                        .foregroundStyle(.primary)
+                                    Text("Capture empty spaces for the AI dataset")
+                                        .font(.system(size: 13))
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
                                 Spacer()
                                 Image(systemName: "chevron.right")
                                     .font(.system(size: 13, weight: .semibold))
@@ -631,6 +711,48 @@ struct DeepSettingsView: View {
         }
         .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
         .navigationTitle("Settings")
+        .fullScreenCover(isPresented: $showGlobalNegativeCamera) {
+            NegativeVideoCameraView(
+                uiTargetDuration: 10,
+                minTotalTimeLimit: 2,
+                maxTotalTimeLimit: 10
+            ) { video in
+                Task {
+                    isUploadingGlobalNegative = true
+                    do {
+                        guard let fileURL = video.fileURL as URL? else {
+                            isUploadingGlobalNegative = false
+                            showGlobalNegativeCamera = false
+                            return
+                        }
+                        try await BusinessLandmarkService.shared.uploadGlobalNegativeVideo(fileURL: fileURL)
+                    } catch {}
+                    
+                    isUploadingGlobalNegative = false
+                    video.deleteLocalFile()
+                    showGlobalNegativeCamera = false
+                }
+            }
+        }
+        .overlay {
+            if isUploadingGlobalNegative {
+                ZStack {
+                    Color.black.opacity(0.6).ignoresSafeArea()
+                    VStack(spacing: 16) {
+                        ProgressView().tint(.white).scaleEffect(1.5)
+                        Text("Uploading Global Negative...")
+                            .font(.headline)
+                            .foregroundStyle(.white)
+                        Text("Please keep app open")
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.7))
+                    }
+                    .padding(32)
+                    .background(.ultraThinMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                }
+            }
+        }
     }
 }
 

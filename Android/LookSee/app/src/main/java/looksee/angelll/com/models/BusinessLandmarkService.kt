@@ -157,13 +157,80 @@ class BusinessLandmarkService internal constructor(
             ),
             responseType = BusinessMediaUploadInitResponse::class.java,
         )
-        uploadToPresignedUrl(init.uploadUrl, contentType, data)
+        uploadToPresignedUrl(init.uploadUrl, contentType, filename, data)
         return requestJson(
             method = "POST",
             url = "${businessLandmarkUrl(landmarkId)}/uploads/complete",
             body = PositiveUploadCompleteBody(init.submissionId, init.s3Key),
             responseType = BusinessMediaUploadCompleteResponse::class.java,
         )
+    }
+
+    suspend fun uploadGlobalNegativeVideo(file: java.io.File) {
+        val fileName = file.name
+        val initPayload = mapOf(
+            "filename" to fileName,
+            "mediaKind" to "video",
+            "contentType" to "video/mp4",
+            "datasetRole" to "global_negative",
+            "label" to "Global Negative Admin"
+        )
+        val initBody = gson.toJson(initPayload)
+        
+        val token = try {
+            tokenProvider.idToken()
+        } catch (_: Exception) { "" }
+
+        val initRequest = BusinessHttpRequest(
+            method = "POST",
+            url = "$LOOKSEE_API_BASE_URL/submissions/init",
+            authorization = "Bearer $token",
+            contentType = "application/json",
+            body = initBody.toByteArray(Charsets.UTF_8)
+        )
+        
+        val initResponse = httpClient.execute(initRequest)
+        validate(initResponse)
+        
+        val initJson = org.json.JSONObject(initResponse.bodyText)
+        val uploadUrlObj = initJson.optJSONObject("uploadUrl")
+        val url = uploadUrlObj?.optString("url") ?: ""
+        val fieldsObj = uploadUrlObj?.optJSONObject("fields")
+        val fieldsMap = mutableMapOf<String, String>()
+        if (fieldsObj != null) {
+            val keys = fieldsObj.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                fieldsMap[key] = fieldsObj.getString(key)
+            }
+        }
+        val s3Key = initJson.optString("s3Key")
+        val submissionId = initJson.optString("submissionId")
+        
+        if (url.isEmpty() || s3Key.isEmpty() || submissionId.isEmpty()) {
+            throw BusinessLandmarkServiceError.InvalidResponse
+        }
+        
+        val presignedPost = S3PresignedPost(url, fieldsMap)
+        uploadToPresignedUrl(presignedPost, "video/mp4", fileName, file.readBytes())
+        
+        val completePayload = mapOf(
+            "submissionId" to submissionId,
+            "s3Key" to s3Key,
+            "datasetRole" to "global_negative"
+        )
+        val completeBody = gson.toJson(completePayload)
+        
+        val completeRequest = BusinessHttpRequest(
+            method = "POST",
+            url = "$LOOKSEE_API_BASE_URL/submissions/complete",
+            authorization = "Bearer $token",
+            contentType = "application/json",
+            body = completeBody.toByteArray(Charsets.UTF_8)
+        )
+        
+        val completeResponse = httpClient.execute(completeRequest)
+        validate(completeResponse)
     }
 
     private suspend fun uploadHardNegativeMedia(
@@ -184,7 +251,7 @@ class BusinessLandmarkService internal constructor(
         )
         val uploadTarget = init.uploads.firstOrNull()
             ?: throw BusinessLandmarkServiceError.NoHardNegativeUploadTarget
-        uploadToPresignedUrl(uploadTarget.uploadUrl, uploadTarget.contentType, data)
+        uploadToPresignedUrl(uploadTarget.uploadUrl, uploadTarget.contentType, filename, data)
         val completed = requestJson(
             method = "POST",
             url = "$endpoint/complete",
@@ -236,24 +303,38 @@ class BusinessLandmarkService internal constructor(
     }
 
     private suspend fun uploadToPresignedUrl(
-        uploadUrl: String,
+        uploadUrl: S3PresignedPost,
         contentType: String,
+        filename: String,
         data: ByteArray,
     ) {
-        try {
-            URL(uploadUrl)
-        } catch (_: Exception) {
-            throw BusinessLandmarkServiceError.InvalidUploadUrl
+        val boundary = "Boundary-${java.util.UUID.randomUUID()}"
+        val multipartContentType = "multipart/form-data; boundary=$boundary"
+
+        val bodyStream = java.io.ByteArrayOutputStream()
+        
+        for ((key, value) in uploadUrl.fields) {
+            bodyStream.write("--$boundary\r\n".toByteArray(Charsets.UTF_8))
+            bodyStream.write("Content-Disposition: form-data; name=\"$key\"\r\n\r\n".toByteArray(Charsets.UTF_8))
+            bodyStream.write("$value\r\n".toByteArray(Charsets.UTF_8))
         }
+        bodyStream.write("--$boundary\r\n".toByteArray(Charsets.UTF_8))
+        bodyStream.write("Content-Disposition: form-data; name=\"file\"; filename=\"$filename\"\r\n".toByteArray(Charsets.UTF_8))
+        bodyStream.write("Content-Type: $contentType\r\n\r\n".toByteArray(Charsets.UTF_8))
+        
+        bodyStream.write(data)
+        
+        bodyStream.write("\r\n--$boundary--\r\n".toByteArray(Charsets.UTF_8))
+
         val response = httpClient.execute(
             BusinessHttpRequest(
-                method = "PUT",
-                url = uploadUrl,
-                body = data,
-                contentType = contentType,
+                method = "POST",
+                url = uploadUrl.url,
+                contentType = multipartContentType,
                 accept = null,
                 timeoutMillis = MEDIA_UPLOAD_TIMEOUT_MILLIS,
-            ),
+                body = bodyStream.toByteArray()
+            )
         )
         validate(response)
     }

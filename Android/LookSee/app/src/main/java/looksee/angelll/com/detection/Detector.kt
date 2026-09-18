@@ -82,7 +82,6 @@ data class Detection(
  * turning a stale box into a new recognition event.
  */
 class DetectionTracker(
-    private val alpha: Float = Detector.TRACKING_SMOOTHING_ALPHA,
     private val maxCoastFrames: Int = Detector.MAX_COAST_FRAMES,
     private val coastConfidenceDecay: Float = Detector.COAST_CONFIDENCE_DECAY,
 ) {
@@ -92,7 +91,6 @@ class DetectionTracker(
     private var framesSinceLastSeen = 0
 
     init {
-        require(alpha in 0f..1f) { "alpha must be between zero and one." }
         require(maxCoastFrames >= 0) { "maxCoastFrames must be non-negative." }
         require(coastConfidenceDecay in 0f..1f) {
             "coastConfidenceDecay must be between zero and one."
@@ -100,7 +98,7 @@ class DetectionTracker(
     }
 
     @Synchronized
-    fun update(newDetection: Detection?): Detection? {
+    fun update(newDetection: Detection?, alpha: Float = Detector.TRACKING_SMOOTHING_ALPHA): Detection? {
         if (newDetection != null) {
             framesSinceLastSeen = 0
             val previous = lastDetection
@@ -108,12 +106,12 @@ class DetectionTracker(
                 newDetection
             } else {
                 newDetection.copy(
-                    confidence = ema(previous.confidence, newDetection.confidence),
+                    confidence = ema(previous.confidence, newDetection.confidence, alpha),
                     bbox = DetectionBox(
-                        left = ema(previous.bbox.left, newDetection.bbox.left),
-                        top = ema(previous.bbox.top, newDetection.bbox.top),
-                        right = ema(previous.bbox.right, newDetection.bbox.right),
-                        bottom = ema(previous.bbox.bottom, newDetection.bbox.bottom),
+                        left = ema(previous.bbox.left, newDetection.bbox.left, alpha),
+                        top = ema(previous.bbox.top, newDetection.bbox.top, alpha),
+                        right = ema(previous.bbox.right, newDetection.bbox.right, alpha),
+                        bottom = ema(previous.bbox.bottom, newDetection.bbox.bottom, alpha),
                     ),
                 )
             }
@@ -139,7 +137,7 @@ class DetectionTracker(
         framesSinceLastSeen = 0
     }
 
-    private fun ema(previous: Float, current: Float): Float =
+    private fun ema(previous: Float, current: Float, alpha: Float): Float =
         previous + alpha * (current - previous)
 
     private fun sameTrack(first: Detection, second: Detection): Boolean =
@@ -313,6 +311,15 @@ class Detector internal constructor(
         }
 
     @Volatile
+    var trackingAlpha: Float = TRACKING_SMOOTHING_ALPHA
+        set(value) {
+            require(value in 0f..1f) {
+                "trackingAlpha must be between zero and one."
+            }
+            field = value
+        }
+
+    @Volatile
     private var userLocation: DetectorLocation? = null
 
     init {
@@ -421,8 +428,6 @@ class Detector internal constructor(
             val releaseId = loadedRelease.get()?.release?.releaseIdentifier ?: "none"
             logger.severe("Detector inference failed for $releaseId: ${error.message}")
         } finally {
-            // Matches the Swift detector's short post-inference throttle window.
-            delay(POST_INFERENCE_THROTTLE_MILLIS)
             inferenceMutex.unlock()
         }
     }
@@ -725,12 +730,12 @@ class Detector internal constructor(
 
             val activeKeys = strongestByTrack.keys
             val results = strongestByTrack.mapNotNullTo(mutableListOf()) { (key, detection) ->
-                trackers.getOrPut(key) { DetectionTracker() }.update(detection)
+                trackers.getOrPut(key) { DetectionTracker() }.update(detection, trackingAlpha)
             }
 
             val lostKeys = trackers.keys.filterNot(activeKeys::contains)
             lostKeys.forEach { key ->
-                val coasted = trackers[key]?.update(null)
+                val coasted = trackers[key]?.update(null, trackingAlpha)
                 if (coasted != null) results += coasted else trackers.remove(key)
             }
             results
@@ -776,7 +781,7 @@ class Detector internal constructor(
         const val IOU_THRESHOLD = 0.45f
         const val DEFAULT_PROXIMITY_THRESHOLD_METERS = 150.0
         const val MAX_LOCATION_ACCURACY_METERS = 100.0
-        const val NOTIFICATION_COOLDOWN_MILLIS = 6_000L
+        const val NOTIFICATION_COOLDOWN_MILLIS = 12_000L
 
         private const val END_TO_END_BOX_SIZE = 6
         private const val COORDINATE_VALUE_COUNT = 4
