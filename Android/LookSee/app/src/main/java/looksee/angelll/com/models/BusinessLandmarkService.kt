@@ -157,7 +157,7 @@ class BusinessLandmarkService internal constructor(
             ),
             responseType = BusinessMediaUploadInitResponse::class.java,
         )
-        uploadToPresignedUrl(init.uploadUrl, contentType, data)
+        uploadToPresignedUrl(init.uploadUrl, contentType, filename, data)
         return requestJson(
             method = "POST",
             url = "${businessLandmarkUrl(landmarkId)}/uploads/complete",
@@ -193,15 +193,26 @@ class BusinessLandmarkService internal constructor(
         validate(initResponse)
         
         val initJson = org.json.JSONObject(initResponse.bodyText)
-        val uploadUrl = initJson.optString("uploadUrl")
+        val uploadUrlObj = initJson.optJSONObject("uploadUrl")
+        val url = uploadUrlObj?.optString("url") ?: ""
+        val fieldsObj = uploadUrlObj?.optJSONObject("fields")
+        val fieldsMap = mutableMapOf<String, String>()
+        if (fieldsObj != null) {
+            val keys = fieldsObj.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                fieldsMap[key] = fieldsObj.getString(key)
+            }
+        }
         val s3Key = initJson.optString("s3Key")
         val submissionId = initJson.optString("submissionId")
         
-        if (uploadUrl.isEmpty() || s3Key.isEmpty() || submissionId.isEmpty()) {
+        if (url.isEmpty() || s3Key.isEmpty() || submissionId.isEmpty()) {
             throw BusinessLandmarkServiceError.InvalidResponse
         }
         
-        uploadToPresignedUrl(uploadUrl, "video/mp4", file.readBytes())
+        val presignedPost = S3PresignedPost(url, fieldsMap)
+        uploadToPresignedUrl(presignedPost, "video/mp4", fileName, file.readBytes())
         
         val completePayload = mapOf(
             "submissionId" to submissionId,
@@ -240,7 +251,7 @@ class BusinessLandmarkService internal constructor(
         )
         val uploadTarget = init.uploads.firstOrNull()
             ?: throw BusinessLandmarkServiceError.NoHardNegativeUploadTarget
-        uploadToPresignedUrl(uploadTarget.uploadUrl, uploadTarget.contentType, data)
+        uploadToPresignedUrl(uploadTarget.uploadUrl, uploadTarget.contentType, filename, data)
         val completed = requestJson(
             method = "POST",
             url = "$endpoint/complete",
@@ -292,24 +303,38 @@ class BusinessLandmarkService internal constructor(
     }
 
     private suspend fun uploadToPresignedUrl(
-        uploadUrl: String,
+        uploadUrl: S3PresignedPost,
         contentType: String,
+        filename: String,
         data: ByteArray,
     ) {
-        try {
-            URL(uploadUrl)
-        } catch (_: Exception) {
-            throw BusinessLandmarkServiceError.InvalidUploadUrl
+        val boundary = "Boundary-${java.util.UUID.randomUUID()}"
+        val multipartContentType = "multipart/form-data; boundary=$boundary"
+
+        val bodyStream = java.io.ByteArrayOutputStream()
+        
+        for ((key, value) in uploadUrl.fields) {
+            bodyStream.write("--$boundary\r\n".toByteArray(Charsets.UTF_8))
+            bodyStream.write("Content-Disposition: form-data; name=\"$key\"\r\n\r\n".toByteArray(Charsets.UTF_8))
+            bodyStream.write("$value\r\n".toByteArray(Charsets.UTF_8))
         }
+        bodyStream.write("--$boundary\r\n".toByteArray(Charsets.UTF_8))
+        bodyStream.write("Content-Disposition: form-data; name=\"file\"; filename=\"$filename\"\r\n".toByteArray(Charsets.UTF_8))
+        bodyStream.write("Content-Type: $contentType\r\n\r\n".toByteArray(Charsets.UTF_8))
+        
+        bodyStream.write(data)
+        
+        bodyStream.write("\r\n--$boundary--\r\n".toByteArray(Charsets.UTF_8))
+
         val response = httpClient.execute(
             BusinessHttpRequest(
-                method = "PUT",
-                url = uploadUrl,
-                body = data,
-                contentType = contentType,
+                method = "POST",
+                url = uploadUrl.url,
+                contentType = multipartContentType,
                 accept = null,
                 timeoutMillis = MEDIA_UPLOAD_TIMEOUT_MILLIS,
-            ),
+                body = bodyStream.toByteArray()
+            )
         )
         validate(response)
     }

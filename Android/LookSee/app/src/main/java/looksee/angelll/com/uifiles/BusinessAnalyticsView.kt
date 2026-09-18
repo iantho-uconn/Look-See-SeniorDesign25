@@ -91,7 +91,7 @@ class BusinessAnalyticsViewModel : ViewModel() {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val token = vm.fetchIdToken()
-                val url = URL("https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/analytics")
+                val url = URL("https://d11vl3v9w133rh.cloudfront.net/analytics")
                 val conn = url.openConnection() as HttpURLConnection
                 conn.requestMethod = "GET"
                 if (token.isNotEmpty()) {

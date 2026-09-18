@@ -251,7 +251,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     suspend fun fetchUserUsageStats() {
         if (userId.isEmpty()) return
 
-        val url = "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/LookSeeGetUserStats"
+        val url = "https://d11vl3v9w133rh.cloudfront.net/LookSeeGetUserStats"
         val body = JSONObject().apply { put("userId", userId) }
 
         val (code, data) = makePostRequest(url, body)
@@ -297,7 +297,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
 
     suspend fun cancelSubscription(): Boolean {
         if (userId.isEmpty()) return false
-        val url = "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/checkout"
+        val url = "https://d11vl3v9w133rh.cloudfront.net/checkout"
 
         val body = JSONObject().apply {
             put("purchaseType", "cancel_subscription")
@@ -325,7 +325,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
 
     suspend fun updateUserIdentity(newUsername: String, emailToSave: String, profileBase64: String? = null): Pair<Boolean, String?> {
         if (userId.isEmpty()) return Pair(false, "User not found")
-        val url = "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/checkout"
+        val url = "https://d11vl3v9w133rh.cloudfront.net/checkout"
 
         val body = JSONObject().apply {
             put("purchaseType", "update_user_identity")
@@ -365,7 +365,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         storeLogoBase64Input: String? = null
     ): Boolean {
         if (userId.isEmpty()) return false
-        val url = "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/checkout"
+        val url = "https://d11vl3v9w133rh.cloudfront.net/checkout"
 
         val body = JSONObject().apply {
             put("purchaseType", "update_profile")
@@ -402,7 +402,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     // 🚀 NEW: Signature forces an email string to be passed in
     suspend fun initDatabaseRow(emailToSave: String) {
         if (userId.isEmpty()) return
-        val url = "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/checkout"
+        val url = "https://d11vl3v9w133rh.cloudfront.net/checkout"
 
         val body = JSONObject().apply {
             put("purchaseType", "init_user")
@@ -423,7 +423,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         imageUrl: String = ""
     ) {
         if (userId.isEmpty()) return
-        val url = "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/history"
+        val url = "https://d11vl3v9w133rh.cloudfront.net/history"
         val body = JSONObject().apply {
             put("userId", userId)
             put("landmarkId", landmarkId)
@@ -438,7 +438,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
 
     suspend fun fetchScanHistory() {
         if (userId.isEmpty()) return
-        val url = "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/history?userId=$userId"
+        val url = "https://d11vl3v9w133rh.cloudfront.net/history?userId=$userId"
         val (code, data) = makeGetRequest(url)
         if (code == 200 && data != null) {
             try {
@@ -460,7 +460,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         withContext(Dispatchers.Main) {
             scanHistory = scanHistory.filterNot { it.scannedAt == scannedAt }
         }
-        val url = "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/history"
+        val url = "https://d11vl3v9w133rh.cloudfront.net/history"
         val body = JSONObject().apply {
             put("userId", userId)
             put("scannedAt", scannedAt)
@@ -473,7 +473,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     suspend fun forceTrainLandmark(landmarkId: String): Boolean {
         if (userId.isEmpty()) return false
         val token = fetchIdToken()
-        val url = "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/business/landmarks/$landmarkId"
+        val url = "https://d11vl3v9w133rh.cloudfront.net/business/landmarks/$landmarkId"
         val body = JSONObject().apply {
             put("forceTrainEnabled", true)
         }

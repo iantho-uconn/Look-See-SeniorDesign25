@@ -18,32 +18,22 @@
   <component name="ChangeListManager">
     <list default="true" id="07f21855-e7c7-4afa-a99c-977bf161748a" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/AccountSecurityView.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/AccountSecurityView.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/BusinessLandmarksView.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/BusinessLandmarksView.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/Buttons.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/Buttons.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/DeepSettings.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/DeepSettings.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/ModelLoadingScreen.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/ModelLoadingScreen.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/build.gradle.kts" beforeDir="false" afterPath="$PROJECT_DIR$/app/build.gradle.kts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/AndroidManifest.xml" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/AndroidManifest.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/detection/CameraPreview.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/detection/CameraPreview.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/detection/Detector.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/detection/Detector.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/models/AutoUploadManager.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/models/AutoUploadManager.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/models/BusinessApiSupport.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/models/BusinessApiSupport.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/models/BusinessLandmarkModels.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/models/BusinessLandmarkModels.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/models/BusinessLandmarkService.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/models/BusinessLandmarkService.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/models/HardNegativeUploadService.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/models/HardNegativeUploadService.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/models/SubmissionModels.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/models/SubmissionModels.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/models/UploadService.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/models/UploadService.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/BusinessAnalyticsView.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/BusinessAnalyticsView.kt" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/Settings.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/Settings.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/Detection/Detector.swift" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/Detection/Detector.swift" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/viewmodels/AuthViewModel.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/viewmodels/AuthViewModel.kt" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/ITlo.gpx" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/ITlo.gpx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/Models/ActivePromotionService.swift" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/Models/ActivePromotionService.swift" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/Models/BusinessLandmarkService.swift" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/Models/BusinessLandmarkService.swift" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/Models/BusinessMediaHistoryService.swift" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/Models/BusinessMediaHistoryService.swift" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/Models/BusinessPromotionService.swift" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/Models/BusinessPromotionService.swift" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/Models/BusinessSetup.swift" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/Models/BusinessSetup.swift" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/Models/HardNegativeUploadService.swift" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/Models/HardNegativeUploadService.swift" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/Models/LandmarkService.swift" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/Models/LandmarkService.swift" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/Models/LibraryService.swift" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/Models/LibraryService.swift" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/Models/LiveLandmarkInfoService.swift" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/Models/LiveLandmarkInfoService.swift" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/Models/NearbyLandmarkService.swift" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/Models/NearbyLandmarkService.swift" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/Models/PromotionService.swift" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/Models/PromotionService.swift" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/Models/StripeCheckoutView.swift" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/Models/StripeCheckoutView.swift" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/Models/SubmissionModels.swift" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/Models/SubmissionModels.swift" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/Models/SubscriptionPlans.swift" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/Models/SubscriptionPlans.swift" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/Models/UploadService.swift" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/Models/UploadService.swift" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/UI Files/BusinessAnalyticsView.swift" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/UI Files/BusinessAnalyticsView.swift" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/UI Files/PopUp.swift" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/UI Files/PopUp.swift" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/ViewModels/AuthViewModel.swift" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/ViewModels/AuthViewModel.swift" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/LookSeeProto/Info.plist" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/LookSeeProto/Info.plist" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -122,20 +112,20 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;Android App.app.executor&quot;: &quot;Run&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.cidr.known.project.marker&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.readMode.enableVisualFormatting&quot;: &quot;true&quot;,
-    &quot;cf.first.check.clang-format&quot;: &quot;false&quot;,
-    &quot;cidr.known.project.marker&quot;: &quot;true&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;detector-fix&quot;,
-    &quot;kotlin-language-version-configured&quot;: &quot;true&quot;,
-    &quot;settings.editor.selected.configurable&quot;: &quot;templates.modelproviders.configurable&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "Android App.app.executor": "Run",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.cidr.known.project.marker": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "RunOnceActivity.readMode.enableVisualFormatting": "true",
+    "cf.first.check.clang-format": "false",
+    "cidr.known.project.marker": "true",
+    "git-widget-placeholder": "detector-fix-preview",
+    "kotlin-language-version-configured": "true",
+    "settings.editor.selected.configurable": "templates.modelproviders.configurable"
   }
-}</component>
+}]]></component>
   <component name="RecentsManager">
     <key name="MoveFile.RECENT_KEYS">
       <recent name="$PROJECT_DIR$/app/src/main/res/drawable" />
@@ -224,12 +214,12 @@
       <map>
         <entry key="looksee.angelll.com">
           <value>
-            <CheckInfo lastCheckTimestamp="1788263408470" />
+            <CheckInfo lastCheckTimestamp="1789718652739" />
           </value>
         </entry>
         <entry key="looksee.angelll.com.test">
           <value>
-            <CheckInfo lastCheckTimestamp="1788263408471" />
+            <CheckInfo lastCheckTimestamp="1789718652763" />
           </value>
         </entry>
       </map>

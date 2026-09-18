@@ -567,11 +567,11 @@ fun GuestPromoCard(presenter: SettingsPresenter, isFullyLoggedIn: Boolean, onNav
                             onNavigate("signup")
                         }
                     },
-                    modifier = Modifier.weight(1.3f).height(48.dp),
+                    modifier = Modifier.weight(1.2f).height(64.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = AppleBlue),
                     shape = RoundedCornerShape(14.dp)
                 ) {
-                    Text(if (isFullyLoggedIn) "View Plans" else "Create Free Account", fontWeight = FontWeight.Bold, maxLines = 1)
+                    Text(if (isFullyLoggedIn) "View Business Plans" else "Create Free Account", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                 }
                 if (!isFullyLoggedIn) {
                     Button(
@@ -579,11 +579,11 @@ fun GuestPromoCard(presenter: SettingsPresenter, isFullyLoggedIn: Boolean, onNav
                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             onNavigate("login")
                         },
-                        modifier = Modifier.weight(0.9f).height(48.dp),
+                        modifier = Modifier.weight(1f).height(64.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.15f)),
                         shape = RoundedCornerShape(14.dp)
                     ) {
-                        Text("Log In", fontWeight = FontWeight.Bold, maxLines = 1)
+                        Text("Log In", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                     }
                 }
             }
