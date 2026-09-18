@@ -483,9 +483,16 @@ struct MapReportSheet: View {
 
     private var isFormValid: Bool {
         guard let reason = selectedReason else { return false }
+        
+        // The word count cannot exceed maxWords for any reason
+        if wordCount > maxWords { return false }
+        
         if reason == .other {
-            return !customExplanation.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && wordCount <= maxWords
+            // If 'Other' is selected, they MUST write something
+            return !customExplanation.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
+        
+        // For all other reasons, text is completely optional
         return true
     }
 
@@ -529,9 +536,9 @@ struct MapReportSheet: View {
                                 }
                             }
 
-                            if selectedReason == .other {
+                            if selectedReason != nil {
                                 VStack(alignment: .leading, spacing: 8) {
-                                    Text("Please describe the issue")
+                                    Text(selectedReason == .other ? "Please describe the issue (Required)" : "Additional details (Optional)")
                                         .font(.system(size: 13, weight: .bold, design: .rounded))
                                         .foregroundStyle(.secondary)
                                         .textCase(.uppercase)
@@ -663,11 +670,18 @@ struct MapReportSheet: View {
         UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
         isSubmitting = true
         
-        let finalReason = selectedReason == .other ? "Other: \(customExplanation)" : (selectedReason?.rawValue ?? "Unknown")
+        let safeExplanation = customExplanation.trimmingCharacters(in: .whitespacesAndNewlines)
+        let finalReason = selectedReason?.rawValue ?? "Unknown"
 
         SentrySDK.capture(message: "[Reported Landmark] \(landmarkLabel)", block: { scope in
             scope.setTag(value: "Content Report", key: "Category")
             scope.setTag(value: finalReason, key: "Report Reason")
+            
+            // Log the custom text if they wrote anything
+            if !safeExplanation.isEmpty {
+                scope.setExtra(value: safeExplanation, key: "User Explanation")
+            }
+            
             scope.setExtra(value: landmarkId, key: "Reported Landmark ID")
             scope.setExtra(value: reportedOwnerId, key: "Reported Owner ID")
             scope.setExtra(value: vm.userEmail, key: "Reporter Email")
