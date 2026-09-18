@@ -99,21 +99,7 @@ struct AnimatedBackground: View {
                     }
                     .frame(height: 220)
                 
-                        .overlay(alignment: .top) {
 
-                            Rectangle()
-                                .fill(
-                                    LinearGradient(
-                                        colors: [
-                                            Color.white.opacity(0.12),
-                                            .clear
-                                        ],
-                                        startPoint: .top,
-                                        endPoint: .bottom
-                                    )
-                                )
-                                .frame(height: 1)
-                        }
 
                 }
 
