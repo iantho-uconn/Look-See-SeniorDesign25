@@ -114,9 +114,25 @@ enum BusinessMediaKind: String {
     case video = "video"
 }
 
+// Business routes may return a signed PUT URL or a signed POST form.
+// Keep the transport matched to the format issued by the server.
+enum BusinessMediaUploadTarget: Decodable {
+    case put(String)
+    case post(S3PresignedPost)
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let url = try? container.decode(String.self) {
+            self = .put(url)
+        } else {
+            self = .post(try container.decode(S3PresignedPost.self))
+        }
+    }
+}
+
 struct BusinessMediaUploadInitResponse: Decodable {
     let submissionId: String
-    let uploadUrl: S3PresignedPost // 🚀 CHANGED
+    let uploadUrl: BusinessMediaUploadTarget
     let s3Key: String
     let bucket: String?
     let datasetRole: String
@@ -148,7 +164,7 @@ struct BusinessHardNegativeInitResponse: Decodable {
 
 struct BusinessHardNegativeUploadTarget: Decodable {
     let negativeId: String
-    let uploadUrl: S3PresignedPost // 🚀 CHANGED
+    let uploadUrl: BusinessMediaUploadTarget
     let sourceBucket: String?
     let sourceKey: String
     let contentType: String
@@ -772,7 +788,44 @@ final class BusinessLandmarkService {
         return try JSONDecoder().decode(BusinessHardNegativeCompleteResponse.self, from: data)
     }
 
-    // MARK: - Shared S3 Upload Helper (🚀 CHANGED to POST)
+    // MARK: - Shared S3 Upload Helpers
+
+    private func uploadToPresignedURL(
+        uploadUrl: BusinessMediaUploadTarget,
+        contentType: String,
+        filename: String,
+        data: Data
+    ) async throws {
+        switch uploadUrl {
+        case .post(let form):
+            try await uploadToPresignedURL(
+                uploadUrl: form,
+                contentType: contentType,
+                filename: filename,
+                data: data
+            )
+        case .put(let urlString):
+            guard let url = URL(string: urlString),
+                  url.scheme?.lowercased() == "https",
+                  let host = url.host, !host.isEmpty else {
+                throw BusinessLandmarkServiceError.invalidUploadURL
+            }
+
+            var request = URLRequest(url: url)
+            request.httpMethod = "PUT"
+            request.setValue(contentType, forHTTPHeaderField: "Content-Type")
+
+            let (responseData, response) = try await URLSession.shared.upload(
+                for: request,
+                from: data
+            )
+            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
+            guard (200...299).contains(statusCode) else {
+                let responseBody = String(data: responseData, encoding: .utf8) ?? ""
+                throw BusinessLandmarkServiceError.badStatus(statusCode, responseBody)
+            }
+        }
+    }
 
     private func uploadToPresignedURL(
         uploadUrl: S3PresignedPost,

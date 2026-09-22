@@ -1463,6 +1463,8 @@ struct BusinessLandmarkDetailView: View {
                 }
             } catch {
                 failedCount += 1
+                print("[BusinessMediaUpload] Failed:", String(reflecting: error))
+                print("[BusinessMediaUpload] Details:", error.localizedDescription)
             }
         }
         
