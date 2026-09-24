@@ -116,6 +116,18 @@ struct ModelLoadingScreen: View {
                     }
                     .padding(.bottom, 60)
                 }
+
+                // Visible throughout the opening animation and model loading.
+                // Keep this in the foreground layout, above the bottom safe area.
+                Text(verbatim: "Copyright © 2026 Information Outpost, LLC.  All rights reserved.")
+                    .font(.caption2)
+                    .foregroundStyle(Color.white.opacity(0.75))
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 16)
+                    .allowsHitTesting(false)
             }
             .opacity(opacity)
             .onAppear {

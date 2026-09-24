@@ -596,15 +596,22 @@ struct BusinessLandmarksView: View {
 
     @ViewBuilder
     private var syncBannerRow: some View {
-        let isUploading = uploadManager.currentlyUploadingId != nil
+        let isUploading = uploadManager.isUploading
         let isOffline = !networkMonitor.isConnected
         HStack(spacing: 16) {
             Image(systemName: isUploading ? "arrow.up.circle.fill" : (isOffline ? "icloud.slash.fill" : "pause.circle.fill")).font(.system(size: 24)).foregroundColor(isUploading ? primaryColor : .gray)
             VStack(alignment: .leading, spacing: 2) {
                 if isUploading { Text("Syncing to Cloud...").font(.system(size: 16, weight: .bold, design: .rounded)).foregroundStyle(.primary) }
                 else if isOffline { Text("Waiting for Connection").font(.system(size: 16, weight: .bold, design: .rounded)).foregroundStyle(.primary) }
-                else { Text("Queue Processing...").font(.system(size: 16, weight: .bold, design: .rounded)).foregroundStyle(.primary) }
-                Text("\(offlineManager.archivedItems.count) items waiting to upload").font(.system(size: 13, weight: .medium)).foregroundColor(.secondary)
+                else { Text("Upload Queue").font(.system(size: 16, weight: .bold, design: .rounded)).foregroundStyle(.primary) }
+                Text(uploadManager.queueMessage)
+                    .font(.system(size: 13, weight: .medium)).foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if !isUploading && !isOffline && offlineManager.archivedItems.contains(where: { $0.deletionBlocked != true }) {
+                    Button("Retry uploads") { uploadManager.forceRetry() }
+                        .font(.system(size: 13, weight: .semibold))
+                        .buttonStyle(.borderless)
+                }
             }
             Spacer()
             if isUploading { ProgressView().tint(primaryColor) }
@@ -617,7 +624,7 @@ struct BusinessLandmarksView: View {
         let isUploading = uploadManager.currentlyUploadingId == item.id
         Button {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            if !isUploading { draftToEdit = item }
+            if !isUploading && item.deletionBlocked != true { draftToEdit = item }
         } label: {
             HStack(spacing: 16) {
                 ZStack {
@@ -632,6 +639,15 @@ struct BusinessLandmarksView: View {
                             Text("Uploading...").font(.system(size: 12, weight: .bold, design: .rounded)).foregroundColor(primaryColor)
                             ProgressView(value: uploadManager.currentUploadProgress).progressViewStyle(.linear).tint(primaryColor)
                         }
+                    } else if let message = item.lastUploadError {
+                        Label(item.deletionBlocked == true ? "Upload blocked" : "Upload failed", systemImage: "exclamationmark.triangle.fill")
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                            .foregroundColor(.red)
+                        Text(message)
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
                     } else {
                         HStack(spacing: 4) {
                             Image(systemName: "clock.fill").font(.system(size: 10))
