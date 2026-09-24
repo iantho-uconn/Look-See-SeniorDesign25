@@ -8,6 +8,7 @@
 import Foundation
 import Amplify
 import AWSPluginsCore
+import CryptoKit
 
 // MARK: - Landmark List / Update Models
 
@@ -116,7 +117,7 @@ enum BusinessMediaKind: String {
 
 struct BusinessMediaUploadInitResponse: Decodable {
     let submissionId: String
-    let uploadUrl: S3PresignedPost // 🚀 CHANGED
+    let uploadUrl: S3PresignedPost
     let s3Key: String
     let bucket: String?
     let datasetRole: String
@@ -148,7 +149,7 @@ struct BusinessHardNegativeInitResponse: Decodable {
 
 struct BusinessHardNegativeUploadTarget: Decodable {
     let negativeId: String
-    let uploadUrl: S3PresignedPost // 🚀 CHANGED
+    let uploadUrl: S3PresignedPost
     let sourceBucket: String?
     let sourceKey: String
     let contentType: String
@@ -254,16 +255,38 @@ final class BusinessLandmarkService {
         return tokens.idToken
     }
 
+    // 🚀 NEW: Centralized Request Builder for App Attest Support
+    private func authorizedRequest(url: URL, method: String, body: Data? = nil) async throws -> URLRequest {
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        let idToken = try await getCognitoIDToken()
+        request.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        
+        let payload = body ?? Data()
+        if body != nil {
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = body
+        }
+        
+        // Inject App Attest signature
+        do {
+            let assertionToken = try await AppAttestService.shared.generateAssertion(for: payload)
+            let payloadHash = Data(SHA256.hash(data: payload)).base64EncodedString()
+            request.setValue(assertionToken, forHTTPHeaderField: "X-LookSee-App-Attest")
+            request.setValue(payloadHash, forHTTPHeaderField: "X-LookSee-App-Attest-Payload-Hash")
+        } catch {
+            print("⚠️ App Attest bypassed or failed: \(error.localizedDescription)")
+        }
+        
+        return request
+    }
+
     // MARK: - Landmark List
 
     func fetchBusinessLandmarks() async throws -> BusinessLandmarkListResponse {
-        let idToken = try await getCognitoIDToken()
         let url = baseURL.appendingPathComponent("business/landmarks")
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        let request = try await authorizedRequest(url: url, method: "GET")
 
         let (data, response) = try await URLSession.shared.data(for: request)
 
@@ -329,20 +352,13 @@ final class BusinessLandmarkService {
         landmarkId: String,
         body: BusinessLandmarkPatchBody
     ) async throws -> BusinessLandmark {
-        let idToken = try await getCognitoIDToken()
-
         let url = baseURL
             .appendingPathComponent("business")
             .appendingPathComponent("landmarks")
             .appendingPathComponent(landmarkId)
 
-        var request = URLRequest(url: url)
-        request.httpMethod = "PATCH"
-        request.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-
-        request.httpBody = try JSONEncoder().encode(body)
+        let requestBody = try JSONEncoder().encode(body)
+        let request = try await authorizedRequest(url: url, method: "PATCH", body: requestBody)
 
         let (data, response) = try await URLSession.shared.data(for: request)
 
@@ -361,24 +377,13 @@ final class BusinessLandmarkService {
         landmarkId: String,
         confirmation: String
     ) async throws -> BusinessLandmarkDeleteResponse {
-        let idToken = try await getCognitoIDToken()
-
         let url = baseURL
             .appendingPathComponent("business")
             .appendingPathComponent("landmarks")
             .appendingPathComponent(landmarkId)
 
-        var request = URLRequest(url: url)
-        request.httpMethod = "DELETE"
-        request.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-
-        request.httpBody = try JSONEncoder().encode(
-            BusinessLandmarkDeleteBody(
-                confirmation: confirmation
-            )
-        )
+        let requestBody = try JSONEncoder().encode(BusinessLandmarkDeleteBody(confirmation: confirmation))
+        let request = try await authorizedRequest(url: url, method: "DELETE", body: requestBody)
 
         let (data, response) = try await URLSession.shared.data(for: request)
 
@@ -469,20 +474,12 @@ final class BusinessLandmarkService {
         filename: String,
         contentType: String
     ) async throws -> BusinessMediaUploadInitResponse {
-        let idToken = try await getCognitoIDToken()
-
         let url = baseURL
             .appendingPathComponent("business")
             .appendingPathComponent("landmarks")
             .appendingPathComponent(landmarkId)
             .appendingPathComponent("uploads")
             .appendingPathComponent("init")
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
 
         let body = PositiveUploadInitBody(
             mediaKind: mediaKind.rawValue,
@@ -491,7 +488,8 @@ final class BusinessLandmarkService {
             contentType: contentType
         )
 
-        request.httpBody = try JSONEncoder().encode(body)
+        let requestBody = try JSONEncoder().encode(body)
+        let request = try await authorizedRequest(url: url, method: "POST", body: requestBody)
 
         let (data, response) = try await URLSession.shared.data(for: request)
 
@@ -510,8 +508,6 @@ final class BusinessLandmarkService {
         submissionId: String,
         s3Key: String
     ) async throws -> BusinessMediaUploadCompleteResponse {
-        let idToken = try await getCognitoIDToken()
-
         let url = baseURL
             .appendingPathComponent("business")
             .appendingPathComponent("landmarks")
@@ -519,18 +515,13 @@ final class BusinessLandmarkService {
             .appendingPathComponent("uploads")
             .appendingPathComponent("complete")
 
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-
         let body = PositiveUploadCompleteBody(
             submissionId: submissionId,
             s3Key: s3Key
         )
 
-        request.httpBody = try JSONEncoder().encode(body)
+        let requestBody = try JSONEncoder().encode(body)
+        let request = try await authorizedRequest(url: url, method: "POST", body: requestBody)
 
         let (data, response) = try await URLSession.shared.data(for: request)
 
@@ -544,21 +535,14 @@ final class BusinessLandmarkService {
         return try JSONDecoder().decode(BusinessMediaUploadCompleteResponse.self, from: data)
     }
     
-    // 🚀 NEW: The custom Global Negatives Uploader (Updated to POST)
+    // MARK: - Global Negatives Uploader
     func uploadGlobalNegativeVideo(fileURL: URL) async throws {
         print("🚀 [GLOBAL NEGATIVE] Initiating network request for: \(fileURL.lastPathComponent)")
-        let idToken = try await getCognitoIDToken()
         let fileName = fileURL.lastPathComponent
         
         let initUrl = baseURL
             .appendingPathComponent("submissions")
             .appendingPathComponent("init")
-        
-        var initRequest = URLRequest(url: initUrl)
-        initRequest.httpMethod = "POST"
-        initRequest.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
-        initRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        initRequest.setValue("application/json", forHTTPHeaderField: "Accept")
         
         let initPayload: [String: Any] = [
             "filename": fileName,
@@ -568,7 +552,8 @@ final class BusinessLandmarkService {
             "label": "Global Negative Admin"
         ]
         
-        initRequest.httpBody = try JSONSerialization.data(withJSONObject: initPayload)
+        let requestBody = try JSONSerialization.data(withJSONObject: initPayload)
+        let initRequest = try await authorizedRequest(url: initUrl, method: "POST", body: requestBody)
         
         let (initData, initResponse) = try await URLSession.shared.data(for: initRequest)
         let initStatusCode = (initResponse as? HTTPURLResponse)?.statusCode ?? -1
@@ -605,18 +590,14 @@ final class BusinessLandmarkService {
             .appendingPathComponent("submissions")
             .appendingPathComponent("complete")
             
-        var completeRequest = URLRequest(url: completeUrl)
-        completeRequest.httpMethod = "POST"
-        completeRequest.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
-        completeRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        completeRequest.setValue("application/json", forHTTPHeaderField: "Accept")
-        
         let completePayload: [String: Any] = [
             "submissionId": submissionId,
             "s3Key": s3Key,
             "datasetRole": "global_negative"
         ]
-        completeRequest.httpBody = try JSONSerialization.data(withJSONObject: completePayload)
+        
+        let completeReqBody = try JSONSerialization.data(withJSONObject: completePayload)
+        let completeRequest = try await authorizedRequest(url: completeUrl, method: "POST", body: completeReqBody)
         
         let (completeData, completeNetResponse) = try await URLSession.shared.data(for: completeRequest)
         let completeStatusCode = (completeNetResponse as? HTTPURLResponse)?.statusCode ?? -1
@@ -675,19 +656,11 @@ final class BusinessLandmarkService {
         filename: String,
         contentType: String
     ) async throws -> BusinessHardNegativeInitResponse {
-        let idToken = try await getCognitoIDToken()
-
         let url = baseURL
             .appendingPathComponent("landmarks")
             .appendingPathComponent(landmarkId)
             .appendingPathComponent("hard-negatives")
             .appendingPathComponent("init")
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
 
         let body = BusinessHardNegativeInitBody(
             files: [
@@ -698,7 +671,8 @@ final class BusinessLandmarkService {
             ]
         )
 
-        request.httpBody = try JSONEncoder().encode(body)
+        let requestBody = try JSONEncoder().encode(body)
+        let request = try await authorizedRequest(url: url, method: "POST", body: requestBody)
 
         let (data, response) = try await URLSession.shared.data(for: request)
 
@@ -738,19 +712,11 @@ final class BusinessLandmarkService {
         negativeIds: [String],
         forceRetry: Bool = false
     ) async throws -> BusinessHardNegativeCompleteResponse {
-        let idToken = try await getCognitoIDToken()
-
         let url = baseURL
             .appendingPathComponent("landmarks")
             .appendingPathComponent(landmarkId)
             .appendingPathComponent("hard-negatives")
             .appendingPathComponent("complete")
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
 
         let body = BusinessHardNegativeCompleteBody(
             batchId: batchId,
@@ -758,7 +724,8 @@ final class BusinessLandmarkService {
             forceRetry: forceRetry ? true : nil
         )
 
-        request.httpBody = try JSONEncoder().encode(body)
+        let requestBody = try JSONEncoder().encode(body)
+        let request = try await authorizedRequest(url: url, method: "POST", body: requestBody)
 
         let (data, response) = try await URLSession.shared.data(for: request)
 
@@ -772,7 +739,7 @@ final class BusinessLandmarkService {
         return try JSONDecoder().decode(BusinessHardNegativeCompleteResponse.self, from: data)
     }
 
-    // MARK: - Shared S3 Upload Helper (🚀 CHANGED to POST)
+    // MARK: - Shared S3 Upload Helper
 
     private func uploadToPresignedURL(
         uploadUrl: S3PresignedPost,

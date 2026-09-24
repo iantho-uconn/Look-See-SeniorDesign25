@@ -34,21 +34,25 @@ struct PopUp: View {
         .onAppear {
             let currentLandmarkId = infoView.landmarkId
             let currentOwnerId = infoView.reportedOwnerId ?? "unknown"
-            
+           
             // Fire-and-forget background ping so it doesn't slow down the UI
             Task.detached(priority: .background) {
                 guard let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/analytics/click") else { return }
-                
+               
                 var request = URLRequest(url: url)
                 request.httpMethod = "POST"
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                
+               
                 let body: [String: Any] = [
                     "landmarkId": currentLandmarkId,
                     "ownerUserId": currentOwnerId
                 ]
-                
+               
                 request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+                
+                // 🚀 ADDED: Attaches App Attest signature headers automatically
+                await request.signWithAppAttest()
+                
                 _ = try? await URLSession.shared.data(for: request)
             }
         }
@@ -115,8 +119,8 @@ struct PopUp: View {
             }
 
             MerchantCardView()
-            
-            // 🚀 NEW: Appends the Map Actions (Image 3) right below the Merchant Card (Image 2)
+           
+            // 🚀 NEW: Appends the Map Actions right below the Merchant Card
             if infoView.isMapPin {
                 mapActionButtons
             }
@@ -156,7 +160,7 @@ struct PopUp: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 16)
                 .background(Color(uiColor: .tertiarySystemFill))
-                .foregroundStyle(primaryColor) // Matches the blue from Image 3
+                .foregroundStyle(primaryColor) // Matches the blue
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
 
@@ -169,7 +173,7 @@ struct PopUp: View {
                     .font(.system(size: 20))
                     .frame(width: 54, height: 54)
                     .background(Color.red.opacity(0.15))
-                    .foregroundStyle(.red) // Matches the red flag from Image 3
+                    .foregroundStyle(.red) // Matches the red flag
                     .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
         }
@@ -439,6 +443,7 @@ struct MapReportSheet: View {
     @EnvironmentObject var vm: AuthViewModel
     
     @State private var selectedReason: ReportReason? = nil
+    @State private var customTitle = "" // 🚀 Added Custom Title Field
     @State private var customExplanation = ""
     @State private var isSubmitting = false
     @State private var reportSuccess = false
@@ -446,31 +451,26 @@ struct MapReportSheet: View {
     private let maxWords = 40
     private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00)
 
+    // 🚀 Updated options per your instructions
     enum ReportReason: String, CaseIterable, Identifiable {
-        case fakeObject = "Not a real object or business"
         case inappropriate = "Inappropriate content"
-        case ownership = "I am the real owner of this business"
-        case inaccurateLocation = "Location is highly inaccurate"
+        case ownership = "Landmark ownership issue"
         case other = "Other / Custom Issue"
 
         var id: String { rawValue }
 
         var icon: String {
             switch self {
-            case .fakeObject: return "trash.slash.fill"
             case .inappropriate: return "exclamationmark.shield.fill"
             case .ownership: return "person.badge.key.fill"
-            case .inaccurateLocation: return "map.fill"
             case .other: return "text.bubble.fill"
             }
         }
 
         var tintColor: Color {
             switch self {
-            case .fakeObject: return .red
             case .inappropriate: return .orange
             case .ownership: return .purple
-            case .inaccurateLocation: return .blue
             case .other: return .secondary
             }
         }
@@ -483,23 +483,24 @@ struct MapReportSheet: View {
 
     private var isFormValid: Bool {
         guard let reason = selectedReason else { return false }
-        
-        // The word count cannot exceed maxWords for any reason
+         
         if wordCount > maxWords { return false }
-        
+         
         if reason == .other {
-            // If 'Other' is selected, they MUST write something
-            return !customExplanation.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            // 🚀 If 'Other' is selected, they MUST provide both a title and an explanation
+            let hasTitle = !customTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            let hasDesc = !customExplanation.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            return hasTitle && hasDesc
         }
-        
-        // For all other reasons, text is completely optional
+         
+        // For standard reasons, text is optional
         return true
     }
 
     var body: some View {
         ZStack {
             Color(uiColor: .systemGroupedBackground).ignoresSafeArea()
-            
+             
             if reportSuccess {
                 VStack(spacing: 16) {
                     Image(systemName: "checkmark.circle.fill")
@@ -522,7 +523,7 @@ struct MapReportSheet: View {
                                 Text("Report Landmark")
                                     .font(.system(size: 26, weight: .bold, design: .rounded))
                                     .foregroundStyle(.primary)
-                                
+                               
                                 Text("Why are you reporting '\(landmarkLabel)'?")
                                     .font(.system(size: 15, weight: .medium))
                                     .foregroundStyle(.secondary)
@@ -538,6 +539,22 @@ struct MapReportSheet: View {
 
                             if selectedReason != nil {
                                 VStack(alignment: .leading, spacing: 8) {
+                                   
+                                    // 🚀 NEW: Shows Title Field when "Other" is selected
+                                    if selectedReason == .other {
+                                        Text("Custom Issue Title (Required)")
+                                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                                            .foregroundStyle(.secondary)
+                                            .textCase(.uppercase)
+                                       
+                                        TextField("Short title of the issue", text: $customTitle)
+                                            .font(.system(size: 15))
+                                            .padding(12)
+                                            .background(Color(uiColor: .tertiarySystemGroupedBackground))
+                                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                                            .padding(.bottom, 8)
+                                    }
+                                   
                                     Text(selectedReason == .other ? "Please describe the issue (Required)" : "Additional details (Optional)")
                                         .font(.system(size: 13, weight: .bold, design: .rounded))
                                         .foregroundStyle(.secondary)
@@ -627,7 +644,7 @@ struct MapReportSheet: View {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .fill(reason.tintColor.opacity(0.15))
                         .frame(width: 42, height: 42)
-                    
+                   
                     Image(systemName: reason.icon)
                         .font(.system(size: 18, weight: .semibold))
                         .foregroundStyle(reason.tintColor)
@@ -644,7 +661,7 @@ struct MapReportSheet: View {
                     Circle()
                         .stroke(isSelected ? primaryColor : Color(uiColor: .tertiaryLabel), lineWidth: 2)
                         .frame(width: 22, height: 22)
-                    
+                   
                     if isSelected {
                         Circle()
                             .fill(primaryColor)
@@ -669,29 +686,38 @@ struct MapReportSheet: View {
     private func submitReport() async {
         UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
         isSubmitting = true
-        
+         
         let safeExplanation = customExplanation.trimmingCharacters(in: .whitespacesAndNewlines)
-        let finalReason = selectedReason?.rawValue ?? "Unknown"
+        let safeCustomTitle = customTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+         
+        // 🚀 Determines the title format depending on if they used 'Other' or a standard reason
+        let finalReason = (selectedReason == .other && !safeCustomTitle.isEmpty) ? safeCustomTitle : (selectedReason?.rawValue ?? "Unknown")
+        let finalCategory = selectedReason == .other ? "Custom Issue" : "Content Report"
 
-        SentrySDK.capture(message: "[Reported Landmark] \(landmarkLabel)", block: { scope in
-            scope.setTag(value: "Content Report", key: "Category")
+        // 🚀 This makes it come in perfectly formatted: "[Custom Title] Landmark Name"
+        SentrySDK.capture(message: "[\(finalReason)] \(landmarkLabel)", block: { scope in
+           
+            // Proactive fix: Override fingerprint to guarantee map reports don't group together!
+            let uniqueReportTicket = UUID().uuidString
+            scope.setFingerprint([uniqueReportTicket])
+           
+            scope.setTag(value: finalCategory, key: "Category")
             scope.setTag(value: finalReason, key: "Report Reason")
-            
-            // Log the custom text if they wrote anything
+           
             if !safeExplanation.isEmpty {
                 scope.setExtra(value: safeExplanation, key: "User Explanation")
             }
-            
+           
             scope.setExtra(value: landmarkId, key: "Reported Landmark ID")
             scope.setExtra(value: reportedOwnerId, key: "Reported Owner ID")
             scope.setExtra(value: vm.userEmail, key: "Reporter Email")
         })
-        
+         
         try? await Task.sleep(nanoseconds: 800_000_000)
-        
+         
         isSubmitting = false
         withAnimation { reportSuccess = true }
-        
+         
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
             dismiss()
         }

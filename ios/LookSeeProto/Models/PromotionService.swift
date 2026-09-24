@@ -89,7 +89,13 @@ final class PromotionService: ObservableObject {
         }
 
         do {
-            let (data, response) = try await URLSession.shared.data(from: url)
+            var req = URLRequest(url: url)
+            req.httpMethod = "GET"
+            
+            // 🚀 ADDED: Attaches App Attest signature headers automatically
+            await req.signWithAppAttest()
+
+            let (data, response) = try await URLSession.shared.data(for: req)
             guard let http = response as? HTTPURLResponse,
                   (200...299).contains(http.statusCode) else {
                 errorMessage = "Failed to load promotions."
@@ -106,11 +112,17 @@ final class PromotionService: ObservableObject {
     func fetchPromotionsForLandmark(landmarkId: String) async -> [PromotionPayload] {
         var components = URLComponents(url: baseURL.appendingPathComponent("promotions/by-landmark"), resolvingAgainstBaseURL: false)!
         components.queryItems = [URLQueryItem(name: "landmarkId", value: landmarkId)]
-        
+         
         guard let url = components.url else { return [] }
 
         do {
-            let (data, _) = try await URLSession.shared.data(from: url)
+            var req = URLRequest(url: url)
+            req.httpMethod = "GET"
+            
+            // 🚀 ADDED: Attaches App Attest signature headers automatically
+            await req.signWithAppAttest()
+
+            let (data, _) = try await URLSession.shared.data(for: req)
             let decoded = try JSONDecoder().decode(PromotionListResponse.self, from: data)
             return decoded.items
         } catch {
@@ -122,13 +134,19 @@ final class PromotionService: ObservableObject {
     func fetchPromotionsByLabel(label: String) async -> [PromotionPayload] {
         var components = URLComponents(url: baseURL.appendingPathComponent("promotions/by-label"), resolvingAgainstBaseURL: false)!
         components.queryItems = [URLQueryItem(name: "landmarkLabel", value: label)]
-        
+         
         guard let url = components.url else { return [] }
 
         do {
-            let (data, response) = try await URLSession.shared.data(from: url)
-            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return [] }
+            var req = URLRequest(url: url)
+            req.httpMethod = "GET"
             
+            // 🚀 ADDED: Attaches App Attest signature headers automatically
+            await req.signWithAppAttest()
+
+            let (data, response) = try await URLSession.shared.data(for: req)
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return [] }
+             
             let decoded = try JSONDecoder().decode(PromotionListResponse.self, from: data)
             return decoded.items
         } catch {
@@ -206,6 +224,9 @@ final class PromotionService: ObservableObject {
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
             req.httpBody = try JSONEncoder().encode(body)
 
+            // 🚀 ADDED: Attaches App Attest signature headers automatically
+            await req.signWithAppAttest()
+
             let (data, response) = try await URLSession.shared.data(for: req)
             guard let http = response as? HTTPURLResponse,
                   (200...299).contains(http.statusCode) else {
@@ -240,6 +261,9 @@ final class PromotionService: ObservableObject {
             var req = URLRequest(url: url)
             req.httpMethod = "DELETE"
 
+            // 🚀 ADDED: Attaches App Attest signature headers automatically
+            await req.signWithAppAttest()
+
             let (_, response) = try await URLSession.shared.data(for: req)
             guard let http = response as? HTTPURLResponse,
                   (200...299).contains(http.statusCode) else {
@@ -264,6 +288,9 @@ final class PromotionService: ObservableObject {
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try JSONEncoder().encode(body)
+
+        // 🚀 ADDED: Attaches App Attest signature headers automatically
+        await req.signWithAppAttest()
 
         let (data, response) = try await URLSession.shared.data(for: req)
         guard let http = response as? HTTPURLResponse,

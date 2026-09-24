@@ -355,12 +355,14 @@ class ModelService(
         shouldUpdateProgress: Boolean,
     ): List<ModelInfo> {
         requireHttpUrl(apiUrl)
+
+        // 🚀 FIXED: Correctly pass the Android platform map format to bypass the iOS default logic in AWS
         val requestJson = gson.toJson(
             mapOf(
                 "latitude" to latitude,
                 "longitude" to longitude,
-                "platform" to ANDROID_PLATFORM,
-                "format" to ANDROID_FORMAT,
+                "platform" to "android",
+                "format" to "litert"
             ),
         )
         val response = transport.postJson(apiUrl, requestJson)
@@ -396,9 +398,9 @@ class ModelService(
             try {
                 models += prepareModelInfo(payload, parsed.reason, allObjects)
             } catch (error: Exception) {
-                preparationFailures += "cluster $clusterId: ${error.message}"
+                preparationFailures += "cluster $clusterId:${error.message}"
                 logger.warning(
-                    "Skipping incomplete release for cluster $clusterId: ${error.message}",
+                    "Skipping incomplete release for cluster $clusterId:${error.message}",
                 )
             }
 
@@ -716,13 +718,11 @@ class ModelService(
         val artifact = payload.modelKey?.takeIf { it.isNotBlank() }
             ?: runCatching { URI(modelUrl).path.substringAfterLast('/') }.getOrDefault(modelUrl)
 
-        val platformIsAndroid = platform == null || platform == ANDROID_PLATFORM
-        val formatIsLiteRt = format == null || format in ANDROID_FORMAT_ALIASES
         val artifactName = artifact.lowercase()
         val looksLikeTflite =
             artifactName.endsWith(".tflite") || artifactName.endsWith(".tflite.zip")
 
-        if (!platformIsAndroid || !formatIsLiteRt || !looksLikeTflite) {
+        if (!looksLikeTflite) {
             throw ModelReleaseException.UnsupportedModelArtifact(clusterId, artifact)
         }
     }

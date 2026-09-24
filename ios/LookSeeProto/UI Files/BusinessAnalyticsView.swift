@@ -77,17 +77,17 @@ class BusinessAnalyticsViewModel: ObservableObject {
     var timeSeriesData: [TimeSeriesPoint] {
         guard let template = data.first?.dailyData else { return [] }
         var merged = [String: Int]()
-        
+         
         for item in data {
             for point in item.dailyData {
                 merged[point.date, default: 0] += point.clicks
             }
         }
-        
+         
         let currentYear = Calendar.current.component(.year, from: Date())
         let formatter = DateFormatter()
         formatter.dateFormat = "MM/dd/yyyy"
-        
+         
         return template.compactMap { point in
             let dateString = "\(point.date)/\(currentYear)"
             guard let exactDate = formatter.date(from: dateString) else { return nil }
@@ -97,20 +97,23 @@ class BusinessAnalyticsViewModel: ObservableObject {
 
     func fetchAnalytics(vm: AuthViewModel) async {
         guard !vm.userId.isEmpty else { return }
-        
+         
         guard let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/analytics") else { return }
-        
+         
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
-        
+         
         let idToken = await vm.fetchIdToken()
         if !idToken.isEmpty {
             request.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
         }
 
+        // 🚀 ADDED: Attaches App Attest and Cognito token headers automatically
+        await request.signWithAppAttest(idToken: idToken)
+
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
-            
+             
             if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
                 do {
                     let decoded = try JSONDecoder().decode(AnalyticsResponse.self, from: data)
@@ -155,15 +158,15 @@ struct BusinessAnalyticsView: View {
                     emptyStateView
                 } else {
                     kpiGrid
-                    
+                     
                     chartToggle
-                    
+                     
                     if chartMode == .trend {
                         trendChartSection
                     } else {
                         distributionChartSection
                     }
-                    
+                     
                     leaderboardSection
                 }
             }
@@ -204,7 +207,7 @@ struct BusinessAnalyticsView: View {
             .background(Color(uiColor: .secondarySystemGroupedBackground))
             .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
             .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2)
-            
+             
             HStack(spacing: 12) {
                 kpiCard(title: "Landmarks", value: "\(viewModel.data.count)", icon: "mappin.and.ellipse", color: .purple)
                 kpiCard(title: "Top Performer", value: viewModel.topLandmark, icon: "star.fill", color: .orange)
@@ -224,7 +227,7 @@ struct BusinessAnalyticsView: View {
                     .textCase(.uppercase)
                 Spacer()
             }
-            
+             
             Text(value)
                 .font(.system(size: 18, weight: .bold, design: .rounded))
                 .foregroundStyle(.primary)
@@ -251,7 +254,7 @@ struct BusinessAnalyticsView: View {
             Text("Engagement Over Time (30 Days)")
                 .font(.system(size: 16, weight: .bold, design: .rounded))
                 .padding(.horizontal, 20)
-            
+             
             VStack {
                 if viewModel.totalViews == 0 {
                     noDataChartPlaceholder
@@ -268,7 +271,7 @@ struct BusinessAnalyticsView: View {
                                 endPoint: .bottom
                             )
                         )
-                        
+                         
                         LineMark(
                             x: .value("Date", item.date),
                             y: .value("Views", item.clicks)
@@ -299,7 +302,7 @@ struct BusinessAnalyticsView: View {
             Text("Views by Landmark")
                 .font(.system(size: 16, weight: .bold, design: .rounded))
                 .padding(.horizontal, 20)
-            
+             
             VStack {
                 if viewModel.activeLandmarksWithViews.isEmpty {
                     noDataChartPlaceholder
@@ -372,23 +375,23 @@ struct BusinessAnalyticsView: View {
                 .font(.system(size: 16, weight: .bold, design: .rounded))
                 .padding(.horizontal, 20)
                 .padding(.top, 8)
-            
+             
             VStack(spacing: 0) {
                 ForEach(Array(viewModel.sortedLandmarks.enumerated()), id: \.element.id) { index, landmark in
                     HStack(spacing: 16) {
-                        
+                         
                         // Rank Number
                         Text("\(index + 1)")
                             .font(.system(size: 14, weight: .bold, design: .monospaced))
                             .foregroundStyle(.tertiary)
                             .frame(width: 24, alignment: .leading)
-                        
+                         
                         Text(landmark.label.isEmpty ? "Untitled Landmark" : landmark.label)
                             .font(.system(size: 16, weight: .semibold, design: .rounded))
                             .foregroundStyle(.primary)
-                        
+                         
                         Spacer()
-                        
+                         
                         Text("\(landmark.totalClicks)")
                             .font(.system(size: 16, weight: .bold, design: .rounded))
                             .padding(.horizontal, 12)
@@ -399,7 +402,7 @@ struct BusinessAnalyticsView: View {
                     }
                     .padding(.horizontal, 20)
                     .padding(.vertical, 14)
-                    
+                     
                     if landmark.landmarkId != viewModel.sortedLandmarks.last?.landmarkId {
                         Divider().padding(.leading, 60)
                     }

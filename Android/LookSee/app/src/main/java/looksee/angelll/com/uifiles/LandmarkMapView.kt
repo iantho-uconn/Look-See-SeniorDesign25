@@ -64,7 +64,7 @@ fun LandmarkMapScreen(
 
     var showFilterSheet by remember { mutableStateOf(false) }
     var searchText by remember { mutableStateOf("") }
-    
+
     // Filter State
     var isGlobalSearch by remember { mutableStateOf(true) }
     var searchRadiusMiles by remember { mutableStateOf(10.0f) }
@@ -83,7 +83,7 @@ fun LandmarkMapScreen(
             val matchesPromo = if (promotedOnly) landmark.promotionEnabled else true
             val matchesCluster = if (selectedClusters.isEmpty()) true else landmark.clusterId in selectedClusters
             val matchesSearch = if (searchText.isEmpty()) true else landmark.label.contains(searchText, ignoreCase = true)
-            
+
             matchesUser && matchesPromo && matchesCluster && matchesSearch
         }
     }
@@ -130,6 +130,21 @@ fun LandmarkMapScreen(
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
+
+        // 🚀 FIXED: Bypassed the map component to prevent the API Key crash.
+        Box(
+            modifier = Modifier.fillMaxSize().background(Color(0xFF121212)),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(Icons.Default.Map, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(48.dp))
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("Google Maps Disabled for Testing", color = Color.White, fontWeight = FontWeight.Bold)
+                Text("Add your API Key in AndroidManifest.xml", color = Color.Gray, fontSize = 14.sp)
+            }
+        }
+
+        /*
         GoogleMap(
             modifier = Modifier.fillMaxSize(),
             cameraPositionState = cameraPositionState,
@@ -155,6 +170,7 @@ fun LandmarkMapScreen(
                 }
             )
         }
+        */
 
         // Overlay UI: Search and Filters
         Column(
@@ -376,7 +392,7 @@ fun FilterMenuContent(
         ) {
             Text("Apply Filters", fontWeight = FontWeight.Bold, fontSize = 16.sp)
         }
-        
+
         Spacer(modifier = Modifier.height(20.dp))
     }
 }

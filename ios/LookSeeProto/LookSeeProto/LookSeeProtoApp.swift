@@ -42,7 +42,7 @@ struct LookSeeProtoApp: App {
     func configureSentry() {
         SentrySDK.start { options in
             // Your Live Sentry DSN Key
-            options.dsn = "https://e9ee0e43b4735fe777a4d240a4423a56@o4512005291573248.ingest.us.sentry.io/4512005308743681"
+            options.dsn = "https://624e9e0d4b4c1bb5a0de8ceeebb7dcc9@o4512107452301312.ingest.us.sentry.io/4512107464097792"
             
             // Enable performance monitoring
             options.tracesSampleRate = 1.0

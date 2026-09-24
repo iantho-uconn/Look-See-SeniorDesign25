@@ -3,32 +3,26 @@ package looksee.angelll.com.detection
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
-import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.util.Range
 import android.util.Size as AndroidSize
-import androidx.annotation.OptIn
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.changedToUp
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.camera.core.ImageAnalysis
-import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.core.resolutionselector.AspectRatioStrategy
 import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
-import androidx.camera.core.UseCaseGroup
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
-import androidx.camera.view.TransformExperimental
-import androidx.camera.view.transform.CoordinateTransform
-import androidx.camera.view.transform.ImageProxyTransformFactory
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -42,6 +36,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
@@ -69,9 +64,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
-import java.nio.ByteBuffer
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
@@ -80,13 +73,6 @@ import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.max
 import kotlin.math.min
 
-/**
- * CameraX equivalent of the shared AVCaptureSession coordinator used by iOS.
- *
- * The coordinator owns the back-camera preview and one KEEP_ONLY_LATEST RGBA
- * analysis stream. The caller owns [Detector]; stopping the camera never closes
- * or resets the detector/model release.
- */
 internal class CameraSessionCoordinator(
     context: Context,
     private val detector: Detector,
@@ -99,27 +85,16 @@ internal class CameraSessionCoordinator(
     private val frameInFlight = AtomicBoolean(false)
     private val analysisFrameRateGate = FrameRateGate(MAX_ANALYSIS_FPS)
 
-    @Volatile
-    private var cameraProvider: ProcessCameraProvider? = null
+    @Volatile private var cameraProvider: ProcessCameraProvider? = null
+    @Volatile private var imageAnalysis: ImageAnalysis? = null
+    @Volatile private var camera: Camera? = null
+    @Volatile private var closed = false
+    @Volatile private var requestedZoom = 1f
 
-    @Volatile
-    private var imageAnalysis: ImageAnalysis? = null
-
-    @Volatile
-    private var camera: Camera? = null
-
-    @Volatile
-    private var closed = false
-
-    @Volatile
-    private var requestedZoom = 1f
-
-    /** Starts or rebinds preview and analysis after [previewView] has a viewport. */
-    @OptIn(TransformExperimental::class)
     fun start(
         lifecycleOwner: LifecycleOwner,
         previewView: PreviewView,
-        onPreviewTransform: (PreviewTransform?) -> Unit,
+        onImageDimensions: (IntSize?) -> Unit,
         onError: (Throwable) -> Unit,
     ) {
         if (closed) return
@@ -128,12 +103,6 @@ internal class CameraSessionCoordinator(
         previewView.post {
             if (closed || generation != bindingGeneration.get()) return@post
 
-            val viewPort = previewView.viewPort
-            if (viewPort == null) {
-                onError(IllegalStateException("Camera preview has no viewport yet."))
-                return@post
-            }
-
             val providerFuture = ProcessCameraProvider.getInstance(appContext)
             providerFuture.addListener(
                 {
@@ -141,10 +110,22 @@ internal class CameraSessionCoordinator(
 
                     try {
                         val provider = providerFuture.get()
-                        val resolutionSelector = ResolutionSelector.Builder()
-                            .setAspectRatioStrategy(
-                                AspectRatioStrategy.RATIO_16_9_FALLBACK_AUTO_STRATEGY,
-                            )
+                        val displayRotation = previewView.display?.rotation ?: android.view.Surface.ROTATION_0
+
+                        // 🚀 FIXED: Allow the Preview to use the full screen 16:9/4:3 resolution so it looks crystal clear.
+                        val previewResolutionSelector = ResolutionSelector.Builder()
+                            .setAspectRatioStrategy(AspectRatioStrategy.RATIO_16_9_FALLBACK_AUTO_STRATEGY)
+                            .build()
+
+                        val preview = Preview.Builder()
+                            .setResolutionSelector(previewResolutionSelector)
+                            .setTargetRotation(displayRotation)
+                            .build().also { useCase ->
+                                useCase.surfaceProvider = previewView.surfaceProvider
+                            }
+
+                        // 🚀 FIXED: Restrict ONLY the ImageAnalyzer to 640x480 for the TFLite Model.
+                        val analysisResolutionSelector = ResolutionSelector.Builder()
                             .setResolutionStrategy(
                                 ResolutionStrategy(
                                     AndroidSize(TARGET_WIDTH, TARGET_HEIGHT),
@@ -152,14 +133,10 @@ internal class CameraSessionCoordinator(
                                 ),
                             )
                             .build()
-                        val preview = Preview.Builder()
-                            .setResolutionSelector(resolutionSelector)
-                            .setTargetFrameRate(Range(MAX_ANALYSIS_FPS, MAX_ANALYSIS_FPS))
-                            .build().also { useCase ->
-                                useCase.surfaceProvider = previewView.surfaceProvider
-                            }
+
                         val analysis = ImageAnalysis.Builder()
-                            .setResolutionSelector(resolutionSelector)
+                            .setResolutionSelector(analysisResolutionSelector)
+                            .setTargetRotation(displayRotation)
                             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                             .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
                             .setOutputImageRotationEnabled(true)
@@ -175,31 +152,31 @@ internal class CameraSessionCoordinator(
                             }
 
                             try {
-                                val sourceTransform = ImageProxyTransformFactory().apply {
-                                    setUsingCropRect(true)
-                                    setUsingRotationDegrees(true)
-                                }.getOutputTransform(image)
-                                val frame = image.toDetectorFrame()
+                                val bitmap = image.toBitmap()
+                                val cropWidth = bitmap.width
+                                val cropHeight = bitmap.height
+
+                                val frame = DetectorFrame(
+                                    width = cropWidth,
+                                    height = cropHeight,
+                                    bitmap = bitmap
+                                )
 
                                 mainExecutor.execute {
                                     if (generation != bindingGeneration.get()) {
                                         frameInFlight.set(false)
+                                        bitmap.recycle()
                                         return@execute
                                     }
-                                    val targetTransform = previewView.outputTransform
-                                    if (targetTransform == null) {
-                                        frameInFlight.set(false)
-                                        return@execute
-                                    }
-                                    val matrix = Matrix()
-                                    CoordinateTransform(sourceTransform, targetTransform)
-                                        .transform(matrix)
-                                    onPreviewTransform(PreviewTransform.from(matrix))
+
+                                    onImageDimensions(IntSize(cropWidth, cropHeight))
+
                                     detectorScope.launch {
                                         try {
                                             detector.process(frame)
                                         } finally {
                                             frameInFlight.set(false)
+                                            bitmap.recycle()
                                         }
                                     }
                                 }
@@ -211,23 +188,18 @@ internal class CameraSessionCoordinator(
                             }
                         }
 
-                        val useCaseGroup = UseCaseGroup.Builder()
-                            .setViewPort(viewPort)
-                            .addUseCase(preview)
-                            .addUseCase(analysis)
-                            .build()
-
                         provider.unbindAll()
                         camera = provider.bindToLifecycle(
                             lifecycleOwner,
                             CameraSelector.DEFAULT_BACK_CAMERA,
-                            useCaseGroup,
+                            preview,
+                            analysis
                         )
                         cameraProvider = provider
                         imageAnalysis = analysis
                         setZoom(requestedZoom)
                     } catch (error: Throwable) {
-                        onPreviewTransform(null)
+                        onImageDimensions(null)
                         onError(error)
                     }
                 },
@@ -236,18 +208,16 @@ internal class CameraSessionCoordinator(
         }
     }
 
-    /** Stops camera hardware while leaving this coordinator reusable. */
-    fun stop(onPreviewTransform: (PreviewTransform?) -> Unit = {}) {
+    fun stop(onImageDimensions: (IntSize?) -> Unit = {}) {
         bindingGeneration.incrementAndGet()
         imageAnalysis?.clearAnalyzer()
         imageAnalysis = null
         cameraProvider?.unbindAll()
         camera = null
         frameInFlight.set(false)
-        onPreviewTransform(null)
+        onImageDimensions(null)
     }
 
-    /** Applies the iOS-compatible 1x through 5x zoom range. */
     fun setZoom(factor: Float): Float {
         val activeCamera = camera
         if (activeCamera == null) {
@@ -274,13 +244,12 @@ internal class CameraSessionCoordinator(
     private companion object {
         const val MIN_ZOOM = 1f
         const val MAX_ZOOM = 5f
-        const val TARGET_WIDTH = 1920
-        const val TARGET_HEIGHT = 1080
+        const val TARGET_WIDTH = 640
+        const val TARGET_HEIGHT = 480
         const val MAX_ANALYSIS_FPS = 30
     }
 }
 
-/** Monotonic frame gate used to cap detector work even if a camera emits above 30 fps. */
 internal class FrameRateGate(maxFramesPerSecond: Int) {
     private val minimumIntervalNanos = 1_000_000_000L / maxFramesPerSecond.also {
         require(it > 0) { "maxFramesPerSecond must be positive." }
@@ -300,12 +269,6 @@ internal class FrameRateGate(maxFramesPerSecond: Int) {
     }
 }
 
-/**
- * Live LookSee camera preview, detector feed, safe-zone overlay, and gestures.
- *
- * [safeZoneRect] uses PreviewView pixel coordinates. Passing null preserves the
- * Swift `.zero` behavior and treats the whole preview as the safe zone.
- */
 @Composable
 fun CameraPreview(
     detector: Detector,
@@ -318,6 +281,7 @@ fun CameraPreview(
     isAIPaused: Boolean,
     onBoxTap: (Detection) -> Unit,
     modifier: Modifier = Modifier,
+    hideBoundingBoxes: Boolean = false,
     onCameraPermissionResult: (Boolean) -> Unit = {},
     onCameraError: (Throwable) -> Unit = {},
 ) {
@@ -334,7 +298,7 @@ fun CameraPreview(
         )
     }
     var previewView by remember { mutableStateOf<PreviewView?>(null) }
-    var previewTransform by remember { mutableStateOf<PreviewTransform?>(null) }
+    var imageDimensions by remember { mutableStateOf<IntSize?>(null) }
     var overlaySize by remember { mutableStateOf(IntSize.Zero) }
     var cameraError by remember { mutableStateOf<Throwable?>(null) }
 
@@ -354,38 +318,28 @@ fun CameraPreview(
         CameraSessionCoordinator(context, detector)
     }
 
-    val detections by detector.detections.collectAsComposeState()
-    val visibleDetections = if (isAIPaused) emptyList() else detections
-    val horizontalMargin = with(density) { 16.dp.toPx() }
-    val verticalMargin = with(density) { 80.dp.toPx() }
-    val minimumBoxSize = with(density) { 10.dp.toPx() }
     val hitExpansion = with(density) { 40.dp.toPx() }
-
-    val displayDetections = remember(
-        visibleDetections,
-        previewTransform,
-        overlaySize,
-        showSafeZone,
-        safeZoneRect,
-        horizontalMargin,
-        verticalMargin,
-        minimumBoxSize,
-    ) {
-        mapDisplayDetections(
-            detections = visibleDetections,
-            transform = previewTransform,
-            overlayWidth = overlaySize.width.toFloat(),
-            overlayHeight = overlaySize.height.toFloat(),
-            showSafeZone = showSafeZone,
-            safeZoneRect = safeZoneRect,
-            horizontalMargin = horizontalMargin,
-            verticalMargin = verticalMargin,
-            minimumBoxSize = minimumBoxSize,
-        )
-    }
 
     LaunchedEffect(Unit) {
         if (!cameraPermissionGranted) permissionLauncher.launch(Manifest.permission.CAMERA)
+    }
+
+    LaunchedEffect(cameraPermissionGranted, previewView) {
+        val view = previewView
+        if (cameraPermissionGranted && view != null) {
+            cameraError = null
+            coordinator.start(
+                lifecycleOwner = lifecycleOwner,
+                previewView = view,
+                onImageDimensions = { imageDimensions = it },
+                onError = { error ->
+                    cameraError = error
+                    currentOnCameraError(error)
+                },
+            )
+        } else {
+            coordinator.stop { imageDimensions = it }
+        }
     }
 
     LaunchedEffect(isAIPaused) {
@@ -394,24 +348,6 @@ fun CameraPreview(
 
     LaunchedEffect(zoomLevel, cameraPermissionGranted) {
         if (cameraPermissionGranted) coordinator.setZoom(zoomLevel)
-    }
-
-    LaunchedEffect(cameraPermissionGranted, isAIPaused, previewView) {
-        val view = previewView
-        if (cameraPermissionGranted && !isAIPaused && view != null) {
-            cameraError = null
-            coordinator.start(
-                lifecycleOwner = lifecycleOwner,
-                previewView = view,
-                onPreviewTransform = { previewTransform = it },
-                onError = { error ->
-                    cameraError = error
-                    currentOnCameraError(error)
-                },
-            )
-        } else {
-            coordinator.stop { previewTransform = it }
-        }
     }
 
     DisposableEffect(coordinator) {
@@ -435,24 +371,46 @@ fun CameraPreview(
         modifier = modifier
             .background(Color.Black)
             .onSizeChanged { overlaySize = it }
-            .pointerInput(displayDetections, hitExpansion) {
-                detectTapGestures { location ->
-                    currentOnTap()
-                    displayDetections.firstOrNull { target ->
-                        target.box.expandedBy(hitExpansion)
-                            .contains(location.x, location.y)
-                    }?.let { target ->
-                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                        currentOnBoxTap(target.detection)
-                    }
-                }
-            }
-            .pointerInput(coordinator) {
-                detectTransformGestures { _, _, zoomChange, _ ->
-                    if (zoomChange != 1f) {
-                        val adjustedZoom = coordinator.adjustZoom(zoomChange)
-                        currentOnZoomLevelChange(adjustedZoom)
-                        currentOnPinch()
+            .pointerInput(imageDimensions, overlaySize, showSafeZone, safeZoneRect, hideBoundingBoxes) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        val changes = event.changes
+                        if (changes.size == 1 && changes.first().changedToUp()) {
+                            val location = changes.first().position
+                            currentOnTap()
+
+                            if (!hideBoundingBoxes) {
+                                val mapped = mapDisplayDetections(
+                                    detections = detector.detections.value,
+                                    imageDimensions = imageDimensions,
+                                    overlayWidth = overlaySize.width.toFloat(),
+                                    overlayHeight = overlaySize.height.toFloat(),
+                                    showSafeZone = showSafeZone,
+                                    safeZoneRect = safeZoneRect,
+                                    horizontalMargin = with(density) { 16.dp.toPx() },
+                                    verticalMargin = with(density) { 80.dp.toPx() },
+                                    minimumBoxSize = with(density) { 10.dp.toPx() },
+                                )
+
+                                mapped.firstOrNull { target ->
+                                    target.box.expandedBy(hitExpansion)
+                                        .contains(location.x, location.y)
+                                }?.let { target ->
+                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    currentOnBoxTap(target.detection)
+                                    changes.first().consume()
+                                }
+                            }
+                        } else if (changes.size >= 2) {
+                            val zoomChange = event.calculateZoom()
+                            if (zoomChange != 1f) {
+                                val adjustedZoom = coordinator.adjustZoom(zoomChange)
+                                currentOnZoomLevelChange(adjustedZoom)
+                                currentOnPinch()
+                            }
+                            changes.forEach { it.consume() } // 🚀 FIXED: Consume touch events so HorizontalPager doesn't slide
+                        }
                     }
                 }
             },
@@ -461,7 +419,6 @@ fun CameraPreview(
             factory = { viewContext ->
                 PreviewView(viewContext).apply {
                     scaleType = PreviewView.ScaleType.FILL_CENTER
-                    // TextureView mode guarantees the Compose overlay stays above preview.
                     implementationMode = PreviewView.ImplementationMode.COMPATIBLE
                     previewView = this
                 }
@@ -470,9 +427,12 @@ fun CameraPreview(
         )
 
         DetectionOverlay(
-            detections = displayDetections,
+            detector = detector,
+            imageDimensions = imageDimensions,
+            overlaySize = overlaySize,
             showSafeZone = showSafeZone,
             safeZoneRect = safeZoneRect,
+            hideBoundingBoxes = hideBoundingBoxes,
             modifier = Modifier.fillMaxSize(),
         )
 
@@ -508,12 +468,46 @@ private fun CameraPermissionMessage(
 
 @Composable
 private fun DetectionOverlay(
-    detections: List<DisplayDetection>,
+    detector: Detector,
+    imageDimensions: IntSize?,
+    overlaySize: IntSize,
     showSafeZone: Boolean,
     safeZoneRect: DetectionBox?,
+    hideBoundingBoxes: Boolean,
     modifier: Modifier,
 ) {
+    if (hideBoundingBoxes || imageDimensions == null || overlaySize == IntSize.Zero) return
+
+    val visibleDetections by detector.detections.collectAsState()
+
     val density = LocalDensity.current
+    val horizontalMargin = remember { with(density) { 16.dp.toPx() } }
+    val verticalMargin = remember { with(density) { 80.dp.toPx() } }
+    val minimumBoxSize = remember { with(density) { 10.dp.toPx() } }
+
+    val displayDetections = remember(
+        visibleDetections,
+        imageDimensions,
+        overlaySize,
+        showSafeZone,
+        safeZoneRect,
+        horizontalMargin,
+        verticalMargin,
+        minimumBoxSize,
+    ) {
+        mapDisplayDetections(
+            detections = visibleDetections,
+            imageDimensions = imageDimensions,
+            overlayWidth = overlaySize.width.toFloat(),
+            overlayHeight = overlaySize.height.toFloat(),
+            showSafeZone = showSafeZone,
+            safeZoneRect = safeZoneRect,
+            horizontalMargin = horizontalMargin,
+            verticalMargin = verticalMargin,
+            minimumBoxSize = minimumBoxSize,
+        )
+    }
+
     val green = Color(0xFF34C759)
     val cyan = Color(0xCC00CCFF)
     val boxStroke = with(density) { 4.dp.toPx() }
@@ -564,7 +558,7 @@ private fun DetectionOverlay(
             )
         }
 
-        detections.forEach { target ->
+        displayDetections.forEach { target ->
             val box = target.box
             drawRoundRect(
                 color = green,
@@ -574,8 +568,7 @@ private fun DetectionOverlay(
                 style = Stroke(width = boxStroke),
             )
 
-            val confidencePercent = (target.detection.confidence * 100).toInt()
-            val labelText = "${target.label} $confidencePercent%"
+            val labelText = target.label
 
             val metrics = labelPaint.fontMetrics
             val textHeight = metrics.descent - metrics.ascent
@@ -604,7 +597,7 @@ private fun DetectionOverlay(
             }
         }
 
-        if (showSafeZone && detections.isEmpty()) {
+        if (showSafeZone && displayDetections.isEmpty()) {
             drawRect(
                 color = cyan,
                 topLeft = Offset(activeSafeZone.left, activeSafeZone.top),
@@ -621,57 +614,9 @@ private data class DisplayDetection(
     val label: String,
 )
 
-/** Immutable CameraX transform snapshot that is safe to retain after ImageProxy.close(). */
-internal class PreviewTransform internal constructor(
-    internal val values: FloatArray,
-) {
-    init {
-        require(values.size == MATRIX_VALUE_COUNT) { "A 3x3 matrix needs nine values." }
-    }
-
-    fun map(box: DetectionBox): DetectionBox {
-        val corners = arrayOf(
-            mapPoint(box.left, box.top),
-            mapPoint(box.right, box.top),
-            mapPoint(box.right, box.bottom),
-            mapPoint(box.left, box.bottom),
-        )
-        return DetectionBox(
-            left = corners.minOf { it.first },
-            top = corners.minOf { it.second },
-            right = corners.maxOf { it.first },
-            bottom = corners.maxOf { it.second },
-        )
-    }
-
-    private fun mapPoint(x: Float, y: Float): Pair<Float, Float> {
-        val denominator = values[6] * x + values[7] * y + values[8]
-        val safeDenominator = if (denominator == 0f) 1f else denominator
-        return Pair(
-            (values[0] * x + values[1] * y + values[2]) / safeDenominator,
-            (values[3] * x + values[4] * y + values[5]) / safeDenominator,
-        )
-    }
-
-    override fun equals(other: Any?): Boolean =
-        other is PreviewTransform && values.contentEquals(other.values)
-
-    override fun hashCode(): Int = values.contentHashCode()
-
-    companion object {
-        private const val MATRIX_VALUE_COUNT = 9
-
-        fun from(matrix: Matrix): PreviewTransform {
-            val values = FloatArray(MATRIX_VALUE_COUNT)
-            matrix.getValues(values)
-            return PreviewTransform(values)
-        }
-    }
-}
-
 private fun mapDisplayDetections(
     detections: List<Detection>,
-    transform: PreviewTransform?,
+    imageDimensions: IntSize?,
     overlayWidth: Float,
     overlayHeight: Float,
     showSafeZone: Boolean,
@@ -680,7 +625,25 @@ private fun mapDisplayDetections(
     verticalMargin: Float,
     minimumBoxSize: Float,
 ): List<DisplayDetection> {
-    if (transform == null || overlayWidth <= 0f || overlayHeight <= 0f) return emptyList()
+    if (imageDimensions == null || overlayWidth <= 0f || overlayHeight <= 0f) return emptyList()
+
+    val imageWidth = imageDimensions.width.toFloat()
+    val imageHeight = imageDimensions.height.toFloat()
+
+    if (imageWidth <= 0f || imageHeight <= 0f) return emptyList()
+
+    val scaleX = overlayWidth / imageWidth
+    val scaleY = overlayHeight / imageHeight
+
+    if (scaleX.isNaN() || scaleY.isNaN() || scaleX.isInfinite() || scaleY.isInfinite()) return emptyList()
+
+    val scale = max(scaleX, scaleY)
+
+    val scaledWidth = imageWidth * scale
+    val scaledHeight = imageHeight * scale
+
+    val offsetX = (scaledWidth - overlayWidth) / 2f
+    val offsetY = (scaledHeight - overlayHeight) / 2f
 
     val viewport = DetectionBox(0f, 0f, overlayWidth, overlayHeight)
     val activeSafeZone = safeZoneRect
@@ -695,11 +658,17 @@ private fun mapDisplayDetections(
     ).takeIf { it.width > 0f && it.height > 0f } ?: viewport
 
     return detections.mapNotNull { detection ->
-        val mapped = transform.map(detection.bbox)
+        val mappedBox = DetectionBox(
+            left = (detection.bbox.left * scale) - offsetX,
+            top = (detection.bbox.top * scale) - offsetY,
+            right = (detection.bbox.right * scale) - offsetX,
+            bottom = (detection.bbox.bottom * scale) - offsetY
+        )
+
         val safeClipped = if (showSafeZone) {
-            mapped.intersectionOrNull(activeSafeZone)
+            mappedBox.intersectionOrNull(activeSafeZone)
         } else {
-            mapped
+            mappedBox
         }
         val clamped = safeClipped?.intersectionOrNull(insetBounds)
             ?.takeIf { it.width > minimumBoxSize && it.height > minimumBoxSize }
@@ -713,8 +682,10 @@ private fun mapDisplayDetections(
     }
 }
 
-internal fun detectionOverlayLabel(detection: Detection): String =
-    "${detection.displayLabel()} ${(detection.confidence * 100).toInt()}%"
+internal fun detectionOverlayLabel(detection: Detection): String {
+    val cleanLabel = detection.displayLabel().substringBefore("%").trim()
+    return "$cleanLabel ${(detection.confidence * 100).toInt()}%"
+}
 
 internal fun DetectionBox.intersectionOrNull(other: DetectionBox): DetectionBox? {
     val result = DetectionBox(
@@ -735,80 +706,3 @@ internal fun DetectionBox.expandedBy(padding: Float): DetectionBox = DetectionBo
 
 internal fun DetectionBox.contains(x: Float, y: Float): Boolean =
     x in left..right && y in top..bottom
-
-private fun ImageProxy.toDetectorFrame(): DetectorFrame {
-    val crop = cropRect
-    val plane = planes.firstOrNull()
-        ?: error("CameraX RGBA frame did not contain a pixel plane.")
-    val pixels = rgbaPlaneToArgb(
-        buffer = plane.buffer,
-        bufferWidth = width,
-        bufferHeight = height,
-        rowStride = plane.rowStride,
-        pixelStride = plane.pixelStride,
-        cropLeft = crop.left,
-        cropTop = crop.top,
-        cropWidth = crop.width(),
-        cropHeight = crop.height(),
-    )
-    return DetectorFrame(
-        width = crop.width(),
-        height = crop.height(),
-        argbPixels = pixels,
-    )
-}
-
-/**
- * Converts CameraX's documented A,R,G,B byte order into Android ARGB ints.
- * Row padding, pixel stride, and the ImageProxy crop rectangle are respected.
- */
-internal fun rgbaPlaneToArgb(
-    buffer: ByteBuffer,
-    bufferWidth: Int,
-    bufferHeight: Int,
-    rowStride: Int,
-    pixelStride: Int,
-    cropLeft: Int = 0,
-    cropTop: Int = 0,
-    cropWidth: Int = bufferWidth,
-    cropHeight: Int = bufferHeight,
-): IntArray {
-    require(bufferWidth > 0 && bufferHeight > 0)
-    require(pixelStride >= 4) { "RGBA pixel stride must be at least four bytes." }
-    require(rowStride >= bufferWidth * pixelStride)
-    require(cropLeft >= 0 && cropTop >= 0 && cropWidth > 0 && cropHeight > 0)
-    require(cropLeft + cropWidth <= bufferWidth && cropTop + cropHeight <= bufferHeight)
-
-    val lastByteOffset =
-        (cropTop + cropHeight - 1) * rowStride +
-                (cropLeft + cropWidth - 1) * pixelStride + 3
-    require(lastByteOffset < buffer.capacity()) {
-        "RGBA plane is smaller than its declared dimensions and strides."
-    }
-
-    val source = buffer.duplicate()
-    val output = IntArray(cropWidth * cropHeight)
-    var outputIndex = 0
-    repeat(cropHeight) { row ->
-        val rowOffset = (cropTop + row) * rowStride + cropLeft * pixelStride
-        repeat(cropWidth) { column ->
-            val offset = rowOffset + column * pixelStride
-            val alpha = source.get(offset).toInt() and 0xFF
-            val red = source.get(offset + 1).toInt() and 0xFF
-            val green = source.get(offset + 2).toInt() and 0xFF
-            val blue = source.get(offset + 3).toInt() and 0xFF
-            output[outputIndex++] =
-                (alpha shl 24) or (red shl 16) or (green shl 8) or blue
-        }
-    }
-    return output
-}
-
-/** Small StateFlow adapter that avoids adding lifecycle-runtime-compose. */
-@Composable
-private fun <T> kotlinx.coroutines.flow.StateFlow<T>.collectAsComposeState():
-        androidx.compose.runtime.State<T> {
-    val state = remember(this) { mutableStateOf(value) }
-    LaunchedEffect(this) { collect { state.value = it } }
-    return state
-}

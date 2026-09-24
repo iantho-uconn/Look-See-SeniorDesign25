@@ -37,6 +37,9 @@ final class NearbyLandmarkService: ObservableObject {
             )
             req.httpBody = try JSONEncoder().encode(body)
 
+            // 🚀 ADDED: Attaches App Attest signature headers automatically
+            await req.signWithAppAttest()
+
             let (data, resp) = try await URLSession.shared.data(for: req)
             guard let http = resp as? HTTPURLResponse else {
                 throw URLError(.badServerResponse)

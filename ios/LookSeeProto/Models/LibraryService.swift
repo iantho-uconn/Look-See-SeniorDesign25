@@ -88,6 +88,9 @@ final class LibraryService: ObservableObject {
             var req = URLRequest(url: url)
             req.httpMethod = "GET"
 
+            // 🚀 ADDED: Attaches App Attest signature headers automatically
+            await req.signWithAppAttest()
+
             let (data, resp) = try await URLSession.shared.data(for: req)
 
             guard let http = resp as? HTTPURLResponse else {

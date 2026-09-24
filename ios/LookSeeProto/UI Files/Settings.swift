@@ -1047,7 +1047,9 @@ struct BusinessProfileEditSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button {
                         isSaving = true
-                        Task {
+                        
+                        // 🚀 ADDED: @MainActor isolation to ensure dismiss works correctly!
+                        Task { @MainActor in
                             let base64String = logoUIImage?.jpegData(compressionQuality: 0.4)?.base64EncodedString()
                             
                             let success = await vm.updateBusinessProfile(
@@ -1255,7 +1257,9 @@ struct UserProfileEditSheet: View {
                             UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
                             isSaving = true
                             errorMessage = ""
-                            Task {
+                            
+                            // 🚀 ADDED: @MainActor isolation to ensure dismiss works correctly!
+                            Task { @MainActor in
                                 var base64String: String? = nil
                                 if let rawImage = logoUIImage {
                                     let compressedImage = resizeImageForUpload(image: rawImage)

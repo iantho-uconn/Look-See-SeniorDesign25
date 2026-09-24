@@ -17,6 +17,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import com.amplifyframework.AmplifyException
 import com.amplifyframework.auth.cognito.AWSCognitoAuthPlugin
 import com.amplifyframework.core.Amplify
 import com.amplifyframework.storage.s3.AWSS3StoragePlugin
@@ -56,20 +57,27 @@ class MainActivity : ComponentActivity() {
             Amplify.addPlugin(AWSS3StoragePlugin())
             Amplify.configure(applicationContext)
             Log.i("AmplifyEngine", "✅ Amplify configured")
+        } catch (error: AmplifyException) {
+            // 🚀 FIXED: Safely catch the AlreadyConfiguredException on Activity restart
+            Log.i("AmplifyEngine", "ℹ️ Amplify was already configured.")
         } catch (error: Exception) {
             Log.e("AmplifyEngine", "❌ Failed to configure Amplify", error)
         }
     }
 
     private fun configureSentry() {
-        SentryAndroid.init(this) { options ->
-            options.dsn = "https://e9ee0e43b4735fe777a4d240a4423a56@o4512005291573248.ingest.us.sentry.io/4512005296816128"
-            // Set tracesSampleRate to 1.0 to capture 100% of transactions for performance monitoring.
-            options.tracesSampleRate = 1.0
-            // Set profilesSampleRate to 1.0 to enable CPU profiling.
-            options.profilesSampleRate = 1.0
+        try {
+            SentryAndroid.init(this) { options ->
+                options.dsn = "https://e9ee0e43b4735fe777a4d240a4423a56@o4512005291573248.ingest.us.sentry.io/4512005296816128"
+                // Set tracesSampleRate to 1.0 to capture 100% of transactions for performance monitoring.
+                options.tracesSampleRate = 1.0
+                // Set profilesSampleRate to 1.0 to enable CPU profiling.
+                options.profilesSampleRate = 1.0
+            }
+            Log.i("SentryEngine", "✅ Sentry configured")
+        } catch (error: Exception) {
+            Log.e("SentryEngine", "❌ Failed to configure Sentry", error)
         }
-        Log.i("SentryEngine", "✅ Sentry configured")
     }
 }
 

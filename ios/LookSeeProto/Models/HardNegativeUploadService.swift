@@ -106,6 +106,9 @@ final class HardNegativeUploadService: ObservableObject {
         request.setValue(token, forHTTPHeaderField: "Authorization")
         request.httpBody = try JSONEncoder().encode(body)
 
+        // 🚀 ADDED: Attaches App Attest and Cognito token headers automatically
+        await request.signWithAppAttest(idToken: token)
+
         let (data, response) = try await URLSession.shared.data(for: request)
         try validateAPIResponse(response, data: data)
 
@@ -168,6 +171,9 @@ final class HardNegativeUploadService: ObservableObject {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(token, forHTTPHeaderField: "Authorization")
         request.httpBody = try JSONEncoder().encode(body)
+
+        // 🚀 ADDED: Attaches App Attest and Cognito token headers automatically
+        await request.signWithAppAttest(idToken: token)
 
         let (data, response) = try await URLSession.shared.data(for: request)
         try validateAPIResponse(response, data: data)

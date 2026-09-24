@@ -56,7 +56,9 @@ final class ActivePromotionService {
 
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        
+        // 🚀 ADDED: Automatically applies App Attest and standard headers
+        await request.signWithAppAttest()
 
         let (data, response) = try await URLSession.shared.data(for: request)
 

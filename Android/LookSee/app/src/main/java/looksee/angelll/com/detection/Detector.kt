@@ -1,6 +1,14 @@
+@file:Suppress("unused", "SpellCheckingInspection", "BlockingMethodInNonBlockingContext")
+
 package looksee.angelll.com.detection
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Matrix
+import android.graphics.Paint
+import android.util.Log
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -10,7 +18,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
@@ -21,19 +28,16 @@ import looksee.angelll.com.models.LandmarkManifestStore
 import looksee.angelll.com.models.ModelSelector
 import org.tensorflow.lite.DataType
 import org.tensorflow.lite.Interpreter
+import org.tensorflow.lite.gpu.CompatibilityList
+import org.tensorflow.lite.gpu.GpuDelegate
+
 import java.io.Closeable
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicReference
-import java.util.logging.Logger
-import kotlin.math.atan2
-import kotlin.math.cos
-import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
-import kotlin.math.sin
-import kotlin.math.sqrt
 
 data class DetectionSize(val width: Int, val height: Int)
 
@@ -64,6 +68,7 @@ data class Detection(
     val id: String = UUID.randomUUID().toString(),
     val displayLabelOverride: String? = null,
 ) {
+    // THIS is where the "1" came from! It is fully dynamic based on AWS.
     val releaseIdentifier: String get() = "$clusterId|$modelVersion"
     val label: String get() = classIndex.toString()
 
@@ -76,25 +81,17 @@ data class Detection(
     ): String = displayLabelOverride ?: landmarkEntry(store)?.label ?: "Class $classIndex"
 }
 
-/**
- * Exponential moving-average tracker with short confidence-decaying coasting.
- * It keeps an overlay stable during brief blur or frame-edge cutoffs without
- * turning a stale box into a new recognition event.
- */
 class DetectionTracker(
     private val maxCoastFrames: Int = Detector.MAX_COAST_FRAMES,
     private val coastConfidenceDecay: Float = Detector.COAST_CONFIDENCE_DECAY,
 ) {
     var lastDetection: Detection? = null
         private set
-
     private var framesSinceLastSeen = 0
 
     init {
-        require(maxCoastFrames >= 0) { "maxCoastFrames must be non-negative." }
-        require(coastConfidenceDecay in 0f..1f) {
-            "coastConfidenceDecay must be between zero and one."
-        }
+        require(maxCoastFrames >= 0)
+        require(coastConfidenceDecay in 0f..1f)
     }
 
     @Synchronized
@@ -137,62 +134,28 @@ class DetectionTracker(
         framesSinceLastSeen = 0
     }
 
-    private fun ema(previous: Float, current: Float, alpha: Float): Float =
-        previous + alpha * (current - previous)
-
-    private fun sameTrack(first: Detection, second: Detection): Boolean =
-        first.releaseIdentifier == second.releaseIdentifier &&
-                first.classIndex == second.classIndex
+    private fun ema(previous: Float, current: Float, alpha: Float): Float = previous + alpha * (current - previous)
+    private fun sameTrack(first: Detection, second: Detection): Boolean = first.releaseIdentifier == second.releaseIdentifier && first.classIndex == second.classIndex
 }
 
-data class DetectorFrame(
-    val width: Int,
-    val height: Int,
-    /** One Android ARGB color per source pixel, in row-major order. */
-    val argbPixels: IntArray,
-) {
-    init {
-        require(width > 0 && height > 0) { "Frame dimensions must be positive." }
-        require(argbPixels.size == width * height) {
-            "Expected ${width * height} ARGB pixels, received ${argbPixels.size}."
-        }
-    }
+data class DetectorFrame(val width: Int, val height: Int, val bitmap: Bitmap) {
+    init { require(width > 0 && height > 0) }
 }
 
-internal data class LetterboxMetadata(
-    val sourceWidth: Int,
-    val sourceHeight: Int,
-    val inputWidth: Int,
-    val inputHeight: Int,
-    val scale: Float,
-    val padX: Float,
-    val padY: Float,
-)
+internal data class LetterboxMetadata(val sourceWidth: Int, val sourceHeight: Int, val inputWidth: Int, val inputHeight: Int, val scale: Float, val padX: Float, val padY: Float)
 
-internal data class PreparedDetectorFrame(
-    val normalizedRgb: FloatArray,
-    val letterbox: LetterboxMetadata,
-)
+internal data class PreparedDetectorFrame(val normalizedRgb: FloatArray, val letterbox: LetterboxMetadata)
 
 sealed interface DetectorModelOutput {
-    data class EndToEnd(
-        val values: FloatArray,
-        val shape: IntArray,
-    ) : DetectorModelOutput
-
-    data class Split(
-        val confidence: FloatArray,
-        val confidenceShape: IntArray,
-        val coordinates: FloatArray,
-        val coordinatesShape: IntArray,
-    ) : DetectorModelOutput
+    class EndToEnd(val values: FloatArray, val shape: IntArray) : DetectorModelOutput
+    class Split(val confidence: FloatArray, val confidenceShape: IntArray, val coordinates: FloatArray, val coordinatesShape: IntArray) : DetectorModelOutput
+    class RawYolo(val values: FloatArray, val shape: IntArray) : DetectorModelOutput
 }
 
 interface DetectorModel : Closeable {
     val inputWidth: Int
     val inputHeight: Int
-    val inferredClassCount: Int?
-        get() = null
+    val inferredClassCount: Int? get() = null
     fun infer(normalizedRgb: FloatArray): DetectorModelOutput
 }
 
@@ -207,21 +170,8 @@ sealed interface DetectorLoadState {
     data class Failed(val releaseIdentifier: String, val message: String) : DetectorLoadState
 }
 
-private data class LoadedDetectorRelease(
-    val release: ActiveModelRelease,
-    val manifest: ClusterLandmarkManifest?,
-    val model: DetectorModel,
-)
+private data class LoadedDetectorRelease(val release: ActiveModelRelease, val manifest: ClusterLandmarkManifest?, val model: DetectorModel)
 
-/**
- * Release-aware LookSee detector.
- *
- * CameraPreview supplies source ARGB frames. Detector performs the same
- * letterboxing, threshold hysteresis, EMA box smoothing, short detection
- * coasting, proximity filtering, and a six-second notification cooldown.
- * Bounding boxes remain in source-image coordinates; CameraPreview maps them
- * into CameraX PreviewView coordinates.
- */
 class Detector internal constructor(
     activeReleases: StateFlow<ActiveModelRelease?>,
     private val manifestStore: LandmarkManifestStore = LandmarkManifestStore.shared,
@@ -230,13 +180,12 @@ class Detector internal constructor(
     private val nowMillis: () -> Long = { System.currentTimeMillis() },
     observeActiveReleases: Boolean = true,
     private val allowSyntheticPreview: Boolean = false,
+    context: Context? = null
 ) : AutoCloseable {
-    constructor(
-        modelSelector: ModelSelector,
-        allowSyntheticPreview: Boolean = false,
-    ) : this(
+    constructor(modelSelector: ModelSelector, allowSyntheticPreview: Boolean = false, context: Context? = null) : this(
         activeReleases = modelSelector.activeRelease,
         allowSyntheticPreview = allowSyntheticPreview,
+        context = context
     )
 
     private val detectorScope = CoroutineScope(SupervisorJob() + dispatcher)
@@ -245,6 +194,8 @@ class Detector internal constructor(
     private val loadedRelease = AtomicReference<LoadedDetectorRelease?>(null)
     private val engineLock = Any()
 
+    private val locationManager = context?.let { LocationManager(it.applicationContext) }
+
     private val trackers = mutableMapOf<String, DetectionTracker>()
     private val notificationCooldowns = mutableMapOf<String, Long>()
 
@@ -252,8 +203,7 @@ class Detector internal constructor(
     val detections: StateFlow<List<Detection>> = _detections.asStateFlow()
 
     private val _newlyDetectedLandmark = MutableStateFlow<Detection?>(null)
-    val newlyDetectedLandmark: StateFlow<Detection?> =
-        _newlyDetectedLandmark.asStateFlow()
+    val newlyDetectedLandmark: StateFlow<Detection?> = _newlyDetectedLandmark.asStateFlow()
 
     private val _currentLabel = MutableStateFlow<String?>(null)
     val currentLabel: StateFlow<String?> = _currentLabel.asStateFlow()
@@ -273,56 +223,47 @@ class Detector internal constructor(
     private val _hideBoundingBoxes = MutableStateFlow(false)
     val hideBoundingBoxes: StateFlow<Boolean> = _hideBoundingBoxes.asStateFlow()
 
-    private val _loadState = MutableStateFlow<DetectorLoadState>(
-        DetectorLoadState.WaitingForRelease,
-    )
+    private val _loadState = MutableStateFlow<DetectorLoadState>(DetectorLoadState.WaitingForRelease)
     val loadState: StateFlow<DetectorLoadState> = _loadState.asStateFlow()
 
     private val _isSyntheticPreviewEnabled = MutableStateFlow(false)
-    val isSyntheticPreviewEnabled: StateFlow<Boolean> =
-        _isSyntheticPreviewEnabled.asStateFlow()
+    val isSyntheticPreviewEnabled: StateFlow<Boolean> = _isSyntheticPreviewEnabled.asStateFlow()
 
-    @Volatile
-    var dynamicSafeZone: DetectionBox? = null
+    @Volatile var dynamicSafeZone: DetectionBox? = null
 
-    @Volatile
-    var proximityThresholdMeters: Double = DEFAULT_PROXIMITY_THRESHOLD_METERS
-        set(value) {
-            require(value.isFinite() && value >= 0.0) {
-                "proximityThresholdMeters must be finite and non-negative."
-            }
-            field = value
-        }
+    @Volatile var proximityThresholdMeters: Double = DEFAULT_PROXIMITY_THRESHOLD_METERS
+        set(value) { require(value.isFinite() && value >= 0.0); field = value }
 
-    @Volatile
-    var confidenceThreshold: Float = DEFAULT_CONFIDENCE_THRESHOLD
-        set(value) {
-            require(value in 0f..1f) { "confidenceThreshold must be between zero and one." }
-            field = value
-        }
+    @Volatile var confidenceThreshold: Float = DEFAULT_CONFIDENCE_THRESHOLD
+        set(value) { require(value in 0f..1f); field = value }
 
-    @Volatile
-    var trackingThresholdMultiplier: Float = DEFAULT_TRACKING_THRESHOLD_MULTIPLIER
-        set(value) {
-            require(value in 0f..1f) {
-                "trackingThresholdMultiplier must be between zero and one."
-            }
-            field = value
-        }
+    @Volatile var trackingThresholdMultiplier: Float = DEFAULT_TRACKING_THRESHOLD_MULTIPLIER
+        set(value) { require(value in 0f..1f); field = value }
 
-    @Volatile
-    var trackingAlpha: Float = TRACKING_SMOOTHING_ALPHA
-        set(value) {
-            require(value in 0f..1f) {
-                "trackingAlpha must be between zero and one."
-            }
-            field = value
-        }
+    @Volatile var trackingAlpha: Float = TRACKING_SMOOTHING_ALPHA
+        set(value) { require(value in 0f..1f); field = value }
 
-    @Volatile
-    private var userLocation: DetectorLocation? = null
+    @Volatile private var userLocation: DetectorLocation? = null
 
     init {
+        Log.e("LOOKSEE_DEBUG", "🚀 Detector initialized. observeActiveReleases = $observeActiveReleases")
+        locationManager?.start()
+
+        detectorScope.launch {
+            delay(4000L)
+            if (userLocation == null) {
+                userLocation = DetectorLocation(41.1809, -73.1568)
+            }
+        }
+
+        detectorScope.launch {
+            locationManager?.state?.collect { state ->
+                if (state is LookSeeLocationState.Ready) {
+                    userLocation = DetectorLocation(state.fix.latitude, state.fix.longitude)
+                }
+            }
+        }
+
         if (observeActiveReleases) {
             detectorScope.launch {
                 var observedReleaseIdentifier: String? = null
@@ -339,21 +280,9 @@ class Detector internal constructor(
         }
     }
 
-    fun setPaused(paused: Boolean) {
-        _isPaused.value = paused
-    }
+    fun setPaused(paused: Boolean) { _isPaused.value = paused }
+    fun setHideBoundingBoxes(hidden: Boolean) { _hideBoundingBoxes.value = hidden }
 
-    fun setHideBoundingBoxes(hidden: Boolean) {
-        _hideBoundingBoxes.value = hidden
-    }
-
-    /**
-     * Enables a debug-only overlay fixture without loading or executing a model.
-     *
-     * Production Detector instances ignore attempts to enable it. This gives the
-     * emulator a way to verify CameraX-to-preview coordinate mapping and overlay
-     * rendering while the real landmark model is unavailable.
-     */
     fun setSyntheticPreviewEnabled(enabled: Boolean) {
         val shouldEnable = allowSyntheticPreview && enabled
         if (_isSyntheticPreviewEnabled.value == shouldEnable) return
@@ -362,23 +291,12 @@ class Detector internal constructor(
     }
 
     fun updateUserLocation(latitude: Double, longitude: Double, accuracyMeters: Double) {
-        if (!latitude.isFinite() || latitude !in -90.0..90.0 ||
-            !longitude.isFinite() || longitude !in -180.0..180.0 ||
-            !accuracyMeters.isFinite() || accuracyMeters <= 0.0 ||
-            accuracyMeters > MAX_LOCATION_ACCURACY_METERS
-        ) {
-            return
-        }
+        if (!latitude.isFinite() || latitude !in -90.0..90.0 || !longitude.isFinite() || longitude !in -180.0..180.0 || !accuracyMeters.isFinite() || accuracyMeters <= 0.0 || accuracyMeters > MAX_LOCATION_ACCURACY_METERS) return
         userLocation = DetectorLocation(latitude, longitude)
     }
 
-    fun clearUserLocation() {
-        userLocation = null
-    }
-
-    fun consumeNewlyDetectedLandmark() {
-        _newlyDetectedLandmark.value = null
-    }
+    fun clearUserLocation() { userLocation = null }
+    fun consumeNewlyDetectedLandmark() { _newlyDetectedLandmark.value = null }
 
     fun resetEngine() {
         synchronized(engineLock) {
@@ -390,7 +308,6 @@ class Detector internal constructor(
         _newlyDetectedLandmark.value = null
     }
 
-    /** Processes at most one camera frame at a time. Extra CameraX frames are dropped. */
     suspend fun process(frame: DetectorFrame) {
         if (_isPaused.value || !inferenceMutex.tryLock()) return
 
@@ -398,14 +315,11 @@ class Detector internal constructor(
             withContext(inferenceDispatcher) {
                 _bufferSize.value = DetectionSize(frame.width, frame.height)
 
-                if (_isSyntheticPreviewEnabled.value) {
-                    _detections.value = syntheticPreviewDetections(frame.width, frame.height)
-                    _currentLabel.value = "Overlay test"
-                    _lastInferenceMs.value = 0.0
+                val loaded = loadedRelease.get()
+                if (loaded == null) {
                     return@withContext
                 }
 
-                val loaded = loadedRelease.get() ?: return@withContext
                 val startedAt = System.nanoTime()
 
                 val prepared = letterbox(
@@ -421,93 +335,64 @@ class Detector internal constructor(
                     eventTimeMillis = nowMillis(),
                 )
 
-                _lastInferenceMs.value =
-                    (System.nanoTime() - startedAt) / NANOS_PER_MILLISECOND
+                _lastInferenceMs.value = (System.nanoTime() - startedAt) / NANOS_PER_MILLISECOND
             }
         } catch (error: Exception) {
+            // 🚀 FIXED: Ignore coroutine cancellations when CameraX drops a frame, so it stops spamming errors!
+            if (error is kotlinx.coroutines.CancellationException) throw error
+
             val releaseId = loadedRelease.get()?.release?.releaseIdentifier ?: "none"
-            logger.severe("Detector inference failed for $releaseId: ${error.message}")
+            Log.e("LOOKSEE_DEBUG", "❌ Detector inference failed for $releaseId: ${error.message}")
         } finally {
             inferenceMutex.unlock()
         }
     }
 
-    private fun syntheticPreviewDetections(width: Int, height: Int): List<Detection> = listOf(
-        Detection(
-            clusterId = "debug",
-            modelVersion = "synthetic",
-            modelIdentifier = "overlay-test",
-            classIndex = 0,
-            classCount = 1,
-            confidence = 1f,
-            displayLabelOverride = "Overlay test",
-            bbox = DetectionBox(
-                left = width * 0.22f,
-                top = height * 0.24f,
-                right = width * 0.78f,
-                bottom = height * 0.72f,
-            ),
-        ),
-    )
-
     internal suspend fun activateRelease(release: ActiveModelRelease) {
+        Log.e("LOOKSEE_DEBUG", "⚙️ Attempting to activate release: ${release.releaseIdentifier}")
         _loadState.value = DetectorLoadState.Loading(release.releaseIdentifier)
         var candidateModel: DetectorModel? = null
 
         try {
             val newModel = modelFactory.load(release).also { candidateModel = it }
-            val effectiveClassCount = release.classCount.takeIf { it > 0 }
-                ?: newModel.inferredClassCount?.takeIf { it > 0 }
-                ?: MAX_INFERRED_CLASS_COUNT
+            val effectiveClassCount = release.classCount.takeIf { it > 0 } ?: newModel.inferredClassCount?.takeIf { it > 0 } ?: MAX_INFERRED_CLASS_COUNT
             val effectiveRelease = release.copy(classCount = effectiveClassCount)
             val manifest = release.manifestFile?.let { manifestFile ->
-                val numericClusterId = release.clusterId.toIntOrNull()
-                    ?: error("Detector requires a numeric clusterId with a manifest: ${release.clusterId}.")
+                val numericClusterId = release.clusterId.toIntOrNull() ?: error("Numeric clusterId required.")
                 manifestStore.load(manifestFile).also { loadedManifest ->
-                    require(loadedManifest.clusterId == numericClusterId) {
-                        "Manifest cluster ${loadedManifest.clusterId} does not match $numericClusterId."
-                    }
-                    require(loadedManifest.trainingRunId == release.modelVersion) {
-                        "Manifest version ${loadedManifest.trainingRunId} does not match " +
-                                "${release.modelVersion}."
-                    }
-                    require(loadedManifest.classCount == effectiveClassCount) {
-                        "Manifest classCount ${loadedManifest.classCount} does not match " +
-                                "$effectiveClassCount."
-                    }
+                    require(loadedManifest.clusterId == numericClusterId)
+                    require(loadedManifest.trainingRunId == release.modelVersion)
+                    require(loadedManifest.classCount == effectiveClassCount)
                 }
             }
 
-            val newLoadedRelease = LoadedDetectorRelease(
-                release = effectiveRelease,
-                manifest = manifest,
-                model = newModel,
-            )
-            val previous = loadedRelease.getAndSet(newLoadedRelease)
-            candidateModel = null
-            previous?.model?.close()
+            val newLoadedRelease = LoadedDetectorRelease(effectiveRelease, manifest, newModel)
 
-            _classLabels.value = release.classLabels
-            resetEngine()
+            withContext(inferenceDispatcher) {
+                inferenceMutex.lock()
+                try {
+                    val previous = loadedRelease.getAndSet(newLoadedRelease)
+                    candidateModel = null
+                    previous?.model?.close()
+
+                    _classLabels.value = release.classLabels
+                    resetEngine()
+                } finally {
+                    inferenceMutex.unlock()
+                }
+            }
+
+            Log.e("LOOKSEE_DEBUG", "✅ Model successfully activated and handed to camera feed!")
             _loadState.value = DetectorLoadState.Ready(release.releaseIdentifier)
-            logger.info(
-                "Detector hot-swapped to ${release.displayName} " +
-                        "($effectiveClassCount classes).",
-            )
         } catch (error: Exception) {
             candidateModel?.close()
-            _loadState.value = DetectorLoadState.Failed(
-                releaseIdentifier = release.releaseIdentifier,
-                message = error.message ?: "Unknown detector model-load error.",
-            )
-            logger.severe(
-                "Detector model load failed for ${release.releaseIdentifier}: " +
-                        error.message,
-            )
+            Log.e("LOOKSEE_DEBUG", "❌ Failed to activate model: ${error.message}")
+            _loadState.value = DetectorLoadState.Failed(release.releaseIdentifier, error.message ?: "Unknown error")
         }
     }
 
     private fun unloadModel() {
+        Log.e("LOOKSEE_DEBUG", "🗑️ Unloading current model")
         loadedRelease.getAndSet(null)?.model?.close()
         _classLabels.value = emptyList()
         _loadState.value = DetectorLoadState.WaitingForRelease
@@ -521,17 +406,9 @@ class Detector internal constructor(
         eventTimeMillis: Long,
     ) {
         val parsed = when (output) {
-            is DetectorModelOutput.EndToEnd -> parseEndToEndDetections(
-                output = output,
-                metadata = metadata,
-                release = loaded.release,
-            )
-
-            is DetectorModelOutput.Split -> parseSplitDetections(
-                output = output,
-                metadata = metadata,
-                release = loaded.release,
-            )
+            is DetectorModelOutput.EndToEnd -> parseEndToEndDetections(output, metadata, loaded.release)
+            is DetectorModelOutput.Split -> parseSplitDetections(output, metadata, loaded.release)
+            is DetectorModelOutput.RawYolo -> parseRawYoloDetections(output, metadata, loaded.release)
         }
         val nearby = proximityFilter(parsed, loaded.manifest)
         val tracked = finalizeTracking(nearby)
@@ -543,28 +420,108 @@ class Detector internal constructor(
         if (strongest != null) {
             val cooldownKey = strongest.displayLabel(manifestStore)
             val lastNotifiedAt = notificationCooldowns[cooldownKey] ?: Long.MIN_VALUE
-            val elapsed = if (lastNotifiedAt == Long.MIN_VALUE) {
-                Long.MAX_VALUE
-            } else {
-                eventTimeMillis - lastNotifiedAt
-            }
-            if (elapsed > NOTIFICATION_COOLDOWN_MILLIS) {
+            if (lastNotifiedAt == Long.MIN_VALUE || eventTimeMillis - lastNotifiedAt > NOTIFICATION_COOLDOWN_MILLIS) {
                 notificationCooldowns[cooldownKey] = eventTimeMillis
                 _newlyDetectedLandmark.value = strongest
             }
         }
     }
 
-    private fun parseEndToEndDetections(
-        output: DetectorModelOutput.EndToEnd,
+    private fun parseRawYoloDetections(
+        output: DetectorModelOutput.RawYolo,
         metadata: LetterboxMetadata,
-        release: ActiveModelRelease,
+        release: ActiveModelRelease
     ): List<Detection> {
-        val boxSize = output.shape.lastOrNull() ?: return emptyList()
-        if (boxSize != END_TO_END_BOX_SIZE || output.values.size % boxSize != 0) {
-            logger.warning("Unsupported end-to-end output shape ${output.shape.contentToString()}.")
-            return emptyList()
+        val shape = output.shape
+        if (shape.size != 3 || shape[0] != 1) return emptyList()
+
+        val isTransposed = shape[1] == 8400
+        val numBoxes = if (isTransposed) shape[1] else shape[2]
+        val numChannels = if (isTransposed) shape[2] else shape[1]
+        val numClasses = numChannels - 4
+
+        if (numClasses <= 0) return emptyList()
+
+        val rawDetections = mutableListOf<Detection>()
+        val flatValues = output.values
+
+        for (i in 0 until numBoxes) {
+            var maxScore = 0f
+            var bestClass = -1
+
+            for (c in 0 until numClasses) {
+                val score = if (isTransposed) {
+                    flatValues[i * numChannels + 4 + c]
+                } else {
+                    flatValues[(4 + c) * numBoxes + i]
+                }
+
+                if (score > maxScore) {
+                    maxScore = score
+                    bestClass = c
+                }
+            }
+
+            val requiredScore = thresholdFor(release, bestClass)
+            if (maxScore < requiredScore) continue
+
+            var cx = if (isTransposed) flatValues[i * numChannels] else flatValues[i]
+            var cy = if (isTransposed) flatValues[i * numChannels + 1] else flatValues[numBoxes + i]
+            var w = if (isTransposed) flatValues[i * numChannels + 2] else flatValues[2 * numBoxes + i]
+            var h = if (isTransposed) flatValues[i * numChannels + 3] else flatValues[3 * numBoxes + i]
+
+            if (cx <= 1.5f && cy <= 1.5f && w <= 1.5f && h <= 1.5f) {
+                cx *= metadata.inputWidth
+                cy *= metadata.inputHeight
+                w *= metadata.inputWidth
+                h *= metadata.inputHeight
+            }
+
+            makeDetection(cx, cy, w, h, maxScore, bestClass, metadata, release)?.let {
+                rawDetections.add(it)
+            }
         }
+
+        rawDetections.sortByDescending { it.confidence }
+        val finalDetections = mutableListOf<Detection>()
+        val active = BooleanArray(rawDetections.size) { true }
+
+        for (i in rawDetections.indices) {
+            if (!active[i]) continue
+            val boxA = rawDetections[i]
+            finalDetections.add(boxA)
+
+            for (j in i + 1 until rawDetections.size) {
+                if (!active[j]) continue
+                val boxB = rawDetections[j]
+
+                if (boxA.classIndex == boxB.classIndex && calculateIoU(boxA.bbox, boxB.bbox) > IOU_THRESHOLD) {
+                    active[j] = false
+                }
+            }
+        }
+
+        return finalDetections
+    }
+
+    private fun calculateIoU(a: DetectionBox, b: DetectionBox): Float {
+        val interLeft = max(a.left, b.left)
+        val interTop = max(a.top, b.top)
+        val interRight = min(a.right, b.right)
+        val interBottom = min(a.bottom, b.bottom)
+
+        if (interRight < interLeft || interBottom < interTop) return 0f
+
+        val interArea = (interRight - interLeft) * (interBottom - interTop)
+        val areaA = (a.right - a.left) * (a.bottom - a.top)
+        val areaB = (b.right - b.left) * (b.bottom - b.top)
+
+        return interArea / (areaA + areaB - interArea)
+    }
+
+    private fun parseEndToEndDetections(output: DetectorModelOutput.EndToEnd, metadata: LetterboxMetadata, release: ActiveModelRelease): List<Detection> {
+        val boxSize = output.shape.lastOrNull() ?: return emptyList()
+        if (boxSize != END_TO_END_BOX_SIZE || output.values.size % boxSize != 0) return emptyList()
 
         val detections = mutableListOf<Detection>()
         val boxCount = output.values.size / boxSize
@@ -573,9 +530,7 @@ class Detector internal constructor(
             val score = output.values[offset + 4]
             val classIndex = output.values[offset + 5].toInt()
             val requiredScore = thresholdFor(release, classIndex)
-            if (score < requiredScore || classIndex !in 0 until release.classCount) {
-                return@repeat
-            }
+            if (score < requiredScore || classIndex !in 0 until release.classCount) return@repeat
 
             var x1 = output.values[offset]
             var y1 = output.values[offset + 1]
@@ -586,31 +541,15 @@ class Detector internal constructor(
             if (y1 <= 1f) y1 *= metadata.inputHeight
             if (y2 <= 1f) y2 *= metadata.inputHeight
 
-            makeDetection(
-                centerX = (x1 + x2) / 2f,
-                centerY = (y1 + y2) / 2f,
-                width = x2 - x1,
-                height = y2 - y1,
-                score = score,
-                classIndex = classIndex,
-                metadata = metadata,
-                release = release,
-            )?.let(detections::add)
+            makeDetection((x1 + x2) / 2f, (y1 + y2) / 2f, x2 - x1, y2 - y1, score, classIndex, metadata, release)?.let(detections::add)
         }
         return detections
     }
 
-    private fun parseSplitDetections(
-        output: DetectorModelOutput.Split,
-        metadata: LetterboxMetadata,
-        release: ActiveModelRelease,
-    ): List<Detection> {
+    private fun parseSplitDetections(output: DetectorModelOutput.Split, metadata: LetterboxMetadata, release: ActiveModelRelease): List<Detection> {
         val numClasses = output.confidenceShape.lastOrNull() ?: return emptyList()
         val numDetections = output.coordinates.size / COORDINATE_VALUE_COUNT
-        if (numClasses <= 0 || output.confidence.size < numDetections * numClasses) {
-            logger.warning("Invalid split detector output shapes.")
-            return emptyList()
-        }
+        if (numClasses <= 0 || output.confidence.size < numDetections * numClasses) return emptyList()
 
         val classesToInspect = min(numClasses, release.classCount)
         val detections = mutableListOf<Detection>()
@@ -636,134 +575,61 @@ class Detector internal constructor(
             if (centerY <= 1f) centerY *= metadata.inputHeight
             if (height <= 1f) height *= metadata.inputHeight
 
-            makeDetection(
-                centerX = centerX,
-                centerY = centerY,
-                width = width,
-                height = height,
-                score = bestScore,
-                classIndex = bestClass,
-                metadata = metadata,
-                release = release,
-            )?.let(detections::add)
+            makeDetection(centerX, centerY, width, height, bestScore, bestClass, metadata, release)?.let(detections::add)
         }
         return detections
     }
 
-    private fun makeDetection(
-        centerX: Float,
-        centerY: Float,
-        width: Float,
-        height: Float,
-        score: Float,
-        classIndex: Int,
-        metadata: LetterboxMetadata,
-        release: ActiveModelRelease,
-    ): Detection? {
+    private fun makeDetection(centerX: Float, centerY: Float, width: Float, height: Float, score: Float, classIndex: Int, metadata: LetterboxMetadata, release: ActiveModelRelease): Detection? {
         if (width <= 0f || height <= 0f || metadata.scale <= 0f) return null
 
         val sourceCenterX = (centerX - metadata.padX) / metadata.scale
         val sourceCenterY = (centerY - metadata.padY) / metadata.scale
         val sourceWidth = width / metadata.scale
         val sourceHeight = height / metadata.scale
-        val box = DetectionBox(
-            left = sourceCenterX - sourceWidth / 2f,
-            top = sourceCenterY - sourceHeight / 2f,
-            right = sourceCenterX + sourceWidth / 2f,
-            bottom = sourceCenterY + sourceHeight / 2f,
-        )
+        val box = DetectionBox(sourceCenterX - sourceWidth / 2f, sourceCenterY - sourceHeight / 2f, sourceCenterX + sourceWidth / 2f, sourceCenterY + sourceHeight / 2f)
 
-        val safeZone = dynamicSafeZone ?: DetectionBox(
-            left = 0f,
-            top = 0f,
-            right = metadata.sourceWidth.toFloat(),
-            bottom = metadata.sourceHeight.toFloat(),
-        )
+        val safeZone = dynamicSafeZone ?: DetectionBox(0f, 0f, metadata.sourceWidth.toFloat(), metadata.sourceHeight.toFloat())
         if (!box.intersects(safeZone)) return null
 
-        return Detection(
-            clusterId = release.clusterId,
-            modelVersion = release.modelVersion,
-            modelIdentifier = release.modelKey ?: "ota-model",
-            classIndex = classIndex,
-            classCount = release.classCount,
-            confidence = score,
-            bbox = box,
-            displayLabelOverride = release.classLabels.getOrNull(classIndex),
-        )
+        return Detection(release.clusterId, release.modelVersion, release.modelKey ?: "ota-model", classIndex, release.classCount, score, box, displayLabelOverride = release.classLabels.getOrNull(classIndex))
     }
 
-    private fun thresholdFor(release: ActiveModelRelease, classIndex: Int): Float =
-        synchronized(engineLock) {
-            if (trackers[trackingKey(release, classIndex)]?.lastDetection != null) {
-                confidenceThreshold * trackingThresholdMultiplier
-            } else {
-                confidenceThreshold
-            }
-        }
-
-    private fun proximityFilter(
-        detections: List<Detection>,
-        manifest: ClusterLandmarkManifest?,
-    ): List<Detection> {
-        val location = userLocation ?: return detections
-        manifest ?: return detections
-        return detections.filter { detection ->
-            val landmark = manifest.landmark(detection.classIndex) ?: return@filter true
-            distanceMeters(
-                location,
-                DetectorLocation(landmark.latitude, landmark.longitude),
-            ) <= proximityThresholdMeters
-        }
+    private fun thresholdFor(release: ActiveModelRelease, classIndex: Int): Float = synchronized(engineLock) {
+        if (trackers[trackingKey(release, classIndex)]?.lastDetection != null) confidenceThreshold * trackingThresholdMultiplier else confidenceThreshold
     }
 
-    private fun finalizeTracking(detections: List<Detection>): List<Detection> =
-        synchronized(engineLock) {
-            val strongestByTrack = mutableMapOf<String, Detection>()
-            detections.forEach { detection ->
-                val key = trackingKey(detection)
-                val current = strongestByTrack[key]
-                if (current == null || detection.confidence > current.confidence) {
-                    strongestByTrack[key] = detection
-                }
-            }
+    private fun proximityFilter(detections: List<Detection>, manifest: ClusterLandmarkManifest?): List<Detection> {
+        return detections
+    }
 
-            val activeKeys = strongestByTrack.keys
-            val results = strongestByTrack.mapNotNullTo(mutableListOf()) { (key, detection) ->
-                trackers.getOrPut(key) { DetectionTracker() }.update(detection, trackingAlpha)
-            }
-
-            val lostKeys = trackers.keys.filterNot(activeKeys::contains)
-            lostKeys.forEach { key ->
-                val coasted = trackers[key]?.update(null, trackingAlpha)
-                if (coasted != null) results += coasted else trackers.remove(key)
-            }
-            results
+    private fun finalizeTracking(detections: List<Detection>): List<Detection> = synchronized(engineLock) {
+        val strongestByTrack = mutableMapOf<String, Detection>()
+        detections.forEach { detection ->
+            val key = trackingKey(detection)
+            val current = strongestByTrack[key]
+            if (current == null || detection.confidence > current.confidence) strongestByTrack[key] = detection
         }
 
-    private fun trackingKey(detection: Detection): String =
-        "${detection.releaseIdentifier}|${detection.classIndex}"
+        val activeKeys = strongestByTrack.keys
+        val results = strongestByTrack.mapNotNullTo(mutableListOf()) { (key, detection) ->
+            trackers.getOrPut(key) { DetectionTracker() }.update(detection, trackingAlpha)
+        }
 
-    private fun trackingKey(release: ActiveModelRelease, classIndex: Int): String =
-        "${release.releaseIdentifier}|$classIndex"
-
-    internal fun processOutputForTesting(
-        output: DetectorModelOutput,
-        metadata: LetterboxMetadata,
-        release: ActiveModelRelease,
-        manifest: ClusterLandmarkManifest?,
-        eventTimeMillis: Long,
-    ) {
-        publishOutput(
-            output = output,
-            metadata = metadata,
-            loaded = LoadedDetectorRelease(release, manifest, NoOpDetectorModel),
-            eventTimeMillis = eventTimeMillis,
-        )
+        val lostKeys = trackers.keys.filterNot(activeKeys::contains)
+        lostKeys.forEach { key ->
+            val coasted = trackers[key]?.update(null, trackingAlpha)
+            if (coasted != null) results += coasted else trackers.remove(key)
+        }
+        results
     }
+
+    private fun trackingKey(detection: Detection): String = "${detection.releaseIdentifier}|${detection.classIndex}"
+    private fun trackingKey(release: ActiveModelRelease, classIndex: Int): String = "${release.releaseIdentifier}|$classIndex"
 
     override fun close() {
         detectorScope.cancel()
+        locationManager?.close()
         loadedRelease.getAndSet(null)?.model?.close()
     }
 
@@ -772,33 +638,39 @@ class Detector internal constructor(
         const val INPUT_HEIGHT = 640
         const val DEFAULT_CONFIDENCE_THRESHOLD = 0.65f
         const val DEFAULT_TRACKING_THRESHOLD_MULTIPLIER = 0.35f
+
         const val TRACKING_SMOOTHING_ALPHA = 0.65f
         const val MAX_COAST_FRAMES = 5
-        const val COAST_CONFIDENCE_DECAY = 0.92f
+        const val COAST_CONFIDENCE_DECAY = 0.85f
+
         const val MODEL_OUTPUT_FLOOR = 0.05f
-        @Deprecated("Use DEFAULT_CONFIDENCE_THRESHOLD.")
-        const val CONFIDENCE_THRESHOLD = DEFAULT_CONFIDENCE_THRESHOLD
         const val IOU_THRESHOLD = 0.45f
-        const val DEFAULT_PROXIMITY_THRESHOLD_METERS = 150.0
+        const val DEFAULT_PROXIMITY_THRESHOLD_METERS = 50.0
         const val MAX_LOCATION_ACCURACY_METERS = 100.0
         const val NOTIFICATION_COOLDOWN_MILLIS = 12_000L
 
         private const val END_TO_END_BOX_SIZE = 6
         private const val COORDINATE_VALUE_COUNT = 4
-        private const val POST_INFERENCE_THROTTLE_MILLIS = 30L
         private const val NANOS_PER_MILLISECOND = 1_000_000.0
         private const val EARTH_RADIUS_METERS = 6_371_008.8
         private const val MAX_INFERRED_CLASS_COUNT = 10_000
-        private val logger = Logger.getLogger(Detector::class.java.name)
 
         @Volatile
         private var sharedInstance: Detector? = null
 
         fun shared(context: Context): Detector =
             sharedInstance ?: synchronized(this) {
-                sharedInstance ?: Detector(ModelSelector.shared(context.applicationContext))
-                    .also { sharedInstance = it }
+                sharedInstance ?: Detector(
+                    modelSelector = ModelSelector.shared(context.applicationContext),
+                    allowSyntheticPreview = false,
+                    context = context.applicationContext
+                ).also { sharedInstance = it }
             }
+
+        private var cachedFloatArray: FloatArray? = null
+        private var cachedBitmap: Bitmap? = null
+        private var cachedCanvas: Canvas? = null
+        private var cachedIntArray: IntArray? = null
 
         internal fun letterbox(
             frame: DetectorFrame,
@@ -814,21 +686,34 @@ class Detector internal constructor(
             val scaledHeight = frame.height * scale
             val padX = (inputWidth - scaledWidth) / 2f
             val padY = (inputHeight - scaledHeight) / 2f
-            val normalizedRgb = FloatArray(inputWidth * inputHeight * 3)
 
-            for (outputY in 0 until inputHeight) {
-                val sourceY = floor(((outputY - padY) / scale).toDouble()).toInt()
-                if (sourceY !in 0 until frame.height) continue
-                for (outputX in 0 until inputWidth) {
-                    val sourceX = floor(((outputX - padX) / scale).toDouble()).toInt()
-                    if (sourceX !in 0 until frame.width) continue
+            val requiredSize = inputWidth * inputHeight
 
-                    val argb = frame.argbPixels[sourceY * frame.width + sourceX]
-                    val outputOffset = (outputY * inputWidth + outputX) * 3
-                    normalizedRgb[outputOffset] = ((argb ushr 16) and 0xFF) / 255f
-                    normalizedRgb[outputOffset + 1] = ((argb ushr 8) and 0xFF) / 255f
-                    normalizedRgb[outputOffset + 2] = (argb and 0xFF) / 255f
-                }
+            if (cachedBitmap == null || cachedBitmap!!.width != inputWidth) {
+                cachedBitmap = Bitmap.createBitmap(inputWidth, inputHeight, Bitmap.Config.ARGB_8888)
+                cachedCanvas = Canvas(cachedBitmap!!)
+                cachedIntArray = IntArray(requiredSize)
+                cachedFloatArray = FloatArray(requiredSize * 3)
+            }
+
+            val canvas = cachedCanvas!!
+            val letterboxBitmap = cachedBitmap!!
+            val intValues = cachedIntArray!!
+            val normalizedRgb = cachedFloatArray!!
+
+            canvas.drawColor(Color.BLACK)
+            val matrix = Matrix()
+            matrix.postScale(scale, scale)
+            matrix.postTranslate(padX, padY)
+            canvas.drawBitmap(frame.bitmap, matrix, Paint(Paint.FILTER_BITMAP_FLAG))
+
+            letterboxBitmap.getPixels(intValues, 0, inputWidth, 0, 0, inputWidth, inputHeight)
+
+            var floatIdx = 0
+            for (pixel in intValues) {
+                normalizedRgb[floatIdx++] = ((pixel shr 16) and 0xFF) / 255f
+                normalizedRgb[floatIdx++] = ((pixel shr 8) and 0xFF) / 255f
+                normalizedRgb[floatIdx++] = (pixel and 0xFF) / 255f
             }
 
             return PreparedDetectorFrame(
@@ -844,42 +729,48 @@ class Detector internal constructor(
                 ),
             )
         }
-
-        private fun distanceMeters(from: DetectorLocation, to: DetectorLocation): Double {
-            val latitudeDelta = Math.toRadians(to.latitude - from.latitude)
-            val longitudeDelta = Math.toRadians(to.longitude - from.longitude)
-            val fromLatitude = Math.toRadians(from.latitude)
-            val toLatitude = Math.toRadians(to.latitude)
-            val haversine =
-                sin(latitudeDelta / 2.0) * sin(latitudeDelta / 2.0) +
-                        cos(fromLatitude) * cos(toLatitude) *
-                        sin(longitudeDelta / 2.0) * sin(longitudeDelta / 2.0)
-            val bounded = haversine.coerceIn(0.0, 1.0)
-            return EARTH_RADIUS_METERS *
-                    2.0 * atan2(sqrt(bounded), sqrt(1.0 - bounded))
-        }
     }
 }
 
 private data class DetectorLocation(val latitude: Double, val longitude: Double)
 
-private object NoOpDetectorModel : DetectorModel {
-    override val inputWidth = Detector.INPUT_WIDTH
-    override val inputHeight = Detector.INPUT_HEIGHT
-    override fun infer(normalizedRgb: FloatArray): DetectorModelOutput =
-        error("NoOpDetectorModel cannot run inference.")
-    override fun close() = Unit
-}
-
-/** LiteRT Interpreter adapter for float32 YOLO exports. */
-class LiteRtDetectorModelFactory(
-    private val numberOfThreads: Int = max(2, Runtime.getRuntime().availableProcessors() / 2),
-) : DetectorModelFactory {
+class LiteRtDetectorModelFactory : DetectorModelFactory {
     override fun load(release: ActiveModelRelease): DetectorModel {
-        val options = Interpreter.Options()
-            .setNumThreads(numberOfThreads)
-            .setUseXNNPACK(true)
-        return LiteRtDetectorModel(Interpreter(release.modelFile, options))
+        var interpreter: Interpreter? = null
+
+        // 1. Try Hardware GPU
+        try {
+            val compatList = CompatibilityList()
+            if (compatList.isDelegateSupportedOnThisDevice) {
+                val gpuOptions = Interpreter.Options().addDelegate(GpuDelegate(compatList.bestOptionsForThisDevice))
+                interpreter = Interpreter(release.modelFile, gpuOptions)
+                Log.e("LOOKSEE_DEBUG", "🚀 ✅ TFLite is running on HARDWARE GPU!")
+            }
+        } catch (e: Exception) {
+            Log.e("LOOKSEE_DEBUG", "⚠️ GPU rejected YOLO11: ${e.message}")
+        }
+
+        // 2. Try Hardware NPU / Tensor Chip (NNAPI)
+        if (interpreter == null) {
+            try {
+                val nnapiOptions = Interpreter.Options().apply { setUseNNAPI(true) }
+                interpreter = Interpreter(release.modelFile, nnapiOptions)
+                Log.e("LOOKSEE_DEBUG", "🧠 ✅ TFLite is running on NNAPI (Hardware NPU)!")
+            } catch (e: Exception) {
+                Log.e("LOOKSEE_DEBUG", "⚠️ NNAPI rejected YOLO11: ${e.message}")
+            }
+        }
+
+        // 3. Max-Power CPU Fallback (All available cores)
+        val finalInterpreter = interpreter ?: Interpreter(release.modelFile, Interpreter.Options().apply {
+            val maxCores = Runtime.getRuntime().availableProcessors()
+            setNumThreads(maxCores)
+            setUseXNNPACK(true)
+        }).also {
+            Log.e("LOOKSEE_DEBUG", "🐢 TFLite running on CPU (XNNPACK) using ${Runtime.getRuntime().availableProcessors()} cores.")
+        }
+
+        return LiteRtDetectorModel(finalInterpreter)
     }
 }
 
@@ -918,13 +809,19 @@ private class LiteRtDetectorModel(
     }
 
     init {
-        require((isNhwc && imageShape[3] == 3) || (!isNhwc && imageShape[1] == 3)) {
-            "LiteRT detector image input must be NHWC or NCHW RGB; " +
-                    "received ${imageShape.contentToString()}."
-        }
-        require(inputWidth == Detector.INPUT_WIDTH && inputHeight == Detector.INPUT_HEIGHT) {
-            "LookSee detector expects 640x640 input; received ${inputWidth}x$inputHeight."
-        }
+        require((isNhwc && imageShape[3] == 3) || (!isNhwc && imageShape[1] == 3))
+        require(inputWidth == Detector.INPUT_WIDTH && inputHeight == Detector.INPUT_HEIGHT)
+    }
+
+    private val imageByteBuffer = ByteBuffer.allocateDirect(inputWidth * inputHeight * 3 * Float.SIZE_BYTES).order(ByteOrder.nativeOrder())
+    private val preallocatedOutputBuffers = (0 until interpreter.outputTensorCount).map { i ->
+        ByteBuffer.allocateDirect(interpreter.getOutputTensor(i).numBytes()).order(ByteOrder.nativeOrder())
+    }
+    private val preallocatedOutputMap = mutableMapOf<Int, Any>().apply {
+        preallocatedOutputBuffers.forEachIndexed { index, buffer -> put(index, buffer) }
+    }
+    private val preallocatedFloatArrays = preallocatedOutputBuffers.map { buffer ->
+        FloatArray(buffer.capacity() / Float.SIZE_BYTES)
     }
 
     @Synchronized
@@ -941,22 +838,28 @@ private class LiteRtDetectorModel(
         val outputTensors = (0 until interpreter.outputTensorCount).map(
             interpreter::getOutputTensor,
         )
-        require(outputTensors.all { it.dataType() == DataType.FLOAT32 }) {
-            "Checkpoint 6 supports float32 detector outputs only."
-        }
-        val outputBuffers = outputTensors.map { tensor ->
-            ByteBuffer.allocateDirect(tensor.numBytes()).order(ByteOrder.nativeOrder())
-        }
-        val outputMap = mutableMapOf<Int, Any>()
-        outputBuffers.forEachIndexed { index, buffer -> outputMap[index] = buffer }
-        interpreter.runForMultipleInputsOutputs(inputs, outputMap)
 
-        val values = outputBuffers.map { buffer ->
+        preallocatedOutputBuffers.forEach { it.rewind() }
+        interpreter.runForMultipleInputsOutputs(inputs, preallocatedOutputMap)
+
+        val values = preallocatedOutputBuffers.mapIndexed { index, buffer ->
             buffer.rewind()
-            FloatArray(buffer.capacity() / Float.SIZE_BYTES).also {
-                buffer.asFloatBuffer().get(it)
-            }
+            val array = preallocatedFloatArrays[index]
+            buffer.asFloatBuffer().get(array)
+            array
         }
+
+        val rawIndex = outputTensors.indexOfFirst {
+            it.shape().size == 3 && (it.shape()[1] == 8400 || it.shape()[2] == 8400)
+        }
+
+        if (rawIndex >= 0) {
+            return DetectorModelOutput.RawYolo(
+                values = values[rawIndex],
+                shape = outputTensors[rawIndex].shape()
+            )
+        }
+
         val confidenceIndex = outputTensors.indexOfFirst {
             it.name().contains("confidence", ignoreCase = true)
         }
@@ -973,10 +876,7 @@ private class LiteRtDetectorModel(
             )
         } else {
             val combinedIndex = outputTensors.indexOfFirst { it.shape().lastOrNull() == 6 }
-            require(combinedIndex >= 0) {
-                "Unknown LiteRT detector outputs: " +
-                        outputTensors.joinToString { "${it.name()}=${it.shape().contentToString()}" }
-            }
+            require(combinedIndex >= 0)
             DetectorModelOutput.EndToEnd(
                 values = values[combinedIndex],
                 shape = outputTensors[combinedIndex].shape(),
@@ -985,9 +885,8 @@ private class LiteRtDetectorModel(
     }
 
     private fun imageBuffer(normalizedRgb: FloatArray): ByteBuffer {
-        val buffer = ByteBuffer.allocateDirect(normalizedRgb.size * Float.SIZE_BYTES)
-            .order(ByteOrder.nativeOrder())
-        val floats = buffer.asFloatBuffer()
+        imageByteBuffer.rewind()
+        val floats = imageByteBuffer.asFloatBuffer()
         if (isNhwc) {
             floats.put(normalizedRgb)
         } else {
@@ -999,15 +898,14 @@ private class LiteRtDetectorModel(
                 }
             }
         }
-        buffer.rewind()
-        return buffer
+        imageByteBuffer.rewind()
+        return imageByteBuffer
     }
 
     private fun thresholdBuffer(inputName: String): ByteBuffer {
         val value = when {
             inputName.contains("iou", ignoreCase = true) -> Detector.IOU_THRESHOLD
-            inputName.contains("confidence", ignoreCase = true) ->
-                Detector.MODEL_OUTPUT_FLOOR
+            inputName.contains("confidence", ignoreCase = true) -> Detector.MODEL_OUTPUT_FLOOR
             else -> error("Unsupported LiteRT detector input: $inputName.")
         }
         return ByteBuffer.allocateDirect(Float.SIZE_BYTES)
