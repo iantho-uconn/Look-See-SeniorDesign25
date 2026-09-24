@@ -1,9 +1,10 @@
 package looksee.angelll.com.uifiles
 
+import android.content.Context
+import android.location.Geocoder
 import android.util.Log
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -13,7 +14,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
@@ -22,14 +22,32 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import looksee.angelll.com.detection.*
 import looksee.angelll.com.models.*
 import looksee.angelll.com.services.*
 import java.util.Locale
 import kotlin.time.Duration.Companion.milliseconds
+
+private suspend fun getCityName(context: Context, lat: Double, lon: Double): String? = withContext(Dispatchers.IO) {
+    try {
+        val geocoder = Geocoder(context, Locale.getDefault())
+        val addresses = geocoder.getFromLocation(lat, lon, 1)
+        if (!addresses.isNullOrEmpty()) {
+            val city = addresses[0].locality ?: ""
+            val state = addresses[0].adminArea ?: ""
+            if (city.isNotEmpty() && state.isNotEmpty()) return@withContext "$city, $state"
+            if (city.isNotEmpty() || state.isNotEmpty()) return@withContext city.ifEmpty { state }
+        }
+    } catch (e: Exception) {
+        Log.e("Geocoder", "Error: ${e.message}")
+    }
+    return@withContext String.format(Locale.US, "%.5f, %.5f", lat, lon)
+}
 
 @Composable
 fun LandmarkScan(
@@ -46,17 +64,26 @@ fun LandmarkScan(
     val coroutineScope = rememberCoroutineScope()
     val infoView = remember { VariableContainer.shared }
     val detector = remember { Detector.shared(context) }
-    
+
+    var isPopupOpen by remember { mutableStateOf(infoView.infoView) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            if (isPopupOpen != infoView.infoView) {
+                isPopupOpen = infoView.infoView
+            }
+            delay(100)
+        }
+    }
+
     var zoomLevel by remember { mutableStateOf(1f) }
     var zoomIndicatorVisible by remember { mutableStateOf(false) }
     var zoomFadeJob by remember { mutableStateOf<Job?>(null) }
-    
+
     var isCameraPaused by remember { mutableStateOf(false) }
     var showThresholdControls by remember { mutableStateOf(false) }
-    
+
     var liveInfoFetchJob by remember { mutableStateOf<Job?>(null) }
 
-    // Initialize state from detector
     var confidenceThreshold by remember { mutableStateOf(detector.confidenceThreshold) }
     var thresholdMultiplier by remember { mutableStateOf(detector.trackingThresholdMultiplier) }
 
@@ -74,17 +101,28 @@ fun LandmarkScan(
         }
     }
 
-    fun fetchLiveLandmarkInfo(landmarkId: String) {
+    fun fetchLiveLandmarkInfo(landmarkId: String, lat: Double, lon: Double, label: String) {
         liveInfoFetchJob?.cancel()
         liveInfoFetchJob = coroutineScope.launch {
             try {
                 val liveInfo = LiveLandmarkInfoService(context).fetchLiveInfo(landmarkId, 2.5)
                 if (infoView.landmarkId == landmarkId) {
                     applyLiveInfo(liveInfo, infoView)
-                    Log.d("LandmarkScan", "✅ Live info applied for $landmarkId")
+
+                    val realAddress = liveInfo.merchantAddress?.takeIf { it.isNotBlank() }
+                    if (realAddress != null && vm != null && vm.hasActiveSubscription) {
+                        vm.logScanHistory(
+                            landmarkId = landmarkId,
+                            label = liveInfo.label.ifBlank { label },
+                            location = realAddress,
+                            latitude = lat,
+                            longitude = lon,
+                            imageUrl = liveInfo.merchantLogoUrl ?: infoView.merchantLogoUrl
+                        )
+                    }
                 }
             } catch (e: Exception) {
-                Log.e("LandmarkScan", "⚠️ Live info unavailable: ${e.message}")
+                Log.e("LandmarkScan", "Live info unavailable: ${e.message}")
             }
         }
     }
@@ -92,13 +130,15 @@ fun LandmarkScan(
     fun openPopup(detection: Detection) {
         liveInfoFetchJob?.cancel()
         val entry = detection.landmarkEntry()
-        
+
+        infoView.infoView = true
+        isPopupOpen = true
+
         if (entry == null) {
             infoView.resetLandmarkDisplay()
             infoView.landmarkName = detection.displayLabel()
             infoView.landmarkConfidence = detection.confidence * 100
             infoView.landmarkDescription = "Discover more about this location."
-            infoView.infoView = true
             return
         }
 
@@ -109,19 +149,20 @@ fun LandmarkScan(
             detectionConfidence = detection.confidence
         )
 
-        // Log scan history for subscribed/business users
-        if (vm != null && vm.hasActiveSubscription) {
-            val lat = entry.latitude
-            val lon = entry.longitude
-            val displayLabel = detection.displayLabel()
-            val lId = entry.landmarkId
-            val cachedImg = infoView.merchantLogoUrl
+        val lat = entry.latitude
+        val lon = entry.longitude
+        val displayLabel = detection.displayLabel()
+        val lId = entry.landmarkId
+        val cachedImg = infoView.merchantLogoUrl
 
+        if (vm != null && vm.hasActiveSubscription) {
             coroutineScope.launch {
+                val locationFallback = getCityName(context, lat, lon) ?: "Current Location"
+
                 vm.logScanHistory(
                     landmarkId = lId,
                     label = displayLabel,
-                    location = "Unknown Location",
+                    location = locationFallback,
                     latitude = lat,
                     longitude = lon,
                     imageUrl = cachedImg
@@ -130,11 +171,11 @@ fun LandmarkScan(
         }
 
         if (entry.landmarkId.isNotBlank()) {
-            fetchLiveLandmarkInfo(entry.landmarkId)
+            fetchLiveLandmarkInfo(entry.landmarkId, lat, lon, displayLabel)
         }
     }
 
-    LaunchedEffect(isActive, infoView.infoView) {
+    LaunchedEffect(isActive) {
         updatePauseState()
     }
 
@@ -153,7 +194,7 @@ fun LandmarkScan(
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val width = maxWidth
         val height = maxHeight
-        
+
         val lockedSafeZone = remember(width, height) {
             DetectionBox(
                 left = (width.value * 0.15f),
@@ -163,13 +204,12 @@ fun LandmarkScan(
             )
         }
 
-        val blurAmount = if (infoView.infoView) 10.dp else 0.dp
-
         ZStack(alignment = Alignment.Center) {
+
             CameraPreview(
                 detector = detector,
                 zoomLevel = zoomLevel,
-                onZoomLevelChange = { 
+                onZoomLevelChange = {
                     zoomLevel = it
                     showZoomIndicatorThenFade()
                     onTap()
@@ -178,19 +218,21 @@ fun LandmarkScan(
                 safeZoneRect = lockedSafeZone,
                 onTap = onTap,
                 onPinch = onPinch,
-                isAIPaused = isCameraPaused,
+                isAIPaused = isCameraPaused || isPopupOpen,
                 onBoxTap = { openPopup(it) },
-                modifier = Modifier
-                    .fillMaxSize()
-                    .blur(blurAmount)
+                hideBoundingBoxes = isPopupOpen,
+                modifier = Modifier.fillMaxSize()
             )
+
+            if (infoView.infoView) {
+                Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.5f)).zIndex(1f))
+            }
 
             if (!isActive) {
                 Box(modifier = Modifier.fillMaxSize().background(Color.Black).zIndex(2f))
             }
 
-            // Confidence Controls (Matt's Debug UI)
-            if (isActive && !infoView.infoView) {
+            if (isActive && !isPopupOpen) {
                 Box(modifier = Modifier.fillMaxSize().padding(bottom = 120.dp, end = 16.dp), contentAlignment = Alignment.BottomEnd) {
                     IconButton(
                         onClick = { showThresholdControls = !showThresholdControls },
@@ -206,7 +248,7 @@ fun LandmarkScan(
             }
 
             AnimatedVisibility(
-                visible = isActive && !infoView.infoView && showThresholdControls,
+                visible = isActive && !isPopupOpen && showThresholdControls,
                 enter = slideInHorizontally { it } + fadeIn(),
                 exit = slideOutHorizontally { it } + fadeOut()
             ) {
@@ -221,10 +263,10 @@ fun LandmarkScan(
                                 text = "${(confidenceThreshold * 100).toInt()}% - ${(confidenceThreshold * thresholdMultiplier * 100).toInt()}%",
                                 color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold
                             )
-                            
+
                             Slider(
                                 value = confidenceThreshold,
-                                onValueChange = { 
+                                onValueChange = {
                                     confidenceThreshold = it
                                     detector.confidenceThreshold = it
                                 },
@@ -235,7 +277,7 @@ fun LandmarkScan(
 
                             Slider(
                                 value = thresholdMultiplier,
-                                onValueChange = { 
+                                onValueChange = {
                                     thresholdMultiplier = it
                                     detector.trackingThresholdMultiplier = it
                                 },
@@ -248,8 +290,7 @@ fun LandmarkScan(
                 }
             }
 
-            // Zoom Indicator
-            if (isActive && !infoView.infoView && zoomIndicatorVisible) {
+            if (isActive && !isPopupOpen && zoomIndicatorVisible) {
                 Box(modifier = Modifier.fillMaxSize().padding(bottom = 110.dp), contentAlignment = Alignment.BottomCenter) {
                     Surface(
                         color = Color.Black.copy(0.6f),

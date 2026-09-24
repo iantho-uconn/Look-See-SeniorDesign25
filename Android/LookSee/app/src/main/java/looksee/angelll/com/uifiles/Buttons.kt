@@ -9,6 +9,8 @@ import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.graphics.asComposeRenderEffect
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
@@ -110,7 +112,7 @@ fun ButtonsScreen(
     // Restoration logic
     val isScanCameraActive by remember {
         derivedStateOf {
-            currentTab == 0 && !showRecordSheet && !showSignUpPrompt && !showTutorial && !showMyLandmarksFromAlert && !infoView.infoView
+            currentTab == 0 && !showRecordSheet && !showSignUpPrompt && !showTutorial && !showMyLandmarksFromAlert
         }
     }
 
@@ -402,14 +404,24 @@ fun ButtonsScreen(
                 userScrollEnabled = !infoView.infoView
             ) { page ->
                 if (page == 0) {
-                    LandmarkScan(
-                        vm = vm,
-                        onTap = { revealChromeThenFade() },
-                        isDetecting = isDetecting,
-                        onIsDetectingChange = { isDetecting = it },
-                        isNavVisible = chromeVisible,
-                        isActive = isScanCameraActive
-                    )
+                    val blurModifier = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S && infoView.infoView) {
+                        Modifier.graphicsLayer {
+                            renderEffect = android.graphics.RenderEffect.createBlurEffect(
+                                20f, 20f, android.graphics.Shader.TileMode.CLAMP
+                            ).asComposeRenderEffect()
+                        }
+                    } else Modifier
+
+                    Box(modifier = blurModifier.fillMaxSize()) {
+                        LandmarkScan(
+                            vm = vm,
+                            onTap = { revealChromeThenFade() },
+                            isDetecting = isDetecting,
+                            onIsDetectingChange = { isDetecting = it },
+                            isNavVisible = chromeVisible,
+                            isActive = isScanCameraActive
+                        )
+                    }
                 } else {
                     Box(modifier = Modifier.padding(paddingValues)) {
                         LandmarkMapScreen(vm = vm, nearbyService = nearbyService, locationManager = locationManager)

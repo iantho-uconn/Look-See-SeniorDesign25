@@ -148,13 +148,16 @@ struct StripeCheckoutView: View {
         var request = URLRequest(url: backendCheckoutUrl)
         request.httpMethod = "POST"
 
+        let idToken: String
         do {
-            let idToken = try await AuthService.shared.fetchIdToken()
-            request.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
+            idToken = try await AuthService.shared.fetchIdToken()
         } catch {
             errorMessage = "Your session could not be verified. Please sign in again."
             return
         }
+
+        // 🚀 ADDED: Attaches App Attest and Cognito token headers automatically
+        await request.signWithAppAttest(idToken: idToken)
 
         do {
             let (data, _) = try await URLSession.shared.data(for: request)

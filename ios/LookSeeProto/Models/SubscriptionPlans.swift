@@ -516,6 +516,9 @@ struct SubscriptionPlans: View {
         
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         
+        // 🚀 ADDED: Attaches App Attest and Cognito token headers automatically
+        await request.signWithAppAttest(idToken: idToken)
+        
         do {
             let (data, _) = try await URLSession.shared.data(for: request)
             if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
@@ -612,7 +615,7 @@ struct SubscriptionPlans: View {
                     }
                 }
             }
-            
+             
         case .canceled, .failed:
             DispatchQueue.main.async {
                 self.isProcessing = false

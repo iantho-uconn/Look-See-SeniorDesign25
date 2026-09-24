@@ -10,6 +10,7 @@ import UIKit
 import Combine
 import Amplify
 import AWSPluginsCore
+import CryptoKit
 
 // MARK: - User-facing upload stage
 
@@ -56,7 +57,6 @@ final class UploadService: ObservableObject {
     private let apiTimeout: TimeInterval = 60
     private let mediaUploadTimeout: TimeInterval = 300
     
-    // 🚀 THE FIX: Changed from 30 to 1.0 to prevent server/timer blocking on Business or 'Needs More' submissions
     private let minimumCombinedVideoDuration: Double = 1.0
 
     // MARK: Errors
@@ -312,7 +312,15 @@ final class UploadService: ObservableObject {
 
         try await addAuthorizationHeader(to: &request)
         request.setValue(token, forHTTPHeaderField: "Authorization")
-        request.httpBody = try JSONEncoder().encode(requestBody)
+        
+        let payload = try JSONEncoder().encode(requestBody)
+        request.httpBody = payload
+        
+        // 🚀 Add App Attest headers
+        if let assertion = try? await AppAttestService.shared.generateAssertion(for: payload) {
+            request.setValue(assertion, forHTTPHeaderField: "X-LookSee-App-Attest")
+            request.setValue(Data(SHA256.hash(data: payload)).base64EncodedString(), forHTTPHeaderField: "X-LookSee-App-Attest-Payload-Hash")
+        }
 
         let (data, response) = try await URLSession.shared.data(for: request)
         try validateAPIResponse(response, data: data)
@@ -324,7 +332,6 @@ final class UploadService: ObservableObject {
         }
     }
 
-    // 🚀 NEW: The S3 Multipart POST Upload logic
     private func postToS3(presignedPost: S3PresignedPost, contentType: String, videoURL: URL?, image: UIImage?) async throws {
         guard let url = URL(string: presignedPost.url) else { throw UploadError.invalidURL }
         
@@ -337,7 +344,6 @@ final class UploadService: ObservableObject {
 
         var body = Data()
         
-        // AWS REQUIRES all S3 security parameters to come BEFORE the file
         for (key, value) in presignedPost.fields {
             body.append("--\(boundary)\r\n".data(using: .utf8)!)
             body.append("Content-Disposition: form-data; name=\"\(key)\"\r\n\r\n".data(using: .utf8)!)
@@ -393,7 +399,15 @@ final class UploadService: ObservableObject {
 
         try await addAuthorizationHeader(to: &request)
         request.setValue(token, forHTTPHeaderField: "Authorization")
-        request.httpBody = try JSONEncoder().encode(requestBody)
+        
+        let payload = try JSONEncoder().encode(requestBody)
+        request.httpBody = payload
+        
+        // 🚀 Add App Attest headers
+        if let assertion = try? await AppAttestService.shared.generateAssertion(for: payload) {
+            request.setValue(assertion, forHTTPHeaderField: "X-LookSee-App-Attest")
+            request.setValue(Data(SHA256.hash(data: payload)).base64EncodedString(), forHTTPHeaderField: "X-LookSee-App-Attest-Payload-Hash")
+        }
 
         let (data, response) = try await URLSession.shared.data(for: request)
         try validateAPIResponse(response, data: data)

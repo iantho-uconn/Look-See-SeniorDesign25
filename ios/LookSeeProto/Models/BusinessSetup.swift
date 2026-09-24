@@ -164,6 +164,10 @@ struct BusinessSetup: View {
         ]
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         
+        // 🚀 ADDED: Automatically attaches App Attest and Cognito token headers
+        let idToken = await vm.fetchIdToken()
+        await request.signWithAppAttest(idToken: idToken)
+        
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
             let rawString = String(data: data, encoding: .utf8) ?? "Empty Response"

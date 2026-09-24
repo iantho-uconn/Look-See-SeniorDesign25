@@ -7,6 +7,7 @@ import Foundation
 import Combine
 import Amplify
 import AWSPluginsCore
+import CryptoKit
 
 @MainActor
 class AuthViewModel: ObservableObject {
@@ -47,7 +48,7 @@ class AuthViewModel: ObservableObject {
     @Published var activePlanCents: Int = 0
     @Published var activePlanYears: Int = 0
     
-    // 🚀 NEW: History Trackers
+    // History Trackers
     @Published var tier: String = ""
     @Published var scanHistory: [ScanHistoryItem] = []
     
@@ -261,15 +262,17 @@ class AuthViewModel: ObservableObject {
         return ""
     }
 
-    private func authorizedJSONRequest(url: URL) async -> URLRequest {
+    private func authorizedJSONRequest(url: URL, body: Data? = nil) async -> URLRequest {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        let idToken = await fetchIdToken()
-        if !idToken.isEmpty {
-            request.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
+        if let bodyData = body {
+            request.httpBody = bodyData
         }
+        
+        let idToken = await fetchIdToken()
+        await request.signWithAppAttest(idToken: idToken)
 
         return request
     }
@@ -279,9 +282,10 @@ class AuthViewModel: ObservableObject {
         guard let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/LookSeeGetUserStats") else { return }
         
         let requestedUserId = userId
-        var request = await authorizedJSONRequest(url: url)
-        let body: [String: String] = ["userId": requestedUserId]
-        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        let bodyPayload: [String: String] = ["userId": requestedUserId]
+        guard let bodyData = try? JSONSerialization.data(withJSONObject: bodyPayload) else { return }
+        
+        let request = await authorizedJSONRequest(url: url, body: bodyData)
         
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
@@ -303,14 +307,11 @@ class AuthViewModel: ObservableObject {
                         self.tier = fetchedTier
                         
                         if let fetchedSub {
-                            // An explicit backend status wins over old tier/Stripe metadata.
                             self.hasActiveSubscription = fetchedSub
                             self.subscriptionStatusUserId = requestedUserId
                         } else {
-                            // Preserve legacy business behavior, but do not assume ad eligibility.
                             self.hasActiveSubscription = fetchedTier == "business" || !fetchedStripeId.isEmpty
                             self.subscriptionStatusUserId = nil
-                            print("[AdMob] Waiting for explicit subscription status from backend")
                         }
                         
                         self.activePlanCents = fetchedPlanCents
@@ -343,11 +344,7 @@ class AuthViewModel: ObservableObject {
         guard !userId.isEmpty else { return }
         guard let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/history") else { return }
 
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
-        let body: [String: Any] = [
+        let bodyPayload: [String: Any] = [
             "userId": userId,
             "landmarkId": landmarkId,
             "label": label,
@@ -356,8 +353,9 @@ class AuthViewModel: ObservableObject {
             "longitude": longitude,
             "imageUrl": imageUrl
         ]
-
-        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        
+        guard let bodyData = try? JSONSerialization.data(withJSONObject: bodyPayload) else { return }
+        let request = await authorizedJSONRequest(url: url, body: bodyData)
         _ = try? await URLSession.shared.data(for: request)
     }
 
@@ -406,14 +404,13 @@ class AuthViewModel: ObservableObject {
         guard !userId.isEmpty else { return false }
         guard let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/checkout") else { return false }
         
-        var request = await authorizedJSONRequest(url: url)
-        
-        let body: [String: Any] = [
+        let bodyPayload: [String: Any] = [
             "purchaseType": "cancel_subscription",
             "userId": userId,
             "subscriptionId": stripeSubscriptionId
         ]
-        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        guard let bodyData = try? JSONSerialization.data(withJSONObject: bodyPayload) else { return false }
+        let request = await authorizedJSONRequest(url: url, body: bodyData)
         
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
@@ -433,26 +430,99 @@ class AuthViewModel: ObservableObject {
         return false
     }
 
+    private func uploadImageToS3(imageData: Data, role: String) async throws -> String {
+        guard let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/checkout") else { throw URLError(.badURL) }
+        
+        let initPayload: [String: Any] = [
+            "purchaseType": "init_image_upload",
+            "userId": userId,
+            "role": role,
+            "contentType": "image/jpeg"
+        ]
+        
+        guard let initData = try? JSONSerialization.data(withJSONObject: initPayload) else { throw URLError(.cannotParseResponse) }
+        let initRequest = await authorizedJSONRequest(url: url, body: initData)
+        
+        let (responseData, response) = try await URLSession.shared.data(for: initRequest)
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            print("❌ API Gateway Initialization Failed: \(String(data: responseData, encoding: .utf8) ?? "Unknown Error")")
+            throw URLError(.badServerResponse)
+        }
+        
+        guard let json = try JSONSerialization.jsonObject(with: responseData) as? [String: Any],
+              let uploadUrlDict = json["uploadUrl"] as? [String: Any],
+              let urlString = uploadUrlDict["url"] as? String,
+              let fields = uploadUrlDict["fields"] as? [String: String],
+              let finalImageUrl = json["finalImageUrl"] as? String else {
+            throw URLError(.cannotParseResponse)
+        }
+        
+        guard let s3Url = URL(string: urlString) else { throw URLError(.badURL) }
+        var s3Request = URLRequest(url: s3Url)
+        s3Request.httpMethod = "POST"
+        
+        let boundary = "Boundary-\(UUID().uuidString)"
+        s3Request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+
+        var body = Data()
+        for (key, value) in fields {
+            body.append("--\(boundary)\r\n".data(using: .utf8)!)
+            body.append("Content-Disposition: form-data; name=\"\(key)\"\r\n\r\n".data(using: .utf8)!)
+            body.append("\(value)\r\n".data(using: .utf8)!)
+        }
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"profile.jpg\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: image/jpeg\r\n\r\n".data(using: .utf8)!)
+        body.append(imageData)
+        body.append("\r\n".data(using: .utf8)!)
+        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+
+        let (s3Data, s3Response) = try await URLSession.shared.upload(for: s3Request, from: body)
+        
+        guard let s3HttpResp = s3Response as? HTTPURLResponse, (200...299).contains(s3HttpResp.statusCode) else {
+            let errorXML = String(data: s3Data, encoding: .utf8) ?? "No XML provided"
+            let statusCode = (s3Response as? HTTPURLResponse)?.statusCode ?? 0
+            print("❌ S3 UPLOAD DIRECTLY FAILED! Status: \(statusCode)\nXML Error: \(errorXML)")
+            throw URLError(.badServerResponse)
+        }
+        
+        print("✅ S3 Image Upload Successful: \(finalImageUrl)")
+        return finalImageUrl
+    }
+
+    // 🚀 FIXED: Deep logging added to catch the silent Lambda crash
     func updateUserIdentity(newUsername: String, emailToSave: String, profileBase64: String? = nil) async -> (success: Bool, error: String?) {
         guard !userId.isEmpty else { return (false, "User not found") }
         guard let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/checkout") else { return (false, "Invalid URL") }
         
-        var request = await authorizedJSONRequest(url: url)
+        var uploadedImageUrl: String? = nil
         
-        var body: [String: Any] = [
+        if let base64 = profileBase64 {
+            let cleanBase64 = base64.contains(",") ? String(base64.split(separator: ",")[1]) : base64
+            
+            if let imageData = Data(base64Encoded: cleanBase64, options: .ignoreUnknownCharacters) {
+                do {
+                    uploadedImageUrl = try await uploadImageToS3(imageData: imageData, role: "user_profile")
+                } catch {
+                    print("❌ S3 Method execution failed for profile image.")
+                    return (false, "Failed to upload image securely.")
+                }
+            } else {
+                print("❌ ERROR: Could not decode Base64 string into Image Data. The string may be corrupted.")
+            }
+        }
+        
+        let bodyPayload: [String: Any] = [
             "purchaseType": "update_user_identity",
             "userId": userId,
             "userEmail": emailToSave,
             "username": newUsername,
             "currentUsername": self.username,
-            "profileImageUrl": self.profileImageUrl
+            "profileImageUrl": uploadedImageUrl ?? self.profileImageUrl
         ]
         
-        if let base64 = profileBase64 {
-            body["profileBase64"] = base64
-        }
-        
-        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        guard let bodyData = try? JSONSerialization.data(withJSONObject: bodyPayload) else { return (false, "Payload Error") }
+        let request = await authorizedJSONRequest(url: url, body: bodyData)
         
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
@@ -468,9 +538,12 @@ class AuthViewModel: ObservableObject {
                             }
                         }
                     }
+                    print("✅ Lambda Successfully Saved Profile Data!")
                     return (true, nil)
                 } else {
                     let err = String(data: data, encoding: .utf8) ?? "Unknown Error"
+                    print("❌ LAMBDA REJECTED SAVE (\(httpResponse.statusCode)): \(err)") // <-- This will tell us the exact issue!
+                    
                     if err.contains("ERR_USERNAME_TAKEN") {
                         return (false, "That username is already taken.")
                     }
@@ -478,26 +551,23 @@ class AuthViewModel: ObservableObject {
                 }
             }
         } catch {
+            print("❌ NETWORK CRASH DURING LAMBDA SAVE: \(error.localizedDescription)")
             return (false, error.localizedDescription)
         }
         return (false, "Network error")
     }
 
-    // 🚀 FIXED: Pointing to the correct /business/landmarks/ URL!
     func forceTrainLandmark(landmarkId: String) async -> Bool {
         guard !userId.isEmpty else { return false }
-        
-        // Using the exact structure found in BusinessLandmarkService.swift
         guard let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/business/landmarks/\(landmarkId)") else { return false }
         
-        var request = await authorizedJSONRequest(url: url)
-        
-        let body: [String: Any] = [
+        let bodyPayload: [String: Any] = [
             "forceTrainEnabled": true
         ]
+        guard let bodyData = try? JSONSerialization.data(withJSONObject: bodyPayload) else { return false }
         
+        var request = await authorizedJSONRequest(url: url, body: bodyData)
         request.httpMethod = "PATCH"
-        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
@@ -517,13 +587,29 @@ class AuthViewModel: ObservableObject {
         return false
     }
 
+    // 🚀 FIXED: Deep logging added to catch the silent Lambda crash
     func updateBusinessProfile(storeName: String, phoneNumber: String, storeWebsite: String, storeAddress: String, storeBio: String, storeLogoUrl: String, storeLogoBase64: String? = nil) async -> Bool {
         guard !userId.isEmpty else { return false }
         guard let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/checkout") else { return false }
         
-        var request = await authorizedJSONRequest(url: url)
+        var uploadedLogoUrl: String? = nil
         
-        var body: [String: Any] = [
+        if let base64 = storeLogoBase64 {
+            let cleanBase64 = base64.contains(",") ? String(base64.split(separator: ",")[1]) : base64
+            
+            if let imageData = Data(base64Encoded: cleanBase64, options: .ignoreUnknownCharacters) {
+                do {
+                    uploadedLogoUrl = try await uploadImageToS3(imageData: imageData, role: "business_logo")
+                } catch {
+                    print("❌ S3 Method execution failed for business logo.")
+                    return false
+                }
+            } else {
+                print("❌ ERROR: Could not decode Business Logo Base64 string into Data.")
+            }
+        }
+        
+        let bodyPayload: [String: Any] = [
             "purchaseType": "update_profile",
             "userId": userId,
             "storeName": storeName,
@@ -531,14 +617,11 @@ class AuthViewModel: ObservableObject {
             "storeWebsite": storeWebsite,
             "storeAddress": storeAddress,
             "storeBio": storeBio,
-            "storeLogoUrl": storeLogoUrl
+            "storeLogoUrl": uploadedLogoUrl ?? storeLogoUrl
         ]
         
-        if let base64 = storeLogoBase64 {
-            body["storeLogoBase64"] = base64
-        }
-        
-        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        guard let bodyData = try? JSONSerialization.data(withJSONObject: bodyPayload) else { return false }
+        let request = await authorizedJSONRequest(url: url, body: bodyData)
         
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
@@ -564,15 +647,15 @@ class AuthViewModel: ObservableObject {
                             self.storeLogoUrl = storeLogoUrl
                         }
                     }
+                    print("✅ Lambda Successfully Saved Business Profile Data!")
                     return true
                 } else {
-                    if let errorString = String(data: data, encoding: .utf8) {
-                        print("❌ Backend Rejected Upload (\(httpResponse.statusCode)): \(errorString)")
-                    }
+                    let errorString = String(data: data, encoding: .utf8) ?? "Unknown Error"
+                    print("❌ LAMBDA REJECTED SAVE (\(httpResponse.statusCode)): \(errorString)") // <-- This will tell us the exact issue!
                 }
             }
         } catch {
-            print("❌ Failed to update business profile: \(error)")
+            print("❌ NETWORK CRASH DURING LAMBDA SAVE: \(error.localizedDescription)")
         }
         return false
     }
@@ -581,15 +664,14 @@ class AuthViewModel: ObservableObject {
         guard !userId.isEmpty else { return }
         guard let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/checkout") else { return }
         
-        var request = await authorizedJSONRequest(url: url)
-        
-        let body: [String: Any] = [
+        let bodyPayload: [String: Any] = [
             "purchaseType": "init_user",
             "userId": userId,
             "userEmail": emailToSave
         ]
         
-        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        guard let bodyData = try? JSONSerialization.data(withJSONObject: bodyPayload) else { return }
+        let request = await authorizedJSONRequest(url: url, body: bodyData)
         _ = try? await URLSession.shared.data(for: request)
     }
 

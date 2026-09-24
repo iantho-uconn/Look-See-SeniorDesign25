@@ -13,7 +13,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -25,10 +24,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import looksee.angelll.com.detection.*
 import looksee.angelll.com.models.*
-import looksee.angelll.com.viewmodels.*
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
-import com.google.accompanist.permissions.isGranted
-import com.google.accompanist.permissions.rememberPermissionState
+import com.google.accompanist.permissions.rememberMultiplePermissionsState
 
 @OptIn(ExperimentalPermissionsApi::class)
 @Composable
@@ -37,47 +34,47 @@ fun ModelLoadingScreen(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    
+
     val modelService = remember { ModelService.shared(context) }
     val locationManager = remember { LocationManager(context) }
-    
+
     val modelState by modelService.state.collectAsState()
     val pullReason by modelService.pullReason.collectAsState()
-    val downloadProgress by modelService.downloadProgress.collectAsState()
     val locationState by locationManager.state.collectAsState()
-    
+
     val opacity = remember { Animatable(0f) }
     var statusMessage by remember { mutableStateOf("Getting your location…") }
     var failed by remember { mutableStateOf(false) }
-    
     var showLoadingUI by remember { mutableStateOf(false) }
-    var animationFinished by remember { mutableStateOf(false) }
 
-    val locationPermissionState = rememberPermissionState(
-        android.Manifest.permission.ACCESS_FINE_LOCATION
+    // Requests BOTH Fine and Coarse permissions to prevent Android 12+ dialog traps
+    val locationPermissionsState = rememberMultiplePermissionsState(
+        listOf(
+            android.Manifest.permission.ACCESS_FINE_LOCATION,
+            android.Manifest.permission.ACCESS_COARSE_LOCATION
+        )
     )
 
-    LaunchedEffect(locationPermissionState.status.isGranted) {
-        if (locationPermissionState.status.isGranted) {
+    LaunchedEffect(locationPermissionsState.allPermissionsGranted) {
+        if (locationManager.hasLocationPermission()) {
             locationManager.start()
         } else {
-            locationPermissionState.launchPermissionRequest()
+            locationPermissionsState.launchMultiplePermissionRequest()
         }
     }
 
-    // MARK: - Loading sequence
     suspend fun startLoading() {
         failed = false
         statusMessage = "Getting your location…"
-        
-        // Step 1 — wait for location
+
+        // Wait on location fix without getting blocked by strict fine-only checks
         var attempts = 0
-        while (!locationPermissionState.status.isGranted || locationState !is LookSeeLocationState.Ready) {
+        while (locationState !is LookSeeLocationState.Ready) {
             delay(500)
             attempts++
-            if (attempts > 20) {
+            if (attempts > 40) { // 🚀 FIXED: Allow 20 seconds for cold Android network locations to settle
                 failed = true
-                statusMessage = "Could not get your location. Make sure location access is enabled."
+                statusMessage = "Could not get your location. Ensure location access is enabled."
                 return
             }
         }
@@ -90,11 +87,9 @@ fun ModelLoadingScreen(
             return
         }
 
-        // Step 2 — load models
         statusMessage = "Finding models for your area…"
         modelService.loadModels(latitude = fix.latitude, longitude = fix.longitude)
 
-        // Step 3 — check result
         val finalState = modelService.state.value
         if (finalState is ModelState.Loaded) {
             val models = finalState.models
@@ -106,18 +101,16 @@ fun ModelLoadingScreen(
                 is ModelPullReason.Single -> {
                     val model = models[0]
                     statusMessage = "Loaded ${model.name} · Cluster ${model.clusterId}\n${reason.reason}"
-                    delay(800)
-                    opacity.animateTo(0f, tween(400))
-                    delay(400)
+                    delay(500)
+                    opacity.animateTo(0f, tween(300))
                     onComplete()
                 }
                 is ModelPullReason.Multiple -> {
                     val names = models.joinToString { it.name }
                     val clusterIds = models.map { it.clusterId }.distinct().sorted().joinToString()
-                    statusMessage = "Loaded ${models.size} models: $names\nClusters: $clusterIds\n${reason.reasons.joinToString(" · ")}"
-                    delay(800)
-                    opacity.animateTo(0f, tween(400))
-                    delay(400)
+                    statusMessage = "Loaded ${models.size} models: $names\nClusters: $clusterIds"
+                    delay(500)
+                    opacity.animateTo(0f, tween(300))
                     onComplete()
                 }
             }
@@ -127,15 +120,18 @@ fun ModelLoadingScreen(
         }
     }
 
+    LaunchedEffect(locationState) {
+        if (locationState is LookSeeLocationState.Ready && modelState is ModelState.NotLoaded) {
+            startLoading()
+        }
+    }
+
     LaunchedEffect(Unit) {
-        opacity.animateTo(1f, tween(400))
+        opacity.animateTo(1f, tween(300))
         startLoading()
     }
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black).alpha(opacity.value)) {
-        AnimatedBackground(showLoadingUI = showLoadingUI)
-        
-        // Glow matching Swift's Circle.fill(...)
         Box(
             modifier = Modifier
                 .align(Alignment.Center)
@@ -154,94 +150,63 @@ fun ModelLoadingScreen(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Spacer(modifier = Modifier.weight(1f))
-            
-                // Logo & Animation
-                LoadingAnimationScreen(onFinished = {
-                    coroutineScope.launch {
-                        delay(500)
-                        showLoadingUI = true
-                    }
-                })
-            
+
+            LoadingAnimationScreen(onFinished = {
+                coroutineScope.launch {
+                    showLoadingUI = true
+                }
+            })
+
             Spacer(modifier = Modifier.weight(1f))
 
-            // Loading state
-            if (showLoadingUI) {
-                Column(
-                    modifier = Modifier.padding(bottom = 60.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    if (failed) {
-                        // Error state
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.Warning,
-                                contentDescription = null,
-                                tint = Color(0xFFFFA500),
-                                modifier = Modifier.size(28.dp)
-                            )
-                            
-                            Text(
-                                text = statusMessage,
-                                color = Color.White.copy(alpha = 0.6f),
-                                fontSize = 14.sp,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.padding(horizontal = 40.dp)
-                            )
-                            
-                            Button(
-                                onClick = {
-                                    coroutineScope.launch { startLoading() }
-                                },
-                                shape = RoundedCornerShape(12.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF387DFF)),
-                                contentPadding = PaddingValues(horizontal = 32.dp, vertical = 12.dp)
-                            ) {
-                                Text("Retry", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                            }
-                            
-                            TextButton(onClick = { onComplete() }) {
-                                Text(
-                                    "Continue without model",
-                                    color = Color.White.copy(alpha = 0.35f),
-                                    fontSize = 13.sp
-                                )
-                            }
-                        }
-                    } else {
-                        // Progress state
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            if (modelState is ModelState.Loading) {
-                                LinearProgressIndicator(
-                                    progress = { downloadProgress.toFloat() },
-                                    modifier = Modifier.width(200.dp).height(4.dp),
-                                    color = Color(0xFF387DFF),
-                                    trackColor = Color.White.copy(alpha = 0.1f)
-                                )
-                            } else {
-                                CircularProgressIndicator(
-                                    color = Color.White.copy(alpha = 0.5f),
-                                    modifier = Modifier.size(24.dp),
-                                    strokeWidth = 2.dp
-                                )
-                            }
-                            
-                            Text(
-                                text = statusMessage,
-                                color = Color.White.copy(alpha = 0.5f),
-                                fontSize = 14.sp,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.padding(horizontal = 40.dp)
-                            )
-                        }
+            Column(
+                modifier = Modifier.padding(bottom = 60.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                if (failed) {
+                    Icon(
+                        Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = Color(0xFFFFA500),
+                        modifier = Modifier.size(28.dp)
+                    )
+
+                    Text(
+                        text = statusMessage,
+                        color = Color.White.copy(alpha = 0.6f),
+                        fontSize = 14.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 40.dp)
+                    )
+
+                    Button(
+                        onClick = {
+                            locationManager.start()
+                            coroutineScope.launch { startLoading() }
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF387DFF)),
+                        contentPadding = PaddingValues(horizontal = 32.dp, vertical = 12.dp)
+                    ) {
+                        Text("Retry", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                     }
+
+                    TextButton(onClick = { onComplete() }) {
+                        Text(
+                            "Continue without model",
+                            color = Color.White.copy(alpha = 0.35f),
+                            fontSize = 13.sp
+                        )
+                    }
+                } else {
+                    Text(
+                        text = statusMessage,
+                        color = Color.White.copy(alpha = 0.5f),
+                        fontSize = 14.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 40.dp)
+                    )
                 }
             }
         }

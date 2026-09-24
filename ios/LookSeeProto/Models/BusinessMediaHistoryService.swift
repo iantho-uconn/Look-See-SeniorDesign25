@@ -91,15 +91,10 @@ final class BusinessMediaHistoryService {
 
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
-        request.setValue(
-            "Bearer \(idToken)",
-            forHTTPHeaderField: "Authorization"
-        )
-        request.setValue(
-            "application/json",
-            forHTTPHeaderField: "Accept"
-        )
         request.timeoutInterval = 30
+
+        // 🚀 ADDED: Attaches App Attest and Cognito token headers automatically
+        await request.signWithAppAttest(idToken: idToken)
 
         let (data, response) = try await URLSession.shared.data(for: request)
 

@@ -52,7 +52,13 @@ final class LandmarkService: ObservableObject {
         }
 
         do {
-            let (data, response) = try await URLSession.shared.data(from: url)
+            var request = URLRequest(url: url)
+            request.httpMethod = "GET"
+            
+            // 🚀 ADDED: Attaches App Attest signature headers automatically
+            await request.signWithAppAttest()
+
+            let (data, response) = try await URLSession.shared.data(for: request)
             guard let http = response as? HTTPURLResponse else {
                 errorMessage = "No response from server."
                 return
@@ -72,9 +78,15 @@ final class LandmarkService: ObservableObject {
     }
     func fetchLandmarkById(landmarkId: String) async -> BusinessLocation? {
         let url = baseURL.appendingPathComponent("landmarks/\(landmarkId)")
-        
+         
         do {
-            let (data, _) = try await URLSession.shared.data(from: url)
+            var request = URLRequest(url: url)
+            request.httpMethod = "GET"
+            
+            // 🚀 ADDED: Attaches App Attest signature headers automatically
+            await request.signWithAppAttest()
+
+            let (data, _) = try await URLSession.shared.data(for: request)
             // Adjust decoding based on your single-item API response shape
             let decoded = try JSONDecoder().decode(BusinessLocation.self, from: data)
             return decoded
@@ -86,13 +98,19 @@ final class LandmarkService: ObservableObject {
     func fetchLandmarkByLabel(label: String) async -> BusinessLocation? {
         var components = URLComponents(url: baseURL.appendingPathComponent("landmarks/by-label"), resolvingAgainstBaseURL: false)!
         components.queryItems = [URLQueryItem(name: "label", value: label)]
-        
+         
         guard let url = components.url else { return nil }
 
         do {
-            let (data, response) = try await URLSession.shared.data(from: url)
-            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return nil }
+            var request = URLRequest(url: url)
+            request.httpMethod = "GET"
             
+            // 🚀 ADDED: Attaches App Attest signature headers automatically
+            await request.signWithAppAttest()
+
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return nil }
+             
             // This assumes your API returns a list (items) even for single searches
             let decoded = try JSONDecoder().decode(BusinessLocationListResponse.self, from: data)
             return decoded.items.first
