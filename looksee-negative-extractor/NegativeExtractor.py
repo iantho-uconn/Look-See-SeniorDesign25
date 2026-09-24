@@ -188,7 +188,7 @@ def write_empty_label(local_label_path):
     Path(local_label_path).write_text("", encoding="utf-8")
 
 
-def save_and_upload_video_frame(
+def save_and_upload_video_frame(guard, 
     frame,
     output_bucket,
     base_key,
@@ -212,13 +212,13 @@ def save_and_upload_video_frame(
     write_empty_label(local_label_path)
 
     try:
-        s3_client.upload_file(
+        guard.upload_file(
             str(local_image_path),
             output_bucket,
             image_key,
             ExtraArgs={"ContentType": "image/jpeg"},
         )
-        s3_client.upload_file(
+        guard.upload_file(
             str(local_label_path),
             output_bucket,
             label_key,
@@ -261,7 +261,7 @@ def thumbnail_candidate_score(frame):
     return sharpness * exposure_penalty
 
 
-def upload_video_thumbnail(
+def upload_video_thumbnail(guard, 
     frame,
     dataset_bucket,
     landmark_id,
@@ -283,7 +283,7 @@ def upload_video_thumbnail(
         raise ExtractionError("OpenCV could not write the video thumbnail.")
 
     try:
-        s3_client.upload_file(
+        guard.upload_file(
             str(local_thumbnail_path),
             dataset_bucket,
             thumbnail_key,
@@ -298,7 +298,7 @@ def upload_video_thumbnail(
     return thumbnail_key
 
 
-def process_video(
+def process_video(guard, 
     local_source_path,
     dataset_bucket,
     base_dataset_key,
@@ -318,6 +318,7 @@ def process_video(
 
     try:
         while True:
+            guard.check()
             readable, frame = capture.read()
             if not readable:
                 break
@@ -341,7 +342,7 @@ def process_video(
             )
 
             if should_save:
-                save_and_upload_video_frame(
+                save_and_upload_video_frame(guard, 
                     frame=frame,
                     output_bucket=dataset_bucket,
                     base_key=base_dataset_key,
@@ -365,7 +366,7 @@ def process_video(
             "The uploaded video did not contain any readable frames."
         )
 
-    thumbnail_key = upload_video_thumbnail(
+    thumbnail_key = upload_video_thumbnail(guard, 
         frame=best_thumbnail_frame,
         dataset_bucket=dataset_bucket,
         landmark_id=landmark_id,
@@ -380,7 +381,7 @@ def process_video(
     }
 
 
-def process_photo(
+def process_photo(guard, 
     local_source_path,
     dataset_bucket,
     base_dataset_key,
@@ -394,12 +395,12 @@ def process_photo(
 
     label_key = dataset_label_key_for_image_key(base_dataset_key)
 
-    s3_client.upload_file(
+    guard.upload_file(
         str(local_source_path),
         dataset_bucket,
         base_dataset_key,
     )
-    s3_client.put_object(
+    guard.put_object(
         Bucket=dataset_bucket,
         Key=label_key,
         Body=b"",
@@ -413,7 +414,7 @@ def process_photo(
     }
 
 
-def mark_landmark_dirty(landmark_id, media_kind):
+def mark_landmark_dirty(guard, landmark_id, media_kind):
     if not MARK_DIRTY_FOR_TRAINING:
         return False
 
@@ -424,7 +425,7 @@ def mark_landmark_dirty(landmark_id, media_kind):
     )
 
     try:
-        cluster_mappings_table.update_item(
+        guard.update(cluster_mappings_table, 
             Key={"landmarkId": landmark_id},
             UpdateExpression=(
                 "SET isDirtyForTraining = :dirty, "
@@ -438,6 +439,8 @@ def mark_landmark_dirty(landmark_id, media_kind):
             },
         )
         return True
+    except ProcessingStopped:
+        raise
     except Exception as exc:
         print(
             "WARNING: Failed to mark landmark dirty: "
@@ -446,7 +449,7 @@ def mark_landmark_dirty(landmark_id, media_kind):
         return False
 
 
-def mark_source_record_ready(
+def mark_source_record_ready(guard, 
     negative_id,
     media_kind,
     saved_count,
@@ -479,7 +482,7 @@ def mark_source_record_ready(
         values[":thumbnailBucket"] = thumbnail_bucket
         values[":thumbnailKey"] = thumbnail_key
 
-    hard_neg_table.update_item(
+    guard.update(hard_neg_table, 
         Key={"negativeId": negative_id},
         UpdateExpression="SET " + ", ".join(set_parts),
         ExpressionAttributeNames={"#status": "status"},
@@ -489,7 +492,7 @@ def mark_source_record_ready(
     return ready_at
 
 
-def mark_history_record_ready(
+def mark_history_record_ready(guard, 
     negative_id,
     media_kind,
     saved_count,
@@ -523,7 +526,7 @@ def mark_history_record_ready(
         values[":thumbnailKey"] = thumbnail_key
 
     try:
-        history_table.update_item(
+        guard.update(history_table, 
             Key={
                 "historyId": history_id_for_negative(negative_id),
             },
@@ -544,9 +547,9 @@ def mark_history_record_ready(
         raise
 
 
-def mark_source_record_failed(negative_id, reason):
+def mark_source_record_failed(guard, negative_id, reason):
     failed_at = now_epoch_string()
-    hard_neg_table.update_item(
+    guard.update(hard_neg_table, 
         Key={"negativeId": negative_id},
         UpdateExpression=(
             "SET #status = :status, "
@@ -562,9 +565,9 @@ def mark_source_record_failed(negative_id, reason):
     )
 
 
-def mark_history_record_failed(negative_id, reason):
+def mark_history_record_failed(guard, negative_id, reason):
     try:
-        history_table.update_item(
+        guard.update(history_table, 
             Key={
                 "historyId": history_id_for_negative(negative_id),
             },
@@ -616,6 +619,7 @@ def validate_event(event):
 def lambda_handler(event, context):
     negative_id = str(event.get("negativeId") or "").strip()
     working_dir = None
+    guard = None
 
     try:
         validate_event(event)
@@ -626,6 +630,8 @@ def lambda_handler(event, context):
         source_key = str(event["sourceKey"]).strip()
         dataset_bucket = str(event["datasetBucket"]).strip()
         base_dataset_key = str(event["datasetImageBaseKey"]).strip()
+
+        guard = ExtractionGuard(event)
 
         media_kind = detect_media_kind(
             source_bucket=source_bucket,
@@ -649,14 +655,16 @@ def lambda_handler(event, context):
             f"Downloading {media_kind} source "
             f"s3://{source_bucket}/{source_key}..."
         )
+        guard.check()
         s3_client.download_file(
             source_bucket,
             source_key,
             str(local_source_path),
         )
 
+        guard.check()
         if media_kind == "video":
-            result = process_video(
+            result = process_video(guard, 
                 local_source_path=local_source_path,
                 dataset_bucket=dataset_bucket,
                 base_dataset_key=base_dataset_key,
@@ -665,7 +673,7 @@ def lambda_handler(event, context):
                 working_dir=working_dir,
             )
         else:
-            result = process_photo(
+            result = process_photo(guard, 
                 local_source_path=local_source_path,
                 dataset_bucket=dataset_bucket,
                 base_dataset_key=base_dataset_key,
@@ -677,7 +685,7 @@ def lambda_handler(event, context):
 
         # Finalize the operational record first. The history projection then
         # mirrors the same READY state and thumbnail information.
-        ready_at = mark_source_record_ready(
+        ready_at = mark_source_record_ready(guard, 
             negative_id=negative_id,
             media_kind=media_kind,
             saved_count=saved_count,
@@ -685,7 +693,7 @@ def lambda_handler(event, context):
             thumbnail_key=thumbnail_key,
         )
 
-        history_updated = mark_history_record_ready(
+        history_updated = mark_history_record_ready(guard, 
             negative_id=negative_id,
             media_kind=media_kind,
             saved_count=saved_count,
@@ -694,7 +702,7 @@ def lambda_handler(event, context):
             thumbnail_key=thumbnail_key,
         )
 
-        dirty_marked = mark_landmark_dirty(
+        dirty_marked = mark_landmark_dirty(guard, 
             landmark_id=landmark_id,
             media_kind=media_kind,
         )
@@ -718,26 +726,22 @@ def lambda_handler(event, context):
             "body": json.dumps(response_body),
         }
 
+    except ProcessingStopped as exc:
+        print(f"[NegativeExtractor] Skipped negativeId={negative_id}: {exc}")
+        return {"statusCode": 200, "body": json.dumps({"status": "SKIPPED", "negativeId": negative_id, "reason": str(exc)})}
+
     except Exception as exc:
         reason = str(exc)
         print(f"Fatal error during extraction: {reason}")
 
-        if negative_id:
-            try:
-                mark_source_record_failed(negative_id, reason)
-            except Exception as source_update_error:
-                print(
-                    "ERROR marking hard-negative submission failed: "
-                    f"{source_update_error}"
-                )
-
-            try:
-                mark_history_record_failed(negative_id, reason)
-            except Exception as history_update_error:
-                print(
-                    "ERROR marking media-history record failed: "
-                    f"{history_update_error}"
-                )
+        if guard is not None:
+            for updater in (mark_history_record_failed, mark_source_record_failed):
+                try:
+                    updater(guard, negative_id, reason)
+                except ProcessingStopped:
+                    break
+                except Exception as update_error:
+                    print(f"Failure status update failed: {type(update_error).__name__}")
 
         return {
             "statusCode": 500,
@@ -753,3 +757,103 @@ def lambda_handler(event, context):
     finally:
         if working_dir is not None:
             shutil.rmtree(working_dir, ignore_errors=True)
+
+
+DELETIONS_TABLE = os.environ.get("DELETIONS_TABLE", "LookSeeLandmarkDeletions")
+LANDMARKS_TABLE = os.environ.get("LANDMARKS_TABLE", "LookSeeLandmarks")
+
+class ProcessingStopped(Exception):
+    pass
+
+class ExtractionGuard:
+    def __init__(self, event):
+        self.landmark_id = event["landmarkId"]
+        self.negative_id = event["negativeId"]
+        self.bindings = {
+            "landmarkId": self.landmark_id,
+            "sourceBucket": event["sourceBucket"], "sourceKey": event["sourceKey"],
+            "datasetBucket": event["datasetBucket"],
+            "datasetImageKey": event["datasetImageBaseKey"],
+        }
+        self.check()
+
+    def check(self):
+        marker = dynamodb.Table(DELETIONS_TABLE).get_item(
+            Key={"landmarkId": self.landmark_id}, ConsistentRead=True).get("Item")
+        if marker:
+            raise ProcessingStopped("deletion_requested")
+        landmark = dynamodb.Table(LANDMARKS_TABLE).get_item(
+            Key={"landmarkId": self.landmark_id}, ConsistentRead=True).get("Item")
+        if not landmark:
+            raise ProcessingStopped("landmark_missing")
+        if "deletionStatus" in landmark or str(landmark.get("status", "")).upper() in {"DELETING", "DELETED"}:
+            raise ProcessingStopped("deletion_requested")
+        record = hard_neg_table.get_item(Key={"negativeId": self.negative_id}, ConsistentRead=True).get("Item")
+        if not record:
+            raise ProcessingStopped("submission_missing")
+        if any(record.get(k) != v for k, v in self.bindings.items()):
+            raise ProcessingStopped("submission_binding_mismatch")
+        if record.get("status") not in {"PROCESSING", "READY"}:
+            raise ProcessingStopped("submission_not_processing")
+        return landmark
+
+    def update(self, table, **kwargs):
+        landmark = self.check()
+        names = {"#pk": "landmarkId", "#ds": "deletionStatus", "#st": "status"}
+        condition = "attribute_exists(#pk) AND attribute_not_exists(#ds)"
+        values = {}
+        if "status" in landmark:
+            condition += " AND #st = :status"
+            values[":status"] = landmark["status"]
+        else:
+            condition += " AND attribute_not_exists(#st)"
+        lm_check = {"TableName": LANDMARKS_TABLE, "Key": {"landmarkId": self.landmark_id},
+            "ConditionExpression": condition, "ExpressionAttributeNames": names}
+        if values:
+            lm_check["ExpressionAttributeValues"] = values
+        binding_names, binding_values, binding_parts = {}, {}, []
+        for i, (key, value) in enumerate(self.bindings.items()):
+            binding_names[f"#b{i}"] = key
+            binding_values[f":b{i}"] = value
+            binding_parts.append(f"#b{i} = :b{i}")
+        binding_names["#state"] = "status"
+        binding_values.update({":processing": "PROCESSING", ":ready": "READY"})
+        binding_parts.append("#state IN (:processing, :ready)")
+        binding_condition = " AND ".join(binding_parts)
+        operations = [
+            {"ConditionCheck": {"TableName": DELETIONS_TABLE, "Key": {"landmarkId": self.landmark_id},
+                "ConditionExpression": "attribute_not_exists(landmarkId)"}},
+            {"ConditionCheck": lm_check},
+        ]
+        kwargs.setdefault("ExpressionAttributeNames", {})["#existing"] = next(iter(kwargs["Key"]))
+        previous = kwargs.get("ConditionExpression")
+        kwargs["ConditionExpression"] = "attribute_exists(#existing)" + (f" AND ({previous})" if previous else "")
+        if table.name == HARD_NEG_TABLE:
+            kwargs["ExpressionAttributeNames"].update(binding_names)
+            kwargs["ExpressionAttributeValues"].update(binding_values)
+            kwargs["ConditionExpression"] += " AND " + binding_condition
+        else:
+            operations.append({"ConditionCheck": {"TableName": HARD_NEG_TABLE,
+                "Key": {"negativeId": self.negative_id}, "ConditionExpression": binding_condition,
+                "ExpressionAttributeNames": binding_names, "ExpressionAttributeValues": binding_values}})
+        operations.append({"Update": {"TableName": table.name, **kwargs}})
+        try:
+            dynamodb.meta.client.transact_write_items(TransactItems=operations)
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") == "TransactionCanceledException":
+                self.check()
+                reasons = exc.response.get("CancellationReasons", [])
+                if reasons and reasons[-1].get("Code") == "ConditionalCheckFailed" and table.name != HARD_NEG_TABLE:
+                    raise ClientError({"Error": {"Code": "ConditionalCheckFailedException", "Message": "Target record missing"}}, "UpdateItem") from exc
+            raise
+
+    def upload_file(self, *args, **kwargs):
+        self.check()
+        s3_client.upload_file(*args, **kwargs)
+        self.check()
+
+    def put_object(self, **kwargs):
+        self.check()
+        s3_client.put_object(**kwargs)
+        self.check()
+

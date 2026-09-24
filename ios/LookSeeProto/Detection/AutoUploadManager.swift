@@ -1,8 +1,4 @@
-//
-//  AutoUploadManager.swift
-//  LookSeeProto
-//
-
+// AutoUploadManager.swift
 import Foundation
 import SwiftUI
 import Combine
@@ -12,113 +8,86 @@ import UIKit
 @MainActor
 class AutoUploadManager: ObservableObject {
     static let shared = AutoUploadManager()
-    
     private var cancellables = Set<AnyCancellable>()
     private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
-    
     weak var globalAuthVM: AuthViewModel?
-    
     @Published var isUploading = false
     @Published var currentlyUploadingId: UUID? = nil
-    @Published var currentUploadProgress: Double = 0.0
-    
+    @Published var currentUploadProgress: Double = 0
+    @Published private(set) var queueMessage = "Ready to upload."
     private var isPaused = false
-    
     private let uploadService = UploadService()
     private let hardNegativeUploadService = HardNegativeUploadService()
-    
+
     private init() {
-        requestNotificationPermission()
-        
-        uploadService.$progress
-            .receive(on: RunLoop.main)
-            .sink { [weak self] p in
-                self?.currentUploadProgress = p
-            }
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
+        uploadService.$progress.receive(on: RunLoop.main)
+            .sink { [weak self] in self?.currentUploadProgress = $0 }
             .store(in: &cancellables)
-        
-        // 🚀 THE FIX 1: Removed .dropFirst()!
-        // Now, it instantly registers that you have Wi-Fi on a cold app launch.
-        NetworkMonitor.shared.$isConnected
-            .sink { [weak self] isConnected in
-                if isConnected {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                        Task { await self?.autoStartIfPossible() }
-                    }
-                }
-            }
-            .store(in: &cancellables)
-            
+        NetworkMonitor.shared.$isConnected.receive(on: RunLoop.main)
+            .sink { [weak self] connected in
+                guard let self else { return }
+                if connected { Task { await self.autoStartIfPossible() } }
+                else if !self.isUploading { self.queueMessage = "Waiting for an internet connection." }
+            }.store(in: &cancellables)
         NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)
+            .receive(on: RunLoop.main)
             .sink { [weak self] _ in
-                if self?.isUploading == true {
-                    self?.isUploading = false
-                    self?.currentlyUploadingId = nil
-                }
-                
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                    Task { await self?.autoStartIfPossible() }
-                }
-            }
+                // Never reset the running flag while an async upload is alive.
+                Task { await self?.autoStartIfPossible() }
+            }.store(in: &cancellables)
+        OfflineMediaManager.shared.$archivedItems
+            .map { $0.map(\.id) }.removeDuplicates().receive(on: RunLoop.main)
+            .sink { [weak self] _ in Task { await self?.autoStartIfPossible() } }
             .store(in: &cancellables)
     }
-    
-    // 🚀 THE FIX 2: Instantly trigger an upload the moment the UI gives us your profile!
+
     func attachAuthVM(_ vm: AuthViewModel) {
-        let isFirstTime = (self.globalAuthVM == nil)
-        self.globalAuthVM = vm
-        
-        // If this is a fresh launch and the queue was waiting for your profile to load, start it now!
-        if isFirstTime && !isPaused {
-            Task { await autoStartIfPossible() }
-        }
-    }
-    
-    private func requestNotificationPermission() {
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
-            if granted { print("✅ Notifications authorized for Auto-Uploads") }
-        }
-    }
-    
-    func forceRetry() {
-        isPaused = false
+        globalAuthVM = vm
         Task { await autoStartIfPossible() }
     }
-    
+
+    func forceRetry() {
+        guard !isUploading else { return }
+        isPaused = false
+        OfflineMediaManager.shared.clearRetryableFailures()
+        Task { await autoStartIfPossible() }
+    }
+
     func stopProcessing() {
         isPaused = true
-        isUploading = false
-        endBackgroundTask()
+        queueMessage = isUploading ? "Pausing after the current request." : "Uploads paused. Tap Retry uploads to resume."
+        // Keep ownership of the active async operation until its defer runs.
     }
-    
+
     func startProcessing(authViewModel: AuthViewModel) async {
+        guard !isUploading else { return }
+        globalAuthVM = authViewModel
         isPaused = false
-        attachAuthVM(authViewModel)
-        await processOfflineQueue(authVM: authViewModel)
+        OfflineMediaManager.shared.clearRetryableFailures()
+        await autoStartIfPossible()
     }
-    
+
     private func autoStartIfPossible() async {
+        guard !isUploading else { return }
         guard !isPaused else { return }
-        
         guard NetworkMonitor.shared.isConnected else {
-            print("⚠️ Device is offline. Pausing auto-upload queue.")
+            queueMessage = "Waiting for an internet connection."
+            print("[UploadQueue] Waiting: offline")
             return
         }
-        
         guard let authVM = globalAuthVM else {
-            print("⚠️ AutoUploadManager has no AuthViewModel attached. Cannot auto-start.")
+            queueMessage = "Waiting for your account to load."
+            print("[UploadQueue] Waiting: account not attached")
             return
         }
-        
-        await authVM.fetchUserUsageStats()
         await processOfflineQueue(authVM: authVM)
     }
-    
+
     private func beginBackgroundTask() {
-        if backgroundTaskID == .invalid {
-            backgroundTaskID = UIApplication.shared.beginBackgroundTask { [weak self] in
-                self?.endBackgroundTask()
-            }
+        guard backgroundTaskID == .invalid else { return }
+        backgroundTaskID = UIApplication.shared.beginBackgroundTask { [weak self] in
+            Task { @MainActor in self?.endBackgroundTask() }
         }
     }
 
@@ -128,141 +97,143 @@ class AutoUploadManager: ObservableObject {
             backgroundTaskID = .invalid
         }
     }
-    
+
+    private func nextQueuedMedia() -> ArchivedMedia? {
+        OfflineMediaManager.shared.archivedItems
+            .filter { $0.deletionBlocked != true && $0.lastUploadError == nil }
+            .sorted { $0.dateSaved < $1.dateSaved }.first
+    }
+
     private func processOfflineQueue(authVM: AuthViewModel) async {
-        guard !isUploading else { return }
-        guard !isPaused else { return }
-        
-        let pendingMedia = OfflineMediaManager.shared.archivedItems.sorted { $0.dateSaved < $1.dateSaved }
-        guard !pendingMedia.isEmpty else { return }
-        
-        isUploading = true
-        beginBackgroundTask()
-        
-        let idToken = await authVM.fetchIdToken()
-        guard !idToken.isEmpty else {
-            print("⚠️ Cannot auto-upload: User is not fully authenticated.")
-            isUploading = false
-            endBackgroundTask()
+        guard !isUploading, !isPaused else { return }
+        guard nextQueuedMedia() != nil else {
+            queueMessage = OfflineMediaManager.shared.archivedItems.isEmpty
+                ? "No uploads waiting." : "Some uploads need attention. See the messages below."
             return
         }
-        
-        print("🚀 Processing \(pendingMedia.count) item(s) from the Outbox...")
-        
-        for media in pendingMedia {
-            if isPaused { break }
-            
-            if !NetworkMonitor.shared.isConnected {
-                print("⚠️ Connection lost. Pausing auto-upload queue.")
-                isPaused = true
-                break
-            }
-            
-            if !authVM.hasActiveSubscription {
-                print("🛑 NO ACTIVE SUBSCRIPTION: Stopping auto-upload queue.")
-                isPaused = true
-                isUploading = false
-                endBackgroundTask()
-                sendLimitNotification(
-                    title: "Subscription Required",
-                    body: "You need an active subscription or Free Trial to upload landmarks."
-                )
+        // Lock before the first await, including account refresh and token lookup.
+        isUploading = true
+        beginBackgroundTask()
+        defer {
+            isUploading = false
+            currentlyUploadingId = nil
+            currentUploadProgress = 0
+            endBackgroundTask()
+        }
+        queueMessage = "Checking your account…"
+        print("[UploadQueue] Checking account before upload")
+        await authVM.fetchUserUsageStats()
+        let idToken = await authVM.fetchIdToken()
+        guard !idToken.isEmpty else {
+            queueMessage = "Sign in to resume uploads."
+            print("[UploadQueue] Waiting: no sign-in token")
+            return
+        }
+        while let media = nextQueuedMedia() {
+            if isPaused { queueMessage = "Uploads paused. Tap Retry uploads to resume."; return }
+            guard NetworkMonitor.shared.isConnected else {
+                queueMessage = "Waiting for an internet connection."
+                print("[UploadQueue] Waiting: connection lost")
                 return
             }
-            
-            if authVM.tokenBalance <= 0 {
-                print("🛑 OUT OF TOKENS: Stopping auto-upload queue.")
-                isPaused = true
-                isUploading = false
-                endBackgroundTask()
-                sendLimitNotification(
-                    title: "Out of Tokens",
-                    body: "You need 1 token to upload a new landmark. Purchase a token pack in Settings."
-                )
+            guard authVM.hasActiveSubscription else {
+                queueMessage = "An active subscription or free trial is required."
+                print("[UploadQueue] Waiting: no active subscription")
                 return
             }
-            
+            // Existing-landmark redos don't consume a creation token.
+            if media.landmarkId == nil && media.positiveUploadCompleted != true && authVM.tokenBalance <= 0 {
+                queueMessage = "A token is required to create this landmark."
+                print("[UploadQueue] Waiting: no creation tokens")
+                return
+            }
             currentlyUploadingId = media.id
-            currentUploadProgress = 0.0
-            
+            currentUploadProgress = 0
+            queueMessage = "Uploading media…"
+            let manager = OfflineMediaManager.shared
+            let landmarkID = manager.prepareUploadID(for: media)
+            let label = media.savedLabel ?? media.title
+            var phase = "positive submission"
+            print("[UploadQueue] Starting item=\(media.id) landmark=\(landmarkID)")
             do {
-                let fileURL = OfflineMediaManager.shared.getFileURL(for: media)
-                let isVideo = media.isVideo
-                
-                let landmarkId = media.landmarkId ?? "landmark_\(UUID().uuidString.prefix(8))"
-                let label = media.savedLabel ?? media.title
-                
-                print("📤 Auto-uploading: \(label)")
-                
-                let positiveResult = try await uploadService.upload(
-                    userEmail: authVM.userEmail,
-                    idToken: idToken,
-                    label: label,
-                    landmarkId: landmarkId,
-                    landmarkLabel: label,
-                    shortDescription: media.savedDescription,
-                    userDescription: media.savedUserDescription,
-                    latitude: media.latitude,
-                    longitude: media.longitude,
-                    horizontalAccuracy: 10.0,
-                    videoURLs: isVideo ? [fileURL] : [],
-                    image: isVideo ? nil : UIImage(contentsOfFile: fileURL.path)
-                )
-                
-                let finalLandmarkId = positiveResult.landmarkId ?? landmarkId
-                
-                if let negativeURL = OfflineMediaManager.shared.getNegativeVideoURL(for: media),
+                var finalLandmarkID = landmarkID
+                if media.positiveUploadCompleted != true {
+                    let fileURL = manager.getFileURL(for: media)
+                    let result = try await uploadService.upload(
+                        userEmail: authVM.userEmail, idToken: idToken,
+                        label: label, landmarkId: landmarkID, landmarkLabel: label,
+                        shortDescription: media.savedDescription,
+                        userDescription: media.savedUserDescription,
+                        latitude: media.latitude, longitude: media.longitude,
+                        horizontalAccuracy: 10,
+                        videoURLs: media.isVideo ? [fileURL] : [],
+                        image: media.isVideo ? nil : UIImage(contentsOfFile: fileURL.path)
+                    )
+                    finalLandmarkID = result.landmarkId ?? landmarkID
+                    manager.recordPositiveCompletion(id: media.id, landmarkID: finalLandmarkID)
+                }
+                if isPaused { queueMessage = "Uploads paused. Tap Retry uploads to resume."; return }
+                if let negativeURL = manager.getNegativeVideoURL(for: media),
                    FileManager.default.fileExists(atPath: negativeURL.path) {
-                    
-                    print("📤 Auto-uploading negative reference video...")
-                    let negativeVideo = CapturedNegativeVideo(fileURL: negativeURL)
-                    
+                    phase = "negative reference"
+                    queueMessage = "Uploading negative reference…"
                     _ = try await hardNegativeUploadService.upload(
-                        landmarkId: finalLandmarkId,
-                        idToken: idToken,
-                        video: negativeVideo
+                        landmarkId: finalLandmarkID, idToken: idToken,
+                        video: CapturedNegativeVideo(fileURL: negativeURL)
                     )
                 }
-                
-                print("✅ Auto-upload complete for: \(label)")
-                
-                authVM.tokenBalance -= 1
-                authVM.activeLandmarksCount += 1
-                
-                OfflineMediaManager.shared.deleteArchive(media: media)
-                sendSuccessNotification(landmarkName: label)
-                
+                manager.deleteArchive(media: media)
+                print("[UploadQueue] Completed item=\(media.id)")
+                let content = UNMutableNotificationContent()
+                content.title = "LookSee Upload Complete"
+                content.body = "Your media for '\(label)' has been synced."
+                content.sound = .default
+                UNUserNotificationCenter.current().add(
+                    UNNotificationRequest(
+                        identifier: UUID().uuidString, content: content, trigger: nil
+                    ),
+                    withCompletionHandler: { error in
+                        if error != nil {
+                            print("[UploadQueue] Upload succeeded, but its notification could not be scheduled.")
+                        }
+                    }
+                )
+                // Use the server's balance instead of charging every redo locally.
+                await authVM.fetchUserUsageStats()
             } catch {
-                print("❌ Background upload failed for \(media.id): \(error.localizedDescription)")
-                isUploading = false
-                currentlyUploadingId = nil
-                endBackgroundTask()
-                return
+                let failure = describeFailure(error)
+                manager.recordUploadFailure(id: media.id, message: failure.message,
+                                            deletionBlocked: failure.blocked)
+                print("[UploadQueue] Failed item=\(media.id) phase=\(phase): \(failure.diagnostic)")
+                // Failed items remain visible; deletion-blocked ones never retry.
+                // Other queued items can continue without this item blocking them.
             }
+            currentlyUploadingId = nil
         }
-        
-        isUploading = false
-        currentlyUploadingId = nil
-        endBackgroundTask()
+        queueMessage = managerSummary()
     }
-    
-    private func sendSuccessNotification(landmarkName: String) {
-        let content = UNMutableNotificationContent()
-        content.title = "LookSee Upload Complete! 🎉"
-        content.body = "Your offline media for '\(landmarkName)' has been successfully synced. (1 Token consumed)."
-        content.sound = .default
-        
-        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
-        UNUserNotificationCenter.current().add(request)
+
+    private func managerSummary() -> String {
+        OfflineMediaManager.shared.archivedItems.isEmpty ? "No uploads waiting."
+            : "Some uploads need attention. See the messages below."
     }
-    
-    private func sendLimitNotification(title: String, body: String) {
-        let content = UNMutableNotificationContent()
-        content.title = title
-        content.body = body
-        content.sound = .default
-        
-        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
-        UNUserNotificationCenter.current().add(request)
+
+    private func describeFailure(_ error: Error) -> (message: String, blocked: Bool, diagnostic: String) {
+        if let uploadError = error as? UploadService.UploadError,
+           case let .badStatus(code, body) = uploadError {
+            let json = body.data(using: .utf8).flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any]
+            let serverMessage = json?["error"] as? String ?? ""
+            let blocked = code == 409 && serverMessage == "Landmark deletion has been requested. Uploads are blocked."
+            if blocked {
+                return ("Upload blocked: deletion has been requested for this landmark. Remove this item from the queue.",
+                        true, "HTTP 409: \(serverMessage)")
+            }
+            // Log status and the safe, known error category, never raw URLs/tokens.
+            let message: String
+            if code == 409 { message = "Upload conflict. Try again; if it continues, remove and re-add the media. (409)" }
+            else { message = uploadError.localizedDescription + " (HTTP \(code))" }
+            return (message, false, "HTTP \(code); \(message)")
+        }
+        return (error.localizedDescription, false, "\(type(of: error)): \(error.localizedDescription)")
     }
 }

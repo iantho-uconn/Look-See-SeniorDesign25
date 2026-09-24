@@ -27,4 +27,10 @@ struct ArchivedMedia: Identifiable, Codable {
     
     // Differentiates between Tier-1 (Record) and Tier-2 (Uploads)
     var isTier2: Bool?
+
+    // Optional fields preserve decoding of existing saved queue entries.
+    var lastUploadError: String? = nil
+    var deletionBlocked: Bool? = nil
+    var queueLandmarkId: String? = nil
+    var positiveUploadCompleted: Bool? = nil
 }

@@ -1377,7 +1377,23 @@ struct BusinessLandmarkDetailView: View {
         activeUploadRole = nil
         uploadProgressText = nil
         uploadStatusMessage = nil
-        uploadErrorMessage = error.localizedDescription
+        uploadErrorMessage = isDeletionBlockedUpload(error) ? deletionBlockedUploadMessage : error.localizedDescription
+    }
+
+    private var deletionBlockedUploadMessage: String {
+        "Upload blocked: deletion has been requested for this landmark. Additional media cannot be uploaded."
+    }
+
+    private func isDeletionBlockedUpload(_ error: Error) -> Bool {
+        guard let serviceError = error as? BusinessLandmarkServiceError,
+              case let .badStatus(statusCode, body) = serviceError,
+              statusCode == 409,
+              let data = body.data(using: .utf8),
+              let payload = try? JSONDecoder().decode([String: String].self, from: data) else {
+            return false
+        }
+        let reason = payload["error"] ?? payload["message"]
+        return reason == "Landmark deletion has been requested. Uploads are blocked."
     }
 
     private func loadRecordedVideoData(from url: URL) async throws -> Data {
@@ -1428,6 +1444,7 @@ struct BusinessLandmarkDetailView: View {
         var completedCount = 0
         var failedCount = 0
         var overLimitVideoCount = 0
+        var deletionBlocked = false
         var lastSubmissionId: String?
 
         for index in items.indices {
@@ -1463,6 +1480,12 @@ struct BusinessLandmarkDetailView: View {
                 }
             } catch {
                 failedCount += 1
+                print("[BusinessMediaUpload] Failed:", String(reflecting: error))
+                print("[BusinessMediaUpload] Details:", error.localizedDescription)
+                if isDeletionBlockedUpload(error) {
+                    deletionBlocked = true
+                    break
+                }
             }
         }
         
@@ -1474,8 +1497,12 @@ struct BusinessLandmarkDetailView: View {
                 switch datasetRole { case .positive: selectedPositiveMediaItems.removeAll(); case .hardNegative: selectedNegativeMediaItems.removeAll() }
             } else {
                 uploadStatusMessage = completedCount > 0 ? "\(completedCount) item\(completedCount == 1 ? "" : "s") uploaded successfully." : nil
-                let otherFailureCount = failedCount - overLimitVideoCount
+                let otherFailureCount = failedCount - overLimitVideoCount - (deletionBlocked ? 1 : 0)
                 var errorMessages: [String] = []
+
+                if deletionBlocked {
+                    errorMessages.append(deletionBlockedUploadMessage)
+                }
 
                 if overLimitVideoCount > 0 {
                     errorMessages.append(
