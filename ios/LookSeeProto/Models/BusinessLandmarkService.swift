@@ -133,7 +133,8 @@ enum BusinessMediaUploadTarget: Decodable {
 
 struct BusinessMediaUploadInitResponse: Decodable {
     let submissionId: String
-    let uploadUrl: S3PresignedPost
+    //let uploadUrl: S3PresignedPost
+    let uploadUrl: BusinessMediaUploadTarget
     let s3Key: String
     let bucket: String?
     let datasetRole: String
@@ -165,6 +166,7 @@ struct BusinessHardNegativeInitResponse: Decodable {
 
 struct BusinessHardNegativeUploadTarget: Decodable {
     let negativeId: String
+    //let uploadUrl: BusinessMediaUploadTarget
     let uploadUrl: S3PresignedPost
     let sourceBucket: String?
     let sourceKey: String
