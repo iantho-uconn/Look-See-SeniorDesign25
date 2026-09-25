@@ -124,6 +124,7 @@ struct PositiveVideoCameraView: View {
         recordedClips.reduce(0) { $0 + $1.duration }
     }
 
+    // 🚀 THE FIX: Optional phases now unconditionally have a 0-second minimum limit
     private var minPhaseTimeLimit: Int {
         if currentPhase.isMandatory {
             if minTotalTimeLimit == 30 {
@@ -134,14 +135,7 @@ struct PositiveVideoCameraView: View {
                 return minTotalTimeLimit
             }
         } else {
-            let deficit = minTotalTimeLimit - totalDurationElapsedInt
-            if minTotalTimeLimit == 30 {
-                return deficit > 0 ? min(4, deficit) : 1
-            } else if minTotalTimeLimit == 1 {
-                return 1
-            } else {
-                return deficit > 0 ? deficit : 1
-            }
+            return 0
         }
     }
 
@@ -256,7 +250,7 @@ struct PositiveVideoCameraView: View {
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 case .reviewingRecent(let url, let duration):
                     reviewingRecentControls(for: url, recordedDuration: duration)
-                        .padding(.bottom, 160) // 🚀 FIX: Lifted from 100 to 160 to expose AVPlayer controls
+                        .padding(.bottom, 160)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 case .gallery:
                     EmptyView()
@@ -760,7 +754,7 @@ struct PositiveVideoCameraView: View {
         .overlay(RoundedRectangle(cornerRadius: 32, style: .continuous).stroke(Color.white.opacity(0.2), lineWidth: 0.5))
         .shadow(color: .black.opacity(0.15), radius: 20, x: 0, y: 10)
         .padding(.horizontal, 20)
-        .padding(.bottom, 160) // 🚀 FIX: Lifted from 40 to 160 to expose AVPlayer controls
+        .padding(.bottom, 160)
     }
 
     private func nextRequiredPhase() -> CameraPhase? {
@@ -958,4 +952,3 @@ private struct PositiveSafeVideoPlayer: UIViewControllerRepresentable, Equatable
         player?.pause()
     }
 }
-

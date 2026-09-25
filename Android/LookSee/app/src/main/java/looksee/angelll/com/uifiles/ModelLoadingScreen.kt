@@ -95,8 +95,8 @@ fun ModelLoadingScreen(
             val models = finalState.models
             when (val reason = pullReason) {
                 is ModelPullReason.None -> {
-                    failed = true
-                    statusMessage = "No models available for your area."
+                    opacity.animateTo(0f, tween(300))
+                    onComplete()
                 }
                 is ModelPullReason.Single -> {
                     val model = models[0]

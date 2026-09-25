@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import androidx.compose.animation.*
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -292,20 +293,28 @@ fun ButtonsScreen(
                             showTutorial = true
                         }
 
-                        Text(
-                            text = topBarTitle,
-                            color = Color.White,
-                            fontSize = 22.sp,
-                            fontWeight = FontWeight.Black,
-                            letterSpacing = (-0.5).sp,
+                        AnimatedContent(
+                            targetState = topBarTitle,
+                            transitionSpec = {
+                                fadeIn(animationSpec = tween(300)) togetherWith fadeOut(animationSpec = tween(300))
+                            },
                             modifier = Modifier
                                 .weight(1f)
                                 .clickable {
                                     haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                     if (isBusinessMode) showPromotion = true else showBusinessAlert = true
-                                },
-                            textAlign = TextAlign.Center
-                        )
+                                }
+                        ) { targetTitle ->
+                            Text(
+                                text = targetTitle,
+                                color = Color.White,
+                                fontSize = 22.sp,
+                                fontWeight = FontWeight.Black,
+                                letterSpacing = (-0.5).sp,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
 
                         NavButton(icon = Icons.Default.Menu, label = "Menu") {
                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)

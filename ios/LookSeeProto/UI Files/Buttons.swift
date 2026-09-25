@@ -510,27 +510,12 @@ struct Buttons: View {
 
             Spacer()
 
+            // 🚀 Removed all tap gestures, sheets, and alerts. This is now completely static.
             Text(topBarTitle)
                 .font(.system(size: 24, weight: .bold, design: .rounded))
                 .foregroundStyle(.white)
                 .shadow(color: .black.opacity(0.8), radius: 4, x: 0, y: 2)
-                .contentShape(Rectangle())
-                .highPriorityGesture(
-                    TapGesture().onEnded {
-                        if isBusinessMode { showPromotion = true }
-                        else { showBusinessAlert = true }
-                    }
-                )
-                .sheet(isPresented: $showPromotion) {
-                    NavigationStack {
-                        BusinessLandmarksView()
-                    }
-                }
-                .alert("Premium Account Required", isPresented: $showBusinessAlert) {
-                    Button("OK", role: .cancel) {}
-                } message: {
-                    Text("You need an active subscription to access the Promotion Editor.")
-                }
+
             Spacer()
 
             // 🚀 RESTORED NATIVE NAVIGATION!
@@ -646,7 +631,7 @@ struct Buttons: View {
         guard isScanTab else { return }
         chromeFadeTask = Task {
             try? await Task.sleep(nanoseconds: 3_000_000_000)
-             guard !Task.isCancelled else { return }
+            guard !Task.isCancelled else { return }
             await MainActor.run {
                 if !isDetecting {
                     withAnimation(.easeOut(duration: 0.3)) { chromeVisible = false }

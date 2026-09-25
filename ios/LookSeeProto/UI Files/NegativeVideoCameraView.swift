@@ -115,11 +115,12 @@ struct NegativeVideoCameraView: View {
         recordedClips.reduce(0) { $0 + $1.duration }
     }
 
+    // 🚀 THE FIX: Optional phases now unconditionally have a 0-second minimum limit
     private var minPhaseTimeLimit: Int {
         if currentPhase.isMandatory {
             return 1
         } else {
-            return 1
+            return 0
         }
     }
 
@@ -943,4 +944,3 @@ private struct NegativeSafeVideoPlayer: UIViewControllerRepresentable, Equatable
         player?.pause()
     }
 }
-

@@ -639,7 +639,7 @@ class Detector internal constructor(
         const val DEFAULT_CONFIDENCE_THRESHOLD = 0.65f
         const val DEFAULT_TRACKING_THRESHOLD_MULTIPLIER = 0.35f
 
-        const val TRACKING_SMOOTHING_ALPHA = 0.65f
+        const val TRACKING_SMOOTHING_ALPHA = 0.85f
         const val MAX_COAST_FRAMES = 5
         const val COAST_CONFIDENCE_DECAY = 0.85f
 

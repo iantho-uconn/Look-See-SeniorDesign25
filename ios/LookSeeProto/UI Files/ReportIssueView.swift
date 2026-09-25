@@ -5,7 +5,6 @@
 
 import SwiftUI
 import PhotosUI
-import Sentry // 🚀 Sentry SDK integrated
 
 // MARK: - Report Models
 
@@ -13,6 +12,7 @@ enum ReportCategory: String, CaseIterable, Identifiable {
     case uiBug = "ui_bug"
     case detectionBug = "detection_bug"
     case uploadBug = "upload_bug"
+    case copyright = "copyright" // 🚀 New DMCA category
     case other = "other"
 
     var id: String { rawValue }
@@ -22,6 +22,7 @@ enum ReportCategory: String, CaseIterable, Identifiable {
         case .uiBug: return String(localized: "UI Bug")
         case .detectionBug: return String(localized: "Detection Bug")
         case .uploadBug: return String(localized: "Upload Bug")
+        case .copyright: return String(localized: "Copyright / DMCA")
         case .other: return String(localized: "Other")
         }
     }
@@ -31,6 +32,7 @@ enum ReportCategory: String, CaseIterable, Identifiable {
         case .uiBug: return "rectangle.on.rectangle.slash"
         case .detectionBug: return "viewfinder.circle"
         case .uploadBug: return "arrow.up.circle"
+        case .copyright: return "c.circle" // 🚀 Standard copyright © icon
         case .other: return "questionmark.circle"
         }
     }
@@ -90,6 +92,10 @@ struct ReportIssueView: View {
     private enum Field { case title, description }
 
     private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00)
+    
+    // 🚀 Safe character limits
+    private let maxTitleLength = 100
+    private let maxDescLength = 3000
 
     private var isValid: Bool {
         !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -205,7 +211,15 @@ struct ReportIssueView: View {
     private var detailsSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 8) {
-                sectionHeader("Title")
+                HStack {
+                    sectionHeader("Title")
+                    Spacer()
+                    Text("\(title.count)/\(maxTitleLength)")
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundStyle(title.count >= maxTitleLength ? .red : .secondary)
+                        .padding(.horizontal, 20)
+                }
+                
                 TextField("Short summary of the issue", text: $title)
                     .focused($focusedField, equals: .title)
                     .font(.system(size: 16, weight: .medium))
@@ -213,10 +227,23 @@ struct ReportIssueView: View {
                     .background(Color(uiColor: .secondarySystemGroupedBackground))
                     .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                     .padding(.horizontal)
+                    .onChange(of: title) { _, newValue in
+                        if newValue.count > maxTitleLength {
+                            title = String(newValue.prefix(maxTitleLength))
+                        }
+                    }
             }
 
             VStack(alignment: .leading, spacing: 8) {
-                sectionHeader("Description")
+                HStack {
+                    sectionHeader("Description")
+                    Spacer()
+                    Text("\(description.count)/\(maxDescLength)")
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundStyle(description.count >= maxDescLength ? .red : .secondary)
+                        .padding(.horizontal, 20)
+                }
+                
                 TextField(
                     "What happened? What did you expect instead?",
                     text: $description,
@@ -229,6 +256,11 @@ struct ReportIssueView: View {
                 .background(Color(uiColor: .secondarySystemGroupedBackground))
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .padding(.horizontal)
+                .onChange(of: description) { _, newValue in
+                    if newValue.count > maxDescLength {
+                        description = String(newValue.prefix(maxDescLength))
+                    }
+                }
             }
         }
     }
@@ -294,53 +326,50 @@ struct ReportIssueView: View {
             guard !isResolvingIdentity else { return }
             isResolvingIdentity = true
 
-            let safeEmail = vm.userEmail
+            let safeEmail = vm.userEmail ?? "unknown@user.com"
             let safeCategory = category.displayName
             let safeTitle = title
             let safeDesc = description
             let safeSeverity = severity.displayName
-            let safeScreenshot = screenshot
-            
-            // 🚀 Generates a 100% unique ID for this exact report submission
-            let uniqueReportTicket = UUID().uuidString
 
             Task {
-                let attachmentData = await Task.detached(priority: .userInitiated) {
-                    guard let image = safeScreenshot else { return nil as Data? }
-                    
-                    let maxDimension: CGFloat = 800
-                    let size = image.size
-                    if size.width <= maxDimension && size.height <= maxDimension {
-                        return image.jpegData(compressionQuality: 0.3)
+                // 1. Prepare the JSON Payload
+                let payload: [String: Any] = [
+                    "email": safeEmail,
+                    "category": safeCategory,
+                    "severity": safeSeverity,
+                    "title": safeTitle,
+                    "description": safeDesc
+                ]
+
+                guard let jsonData = try? JSONSerialization.data(withJSONObject: payload) else {
+                    await MainActor.run { isResolvingIdentity = false }
+                    return
+                }
+
+                // 2. Make the HTTP POST Request
+                // 🚀 Uses your secure CloudFront endpoint
+                guard let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/support/report") else { return }
+                
+                var request = URLRequest(url: url)
+                request.httpMethod = "POST"
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                request.httpBody = jsonData
+
+                do {
+                    let (_, response) = try await URLSession.shared.data(for: request)
+                    if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
+                        await MainActor.run {
+                            isResolvingIdentity = false
+                            showSentConfirmation = true
+                        }
+                    } else {
+                        print("Backend rejected the support ticket.")
+                        await MainActor.run { isResolvingIdentity = false }
                     }
-                    
-                    let ratio = min(maxDimension / size.width, maxDimension / size.height)
-                    let newSize = CGSize(width: size.width * ratio, height: size.height * ratio)
-                    let renderer = UIGraphicsImageRenderer(size: newSize)
-                    let resized = renderer.image { _ in image.draw(in: CGRect(origin: .zero, size: newSize)) }
-                    
-                    return resized.jpegData(compressionQuality: 0.3)
-                }.value
-
-                SentrySDK.capture(message: "[\(safeCategory)] \(safeTitle)", block: { scope in
-                    
-                    // 🚀 Overrides Sentry's default grouping so this creates a brand NEW issue
-                    scope.setFingerprint([uniqueReportTicket])
-                    
-                    scope.setExtra(value: safeDesc, key: "User Description")
-                    scope.setTag(value: safeSeverity, key: "Severity")
-                    scope.setTag(value: safeCategory, key: "Category")
-                    scope.setExtra(value: safeEmail, key: "User Email")
-
-                    if let data = attachmentData {
-                        let attachment = Attachment(data: data, filename: "screenshot.jpg", contentType: "image/jpeg")
-                        scope.addAttachment(attachment)
-                    }
-                })
-
-                await MainActor.run {
-                    isResolvingIdentity = false
-                    showSentConfirmation = true
+                } catch {
+                    print("Failed to send support ticket: \(error)")
+                    await MainActor.run { isResolvingIdentity = false }
                 }
             }
 

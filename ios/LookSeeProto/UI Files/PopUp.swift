@@ -34,20 +34,20 @@ struct PopUp: View {
         .onAppear {
             let currentLandmarkId = infoView.landmarkId
             let currentOwnerId = infoView.reportedOwnerId ?? "unknown"
-           
+            
             // Fire-and-forget background ping so it doesn't slow down the UI
             Task.detached(priority: .background) {
                 guard let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/analytics/click") else { return }
-               
+                
                 var request = URLRequest(url: url)
                 request.httpMethod = "POST"
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-               
+                
                 let body: [String: Any] = [
                     "landmarkId": currentLandmarkId,
                     "ownerUserId": currentOwnerId
                 ]
-               
+                
                 request.httpBody = try? JSONSerialization.data(withJSONObject: body)
                 
                 // 🚀 ADDED: Attaches App Attest signature headers automatically
@@ -119,7 +119,7 @@ struct PopUp: View {
             }
 
             MerchantCardView()
-           
+            
             // 🚀 NEW: Appends the Map Actions right below the Merchant Card
             if infoView.isMapPin {
                 mapActionButtons
@@ -443,18 +443,21 @@ struct MapReportSheet: View {
     @EnvironmentObject var vm: AuthViewModel
     
     @State private var selectedReason: ReportReason? = nil
-    @State private var customTitle = "" // 🚀 Added Custom Title Field
+    @State private var customTitle = ""
     @State private var customExplanation = ""
     @State private var isSubmitting = false
     @State private var reportSuccess = false
     
-    private let maxWords = 40
+    // 🚀 NEW: Upgraded to generous character limits for safety
+    private let maxDescLength = 3000
+    private let maxTitleLength = 100
     private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00)
 
-    // 🚀 Updated options per your instructions
+    // 🚀 NEW: Added the Copyright/DMCA Option
     enum ReportReason: String, CaseIterable, Identifiable {
         case inappropriate = "Inappropriate content"
         case ownership = "Landmark ownership issue"
+        case copyright = "Copyright / DMCA"
         case other = "Other / Custom Issue"
 
         var id: String { rawValue }
@@ -463,6 +466,7 @@ struct MapReportSheet: View {
             switch self {
             case .inappropriate: return "exclamationmark.shield.fill"
             case .ownership: return "person.badge.key.fill"
+            case .copyright: return "c.circle" // Standard copyright icon
             case .other: return "text.bubble.fill"
             }
         }
@@ -471,23 +475,16 @@ struct MapReportSheet: View {
             switch self {
             case .inappropriate: return .orange
             case .ownership: return .purple
+            case .copyright: return .blue
             case .other: return .secondary
             }
         }
     }
 
-    private var wordCount: Int {
-        let components = customExplanation.split { $0.isWhitespace || $0.isNewline }
-        return components.count
-    }
-
     private var isFormValid: Bool {
         guard let reason = selectedReason else { return false }
          
-        if wordCount > maxWords { return false }
-         
         if reason == .other {
-            // 🚀 If 'Other' is selected, they MUST provide both a title and an explanation
             let hasTitle = !customTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             let hasDesc = !customExplanation.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             return hasTitle && hasDesc
@@ -540,12 +537,17 @@ struct MapReportSheet: View {
                             if selectedReason != nil {
                                 VStack(alignment: .leading, spacing: 8) {
                                    
-                                    // 🚀 NEW: Shows Title Field when "Other" is selected
                                     if selectedReason == .other {
-                                        Text("Custom Issue Title (Required)")
-                                            .font(.system(size: 13, weight: .bold, design: .rounded))
-                                            .foregroundStyle(.secondary)
-                                            .textCase(.uppercase)
+                                        HStack {
+                                            Text("Custom Issue Title (Required)")
+                                                .font(.system(size: 13, weight: .bold, design: .rounded))
+                                                .foregroundStyle(.secondary)
+                                                .textCase(.uppercase)
+                                            Spacer()
+                                            Text("\(customTitle.count)/\(maxTitleLength)")
+                                                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                                .foregroundStyle(customTitle.count >= maxTitleLength ? .red : .secondary)
+                                        }
                                        
                                         TextField("Short title of the issue", text: $customTitle)
                                             .font(.system(size: 15))
@@ -553,12 +555,23 @@ struct MapReportSheet: View {
                                             .background(Color(uiColor: .tertiarySystemGroupedBackground))
                                             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                                             .padding(.bottom, 8)
+                                            .onChange(of: customTitle) { _, newValue in
+                                                if newValue.count > maxTitleLength {
+                                                    customTitle = String(newValue.prefix(maxTitleLength))
+                                                }
+                                            }
                                     }
                                    
-                                    Text(selectedReason == .other ? "Please describe the issue (Required)" : "Additional details (Optional)")
-                                        .font(.system(size: 13, weight: .bold, design: .rounded))
-                                        .foregroundStyle(.secondary)
-                                        .textCase(.uppercase)
+                                    HStack {
+                                        Text(selectedReason == .other ? "Please describe the issue (Required)" : "Additional details (Optional)")
+                                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                                            .foregroundStyle(.secondary)
+                                            .textCase(.uppercase)
+                                        Spacer()
+                                        Text("\(customExplanation.count)/\(maxDescLength)")
+                                            .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                            .foregroundStyle(customExplanation.count >= maxDescLength ? .red : .secondary)
+                                    }
 
                                     ZStack(alignment: .bottomTrailing) {
                                         TextEditor(text: $customExplanation)
@@ -570,19 +583,13 @@ struct MapReportSheet: View {
                                             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                                             .overlay(
                                                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                                    .stroke(wordCount > maxWords ? Color.red.opacity(0.8) : Color.clear, lineWidth: 1.5)
+                                                    .stroke(customExplanation.count >= maxDescLength ? Color.red.opacity(0.8) : Color.clear, lineWidth: 1.5)
                                             )
                                             .onChange(of: customExplanation) { _, newValue in
-                                                let words = newValue.split { $0.isWhitespace || $0.isNewline }
-                                                if words.count > maxWords {
-                                                    customExplanation = words.prefix(maxWords).joined(separator: " ")
+                                                if newValue.count > maxDescLength {
+                                                    customExplanation = String(newValue.prefix(maxDescLength))
                                                 }
                                             }
-
-                                        Text("\(wordCount)/\(maxWords)")
-                                            .font(.system(size: 11, weight: .bold, design: .monospaced))
-                                            .foregroundStyle(wordCount > maxWords ? .red : .secondary)
-                                            .padding(10)
                                     }
                                 }
                                 .transition(.opacity.combined(with: .move(edge: .top)))
@@ -644,7 +651,7 @@ struct MapReportSheet: View {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .fill(reason.tintColor.opacity(0.15))
                         .frame(width: 42, height: 42)
-                   
+                    
                     Image(systemName: reason.icon)
                         .font(.system(size: 18, weight: .semibold))
                         .foregroundStyle(reason.tintColor)
@@ -661,7 +668,7 @@ struct MapReportSheet: View {
                     Circle()
                         .stroke(isSelected ? primaryColor : Color(uiColor: .tertiaryLabel), lineWidth: 2)
                         .frame(width: 22, height: 22)
-                   
+                    
                     if isSelected {
                         Circle()
                             .fill(primaryColor)
@@ -689,37 +696,55 @@ struct MapReportSheet: View {
          
         let safeExplanation = customExplanation.trimmingCharacters(in: .whitespacesAndNewlines)
         let safeCustomTitle = customTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        let safeEmail = vm.userEmail ?? "unknown@user.com"
          
-        // 🚀 Determines the title format depending on if they used 'Other' or a standard reason
+        // Determines the title format depending on if they used 'Other' or a standard reason
         let finalReason = (selectedReason == .other && !safeCustomTitle.isEmpty) ? safeCustomTitle : (selectedReason?.rawValue ?? "Unknown")
-        let finalCategory = selectedReason == .other ? "Custom Issue" : "Content Report"
+        let finalCategory = selectedReason == .other ? "Custom Issue" : "Landmark Report"
+        
+        // 🚀 Embeds critical map context directly into the Jira ticket description
+        let fullDescription = """
+        \(safeExplanation.isEmpty ? "No additional details provided." : safeExplanation)
+        
+        ---
+        Landmark Name: \(landmarkLabel)
+        Landmark ID: \(landmarkId)
+        Reported Owner ID: \(reportedOwnerId)
+        """
 
-        // 🚀 This makes it come in perfectly formatted: "[Custom Title] Landmark Name"
-        SentrySDK.capture(message: "[\(finalReason)] \(landmarkLabel)", block: { scope in
-           
-            // Proactive fix: Override fingerprint to guarantee map reports don't group together!
-            let uniqueReportTicket = UUID().uuidString
-            scope.setFingerprint([uniqueReportTicket])
-           
-            scope.setTag(value: finalCategory, key: "Category")
-            scope.setTag(value: finalReason, key: "Report Reason")
-           
-            if !safeExplanation.isEmpty {
-                scope.setExtra(value: safeExplanation, key: "User Explanation")
+        // 🚀 Uses your secure CloudFront endpoint to route this to Jira
+        let payload: [String: Any] = [
+            "email": safeEmail,
+            "category": finalCategory,
+            "severity": "High", // Map reports demand faster attention
+            "title": "[\(finalReason)] \(landmarkLabel)",
+            "description": fullDescription
+        ]
+
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: payload),
+              let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/support/report") else {
+            await MainActor.run { isSubmitting = false }
+            return
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = jsonData
+
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
+                await MainActor.run {
+                    isSubmitting = false
+                    withAnimation { reportSuccess = true }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { dismiss() }
+                }
+            } else {
+                await MainActor.run { isSubmitting = false }
             }
-           
-            scope.setExtra(value: landmarkId, key: "Reported Landmark ID")
-            scope.setExtra(value: reportedOwnerId, key: "Reported Owner ID")
-            scope.setExtra(value: vm.userEmail, key: "Reporter Email")
-        })
-         
-        try? await Task.sleep(nanoseconds: 800_000_000)
-         
-        isSubmitting = false
-        withAnimation { reportSuccess = true }
-         
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
-            dismiss()
+        } catch {
+            await MainActor.run { isSubmitting = false }
         }
     }
 }
