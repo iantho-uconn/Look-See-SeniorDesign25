@@ -435,7 +435,9 @@ class Detector internal constructor(
         val shape = output.shape
         if (shape.size != 3 || shape[0] != 1) return emptyList()
 
-        val isTransposed = shape[1] == 8400
+        // 🚀 FIXED: Dynamically detect YOLO26s shape instead of hardcoding 8400 boxes
+        // Typically boxes > channels, so the larger dimension is the number of boxes
+        val isTransposed = shape[1] > shape[2]
         val numBoxes = if (isTransposed) shape[1] else shape[2]
         val numChannels = if (isTransposed) shape[2] else shape[1]
         val numClasses = numChannels - 4
@@ -600,7 +602,27 @@ class Detector internal constructor(
     }
 
     private fun proximityFilter(detections: List<Detection>, manifest: ClusterLandmarkManifest?): List<Detection> {
-        return detections
+        val userLoc = userLocation
+        if (manifest == null || userLoc == null) return detections
+
+        return detections.filter { detection ->
+            val objectInfo = manifest.landmark(detection.classIndex) ?: return@filter true
+            
+            val results = FloatArray(1)
+            android.location.Location.distanceBetween(
+                userLoc.latitude, userLoc.longitude,
+                objectInfo.latitude, objectInfo.longitude,
+                results
+            )
+            val distanceMeters = results[0]
+            val isNearby = distanceMeters <= proximityThresholdMeters
+            
+            if (!isNearby) {
+                Log.d("LOOKSEE_DEBUG", "${objectInfo.label} suppressed because object is not nearby (distance: ${distanceMeters}m)")
+            }
+            
+            isNearby
+        }
     }
 
     private fun finalizeTracking(detections: List<Detection>): List<Detection> = synchronized(engineLock) {
@@ -738,30 +760,22 @@ class LiteRtDetectorModelFactory : DetectorModelFactory {
     override fun load(release: ActiveModelRelease): DetectorModel {
         var interpreter: Interpreter? = null
 
-        // 1. Try Hardware GPU
+        // 1. Force Hardware GPU (Bypass CompatibilityList)
         try {
-            val compatList = CompatibilityList()
-            if (compatList.isDelegateSupportedOnThisDevice) {
-                val gpuOptions = Interpreter.Options().addDelegate(GpuDelegate(compatList.bestOptionsForThisDevice))
-                interpreter = Interpreter(release.modelFile, gpuOptions)
-                Log.e("LOOKSEE_DEBUG", "🚀 ✅ TFLite is running on HARDWARE GPU!")
+            // CompatibilityList is outdated for modern devices (like Pixel 9 Pro). 
+            // We force the GPU Delegate and catch any Throwables to prevent crashes.
+            val gpuOptions = Interpreter.Options().apply {
+                addDelegate(GpuDelegate())
             }
-        } catch (e: Exception) {
-            Log.e("LOOKSEE_DEBUG", "⚠️ GPU rejected YOLO11: ${e.message}")
+            interpreter = Interpreter(release.modelFile, gpuOptions)
+            Log.e("LOOKSEE_DEBUG", "🚀 ✅ TFLite is running on HARDWARE GPU!")
+        } catch (t: Throwable) {
+            // Catching Throwable (not just Exception) safely traps underlying Java LinkageErrors
+            Log.e("LOOKSEE_DEBUG", "⚠️ GPU rejected model: ${t.message}")
         }
 
-        // 2. Try Hardware NPU / Tensor Chip (NNAPI)
-        if (interpreter == null) {
-            try {
-                val nnapiOptions = Interpreter.Options().apply { setUseNNAPI(true) }
-                interpreter = Interpreter(release.modelFile, nnapiOptions)
-                Log.e("LOOKSEE_DEBUG", "🧠 ✅ TFLite is running on NNAPI (Hardware NPU)!")
-            } catch (e: Exception) {
-                Log.e("LOOKSEE_DEBUG", "⚠️ NNAPI rejected YOLO11: ${e.message}")
-            }
-        }
-
-        // 3. Max-Power CPU Fallback (All available cores)
+        // 2. Max-Power CPU Fallback (All available cores)
+        // We completely skip NNAPI, as it is deprecated by Google and crashes during inference on Tensor chips.
         val finalInterpreter = interpreter ?: Interpreter(release.modelFile, Interpreter.Options().apply {
             val maxCores = Runtime.getRuntime().availableProcessors()
             setNumThreads(maxCores)
@@ -850,7 +864,8 @@ private class LiteRtDetectorModel(
         }
 
         val rawIndex = outputTensors.indexOfFirst {
-            it.shape().size == 3 && (it.shape()[1] == 8400 || it.shape()[2] == 8400)
+            // 🚀 FIXED: Dynamically find the output tensor for YOLO26s
+            it.shape().size == 3 && (it.shape()[1] > 1000 || it.shape()[2] > 1000)
         }
 
         if (rawIndex >= 0) {

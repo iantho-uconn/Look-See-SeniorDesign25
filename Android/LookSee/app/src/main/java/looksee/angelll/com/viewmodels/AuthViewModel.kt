@@ -323,9 +323,59 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private suspend fun uploadImageToS3(imageBytes: ByteArray, role: String): String? {
+        val url = "https://d11vl3v9w133rh.cloudfront.net/checkout"
+        val initPayload = JSONObject().apply {
+            put("purchaseType", "init_image_upload")
+            put("userId", userId)
+            put("role", role)
+            put("contentType", "image/jpeg")
+        }
+        val (code, data) = makePostRequest(url, initPayload)
+        if (code !in 200..299 || data == null) {
+            println("❌ API Gateway Initialization Failed")
+            return null
+        }
+        
+        try {
+            val json = JSONObject(data)
+            val uploadUrlDict = json.getJSONObject("uploadUrl")
+            val urlString = uploadUrlDict.getString("url")
+            val fields = uploadUrlDict.getJSONObject("fields")
+            val finalImageUrl = json.getString("finalImageUrl")
+            
+            val success = UploadHelper.uploadToS3(fields, urlString, imageBytes)
+            if (success) {
+                println("✅ S3 Image Upload Successful: $finalImageUrl")
+                return finalImageUrl
+            } else {
+                println("❌ S3 UPLOAD DIRECTLY FAILED!")
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            println("❌ NETWORK CRASH DURING LAMBDA SAVE: ${e.localizedMessage}")
+        }
+        return null
+    }
+
     suspend fun updateUserIdentity(newUsername: String, emailToSave: String, profileBase64: String? = null): Pair<Boolean, String?> {
         if (userId.isEmpty()) return Pair(false, "User not found")
         val url = "https://d11vl3v9w133rh.cloudfront.net/checkout"
+
+        var uploadedImageUrl: String? = null
+        if (profileBase64 != null) {
+            try {
+                val cleanBase64 = if (profileBase64.contains(",")) profileBase64.split(",")[1] else profileBase64
+                val imageBytes = android.util.Base64.decode(cleanBase64, android.util.Base64.DEFAULT)
+                uploadedImageUrl = uploadImageToS3(imageBytes, "user_profile")
+                if (uploadedImageUrl == null) {
+                    println("❌ S3 Method execution failed for profile image.")
+                    return Pair(false, "Failed to upload image securely.")
+                }
+            } catch (e: Exception) {
+                println("❌ ERROR: Could not decode Base64 string into Image Data. The string may be corrupted.")
+            }
+        }
 
         val body = JSONObject().apply {
             put("purchaseType", "update_user_identity")
@@ -333,20 +383,21 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
             put("userEmail", emailToSave) // 🚀 Forced parameter injection
             put("username", newUsername)
             put("currentUsername", username)
-            put("profileImageUrl", profileImageUrl)
-            profileBase64?.let { put("profileBase64", it) }
+            put("profileImageUrl", uploadedImageUrl ?: profileImageUrl)
         }
 
         val (code, data) = makePostRequest(url, body)
-        return if (code == 200 && data != null) {
+        return if (code in 200..299 && data != null) {
             val json = JSONObject(data)
             withContext(Dispatchers.Main) {
                 json.optString("username", "").takeIf { it.isNotEmpty() }?.let { username = it }
                 json.optString("profileImageUrl", "").takeIf { it.isNotEmpty() }?.let { profileImageUrl = it }
             }
+            println("✅ Lambda Successfully Saved Profile Data!")
             Pair(true, null)
         } else {
             val errStr = data ?: "Unknown Error"
+            println("❌ LAMBDA REJECTED SAVE ($code): $errStr")
             if (errStr.contains("ERR_USERNAME_TAKEN")) {
                 Pair(false, "That username is already taken.")
             } else {
@@ -367,6 +418,21 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         if (userId.isEmpty()) return false
         val url = "https://d11vl3v9w133rh.cloudfront.net/checkout"
 
+        var uploadedLogoUrl: String? = null
+        if (storeLogoBase64Input != null) {
+            try {
+                val cleanBase64 = if (storeLogoBase64Input.contains(",")) storeLogoBase64Input.split(",")[1] else storeLogoBase64Input
+                val imageBytes = android.util.Base64.decode(cleanBase64, android.util.Base64.DEFAULT)
+                uploadedLogoUrl = uploadImageToS3(imageBytes, "business_logo")
+                if (uploadedLogoUrl == null) {
+                    println("❌ S3 Method execution failed for business logo.")
+                    return false
+                }
+            } catch (e: Exception) {
+                println("❌ ERROR: Could not decode Business Logo Base64 string into Data.")
+            }
+        }
+
         val body = JSONObject().apply {
             put("purchaseType", "update_profile")
             put("userId", userId)
@@ -375,12 +441,11 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
             put("storeWebsite", storeWebsiteInput)
             put("storeAddress", storeAddressInput)
             put("storeBio", storeBioInput)
-            put("storeLogoUrl", storeLogoUrlInput)
-            storeLogoBase64Input?.let { put("storeLogoBase64", it) }
+            put("storeLogoUrl", uploadedLogoUrl ?: storeLogoUrlInput)
         }
 
         val (code, data) = makePostRequest(url, body)
-        return if (code == 200) {
+        return if (code in 200..299) {
             val json = data?.let { JSONObject(it) }
             val newLogoUrl = json?.optString("logoUrl", "")
 
@@ -392,9 +457,11 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                 storeBio = storeBioInput
                 storeLogoUrl = newLogoUrl?.takeIf { it.isNotEmpty() } ?: storeLogoUrlInput
             }
+            println("✅ Lambda Successfully Saved Business Profile Data!")
             true
         } else {
-            println("❌ Backend Rejected Upload ($code): $data")
+            val errStr = data ?: "Unknown Error"
+            println("❌ LAMBDA REJECTED SAVE ($code): $errStr")
             false
         }
     }

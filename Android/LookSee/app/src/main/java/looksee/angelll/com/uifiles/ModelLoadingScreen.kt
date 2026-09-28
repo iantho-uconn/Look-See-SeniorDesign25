@@ -131,7 +131,8 @@ fun ModelLoadingScreen(
         startLoading()
     }
 
-    Box(modifier = Modifier.fillMaxSize().background(Color.Black).alpha(opacity.value)) {
+    Box(modifier = Modifier.fillMaxSize().alpha(opacity.value)) {
+        AnimatedBackground(showLoadingUI = showLoadingUI)
         Box(
             modifier = Modifier
                 .align(Alignment.Center)

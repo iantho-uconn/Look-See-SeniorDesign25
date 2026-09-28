@@ -118,21 +118,36 @@ fun RootView(vm: AuthViewModel, authState: AuthState) {
         }
     }
 
+
+    var isModelLoadingDone by remember { mutableStateOf(false) }
+    var isAuthResolutionDone by remember { mutableStateOf(false) }
+
+    fun advanceIfReady() {
+        if (isModelLoadingDone && isAuthResolutionDone) {
+            appState = AppState.Main
+            isModelLoadingDone = false
+            isAuthResolutionDone = false
+        }
+    }
+
     when (appState) {
         AppState.LoadingModel -> {
+            LaunchedEffect(Unit) {
+                vm.checkSession()
+                if (vm.isSignedIn) {
+                    authState.resolveTier()
+                }
+                isAuthResolutionDone = true
+                advanceIfReady()
+            }
+            
             ModelLoadingScreen(
                 onComplete = {
-                    appState = AppState.Main
-                    coroutineScope.launch {
-                        vm.checkSession()
-                        if (vm.isSignedIn) {
-                            authState.resolveTier()
-                        }
-                    }
+                    isModelLoadingDone = true
+                    advanceIfReady()
                 }
             )
         }
-
         AppState.Main -> {
             ButtonsScreen(
                 vm = vm,
