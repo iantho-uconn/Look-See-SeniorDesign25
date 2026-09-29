@@ -22,6 +22,90 @@ bedrock_client = boto3.client("bedrock-runtime", region_name=os.environ.get("AWS
 
 QUEUE_URL = os.environ.get('QUEUE_URL')
 
+
+from boto3.dynamodb.types import TypeSerializer
+from botocore.exceptions import ClientError
+
+DELETIONS_TABLE = os.environ.get("DELETIONS_TABLE", "LookSeeLandmarkDeletions")
+LANDMARKS_TABLE = os.environ.get("LANDMARKS_TABLE", "LookSeeLandmarks")
+SUBMISSIONS_TABLE = os.environ.get("TABLE_NAME", "LookSeeSubmissions")
+OUTPUT_BUCKET = os.environ.get("OUTPUT_BUCKET", "looksee-models")
+ddb_client = boto3.client("dynamodb")
+_serializer = TypeSerializer()
+
+class ProcessingStopped(Exception):
+    pass
+
+class ProcessingGuard:
+    def __init__(self, submission_id, bucket, key):
+        self.submission_id, self.bucket, self.key = submission_id, bucket, key
+        self.item = dynamodb.Table(SUBMISSIONS_TABLE).get_item(
+            Key={"submissionId": submission_id}, ConsistentRead=True).get("Item")
+        if not self.item:
+            raise ProcessingStopped("submission_missing")
+        self.landmark_id = self.item.get("boundLandmarkId") or self.item.get("landmarkId")
+        if not self.landmark_id:
+            raise ProcessingStopped("landmark_binding_missing")
+        if self.item.get("landmarkId") not in (None, self.landmark_id):
+            raise ProcessingStopped("landmark_binding_mismatch")
+        self.bucket_field = "sourceBucket" if self.item.get("sourceBucket") else "bucket"
+        if self.item.get(self.bucket_field) != bucket or self.item.get("s3Key") != key:
+            raise ProcessingStopped("source_binding_mismatch")
+        self.binding_field = "boundLandmarkId" if self.item.get("boundLandmarkId") else "landmarkId"
+        self.check()
+
+    def check(self):
+        marker = dynamodb.Table(DELETIONS_TABLE).get_item(
+            Key={"landmarkId": self.landmark_id}, ConsistentRead=True).get("Item")
+        if marker is not None:
+            raise ProcessingStopped("deletion_requested")
+        landmark = dynamodb.Table(LANDMARKS_TABLE).get_item(
+            Key={"landmarkId": self.landmark_id}, ConsistentRead=True).get("Item")
+        if not landmark:
+            raise ProcessingStopped("landmark_missing")
+        if "deletionStatus" in landmark or landmark.get("status") in ("DELETING", "DELETED"):
+            raise ProcessingStopped("deletion_requested")
+        current = dynamodb.Table(SUBMISSIONS_TABLE).get_item(
+            Key={"submissionId": self.submission_id}, ConsistentRead=True).get("Item")
+        if not current:
+            raise ProcessingStopped("submission_missing")
+        if (current.get(self.binding_field) != self.landmark_id or
+                current.get(self.bucket_field) != self.bucket or current.get("s3Key") != self.key):
+            raise ProcessingStopped("source_binding_changed")
+
+    def update(self, expression, values, names=None):
+        self.check()
+        def av(data):
+            return {k: _serializer.serialize(v) for k, v in data.items()}
+        sn = dict(names or {})
+        sn.update({"#binding": self.binding_field, "#bucket": self.bucket_field})
+        sv = dict(values)
+        sv.update({":guardLandmark": self.landmark_id, ":guardBucket": self.bucket, ":guardKey": self.key})
+        ln = dict(names or {})
+        ln["#guardStatus"] = "status"
+        lv = dict(values)
+        lv.update({":guardDeleting": "DELETING", ":guardDeleted": "DELETED"})
+        actions = [
+            {"ConditionCheck": {"TableName": DELETIONS_TABLE,
+                "Key": av({"landmarkId": self.landmark_id}),
+                "ConditionExpression": "attribute_not_exists(landmarkId)"}},
+            {"Update": {"TableName": SUBMISSIONS_TABLE,
+                "Key": av({"submissionId": self.submission_id}),
+                "UpdateExpression": expression,
+                "ConditionExpression": "attribute_exists(submissionId) AND #binding = :guardLandmark AND #bucket = :guardBucket AND s3Key = :guardKey",
+                "ExpressionAttributeNames": sn, "ExpressionAttributeValues": av(sv)}},
+            {"Update": {"TableName": LANDMARKS_TABLE,
+                "Key": av({"landmarkId": self.landmark_id}),
+                "UpdateExpression": expression,
+                "ConditionExpression": "attribute_exists(landmarkId) AND attribute_not_exists(deletionStatus) AND (attribute_not_exists(#guardStatus) OR (#guardStatus <> :guardDeleting AND #guardStatus <> :guardDeleted))",
+                "ExpressionAttributeNames": ln, "ExpressionAttributeValues": av(lv)}}]
+        try:
+            ddb_client.transact_write_items(TransactItems=actions)
+        except ClientError:
+            self.check()  # Convert deletion races to a clean skip; retain real AWS failures.
+            raise
+
+
 FRAME_SKIP = 1
 SIMILARITY_THRESHOLD = 0.85
 RESIZE_WIDTH = 640  
@@ -60,92 +144,67 @@ def are_frames_similar(frame1, frame2, frame_index):
     print(f"  -> Frame {frame_index}: {similarity_pct * 100:.1f}% similar")
     return similarity_pct >= SIMILARITY_THRESHOLD
 
-def save_and_upload(frame, output_bucket, folder_path, frame_index, file_prefix):
+def save_and_upload(frame, output_bucket, folder_path, frame_index, file_prefix, guard):
     unique_name = f"{file_prefix}__frame_{frame_index}.jpg"
     local_path = f"{TEMP_FRAME_DIR}/{unique_name}"
     cv2.imwrite(local_path, frame)
+    guard.check()
     s3_client.upload_file(local_path, output_bucket, f"{folder_path}/{unique_name}")
+    guard.check()
     os.remove(local_path)
 
-def process_video(input_bucket, video_key, output_bucket, folder_path, file_prefix):
+def process_video(input_bucket, video_key, output_bucket, folder_path, file_prefix, guard):
     if not os.path.exists(TEMP_FRAME_DIR): 
         os.makedirs(TEMP_FRAME_DIR)
+    guard.check()
     s3_client.download_file(input_bucket, video_key, TEMP_VIDEO_PATH)
+    guard.check()
     cap = cv2.VideoCapture(TEMP_VIDEO_PATH)
     previous_frame, frame_index = None, 0
     saved_count = 0 
 
-    while True:
-        ret, frame = cap.read()
-        if not ret: 
-            break
-        if frame_index % FRAME_SKIP != 0:
+    try:
+        while True:
+            if frame_index % 30 == 0:
+                guard.check()
+            ret, frame = cap.read()
+            if not ret: 
+                break
+            if frame_index % FRAME_SKIP != 0:
+                frame_index += 1
+                continue
+                
+            original_height, original_width = frame.shape[:2]
+            aspect_ratio = original_width / original_height
+            new_width = RESIZE_WIDTH
+            new_height = int(RESIZE_WIDTH / aspect_ratio)
+            
+            frame = cv2.resize(frame, (new_width, new_height))
+    
+            if previous_frame is None or not are_frames_similar(previous_frame, frame, frame_index):
+                save_and_upload(frame, output_bucket, folder_path, frame_index, file_prefix, guard)
+                previous_frame = frame
+                saved_count += 1 
+                
             frame_index += 1
-            continue
             
-        original_height, original_width = frame.shape[:2]
-        aspect_ratio = original_width / original_height
-        new_width = RESIZE_WIDTH
-        new_height = int(RESIZE_WIDTH / aspect_ratio)
-        
-        frame = cv2.resize(frame, (new_width, new_height))
-
-        if previous_frame is None or not are_frames_similar(previous_frame, frame, frame_index):
-            save_and_upload(frame, output_bucket, folder_path, frame_index, file_prefix)
-            previous_frame = frame
-            saved_count += 1 
-            
-        frame_index += 1
-        
-    cap.release()
-    if os.path.exists(TEMP_VIDEO_PATH): 
-        os.remove(TEMP_VIDEO_PATH)
+    finally:
+        cap.release()
+        if os.path.exists(TEMP_VIDEO_PATH):
+            os.remove(TEMP_VIDEO_PATH)
     return saved_count
 
 
-def lambda_handler(event, context):
-    input_bucket = None
-    video_key = None
-
-    print(f"Received event: {json.dumps(event)}") 
-
-    if 'detail' in event and 'bucket' in event['detail']:
-        input_bucket = event['detail']['bucket']['name']
-        video_key = event['detail']['object']['key']
-
-    elif 's3Key' in event and 'bucket' in event:
-        input_bucket = event['bucket']
-        video_key = event['s3Key']
-
-    elif 'Records' in event:
-        record = event['Records'][0]
-        if record.get('eventSource') == 'aws:sqs':
-            sqs_body = json.loads(record['body'])
-            if sqs_body.get('Event') == 's3:TestEvent':
-                return {"statusCode": 200, "body": "Skipped test event"}
-            if 'Records' in sqs_body:
-                input_bucket = sqs_body['Records'][0]['s3']['bucket']['name']
-                video_key = sqs_body['Records'][0]['s3']['object']['key']
-        elif 's3' in record:
-            input_bucket = record['s3']['bucket']['name']
-            video_key = record['s3']['object']['key']
-
-    if not input_bucket or not video_key:
-        print(f"Skipping unrecognized event format: {event}")
-        return {"statusCode": 400, "body": "No valid bucket or key found"}
-
-    video_key = urllib.parse.unquote_plus(video_key)
-    output_bucket = "looksee-models"
-    
+def process_object(input_bucket, video_key):
+    output_bucket = OUTPUT_BUCKET
     path_parts = video_key.split('/')
-    submission_id = path_parts[-2] 
-
-    table = dynamodb.Table('LookSeeSubmissions')
-    db_response = table.get_item(Key={'submissionId': submission_id})
-    item = db_response.get('Item', {})
-
+    if len(path_parts) < 2:
+        raise ValueError("Invalid source key")
+    submission_id = path_parts[-2]
+    guard = ProcessingGuard(submission_id, input_bucket, video_key)
+    item = guard.item
     raw_label = item.get('label')
-    landmark_id = item.get('landmarkId')
+    landmark_id = guard.landmark_id
     
     if not raw_label:
         raw_label = landmark_id if landmark_id else 'Unknown'
@@ -166,15 +225,18 @@ def lambda_handler(event, context):
     if "/images/" in video_key:
         original_filename = video_key.split('/')[-1]
         target_filename = f"{file_prefix}__{original_filename}" 
+        guard.check()
         s3_client.copy({'Bucket': input_bucket, 'Key': video_key}, output_bucket, f"{folder_path}/{target_filename}")
+        guard.check()
         reference_image_key = f"{folder_path}/{target_filename}"
         new_saved_count = 1
     else:
-        new_saved_count = process_video(input_bucket, video_key, output_bucket, folder_path, file_prefix)
+        new_saved_count = process_video(input_bucket, video_key, output_bucket, folder_path, file_prefix, guard)
         reference_image_key = f"{folder_path}/{file_prefix}__frame_0.jpg" 
         
     print(f"Extracted {new_saved_count} frames from the latest upload.")
 
+    guard.check()
     if not prompt_list:
         try:
             print(f"🤖 Invoking Bedrock Vision AI (Nova Pro) for reference image: {reference_image_key}")
@@ -225,22 +287,13 @@ def lambda_handler(event, context):
 
             print(f"📝 Generated Multi-Prompts: {prompts_list}")
 
-            table.update_item(
-                Key={'submissionId': submission_id},
-                UpdateExpression="SET prompts = :p",
-                ExpressionAttributeValues={':p': prompts_list}
-            )
-            
-            if landmark_id:
-                landmarks_table = dynamodb.Table('LookSeeLandmarks')
-                landmarks_table.update_item(
-                    Key={'landmarkId': landmark_id},
-                    UpdateExpression="SET prompts = :p",
-                    ExpressionAttributeValues={':p': prompts_list}
-                )
-            
+            guard.update("SET prompts = :p", {":p": prompts_list})
             prompt_data_to_save = prompts_list
 
+        except ProcessingStopped:
+            raise
+        except ClientError:
+            raise
         except Exception as e:
             print(f"⚠️ Bedrock/DynamoDB integration failed, skipping: {str(e)}")
             prompt_data_to_save = [class_name] 
@@ -255,12 +308,15 @@ def lambda_handler(event, context):
     if landmark_id:
         metadata_content["landmarkId"] = landmark_id
     
+    guard.check()
     s3_client.put_object(
         Bucket=output_bucket,
         Key=f"{folder_path}/metadata.json",
         Body=json.dumps(metadata_content, cls=DecimalEncoder),
         ContentType='application/json'
     )
+
+    guard.check()
 
     # ---------------------------------------------------------------------------
     # 🚀 REAL-TIME SHORTFALL CHECK & DYNAMODB STATUS UPDATE 
@@ -306,35 +362,59 @@ def lambda_handler(event, context):
                 ':r': required_frames
             }
 
-            # 🚀 WAKE UP AUTO-LABELING WORKER VIA SQS
-            if QUEUE_URL:
-                try:
-                    sqs_client.send_message(
-                        QueueUrl=QUEUE_URL,
-                        MessageBody=json.dumps({"folder_name": folder_name})
-                    )
-                    print(f"📨 Sent SQS task for {folder_name} to Auto-Labeler.")
-                except Exception as sqs_err:
-                    print(f"⚠️ Failed to send SQS trigger: {sqs_err}")
-
-        # Update Submission Table
-        table.update_item(
-            Key={'submissionId': submission_id},
-            UpdateExpression=update_expr,
-            ExpressionAttributeNames={'#st': 'status'},
-            ExpressionAttributeValues=expr_vals
-        )
-        
-        # Update Landmark Table
-        if landmark_id:
-            dynamodb.Table('LookSeeLandmarks').update_item(
-                Key={'landmarkId': landmark_id},
-                UpdateExpression=update_expr,
-                ExpressionAttributeNames={'#st': 'status'},
-                ExpressionAttributeValues=expr_vals
-            )
-        
-    except Exception as e:
-        print(f"⚠️ Critical error during DynamoDB status update: {e}")
+        # Update both records atomically with the deletion marker check.
+        guard.update(update_expr, expr_vals, {'#st': 'status'})
+        if status == 'PREPARING_DATA' and QUEUE_URL:
+            guard.check()
+            sqs_client.send_message(
+                QueueUrl=QUEUE_URL,
+                MessageBody=json.dumps({"folder_name": folder_name,
+                                        "landmarkId": landmark_id,
+                                        "submissionId": submission_id}))
+            guard.check()
+            print(f"Sent autolabel task for {folder_name}")
+    except ProcessingStopped:
+        raise
+    except Exception:
+        # Raise so Lambda/SQS can retry infrastructure failures.
+        raise
 
     return {"statusCode": 200, "body": f"Processing complete. Status: {status}"}
+
+def _objects(event):
+    # Only S3 notification keys use form-url encoding. EventBridge/direct keys are literal.
+    if event.get("Event") == "s3:TestEvent":
+        return
+    if "Records" in event:
+        for record in event["Records"]:
+            if record.get("eventSource") == "aws:sqs":
+                yield from _objects(json.loads(record["body"]))
+            elif "s3" in record:
+                yield (record["s3"]["bucket"]["name"],
+                       urllib.parse.unquote_plus(record["s3"]["object"]["key"]))
+            else:
+                raise ValueError("Unsupported record")
+    elif "detail" in event and "bucket" in event["detail"]:
+        yield event["detail"]["bucket"]["name"], event["detail"]["object"]["key"]
+    elif "s3Key" in event and "bucket" in event:
+        yield event["bucket"], event["s3Key"]
+    else:
+        raise ValueError("No valid bucket or key found")
+
+
+def lambda_handler(event, context):
+    results = []
+    for bucket, key in _objects(event):
+        try:
+            results.append(process_object(bucket, key))
+        except ProcessingStopped as exc:
+            result = {"status": "SKIPPED", "reason": str(exc), "sourceKey": key}
+            print(json.dumps(result))
+            results.append({"statusCode": 200, "body": json.dumps(result)})
+        finally:
+            if os.path.exists(TEMP_VIDEO_PATH):
+                os.remove(TEMP_VIDEO_PATH)
+            if os.path.isdir(TEMP_FRAME_DIR):
+                for filename in os.listdir(TEMP_FRAME_DIR):
+                    os.remove(os.path.join(TEMP_FRAME_DIR, filename))
+    return results[0] if len(results) == 1 else {"statusCode": 200, "results": results}
