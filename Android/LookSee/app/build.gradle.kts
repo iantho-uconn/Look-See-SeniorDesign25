@@ -1,7 +1,18 @@
+import java.io.FileInputStream
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
 }
+
+val localProperties = Properties().apply {
+    val localPropertiesFile = rootProject.file("local.properties")
+    if (localPropertiesFile.exists()) {
+        load(FileInputStream(localPropertiesFile))
+    }
+}
+val mapsApiKey: String = localProperties.getProperty("MAPS_API_KEY") ?: ""
 
 android {
     namespace = "looksee.angelll.com"
@@ -15,6 +26,10 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Injects the key into AndroidManifest.xml and BuildConfig
+        manifestPlaceholders["MAPS_API_KEY"] = mapsApiKey
+        buildConfigField("String", "MAPS_API_KEY", "\"$mapsApiKey\"")
     }
 
     buildTypes {
@@ -77,6 +92,8 @@ dependencies {
     implementation("com.google.maps.android:maps-compose:8.4.0")
     implementation("com.google.maps.android:maps-compose-utils:8.4.0")
     implementation("com.google.android.gms:play-services-location:21.4.0")
+    implementation("com.google.android.ump:user-messaging-platform:2.2.0")
+    implementation("com.google.android.gms:play-services-ads:23.0.0")
 
     implementation("com.google.accompanist:accompanist-permissions:0.37.3")
 

@@ -234,12 +234,12 @@ fun RootView(vm: AuthViewModel, authState: AuthState) {
         AppState.GuestSignUp -> {
             GuestSignUpView(
                 vm = vm,
-                onNavigate = { route ->
-                    if (route.startsWith("confirm_signup/")) {
-                        appState = AppState.Login // Or handle confirmation specifically
-                    } else if (route == "login") {
-                        appState = AppState.Login
-                    }
+                initialBusinessAccount = false,
+                onSignupSuccess = { email, wantsBusiness ->
+                    appState = AppState.LoadingModel
+                },
+                onGoToLogin = {
+                    appState = AppState.Login
                 },
                 onDismiss = { appState = AppState.Settings }
             )
@@ -304,10 +304,17 @@ fun RootView(vm: AuthViewModel, authState: AuthState) {
         }
 
         AppState.Signup -> {
-            Signup(
+            SignupScreen(
                 vm = vm,
-                onSignupSuccess = { appState = AppState.Login },
-                onGoToLogin = { appState = AppState.Login }
+                initialBusinessAccount = false,
+                onSignupSuccess = { email, wantsBusiness ->
+                    appState = AppState.LoadingModel
+                },
+                onNavigate = { route ->
+                    if (route == "login") {
+                        appState = AppState.Login
+                    }
+                }
             )
         }
 

@@ -1,5 +1,12 @@
 package looksee.angelll.com.subscription
 
+import looksee.angelll.com.models.BusinessHttpClient
+import looksee.angelll.com.models.UrlConnectionBusinessHttpClient
+import looksee.angelll.com.models.BusinessHttpRequest
+import looksee.angelll.com.models.BusinessHttpResponse
+import looksee.angelll.com.models.LOOKSEE_API_BASE_URL
+
+import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,6 +26,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -27,11 +35,15 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.google.gson.Gson
+import com.stripe.android.PaymentConfiguration
+import com.stripe.android.paymentsheet.PaymentSheet
 import com.stripe.android.paymentsheet.PaymentSheetResult
-import looksee.angelll.com.models.CheckoutPreparation
-import looksee.angelll.com.models.CheckoutPrepareRequest
-import looksee.angelll.com.models.CheckoutService
-import looksee.angelll.com.models.CheckoutSession
+import looksee.angelll.com.subscription.CheckoutPreparation
+import looksee.angelll.com.subscription.CheckoutPrepareRequest
+import looksee.angelll.com.subscription.CheckoutService
+import looksee.angelll.com.subscription.CheckoutSession
+
 
 /** Generic Stripe PaymentSheet screen translated from StripeCheckoutView.swift. */
 @Composable
@@ -161,5 +173,247 @@ fun StripeCheckoutView(
                 }
             }
         }
+    }
+}
+
+
+// --- Merged from CheckoutService.kt ---
+enum class CheckoutPurchaseType(val wireValue: String) {
+    YEARLY_SUBSCRIPTION("yearly_subscription"),
+    TOKEN_PACK("token_pack"),
+    CONFIRM_SUCCESS("confirm_success"),
+}
+
+data class CheckoutPrepareRequest(
+    val purchaseType: String,
+    val userId: String,
+    val userEmail: String? = null,
+    val amountCents: Int? = null,
+    val tokenCount: Int? = null,
+    val planYears: Int? = null,
+    val planCents: Int? = null,
+    val addOnCents: Int? = null,
+    val isFreeTrial: Boolean? = null,
+    val selectedPlanIndex: Int? = null,
+    val stripeSubscriptionId: String? = null,
+) {
+    companion object {
+        fun yearly(
+            account: SubscriptionAccountState,
+            plan: SubscriptionPlan,
+            addOn: TokenAddOn,
+        ) = CheckoutPrepareRequest(
+            purchaseType = CheckoutPurchaseType.YEARLY_SUBSCRIPTION.wireValue,
+            userId = account.userId,
+            userEmail = account.userEmail,
+            planYears = plan.years,
+            planCents = plan.priceCents,
+            addOnCents = addOn.priceCents,
+            tokenCount = plan.baseTokens + addOn.tokens,
+        )
+
+        fun freeTrial(account: SubscriptionAccountState) = CheckoutPrepareRequest(
+            purchaseType = CheckoutPurchaseType.YEARLY_SUBSCRIPTION.wireValue,
+            userId = account.userId,
+            userEmail = account.userEmail,
+            planYears = 1,
+            planCents = 1_000,
+            addOnCents = 0,
+            tokenCount = 2,
+            isFreeTrial = true,
+        )
+
+        fun tokenPack(
+            account: SubscriptionAccountState,
+            pack: TokenAddOn,
+        ) = CheckoutPrepareRequest(
+            purchaseType = CheckoutPurchaseType.TOKEN_PACK.wireValue,
+            userId = account.userId,
+            userEmail = account.userEmail,
+            amountCents = pack.priceCents,
+            tokenCount = pack.tokens,
+        )
+
+        fun businessSetup(
+            account: SubscriptionAccountState,
+            selectedPlanIndex: Int,
+        ): CheckoutPrepareRequest {
+            val plan = SubscriptionCatalog.plans.getOrNull(selectedPlanIndex)
+                ?: SubscriptionCatalog.plans[0]
+            return CheckoutPrepareRequest(
+                purchaseType = CheckoutPurchaseType.YEARLY_SUBSCRIPTION.wireValue,
+                userId = account.userId,
+                userEmail = account.userEmail,
+                planYears = plan.years,
+                planCents = plan.priceCents,
+                addOnCents = 0,
+                tokenCount = plan.baseTokens,
+            )
+        }
+    }
+}
+
+data class CheckoutConfirmRequest(
+    val purchaseType: String = CheckoutPurchaseType.CONFIRM_SUCCESS.wireValue,
+    val userId: String,
+    val addTokens: Int,
+    val isBusiness: Boolean,
+    val subscriptionId: String? = null,
+    val planCents: Int? = null,
+    val planYears: Int? = null,
+)
+
+data class CheckoutSession(
+    val clientSecret: String,
+    val customerId: String,
+    val ephemeralKeySecret: String,
+    val publishableKey: String,
+    val subscriptionId: String? = null,
+) {
+    val isSetupIntent: Boolean
+        get() = clientSecret.startsWith("seti_")
+}
+
+sealed interface CheckoutPreparation {
+    data class Ready(val session: CheckoutSession) : CheckoutPreparation
+    data object TrialStarted : CheckoutPreparation
+}
+
+sealed class CheckoutError(message: String) : Exception(message) {
+    data class Backend(val statusCode: Int, val responseBody: String) :
+        CheckoutError("Checkout failed with HTTP $statusCode: $responseBody")
+
+    data class Stripe(val detail: String) : CheckoutError("Stripe error: $detail")
+    data object InvalidResponse : CheckoutError("The checkout service returned an invalid response.")
+}
+
+class CheckoutService internal constructor(
+    private val httpClient: BusinessHttpClient,
+    private val gson: Gson = Gson(),
+) {
+    constructor() : this(UrlConnectionBusinessHttpClient())
+
+    suspend fun prepare(request: CheckoutPrepareRequest): CheckoutPreparation {
+        val response = httpClient.execute(
+            BusinessHttpRequest(
+                method = "POST",
+                url = "$LOOKSEE_API_BASE_URL/checkout",
+                body = gson.toJson(request).toByteArray(Charsets.UTF_8),
+                contentType = "application/json",
+                timeoutMillis = 60_000,
+            ),
+        )
+        validate(response)
+        val body = decode(response.bodyText)
+        body.error?.takeIf(String::isNotBlank)?.let { throw CheckoutError.Stripe(it) }
+        if (body.setupIntent == "trial_started") return CheckoutPreparation.TrialStarted
+
+        return CheckoutPreparation.Ready(
+            CheckoutSession(
+                clientSecret = body.setupIntent?.takeIf(String::isNotBlank)
+                    ?: throw CheckoutError.InvalidResponse,
+                customerId = body.customer?.takeIf(String::isNotBlank)
+                    ?: throw CheckoutError.InvalidResponse,
+                ephemeralKeySecret = body.ephemeralKey?.takeIf(String::isNotBlank)
+                    ?: throw CheckoutError.InvalidResponse,
+                publishableKey = body.publishableKey?.takeIf(String::isNotBlank)
+                    ?: throw CheckoutError.InvalidResponse,
+                subscriptionId = body.subscriptionId,
+            ),
+        )
+    }
+
+    suspend fun confirm(request: CheckoutConfirmRequest): Boolean {
+        val response = httpClient.execute(
+            BusinessHttpRequest(
+                method = "POST",
+                url = "$LOOKSEE_API_BASE_URL/checkout",
+                body = gson.toJson(request).toByteArray(Charsets.UTF_8),
+                contentType = "application/json",
+                timeoutMillis = 60_000,
+            ),
+        )
+        return response.statusCode == 200
+    }
+
+    private fun validate(response: BusinessHttpResponse) {
+        if (response.statusCode !in 200..299) {
+            throw CheckoutError.Backend(response.statusCode, response.bodyText)
+        }
+    }
+
+    private fun decode(json: String): CheckoutResponse = try {
+        gson.fromJson(json, CheckoutResponse::class.java) ?: throw CheckoutError.InvalidResponse
+    } catch (error: CheckoutError) {
+        throw error
+    } catch (_: Exception) {
+        throw CheckoutError.InvalidResponse
+    }
+}
+
+private data class CheckoutResponse(
+    val setupIntent: String? = null,
+    val customer: String? = null,
+    val ephemeralKey: String? = null,
+    val publishableKey: String? = null,
+    val subscriptionId: String? = null,
+    val error: String? = null,
+)
+
+// --- Merged from StripePaymentSupport.kt ---
+@Composable
+internal fun rememberLookSeePaymentSheet(
+    onResult: (PaymentSheetResult) -> Unit,
+): PaymentSheet {
+    val currentResult = rememberUpdatedState(onResult)
+
+    return remember {
+        PaymentSheet.Builder { result ->
+            currentResult.value(result)
+        }
+    }.build()
+}
+
+internal fun presentCheckoutSession(
+    context: Context,
+    paymentSheet: PaymentSheet,
+    session: CheckoutSession,
+) {
+    PaymentConfiguration.init(context, session.publishableKey)
+
+    val environment =
+        if (session.publishableKey.startsWith("pk_live_")) {
+            PaymentSheet.GooglePayConfiguration.Environment.Production
+        } else {
+            PaymentSheet.GooglePayConfiguration.Environment.Test
+        }
+
+    val configuration = PaymentSheet.Configuration.Builder("LookSee")
+        .customer(
+            PaymentSheet.CustomerConfiguration(
+                id = session.customerId,
+                ephemeralKeySecret = session.ephemeralKeySecret,
+            ),
+        )
+        .googlePay(
+            PaymentSheet.GooglePayConfiguration(
+                environment = environment,
+                countryCode = "US",
+                currencyCode = "USD",
+            ),
+        )
+        .allowsDelayedPaymentMethods(false)
+        .build()
+
+    if (session.isSetupIntent) {
+        paymentSheet.presentWithSetupIntent(
+            session.clientSecret,
+            configuration,
+        )
+    } else {
+        paymentSheet.presentWithPaymentIntent(
+            session.clientSecret,
+            configuration,
+        )
     }
 }

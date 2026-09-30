@@ -1,63 +1,125 @@
 package looksee.angelll.com.uifiles
 
 import android.annotation.SuppressLint
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import android.graphics.Bitmap
+import android.view.ViewGroup
+import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-// Expected ghost error until the txt file is added to res/raw
-import looksee.angelll.com.R
+import androidx.compose.ui.viewinterop.AndroidView
 
 @OptIn(ExperimentalMaterial3Api::class)
-@SuppressLint("DiscouragedApi")
+@SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun PrivacyPolicy(onDismiss: () -> Unit) {
-    val context = LocalContext.current
+    var isLoading by remember { mutableStateOf(true) }
+    var loadFailed by remember { mutableStateOf(false) }
+    var reloadCount by remember { mutableStateOf(0) } // Forces recomposition of the WebView
 
-    val termsText = remember {
-        try {
-            context.resources.openRawResource(R.raw.privacypolicy)
-                .bufferedReader().use { it.readText() }
-        } catch (_: Exception) {
-            "Privacy Policy could not be loaded."
-        }
-    }
+    val url = "https://www.informationoutpost.com/privacy-policy.html"
 
     Scaffold(
-        containerColor = Color(0xFF0F0F1A),
         topBar = {
             TopAppBar(
-                title = { Text("Privacy Policy", fontSize = 18.sp, color = Color.White) },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color(0xFF0F0F1A),
-                    navigationIconContentColor = Color.White
-                ),
+                title = { Text("Privacy Policy", color = Color.White) },
                 navigationIcon = {
                     IconButton(onClick = onDismiss) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF0F0F1A))
+            )
+        },
+        containerColor = Color(0xFF0F0F1A)
+    ) { paddingValues ->
+        Box(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
+            key(reloadCount) {
+                AndroidView(
+                    modifier = Modifier.fillMaxSize(),
+                    factory = { context ->
+                        WebView(context).apply {
+                            layoutParams = ViewGroup.LayoutParams(
+                                ViewGroup.LayoutParams.MATCH_PARENT,
+                                ViewGroup.LayoutParams.MATCH_PARENT
+                            )
+                            settings.javaScriptEnabled = true
+                            settings.domStorageEnabled = true
+                            webViewClient = object : WebViewClient() {
+                                override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                                    isLoading = true
+                                    loadFailed = false
+                                }
+
+                                override fun onPageFinished(view: WebView?, url: String?) {
+                                    isLoading = false
+                                }
+
+                                override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
+                                    super.onReceivedError(view, request, error)
+                                    isLoading = false
+                                    loadFailed = true
+                                }
+                            }
+                            loadUrl(url)
+                        }
+                    },
+                    update = { view ->
+                        if (loadFailed) {
+                            view.loadUrl(url)
+                        }
+                    }
+                )
+            }
+
+            if (isLoading) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = Color(0xFF387DFF))
+                }
+            }
+
+            if (loadFailed) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            "Unable to load policy",
+                            color = Color.White,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "Please check your internet connection and try again.",
+                            color = Color.Gray,
+                            fontSize = 14.sp
+                        )
+                        Spacer(Modifier.height(24.dp))
+                        Button(
+                            onClick = { reloadCount++ },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF387DFF))
+                        ) {
+                            Icon(Icons.Default.Refresh, contentDescription = null, tint = Color.White)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Retry", color = Color.White)
+                        }
                     }
                 }
-            )
+            }
         }
-    ) { paddingValues ->
-        Text(
-            text = termsText,
-            fontSize = 15.sp,
-            color = Color.White.copy(alpha = 0.8f),
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp)
-        )
     }
 }

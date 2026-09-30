@@ -20,7 +20,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.amplifyframework.kotlin.core.Amplify
 import kotlinx.coroutines.launch
-import looksee.angelll.com.ui.theme.LookSeeCard
+import looksee.angelll.com.uifiles.LookSeeCard
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

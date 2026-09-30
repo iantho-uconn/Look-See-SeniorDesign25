@@ -1,4 +1,6 @@
 package looksee.angelll.com.uifiles
+import looksee.angelll.com.viewmodels.ScanHistoryItem
+
 
 import android.content.Intent
 import android.net.Uri
@@ -33,7 +35,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.rememberAsyncImagePainter
 import kotlinx.coroutines.launch
 import looksee.angelll.com.models.*
-import looksee.angelll.com.ui.theme.LookSeeCard
+import looksee.angelll.com.uifiles.LookSeeCard
 import looksee.angelll.com.ui.theme.LookSeeBlue
 import looksee.angelll.com.viewmodels.AuthViewModel
 import java.text.SimpleDateFormat

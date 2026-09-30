@@ -1,13 +1,10 @@
 package looksee.angelll.com.uifiles
 
 import android.net.Uri
-import android.os.Handler
-import android.os.Looper
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.camera.view.PreviewView
 import androidx.compose.animation.*
-import androidx.compose.animation.core.*
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -29,7 +26,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -48,11 +44,8 @@ import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
-import looksee.angelll.com.viewmodels.*
 import looksee.angelll.com.models.*
 import looksee.angelll.com.services.*
-import androidx.lifecycle.LifecycleOwner
-import androidx.camera.core.Preview
 
 // MARK: - Models & Enums
 

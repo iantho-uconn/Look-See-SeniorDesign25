@@ -19,6 +19,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -58,10 +62,7 @@ fun LoginScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xFF0F0F1A))
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null
-            ) { focusManager.clearFocus() },
+            .pointerInput(Unit) { detectTapGestures(onTap = { focusManager.clearFocus() }) },
         contentAlignment = Alignment.Center
     ) {
         // Glow effect

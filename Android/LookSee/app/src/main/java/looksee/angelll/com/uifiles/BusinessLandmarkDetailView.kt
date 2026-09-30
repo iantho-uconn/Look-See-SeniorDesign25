@@ -38,8 +38,7 @@ import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.launch
 import looksee.angelll.com.models.*
 import looksee.angelll.com.ui.theme.AppleBlue
-import looksee.angelll.com.ui.theme.LookSeeCard
-import looksee.angelll.com.ui.theme.LookSeeSectionHeader
+import looksee.angelll.com.uifiles.LookSeeCard
 import java.io.File
 import java.util.*
 

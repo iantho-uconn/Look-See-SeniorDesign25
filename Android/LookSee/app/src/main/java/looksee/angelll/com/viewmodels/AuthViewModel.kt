@@ -1,4 +1,6 @@
 package looksee.angelll.com.viewmodels
+import looksee.angelll.com.models.UploadHelper
+
 
 import android.app.Application
 import android.content.Context
@@ -13,15 +15,17 @@ import com.amplifyframework.auth.cognito.AWSCognitoAuthSession
 import com.amplifyframework.auth.result.step.AuthSignInStep
 import com.amplifyframework.kotlin.core.Amplify // 🚀 THE MAGIC FIX: Using the Kotlin Facade
 import com.google.gson.Gson
+import com.google.gson.annotations.SerializedName
 import com.google.gson.reflect.TypeToken
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import looksee.angelll.com.models.ScanHistoryItem
-import org.json.JSONObject
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import looksee.angelll.com.viewmodels.ScanHistoryItem
+import org.json.JSONObject
+
 
 class AuthViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -127,7 +131,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                     isSignedIn = false
                 }
             } catch (error: AuthException) {
-                errorMessage = friendlyMessage(error)
+                errorMessage = friendlyMessage(error as? com.amplifyframework.auth.AuthException ?: com.amplifyframework.auth.AuthException("Unknown error", "Unknown error", error))
                 isSignedIn = false
             } catch (_: Exception) {
                 errorMessage = "Something went wrong. Please try again."
@@ -157,7 +161,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                     errorMessage = "Additional steps required to sign in."
                 }
             } catch (error: AuthException) {
-                errorMessage = friendlyMessage(error)
+                errorMessage = friendlyMessage(error as? com.amplifyframework.auth.AuthException ?: com.amplifyframework.auth.AuthException("Unknown error", "Unknown error", error))
             } catch (_: Exception) {
                 errorMessage = "Failed to update password. Please try again."
             }
@@ -604,4 +608,25 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
             Pair(500, e.localizedMessage)
         }
     }
+}
+
+
+// --- Merged from ScanHistoryModels.kt ---
+data class ScanHistoryItem(
+    @SerializedName("scannedAt") val scannedAt: String = "",
+    @SerializedName("landmarkId") val landmarkId: String = "",
+    @SerializedName("landmarkLabel") val landmarkLabel: String = "",
+    @SerializedName("locationString") val locationString: String = "",
+    @SerializedName("latitude") val latitude: String? = null,
+    @SerializedName("longitude") val longitude: String? = null,
+    @SerializedName("imageUrl") val imageUrl: String? = null
+) {
+    val id: String
+        get() = scannedAt
+
+    val latAsDouble: Double?
+        get() = latitude?.toDoubleOrNull()
+
+    val lonAsDouble: Double?
+        get() = longitude?.toDoubleOrNull()
 }

@@ -12,9 +12,9 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -34,16 +34,18 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.gson.Gson
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import looksee.angelll.com.models.AnalyticsResponse
-import looksee.angelll.com.models.LandmarkAnalyticsData
-import looksee.angelll.com.viewmodels.AuthViewModel
+import com.google.gson.annotations.SerializedName
 import java.net.HttpURLConnection
 import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import looksee.angelll.com.uifiles.AnalyticsResponse
+import looksee.angelll.com.uifiles.LandmarkAnalyticsData
+import looksee.angelll.com.viewmodels.AuthViewModel
+
 
 // Internal model for Time-Series
 data class TimeSeriesPoint(val date: Date, val clicks: Int)
@@ -422,4 +424,26 @@ private fun AnalyticsEmptyStateView() {
         Text("No landmarks found.", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
         Text("Add landmarks to your business account to start tracking engagement.", fontSize = 14.sp, color = Color.Gray, textAlign = TextAlign.Center)
     }
+}
+
+
+// --- Merged from BusinessAnalyticsModels.kt ---
+data class AnalyticsResponse(
+    @SerializedName("analytics") val analytics: List<LandmarkAnalyticsData> = emptyList()
+)
+
+data class LandmarkAnalyticsData(
+    @SerializedName("landmarkId") val landmarkId: String = "",
+    @SerializedName("label") val label: String = "",
+    @SerializedName("totalClicks") val totalClicks: Int = 0,
+    @SerializedName("dailyData") val dailyData: List<DailyClickPoint> = emptyList()
+) {
+    val id: String get() = landmarkId
+}
+
+data class DailyClickPoint(
+    @SerializedName("date") val date: String = "",
+    @SerializedName("clicks") val clicks: Int = 0
+) {
+    val id: String get() = date
 }

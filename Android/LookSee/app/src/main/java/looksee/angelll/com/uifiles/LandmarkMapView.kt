@@ -131,20 +131,7 @@ fun LandmarkMapScreen(
 
     Box(modifier = Modifier.fillMaxSize()) {
 
-        // 🚀 FIXED: Bypassed the map component to prevent the API Key crash.
-        Box(
-            modifier = Modifier.fillMaxSize().background(Color(0xFF121212)),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(Icons.Default.Map, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(48.dp))
-                Spacer(modifier = Modifier.height(16.dp))
-                Text("Google Maps Disabled for Testing", color = Color.White, fontWeight = FontWeight.Bold)
-                Text("Add your API Key in AndroidManifest.xml", color = Color.Gray, fontSize = 14.sp)
-            }
-        }
-
-        /*
+        // 🚀 THE FIX: Restored the actual Google Map and deleted the fake placeholder box!
         GoogleMap(
             modifier = Modifier.fillMaxSize(),
             cameraPositionState = cameraPositionState,
@@ -153,8 +140,8 @@ fun LandmarkMapScreen(
                 mapStyleOptions = mapStyleOptions
             ),
             uiSettings = MapUiSettings(
-                myLocationButtonEnabled = false,
-                compassEnabled = false,
+                myLocationButtonEnabled = true, // Enables the "Jump to my location" crosshair
+                compassEnabled = true,
                 zoomControlsEnabled = false
             )
         ) {
@@ -170,7 +157,6 @@ fun LandmarkMapScreen(
                 }
             )
         }
-        */
 
         // Overlay UI: Search and Filters
         Column(

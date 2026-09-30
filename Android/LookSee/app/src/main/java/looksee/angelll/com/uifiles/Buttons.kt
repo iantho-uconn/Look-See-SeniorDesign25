@@ -7,26 +7,32 @@ import android.content.IntentFilter
 import androidx.compose.animation.*
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.ui.graphics.asComposeRenderEffect
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asComposeRenderEffect
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -37,25 +43,25 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
-import androidx.compose.material.icons.outlined.Info
 import androidx.compose.ui.zIndex
 import androidx.core.app.ComponentActivity
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
-import looksee.angelll.com.models.ModelAutoRefreshService
-import looksee.angelll.com.detection.LocationManager
-import looksee.angelll.com.models.*
-import looksee.angelll.com.viewmodels.AuthViewModel
-import looksee.angelll.com.viewmodels.AuthState
-import looksee.angelll.com.ui.theme.AppleBlue
-import looksee.angelll.com.ui.theme.CardBackground
-import looksee.angelll.com.ui.theme.DarkBackground
-import looksee.angelll.com.ui.theme.LookSeeCard
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import looksee.angelll.com.detection.LocationManager
+import looksee.angelll.com.models.*
+import looksee.angelll.com.models.ModelAutoRefreshService
+import looksee.angelll.com.ui.theme.AppleBlue
+import looksee.angelll.com.ui.theme.CardBackground
+import looksee.angelll.com.ui.theme.DarkBackground
+import looksee.angelll.com.uifiles.LookSeeCard
+import looksee.angelll.com.viewmodels.AuthState
+import looksee.angelll.com.viewmodels.AuthViewModel
+
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalPermissionsApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -119,7 +125,7 @@ fun ButtonsScreen(
 
     val shouldShowBanner by remember {
         derivedStateOf {
-            isScanCameraActive && !infoView.infoView && !showSignUpPrompt && currentTab == 0
+            isScanCameraActive && !infoView.infoView && !showSignUpPrompt && isScanTab
         }
     }
 
@@ -397,7 +403,7 @@ fun ButtonsScreen(
                             .navigationBarsPadding(),
                         contentAlignment = Alignment.Center
                     ) {
-                        AdBannerView()
+                        AdBannerView(looksee.angelll.com.services.AdConsentManager(context))
                     }
                 } else {
                     Spacer(Modifier.navigationBarsPadding())
@@ -406,7 +412,7 @@ fun ButtonsScreen(
         },
         containerColor = Color.Black
     ) { paddingValues ->
-        Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+        Box(modifier = Modifier.fillMaxSize().background(Color.Black).padding(bottom = if (shouldShowBanner) 62.dp else 0.dp)) {
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier.fillMaxSize(),
@@ -639,4 +645,96 @@ fun RowScope.TabButton(title: String, icon: androidx.compose.ui.graphics.vector.
         Text(title, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (isLocked) Color.DarkGray else if (isSelected) AppleBlue else Color.Gray)
         if (isSelected && !isLocked) Box(modifier = Modifier.padding(top = 4.dp).size(width = 24.dp, height = 3.dp).background(AppleBlue, CircleShape))
     }
+}
+
+
+// --- Merged from EmptyView.kt ---
+@Composable
+fun EmptyView() {
+    Box(modifier = Modifier.fillMaxSize())
+}
+
+// --- Merged from LookSeeComponents.kt ---
+/**
+ * iOS-style Card Container (#1C1C1E)
+ */
+@Composable
+fun LookSeeCard(
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = Color(0xFF1C1C1E),
+        shape = RoundedCornerShape(16.dp),
+        content = {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                content = content
+            )
+        }
+    )
+}
+
+/**
+ * iOS-style List Row with optional Chevron
+ */
+@Composable
+fun LookSeeRow(
+    icon: ImageVector,
+    iconContainerColor: Color,
+    title: String,
+    subtitle: String? = null,
+    onClick: () -> Unit
+) {
+    val haptic = LocalHapticFeedback.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = {
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onClick()
+            })
+            .padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(32.dp)
+                .background(iconContainerColor, RoundedCornerShape(8.dp)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+        }
+        
+        Spacer(modifier = Modifier.width(16.dp))
+        
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = title, color = Color.White, fontSize = 17.sp)
+            if (subtitle != null) {
+                Text(text = subtitle, color = Color.Gray, fontSize = 13.sp)
+            }
+        }
+        
+        Icon(
+            imageVector = Icons.Default.ChevronRight,
+            contentDescription = null,
+            tint = Color(0xFFC7C7CC),
+            modifier = Modifier.size(20.dp)
+        )
+    }
+}
+
+/**
+ * iOS-style Section Header
+ */
+@Composable
+fun LookSeeSectionHeader(title: String) {
+    Text(
+        text = title.uppercase(),
+        color = Color(0xFF8E8E93),
+        fontSize = 13.sp,
+        fontWeight = FontWeight.SemiBold,
+        modifier = Modifier.padding(start = 16.dp, bottom = 8.dp, top = 24.dp)
+    )
 }

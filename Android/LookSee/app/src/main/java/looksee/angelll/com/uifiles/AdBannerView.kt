@@ -12,23 +12,24 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import looksee.angelll.com.services.AdConsentManager
 
 @Composable
-fun AdBannerView() {
-    // A compact, fixed-height banner keeps more camera area visible.
-    // Equivalent to Google Mobile Ads BannerView in iOS.
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(50.dp)
-            .background(Color.White),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = "Test Ad Banner",
-            color = Color.Black,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Medium
-        )
+fun AdBannerView(consent: AdConsentManager) {
+    if (consent.adsReady) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(50.dp)
+                .background(Color.White),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "Test Ad Banner",
+                color = Color.Black,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium
+            )
+        }
     }
 }

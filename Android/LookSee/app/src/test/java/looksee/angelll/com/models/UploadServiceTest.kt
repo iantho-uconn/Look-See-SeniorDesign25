@@ -2,6 +2,8 @@ package looksee.angelll.com.models
 
 import java.io.File
 import kotlinx.coroutines.runBlocking
+import looksee.angelll.com.uifiles.MergedVideo
+import looksee.angelll.com.uifiles.PositiveVideoMerger
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

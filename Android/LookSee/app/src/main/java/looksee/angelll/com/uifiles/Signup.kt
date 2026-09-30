@@ -13,6 +13,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -27,49 +31,54 @@ import com.amplifyframework.kotlin.core.Amplify
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import looksee.angelll.com.services.AuthService
-import looksee.angelll.com.ui.theme.LookSeeCard
+import looksee.angelll.com.uifiles.LookSeeCard
 import looksee.angelll.com.viewmodels.AuthViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun Signup(
+fun SignupScreen(
     vm: AuthViewModel,
-    onSignupSuccess: () -> Unit,
-    onGoToLogin: () -> Unit
+    initialBusinessAccount: Boolean = false,
+    onSignupSuccess: (String, Boolean) -> Unit,
+    onNavigate: (String) -> Unit
 ) {
     var email by remember { mutableStateOf("") }
     var username by remember { mutableStateOf("") }
+    var isBusinessAccount by remember { mutableStateOf(initialBusinessAccount) }
     var password by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
     var verificationCode by remember { mutableStateOf("") }
-    var isBusinessAccount by remember { mutableStateOf(false) }
+
 
     var showVerification by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }
 
     val coroutineScope = rememberCoroutineScope()
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
 
     val isValidPassword = { pass: String ->
         val passwordRegex = "^(?=.*[A-Z])(?=.*[a-z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,}$".toRegex()
         passwordRegex.matches(pass)
     }
 
+    val sanitizedEmail = email.trim().lowercase()
+
     val signUp: () -> Unit = {
         isLoading = true
         message = ""
-        val group = if (isBusinessAccount) "business-users" else "authenticated-users"
+        val group = if (isBusinessAccount) "business" else "guest"
         coroutineScope.launch {
             try {
-                val result = AuthService.signUp(email, password, email, group)
-                if (result.isSignUpComplete) {
+                val result = AuthService.signUp(username, password, sanitizedEmail, group)
+                if (result.isSignUpComplete || result.nextStep.signUpStep == com.amplifyframework.auth.result.step.AuthSignUpStep.CONFIRM_SIGN_UP_STEP) {
                     vm.pendingUsernameToSave = username
-                    message = "Account created and verified! Routing to login..."
-                    delay(1200)
-                    onSignupSuccess()
-                } else {
                     showVerification = true
                     message = "Code sent! Please check your email."
+                } else {
+                    message = "Account created and verified! Routing to login..."
+                    delay(1200)
+                    onSignupSuccess(sanitizedEmail, isBusinessAccount)
                 }
             } catch (e: Exception) {
                 message = e.localizedMessage ?: "Signup failed."
@@ -84,12 +93,12 @@ fun Signup(
         message = ""
         coroutineScope.launch {
             try {
-                val result = Amplify.Auth.confirmSignUp(email, verificationCode)
+                val result = Amplify.Auth.confirmSignUp(username, verificationCode)
                 if (result.isSignUpComplete) {
                     vm.pendingUsernameToSave = username
                     message = "Verification successful! Routing to login..."
                     delay(1500)
-                    onSignupSuccess()
+                    onSignupSuccess(sanitizedEmail, isBusinessAccount)
                 } else {
                     message = "Verification incomplete. Please check the code."
                 }
@@ -101,10 +110,13 @@ fun Signup(
         }
     }
 
+    
+
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF0F0F1A)),
+            .background(Color(0xFF0F0F1A))
+            .pointerInput(Unit) { detectTapGestures(onTap = { focusManager.clearFocus() }) },
         contentAlignment = Alignment.TopCenter
     ) {
         // Glow effect
@@ -313,7 +325,7 @@ fun Signup(
             }
 
             if (!showVerification) {
-                TextButton(onClick = onGoToLogin, modifier = Modifier.padding(top = 8.dp)) {
+                TextButton(onClick = { onNavigate("login") }, modifier = Modifier.padding(top = 8.dp)) {
                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text("Already have an account?", color = Color.White.copy(alpha = 0.4f), fontSize = 12.sp)
                         Text("Sign in", color = Color(0xFF007AFF), fontSize = 12.sp)

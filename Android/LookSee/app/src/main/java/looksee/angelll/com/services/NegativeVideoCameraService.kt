@@ -24,7 +24,6 @@ enum class AuthorizationStatus {
 
 class NegativeVideoCameraService(private val context: Context) {
 
-    // MARK: - State Properties
     var isRecording by mutableStateOf(false)
         private set
     var errorMessage by mutableStateOf<String?>(null)
@@ -45,8 +44,6 @@ class NegativeVideoCameraService(private val context: Context) {
     var onVideoRecorded: ((Uri) -> Unit)? = null
 
     private val coroutineScope = CoroutineScope(Dispatchers.Main)
-
-    // MARK: - Setup & Permissions
 
     fun start(lifecycleOwner: LifecycleOwner, surfaceProvider: Preview.SurfaceProvider) {
         checkPermissionsAndStart(lifecycleOwner, surfaceProvider)
@@ -77,12 +74,10 @@ class NegativeVideoCameraService(private val context: Context) {
         cameraProviderFuture.addListener({
             val cameraProvider = cameraProviderFuture.get()
 
-            // Preview setup
             val preview = Preview.Builder().build().also {
                 it.setSurfaceProvider(surfaceProvider)
             }
 
-            // Recorder setup (HD 1080p equivalent)
             val qualitySelector = QualitySelector.from(
                 Quality.FHD,
                 FallbackStrategy.lowerQualityOrHigherThan(Quality.FHD)
@@ -92,8 +87,6 @@ class NegativeVideoCameraService(private val context: Context) {
                 .build()
 
             videoCapture = VideoCapture.withOutput(recorder)
-
-            // Select best back camera
             val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
 
             try {
@@ -106,8 +99,6 @@ class NegativeVideoCameraService(private val context: Context) {
             }
         }, ContextCompat.getMainExecutor(context))
     }
-
-    // MARK: - Recording Controls
 
     fun startRecording() {
         if (isRecording) return
@@ -123,7 +114,6 @@ class NegativeVideoCameraService(private val context: Context) {
 
         val outputOptions = FileOutputOptions.Builder(file).build()
 
-        // 🚀 Video only, no audio track, matching iOS implementation
         activeRecording = videoCapture.output
             .prepareRecording(context, outputOptions)
             .start(ContextCompat.getMainExecutor(context)) { recordEvent ->
@@ -139,8 +129,6 @@ class NegativeVideoCameraService(private val context: Context) {
         activeRecording?.stop()
         activeRecording = null
     }
-
-    // MARK: - Event Handling
 
     private fun handleRecordEvent(event: VideoRecordEvent) {
         when (event) {
@@ -168,8 +156,6 @@ class NegativeVideoCameraService(private val context: Context) {
         }
     }
 
-    // MARK: - Interruption Handling (Call from UI Lifecycle)
-
     fun handleInterruptionBegan() {
         wasRecordingBeforeInterruption = isRecording
         isInterrupted = true
@@ -181,7 +167,6 @@ class NegativeVideoCameraService(private val context: Context) {
         isInterrupted = false
         if (wasRecordingBeforeInterruption) {
             wasRecordingBeforeInterruption = false
-            // Small 0.3s delay matching iOS logic
             android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
                 resumeRecordingAfterInterruption()
             }, 300)
@@ -192,8 +177,6 @@ class NegativeVideoCameraService(private val context: Context) {
         if (isRecording) return
         beginNewSegment()
     }
-
-    // MARK: - Segment Merging
 
     private suspend fun finishAndDeliverSegments() {
         val uris = segmentUris.toList()
@@ -207,16 +190,12 @@ class NegativeVideoCameraService(private val context: Context) {
         }
 
         try {
-            // 🚀 Routes safely through the Android VideoMerger
             val mergedUri = VideoMerger.mergeAndValidate(context, uris, 1.0)
-
-            // Cleanup segments
             for (uri in uris) {
                 try {
                     uri.path?.let { File(it).delete() }
                 } catch (e: Exception) { e.printStackTrace() }
             }
-
             onVideoRecorded?.invoke(mergedUri)
         } catch (e: Exception) {
             onVideoRecorded?.invoke(first)

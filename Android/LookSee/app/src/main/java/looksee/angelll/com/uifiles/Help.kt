@@ -78,11 +78,11 @@ fun HelpScreen(onBack: () -> Unit) {
             item {
                 SupportContactCard(
                     title = "Email Support",
-                    subtitle = "support@looksee.ai",
+                    subtitle = "",
                     icon = Icons.Default.Email,
                     onClick = {
                         val intent = Intent(Intent.ACTION_SENDTO).apply {
-                            data = Uri.parse("mailto:support@looksee.ai")
+                            data = Uri.parse("mailto:looksee.support@informationoutpost.com")
                         }
                         context.startActivity(Intent.createChooser(intent, "Send Email"))
                     }
@@ -92,10 +92,10 @@ fun HelpScreen(onBack: () -> Unit) {
             item {
                 SupportContactCard(
                     title = "Visit Website",
-                    subtitle = "www.looksee.ai/help",
+                    subtitle = "",
                     icon = Icons.Default.Language,
                     onClick = {
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.looksee.ai/help"))
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.informationoutpost.com"))
                         context.startActivity(intent)
                     }
                 )

@@ -1,7 +1,10 @@
 package looksee.angelll.com.uifiles
 
+import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -31,8 +34,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.rememberAsyncImagePainter
 import io.sentry.Sentry
+import kotlinx.coroutines.launch
 import looksee.angelll.com.models.*
 import looksee.angelll.com.viewmodels.*
+
 
 private val backgroundColor = Color(0xFF14141F)
 private val cardColor = Color(0xFF1F1F2E)
@@ -70,19 +75,29 @@ fun ReportIssueView(
         
         val draft = MailReportService.buildDraft(report, vm.userEmail, deviceInfo)
         
-        // 🚀 Sends the Bug Report directly to your Sentry Dashboard silently!
-        Sentry.captureMessage("[${category.displayName}] $title") { scope ->
-            scope.setLevel(when(severity) {
-                ReportSeverity.LOW -> io.sentry.SentryLevel.DEBUG
-                ReportSeverity.MEDIUM -> io.sentry.SentryLevel.INFO
-                ReportSeverity.HIGH -> io.sentry.SentryLevel.WARNING
-                ReportSeverity.CRITICAL -> io.sentry.SentryLevel.ERROR
-            })
-            scope.setTag("category", category.name)
-            scope.setTag("user_email", vm.userEmail)
-            scope.setTag("device_model", deviceInfo.deviceModel)
-            scope.setTag("os_version", deviceInfo.osVersion)
-            scope.setContexts("Description", description)
+        // 🚀 Uses your secure CloudFront endpoint to route this to Jira
+        val payload = org.json.JSONObject().apply {
+            put("email", vm.userEmail.ifEmpty { "unknown@user.com" })
+            put("category", category.displayName)
+            put("severity", severity.name)
+            put("title", "[${category.displayName}] $title")
+            put("description", draft.body)
+        }
+
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            try {
+                val url = java.net.URL("https://d11vl3v9w133rh.cloudfront.net/support/report")
+                val conn = url.openConnection() as java.net.HttpURLConnection
+                conn.requestMethod = "POST"
+                conn.setRequestProperty("Content-Type", "application/json")
+                conn.doOutput = true
+                java.io.OutputStreamWriter(conn.outputStream).use { it.write(payload.toString()) }
+                
+                val responseCode = conn.responseCode
+                println("✅ Bug report routed to Jira via CloudFront: $responseCode")
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
 
         val intent = Intent(Intent.ACTION_SENDTO).apply {
@@ -288,6 +303,7 @@ fun CategoryChip(
         ReportCategory.UI_BUG -> Icons.Default.WebAssetOff
         ReportCategory.DETECTION_BUG -> Icons.Default.CenterFocusStrong
         ReportCategory.UPLOAD_BUG -> Icons.Default.ArrowCircleUp
+        ReportCategory.COPYRIGHT -> Icons.Default.Copyright
         ReportCategory.OTHER -> Icons.Default.QuestionMark
     }
 
@@ -349,3 +365,120 @@ fun SeverityChip(
     }
 }
 
+
+
+// --- Merged from BugReportModels.kt ---
+enum class ReportCategory(
+    val wireValue: String,
+    val displayName: String,
+    val jiraLabel: String,
+) {
+    UI_BUG("ui_bug", "UI Bug", "mobile-ui"),
+    DETECTION_BUG("detection_bug", "Detection Bug", "detection"),
+    UPLOAD_BUG("upload_bug", "Upload Bug", "upload-pipeline"),
+    COPYRIGHT("copyright", "Copyright / DMCA", "copyright"),
+    OTHER("other", "Other", "unclassified"),
+}
+
+enum class ReportSeverity(
+    val wireValue: String,
+    val displayName: String,
+    val jiraPriority: String,
+) {
+    LOW("low", "Low", "Low"),
+    MEDIUM("medium", "Medium", "Medium"),
+    HIGH("high", "High", "High"),
+    CRITICAL("critical", "Critical", "Highest"),
+}
+
+data class BugReport(
+    val category: ReportCategory,
+    val severity: ReportSeverity,
+    val title: String,
+    val description: String,
+    val screenshotJpeg: ByteArray? = null,
+)
+
+data class ReportDeviceInfo(
+    val appVersion: String,
+    val buildNumber: String,
+    val osVersion: String,
+    val deviceModel: String,
+) {
+    companion object {
+        fun current(context: Context): ReportDeviceInfo {
+            val packageInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.packageManager.getPackageInfo(
+                    context.packageName,
+                    PackageManager.PackageInfoFlags.of(0),
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                context.packageManager.getPackageInfo(context.packageName, 0)
+            }
+            val buildNumber = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                packageInfo.longVersionCode.toString()
+            } else {
+                @Suppress("DEPRECATION")
+                packageInfo.versionCode.toString()
+            }
+            return ReportDeviceInfo(
+                appVersion = packageInfo.versionName ?: "unknown",
+                buildNumber = buildNumber,
+                osVersion = Build.VERSION.RELEASE.ifBlank { "unknown" },
+                deviceModel = listOf(Build.MANUFACTURER, Build.MODEL)
+                    .map { it.trim() }
+                    .filter(String::isNotEmpty)
+                    .joinToString(" ")
+                    .ifBlank { "unknown" },
+            )
+        }
+    }
+}
+
+// --- Merged from MailReportService.kt ---
+data class MailReportDraft(
+    val recipients: List<String>,
+    val subject: String,
+    val body: String,
+    val attachmentJpeg: ByteArray?,
+    val attachmentFilename: String? = attachmentJpeg?.let { "screenshot.jpg" },
+)
+
+/**
+ * Platform-neutral report-email builder. The UI layer owns launching Android's
+ * email intent and granting a FileProvider URI when a screenshot is attached.
+ */
+object MailReportService {
+    val recipients = listOf("Looksee.support@informationoutpost.com")
+
+    fun subject(report: BugReport): String =
+        "[${report.category.displayName} · ${report.severity.displayName}] ${report.title}"
+
+    fun body(
+        report: BugReport,
+        userEmail: String?,
+        deviceInfo: ReportDeviceInfo,
+    ): String = """
+        ${report.description}
+
+        ---
+        Category: ${report.category.displayName}
+        Severity: ${report.severity.displayName}
+        Reported by: ${userEmail.orEmpty()}
+        App version: ${deviceInfo.appVersion} (${deviceInfo.buildNumber})
+        OS: Android ${deviceInfo.osVersion}
+        Device: ${deviceInfo.deviceModel}
+    """.trimIndent()
+
+    fun buildDraft(
+        report: BugReport,
+        userEmail: String?,
+        deviceInfo: ReportDeviceInfo,
+    ): MailReportDraft = MailReportDraft(
+        recipients = recipients,
+        subject = subject(report),
+        body = body(report, userEmail, deviceInfo),
+        attachmentJpeg = report.screenshotJpeg,
+    )
+}

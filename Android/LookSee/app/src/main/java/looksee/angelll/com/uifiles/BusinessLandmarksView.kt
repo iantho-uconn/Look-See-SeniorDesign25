@@ -51,7 +51,7 @@ import looksee.angelll.com.models.BusinessLandmarkDataSource
 import looksee.angelll.com.models.BusinessLandmarkService
 import looksee.angelll.com.models.BusinessPromotionListResponse
 import looksee.angelll.com.ui.theme.AppleBlue
-import looksee.angelll.com.ui.theme.LookSeeCard
+import looksee.angelll.com.uifiles.LookSeeCard
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -494,7 +494,7 @@ private fun PendingRow(
         Column(modifier = Modifier.weight(1f)) {
             Text(item.title, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
             if (isUploading) {
-                VStack(spacing = 4.dp) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("Uploading...", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = primaryColor)
                     LinearProgressIndicator(
                         progress = { progress.toFloat() },
