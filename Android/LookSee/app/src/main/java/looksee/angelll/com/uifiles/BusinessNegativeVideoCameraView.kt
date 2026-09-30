@@ -292,7 +292,7 @@ fun BusinessNegativeVideoCameraView(
                     Icon(Icons.Default.VideocamOff, contentDescription = null, tint = Color(0xFF387DFF), modifier = Modifier.size(24.dp))
                     Spacer(Modifier.width(16.dp))
                     Column {
-                        Text("Capture Negative Media", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                        Text("Capture Negative Media", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
                         Spacer(Modifier.height(6.dp))
                         Text("Pan the area and background environment. Do not include the main landmark in this video.", color = Color.White.copy(0.8f), fontSize = 14.sp)
                     }
@@ -303,14 +303,14 @@ fun BusinessNegativeVideoCameraView(
 
             // Bottom Controls
             AnimatedVisibility(visible = true, enter = slideInVertically(initialOffsetY = { it }) + fadeIn(), exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()) {
-                Box(modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 100.dp).fillMaxWidth().background(Color.Black.copy(0.6f), RoundedCornerShape(32.dp)).border(0.5.dp, Color.White.copy(0.2f), RoundedCornerShape(32.dp)).padding(24.dp)) {
+                Box(modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 100.dp).fillMaxWidth().background(Color.Black.copy(0.4f), RoundedCornerShape(32.dp)).border(0.5.dp, Color.White.copy(0.2f), RoundedCornerShape(32.dp)).padding(horizontal = 24.dp, vertical = 20.dp)) {
 
                     when (flowState) {
                         BusinessNegativeCameraFlowState.INSTRUCTION -> {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Text(currentPhase.title, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
                                 Spacer(Modifier.height(16.dp))
-                                Text(currentPhase.instruction, color = Color.White.copy(0.9f), fontSize = 15.sp, textAlign = TextAlign.Center)
+                                Text(currentPhase.instruction, color = Color.White.copy(0.9f), fontSize = 13.sp, textAlign = TextAlign.Center)
                                 Spacer(Modifier.height(16.dp))
 
                                 Button(
@@ -322,7 +322,7 @@ fun BusinessNegativeVideoCameraView(
                                     modifier = Modifier.fillMaxWidth().height(56.dp),
                                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF387DFF)),
                                     shape = RoundedCornerShape(16.dp)
-                                ) { Text("Start Recording", fontSize = 17.sp, fontWeight = FontWeight.Bold) }
+                                ) { Text("Start Recording", fontSize = 15.sp, fontWeight = FontWeight.Bold) }
 
                                 if (recordedClips.isNotEmpty()) {
                                     Spacer(Modifier.height(12.dp))
@@ -333,7 +333,7 @@ fun BusinessNegativeVideoCameraView(
                                         modifier = Modifier.fillMaxWidth().height(56.dp),
                                         colors = ButtonDefaults.buttonColors(containerColor = Color.White),
                                         shape = RoundedCornerShape(16.dp)
-                                    ) { Text("Cancel & View Captured Clips", color = Color.Black, fontSize = 17.sp, fontWeight = FontWeight.Bold) }
+                                    ) { Text("Cancel & View Captured Clips", color = Color.Black, fontSize = 15.sp, fontWeight = FontWeight.Bold) }
                                 }
                             }
                         }
@@ -434,13 +434,13 @@ fun BusinessNegativeVideoCameraView(
                                 Button(
                                     onClick = { currentPhase = nextMandatory; flowState = BusinessNegativeCameraFlowState.INSTRUCTION },
                                     modifier = Modifier.fillMaxWidth().height(56.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF387DFF)), shape = RoundedCornerShape(16.dp)
-                                ) { Text("Record Next Angle", fontSize = 17.sp, fontWeight = FontWeight.Bold) }
+                                ) { Text("Record Next Angle", fontSize = 15.sp, fontWeight = FontWeight.Bold) }
                             } else {
                                 if (timeRemaining > 0) {
                                     Button(
                                         onClick = { currentPhase = BusinessNegativeCameraPhase.Optional(recordedClips.size + 1); flowState = BusinessNegativeCameraFlowState.INSTRUCTION },
                                         modifier = Modifier.fillMaxWidth().height(56.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF387DFF)), shape = RoundedCornerShape(16.dp)
-                                    ) { Text("Add Extra Clip", fontSize = 17.sp, fontWeight = FontWeight.Bold) }
+                                    ) { Text("Add Extra Clip", fontSize = 15.sp, fontWeight = FontWeight.Bold) }
                                 }
 
                                 if (totalDurationElapsedInt >= minTotalTimeLimit) {
@@ -467,7 +467,7 @@ fun BusinessNegativeVideoCameraView(
                                         modifier = Modifier.fillMaxWidth().height(56.dp), colors = ButtonDefaults.buttonColors(containerColor = Color.White), shape = RoundedCornerShape(16.dp), enabled = !isFinishing
                                     ) {
                                         if (isFinishing) CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(24.dp))
-                                        else Text("Finish Submission", color = Color.Black, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                                        else Text("Finish Submission", color = Color.Black, fontSize = 15.sp, fontWeight = FontWeight.Bold)
                                     }
                                 } else {
                                     Text("Total video must be between $minTotalTimeLimit and $maxTotalTimeLimit seconds", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp))
@@ -500,7 +500,7 @@ fun BusinessNegativeVideoCameraView(
                 Column(modifier = Modifier.background(Color.DarkGray, RoundedCornerShape(32.dp)).padding(30.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     Icon(Icons.Default.Warning, contentDescription = null, tint = Color.Yellow, modifier = Modifier.size(42.dp))
                     Text("Camera Unavailable", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                    Text(cameraService.errorMessage ?: finishingErrorMessage ?: "", color = Color.LightGray, fontSize = 15.sp, textAlign = TextAlign.Center)
+                    Text(cameraService.errorMessage ?: finishingErrorMessage ?: "", color = Color.LightGray, fontSize = 13.sp, textAlign = TextAlign.Center)
                     Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth().height(50.dp), colors = ButtonDefaults.buttonColors(containerColor = Color.Gray)) { Text("Close", color = Color.White, fontWeight = FontWeight.Bold) }
                 }
             }

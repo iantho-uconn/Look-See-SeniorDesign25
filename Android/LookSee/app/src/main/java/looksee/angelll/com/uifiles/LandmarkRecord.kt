@@ -83,6 +83,9 @@ fun LandmarkRecordScreen(
     var isFormVisible by remember { mutableStateOf(archivedMedia != null) }
     var statusText by remember { mutableStateOf(if (archivedMedia != null) "Loaded archived media." else "No landmark media selected.") }
     var showBackgroundUploadAlert by remember { mutableStateOf(false) }
+    var showLimitAlert by remember { mutableStateOf(false) }
+    var limitAlertTitle by remember { mutableStateOf("") }
+    var limitAlertMessage by remember { mutableStateOf("") }
 
     var extractedLatitude by remember { mutableStateOf<Double?>(null) }
     var extractedLongitude by remember { mutableStateOf<Double?>(null) }
@@ -90,7 +93,6 @@ fun LandmarkRecordScreen(
     var completedPositiveResult by remember { mutableStateOf<PositiveSubmissionResult?>(null) }
     var isFullSubmissionComplete by remember { mutableStateOf(false) }
 
-    // 🚀 FIXED: Bypass the 0.0s Emulator Bug. If the retriever fails, we provide a valid fallback length so you can actually click upload!
     LaunchedEffect(pickedVideoUris) {
         withContext(Dispatchers.IO) {
             val newDurations = mutableMapOf<Uri, Double>()
@@ -101,7 +103,7 @@ fun LandmarkRecordScreen(
                     val timeStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
                     val millis = timeStr?.toLongOrNull() ?: 0L
                     val actualLength = millis / 1000.0
-                    newDurations[uri] = if (actualLength > 0.0) actualLength else 15.0 // Fallback for bad emulator metadata
+                    newDurations[uri] = if (actualLength > 0.0) actualLength else 15.0
                 } catch (e: Exception) {
                     newDurations[uri] = 15.0
                 } finally {
@@ -134,16 +136,42 @@ fun LandmarkRecordScreen(
     }
 
     fun startFullSubmission() {
+        if (completedPositiveResult == null) {
+            if (!vm.hasActiveSubscription) {
+                limitAlertTitle = "Subscription Required"
+                limitAlertMessage = "You need an active subscription or Free Trial to upload landmarks."
+                showLimitAlert = true
+                return
+            }
+            if (existingLandmarkId == null && vm.tokenBalance <= 0) {
+                limitAlertTitle = "Out of Tokens"
+                limitAlertMessage = "You need 1 token to upload a new landmark. Purchase a token pack in Settings."
+                showLimitAlert = true
+                return
+            }
+        }
+
         coroutineScope.launch {
             val lat = extractedLatitude ?: (locationState as? LookSeeLocationState.Ready)?.fix?.latitude ?: 0.0
             val lon = extractedLongitude ?: (locationState as? LookSeeLocationState.Ready)?.fix?.longitude ?: 0.0
             val idToSave = businessLandmarkId ?: "landmark_${UUID.randomUUID().toString().replace("-", "").take(8)}"
-
             val offlineManager = OfflineMediaManager.shared(context)
-            if (pickedVideoUris.isNotEmpty()) {
-                val file = File(pickedVideoUris.first().path ?: "")
-                offlineManager.archiveVideo(file, lat, lon, idToSave, labelText, shortDescription, "", capturedNegativeVideo?.file, false)
+
+            if (archivedMedia != null) {
+                // 🚀 FIXED: Removed the 'context' parameter to match your existing OfflineMediaManager file
+                offlineManager.updateDraft(archivedMedia, labelText, shortDescription, null)
+            } else {
+                if (pickedVideoUris.isNotEmpty()) {
+                    val file = File(pickedVideoUris.first().path ?: "")
+                    // 🚀 FIXED: Reverted to passing 'file' and 'capturedNegativeVideo?.file' instead of Uris
+                    offlineManager.archiveVideo(file, lat, lon, idToSave, labelText, shortDescription, "", capturedNegativeVideo?.file, false)
+                }
+                if (existingLandmarkId == null) {
+                    vm.tokenBalance -= 1
+                    vm.activeLandmarksCount += 1
+                }
             }
+
             AutoUploadManager.shared(context).forceRetry()
             showBackgroundUploadAlert = true
         }
@@ -178,7 +206,6 @@ fun LandmarkRecordScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(Color(0xFF0F0F1A))
-                    // 🚀 FIXED: Safe gesture detection allows the Negative Video button to be clicked!
                     .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) { focusManager.clearFocus() }
                     .verticalScroll(rememberScrollState())
                     .imePadding()
@@ -199,7 +226,6 @@ fun LandmarkRecordScreen(
 
                         pickedVideoUris.forEach { uri ->
                             Box(modifier = Modifier.fillMaxWidth().height(240.dp).clip(RoundedCornerShape(16.dp))) {
-                                // 🚀 FIXED: The ExoPlayer widget now completely replaces the ugly Android default player block
                                 PositiveSafeVideoPlayer(uri = uri, modifier = Modifier.fillMaxSize())
                                 if (!arePositiveDetailsLocked) {
                                     Box(modifier = Modifier.align(Alignment.TopEnd).padding(12.dp).size(32.dp).background(Color.Black.copy(0.6f), CircleShape).clickable { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove); clearScreen() }, contentAlignment = Alignment.Center) {
@@ -257,7 +283,11 @@ fun LandmarkRecordScreen(
                             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                 Text("Record a >= ${negativeTargetDuration}s video panning the area. Do NOT include the landmark.", fontSize = 14.sp, color = Color.Gray)
                                 Button(
-                                    onClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); showNegativeCamera = true },
+                                    onClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        focusManager.clearFocus()
+                                        showNegativeCamera = true
+                                    },
                                     modifier = Modifier.fillMaxWidth().height(50.dp),
                                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2C2C2E)),
                                     shape = RoundedCornerShape(12.dp)
@@ -291,7 +321,6 @@ fun LandmarkRecordScreen(
             }
         }
 
-        // 🚀 FIXED: Processing Box is perfectly formatted and matching iOS dimensions
         if (isStitchingVideos) {
             Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(0.6f)).zIndex(100f), contentAlignment = Alignment.Center) {
                 Column(
@@ -305,5 +334,43 @@ fun LandmarkRecordScreen(
                 }
             }
         }
+
+        if (showNegativeCamera) {
+            Box(modifier = Modifier.fillMaxSize().zIndex(200f)) {
+                NegativeVideoCameraView(
+                    uiTargetDuration = negativeTargetDuration,
+                    minTotalTimeLimit = negativeTargetDuration,
+                    maxTotalTimeLimit = 30,
+                    onDone = { video ->
+                        capturedNegativeVideo = video
+                        showNegativeCamera = false
+                    },
+                    onDismiss = {
+                        showNegativeCamera = false
+                    }
+                )
+            }
+        }
+    }
+
+    if (showBackgroundUploadAlert) {
+        AlertDialog(
+            onDismissRequest = { showBackgroundUploadAlert = false; onDismiss() },
+            title = { Text("Upload Queued!") },
+            text = { Text("Your landmark has been securely queued! It will upload in the background. Feel free to keep using the app.") },
+            confirmButton = { TextButton(onClick = { showBackgroundUploadAlert = false; clearScreen() }) { Text("Record Another") } },
+            dismissButton = { TextButton(onClick = { showBackgroundUploadAlert = false; onDismiss() }) { Text("Done") } },
+            containerColor = Color(0xFF1C1C1E)
+        )
+    }
+
+    if (showLimitAlert) {
+        AlertDialog(
+            onDismissRequest = { showLimitAlert = false },
+            title = { Text(limitAlertTitle) },
+            text = { Text(limitAlertMessage) },
+            confirmButton = { TextButton(onClick = { showLimitAlert = false }) { Text("OK") } },
+            containerColor = Color(0xFF1C1C1E)
+        )
     }
 }

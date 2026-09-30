@@ -210,6 +210,14 @@ fun ModelLoadingScreen(
                     )
                 }
             }
+            
+            Text(
+                text = "Copyright © 1999-2026 Information Outpost, LLC.  All rights reserved.",
+                fontSize = 10.sp,
+                color = Color.White.copy(alpha = 0.5f),
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp, start = 20.dp, end = 20.dp)
+            )
         }
     }
 }

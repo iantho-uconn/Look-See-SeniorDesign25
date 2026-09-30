@@ -108,7 +108,6 @@ fun PositiveVideoCameraView(
     }
 
     var zoomLevel by remember { mutableStateOf(1f) }
-    var showZoomIndicator by remember { mutableStateOf(false) }
     var showZoomInstruction by remember { mutableStateOf(false) }
 
     val totalDurationElapsedInt = recordedClips.sumOf { it.duration }
@@ -162,10 +161,9 @@ fun PositiveVideoCameraView(
                         .also { previewViewInstance = it; if (isActive) cameraService.start(lifecycleOwner, it.surfaceProvider) }
                 },
                 modifier = Modifier.fillMaxSize()
-                    .pointerInput(Unit) { detectTransformGestures { _, _, zoom, _ -> zoomLevel = (zoomLevel * zoom).coerceIn(1f, 5f); showZoomIndicator = true; cameraService.camera?.cameraControl?.setZoomRatio(zoomLevel) } }
+                    .pointerInput(Unit) { detectTransformGestures { _, _, zoom, _ -> zoomLevel = (zoomLevel * zoom).coerceIn(1f, 5f); cameraService.camera?.cameraControl?.setZoomRatio(zoomLevel) } }
                     .pointerInput(Unit) { detectTapGestures { offset -> val factory = previewViewInstance?.meteringPointFactory ?: return@detectTapGestures; val point = factory.createPoint(offset.x, offset.y); val action = androidx.camera.core.FocusMeteringAction.Builder(point).build(); cameraService.camera?.cameraControl?.startFocusAndMetering(action) } }
             )
-            LaunchedEffect(zoomLevel) { delay(1500); showZoomIndicator = false }
         }
 
         if (isReviewingRecent && reviewingUri != null) {
@@ -176,13 +174,8 @@ fun PositiveVideoCameraView(
             Text("Slowly pan across the landmark while pinching to zoom in and out", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.background(Color(0xFF387DFF).copy(alpha = 0.9f), CircleShape).padding(horizontal = 14.dp, vertical = 8.dp))
         }
 
-        AnimatedVisibility(visible = showZoomIndicator, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 160.dp)) {
-            Text(String.format("%.1fx", zoomLevel), color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, modifier = Modifier.background(Color.Black.copy(alpha = 0.6f), CircleShape).padding(horizontal = 16.dp, vertical = 8.dp))
-        }
-
         Column(modifier = Modifier.fillMaxSize()) {
 
-            // 🚀 FIXED: Snug top padding so it doesn't push the card down!
             Row(modifier = Modifier.fillMaxWidth().padding(top = 58.dp, bottom = 16.dp, start = 20.dp, end = 20.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 if (flowState != CameraFlowState.GALLERY) {
                     Box(modifier = Modifier.size(44.dp).clip(CircleShape).background(Color.White.copy(0.2f)).border(0.5.dp, Color.White.copy(0.2f), CircleShape).clickable { haptic.performHapticFeedback(HapticFeedbackType.LongPress); isCancelled = true; if (cameraService.isRecording) cameraService.stopRecording(); recordedClips.forEach { try { it.uri.path?.let { p -> File(p).delete() } } catch (e: Exception) {} }; reviewingUri?.path?.let { File(it).delete() }; onCancel() }, contentAlignment = Alignment.Center) { Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White) }
@@ -208,7 +201,6 @@ fun PositiveVideoCameraView(
 
             Spacer(Modifier.weight(1f))
 
-            // 🚀 FIXED: Removed the black background box from the wrapper so the recording button is fully transparent!
             AnimatedVisibility(visible = true, enter = slideInVertically(initialOffsetY = { it }) + fadeIn(), exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()) {
                 Box(modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = if (isReviewingRecent) 160.dp else 100.dp).fillMaxWidth()) {
                     when (flowState) {
@@ -292,7 +284,6 @@ fun PositiveSafeVideoPlayer(uri: Uri, modifier: Modifier = Modifier) {
         factory = { ctx ->
             PlayerView(ctx).apply {
                 player = exoPlayer
-                // 🚀 FIXED: Enabled transport controls to allow scrubbing through the gallery!
                 useController = true
                 layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
             }

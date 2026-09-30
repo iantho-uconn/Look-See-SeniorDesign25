@@ -35,7 +35,7 @@ fun HelpScreen(onBack: () -> Unit) {
     val faqs = remember {
         listOf(
             FAQItem("How do I record a landmark?", "Tap the record button on the main screen. Hold your device steady and follow the on-screen instructions."),
-            FAQItem("How do I delete my data?", "You can delete individual landmarks from your archive or contact support to request a full account deletion."),
+            FAQItem("How do I delete my data?", "You can delete individual landmarks from your Manage My Landmarks Screen or contact support to request a full account deletion."),
             FAQItem("Is my location data shared?", "Your location is only used to place landmarks on the map and is never shared with third parties without your consent.")
         )
     }
@@ -196,7 +196,9 @@ fun SupportContactCard(
         }
         Column(modifier = Modifier.weight(1f)) {
             Text(title, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.White)
-            Text(subtitle, fontSize = 14.sp, color = Color.Gray)
+            if (subtitle.isNotEmpty()) {
+                Text(subtitle, fontSize = 14.sp, color = Color.Gray)
+            }
         }
         Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color.Gray)
     }
