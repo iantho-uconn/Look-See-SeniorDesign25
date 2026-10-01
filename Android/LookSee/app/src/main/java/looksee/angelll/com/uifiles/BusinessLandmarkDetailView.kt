@@ -1,5 +1,6 @@
 package looksee.angelll.com.uifiles
 
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -9,7 +10,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -38,13 +38,13 @@ import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.launch
 import looksee.angelll.com.models.*
 import looksee.angelll.com.ui.theme.AppleBlue
-import looksee.angelll.com.uifiles.LookSeeCard
-import java.io.File
+import looksee.angelll.com.viewmodels.AuthViewModel
 import java.util.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BusinessLandmarkDetailView(
+    vm: AuthViewModel, // 🚀 ADDED: Required to call forceTrainLandmark!
     initialLandmark: BusinessLandmark,
     onLandmarkUpdated: (BusinessLandmark) -> Unit = {},
     onLandmarkDeleted: (String) -> Unit = {},
@@ -98,13 +98,11 @@ fun BusinessLandmarkDetailView(
     var isDeletingLandmark by remember { mutableStateOf(false) }
     var deleteErrorMessage by remember { mutableStateOf<String?>(null) }
 
-    // Upload Helper
-    suspend fun uploadMediaBatch(uris: List<Uri>, role: BusinessDatasetRole, kind: BusinessMediaKind) {
+    suspend fun uploadMediaBatch(uris: List<Uri>, role: BusinessDatasetRole) {
         isUploadingMedia = true
         activeUploadRole = role
         uploadStatusMessage = null
-        uploadErrorMessage = null
-        
+
         var completedCount = 0
         var failedCount = 0
 
@@ -115,15 +113,25 @@ fun BusinessLandmarkDetailView(
                 val bytes = inputStream.readBytes()
                 inputStream.close()
 
-                val contentType = if (kind == BusinessMediaKind.PHOTO) "image/jpeg" else "video/mp4"
-                val filename = "${landmark.label.replace(" ", "_")}_${role.wireValue}_${index}_${UUID.randomUUID()}.${if (kind == BusinessMediaKind.PHOTO) "jpg" else "mp4"}"
+                val mimeType = if (uri.scheme == "file") {
+                    val ext = android.webkit.MimeTypeMap.getFileExtensionFromUrl(uri.toString())
+                    android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext.lowercase()) ?: "video/mp4"
+                } else {
+                    context.contentResolver.getType(uri) ?: "application/octet-stream"
+                }
+                
+                val isVideo = mimeType.startsWith("video/") || uri.toString().endsWith(".mp4", true) || uri.toString().endsWith(".mov", true)
+                val kind = if (isVideo) BusinessMediaKind.VIDEO else BusinessMediaKind.PHOTO
+                val ext = if (isVideo) "mp4" else "jpg"
+
+                val filename = "${landmark.label.replace(" ", "_").replace("/", "_")}_${role.wireValue}_${index}_${UUID.randomUUID()}.$ext"
 
                 landmarkService.uploadBusinessMedia(
                     landmarkId = landmark.landmarkId,
                     datasetRole = role,
                     mediaKind = kind,
                     filename = filename,
-                    contentType = contentType,
+                    contentType = mimeType,
                     data = bytes
                 )
                 completedCount++
@@ -136,24 +144,57 @@ fun BusinessLandmarkDetailView(
         if (failedCount == 0) {
             uploadStatusMessage = "$completedCount item(s) uploaded successfully."
         } else {
-            uploadErrorMessage = "$failedCount item(s) failed to upload."
+            if (uploadErrorMessage == null) {
+                uploadErrorMessage = "$failedCount item(s) failed to upload."
+            }
             if (completedCount > 0) uploadStatusMessage = "$completedCount item(s) uploaded successfully."
         }
         uploadProgressText = null
     }
 
-    // Media Pickers
     val mediaPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickMultipleVisualMedia(10)
     ) { uris ->
         if (uris.isNotEmpty()) {
             coroutineScope.launch {
-                uploadMediaBatch(uris, activeUploadRole ?: BusinessDatasetRole.POSITIVE, BusinessMediaKind.PHOTO) // Default to PHOTO for simplicity, or we could infer
+                uploadErrorMessage = null
+                val validUris = mutableListOf<Uri>()
+                var overLimitCount = 0
+
+                uris.forEach { uri ->
+                    val mimeType = context.contentResolver.getType(uri)
+                    if (mimeType?.startsWith("video/") == true) {
+                        val retriever = MediaMetadataRetriever()
+                        try {
+                            retriever.setDataSource(context, uri)
+                            val durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                            val durationSecs = (durationStr?.toLongOrNull() ?: 0L) / 1000.0
+                            if (durationSecs > 90) {
+                                overLimitCount++
+                            } else {
+                                validUris.add(uri)
+                            }
+                        } catch (e: Exception) {
+                            validUris.add(uri)
+                        } finally {
+                            retriever.release()
+                        }
+                    } else {
+                        validUris.add(uri)
+                    }
+                }
+
+                if (overLimitCount > 0) {
+                    uploadErrorMessage = "$overLimitCount video(s) were not uploaded. Gallery videos must be 90 seconds or shorter."
+                }
+
+                if (validUris.isNotEmpty()) {
+                    uploadMediaBatch(validUris, activeUploadRole ?: BusinessDatasetRole.POSITIVE)
+                }
             }
         }
     }
 
-    // Load Promotions
     suspend fun loadPromotions() {
         isLoadingPromotions = true
         promotionErrorMessage = null
@@ -193,11 +234,72 @@ fun BusinessLandmarkDetailView(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues),
-            contentPadding = PaddingValues(bottom = 40.dp)
+            contentPadding = PaddingValues(bottom = 40.dp),
+            verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
-            // Header Section
+
             item {
-                LookSeeCard(modifier = Modifier.padding(16.dp)) {
+                val status = landmark.status ?: ""
+                val isProcessing = landmark.isProcessing
+
+                val bannerColor: Color
+                val bannerIcon: ImageVector
+                val bannerTitle: String
+                val bannerMessage: String
+
+                when {
+                    status == "NEEDS_MORE_MEDIA" -> {
+                        bannerColor = Color(0xFFFF453A)
+                        bannerIcon = Icons.Default.Warning
+                        bannerTitle = landmark.displayStatus.uppercase()
+                        bannerMessage = "Not enough video data to train. Please record more media below."
+                    }
+                    isProcessing || listOf("PREPARING_DATA", "PENDING_TRAINING", "TRAINING_MODEL", "OPTIMIZING_MODEL").contains(status) -> {
+                        bannerColor = when(status) {
+                            "PREPARING_DATA" -> Color(0xFFFF9F0A)
+                            "PENDING_TRAINING" -> Color(0xFFAF52DE)
+                            "TRAINING_MODEL" -> Color(0xFFFFD60A)
+                            "OPTIMIZING_MODEL" -> Color(0xFF64D2FF)
+                            else -> Color(0xFFFF9F0A)
+                        }
+                        bannerIcon = Icons.Default.HourglassBottom
+                        bannerTitle = landmark.displayStatus.uppercase()
+                        bannerMessage = "Your landmark is currently in progress of being trained. Training is done overnight starting at 7 PM EST."
+                    }
+                    landmark.isActive == true -> {
+                        bannerColor = Color(0xFF32D74B)
+                        bannerIcon = Icons.Default.VerifiedUser
+                        bannerTitle = "ACTIVE"
+                        bannerMessage = "Your landmark is trained and able to be detected by users."
+                    }
+                    else -> {
+                        bannerColor = Color.Gray
+                        bannerIcon = Icons.Default.PauseCircle
+                        bannerTitle = "INACTIVE"
+                        bannerMessage = "This landmark is currently disabled and cannot be detected."
+                    }
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                        .padding(top = 16.dp)
+                        .background(bannerColor.copy(alpha = 0.15f), RoundedCornerShape(16.dp))
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.Top,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Icon(bannerIcon, contentDescription = null, tint = bannerColor, modifier = Modifier.size(24.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(bannerTitle, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = bannerColor)
+                        Text(bannerMessage, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Color.Gray, lineHeight = 20.sp)
+                    }
+                }
+            }
+
+            item {
+                LookSeeCard(modifier = Modifier.padding(horizontal = 16.dp)) {
                     Text(
                         text = landmark.label.ifEmpty { "Untitled Landmark" },
                         fontSize = 26.sp,
@@ -257,287 +359,344 @@ fun BusinessLandmarkDetailView(
                 }
             }
 
-            // Management Section
-            item { LookSeeSectionHeader("Management") }
             item {
-                LookSeeCard(modifier = Modifier.padding(horizontal = 16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                        Icon(
-                            imageVector = if (landmark.isActive == true) Icons.Default.CheckCircle else Icons.Default.PauseCircle,
-                            contentDescription = null,
-                            tint = if (landmark.isActive == true) Color.Green else Color.Gray,
-                            modifier = Modifier.size(24.dp)
-                        )
-                        Spacer(Modifier.width(16.dp))
-                        Text(
-                            text = if (landmark.isActive == true) "Active Landmark" else "Inactive Landmark",
-                            color = if (landmark.isActive == true) Color.Green else Color.Gray,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Switch(
-                            checked = landmark.isActive ?: true,
-                            onCheckedChange = { newVal ->
-                                coroutineScope.launch {
-                                    isSavingManagement = true
-                                    try {
-                                        val updated = landmarkService.updateLandmarkSettings(landmark.landmarkId, isActive = newVal)
-                                        landmark = updated
-                                        onLandmarkUpdated(updated)
-                                    } catch (e: Exception) {
-                                        managementErrorMessage = e.localizedMessage
-                                    } finally {
-                                        isSavingManagement = false
-                                    }
-                                }
-                            },
-                            enabled = !isSavingManagement
-                        )
-                    }
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("TRAINING DATASET", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray, modifier = Modifier.padding(horizontal = 20.dp))
+                    LookSeeCard(modifier = Modifier.padding(horizontal = 16.dp)) {
+                        val processed = landmark.cleanFrameCount ?: 0
+                        val required = landmark.requiredFrames ?: 2000
 
-                    HorizontalDivider(Modifier.padding(vertical = 12.dp), color = Color.Gray.copy(alpha = 0.2f))
-
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                        Icon(
-                            imageVector = if (landmark.promotionEnabled == true) Icons.Default.LocalOffer else Icons.Default.LocalOffer,
-                            contentDescription = null,
-                            tint = if (landmark.promotionEnabled == true) Color(0xFFFFA500) else Color.Gray,
-                            modifier = Modifier.size(24.dp)
-                        )
-                        Spacer(Modifier.width(16.dp))
-                        Text(
-                            text = if (landmark.promotionEnabled == true) "Promotions Enabled" else "Promotions Disabled",
-                            color = if (landmark.promotionEnabled == true) Color(0xFFFFA500) else Color.Gray,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Switch(
-                            checked = landmark.promotionEnabled ?: false,
-                            onCheckedChange = { newVal ->
-                                coroutineScope.launch {
-                                    isSavingManagement = true
-                                    try {
-                                        val updated = landmarkService.updateLandmarkSettings(landmark.landmarkId, promotionEnabled = newVal)
-                                        landmark = updated
-                                        onLandmarkUpdated(updated)
-                                    } catch (e: Exception) {
-                                        managementErrorMessage = e.localizedMessage
-                                    } finally {
-                                        isSavingManagement = false
-                                    }
-                                }
-                            },
-                            enabled = !isSavingManagement,
-                            colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFFFFA500), checkedTrackColor = Color(0xFFFFA500).copy(alpha = 0.5f))
-                        )
-                    }
-                }
-            }
-
-            // Promotions Section
-            item { LookSeeSectionHeader("Promotions") }
-            item {
-                LookSeeCard(modifier = Modifier.padding(horizontal = 16.dp)) {
-                    TextButton(
-                        onClick = {
-                            promotionEditorContext = BusinessPromotionEditorContext.Create()
-                            showPromotionEditor = true
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        contentPadding = PaddingValues(16.dp)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                            Icon(Icons.Default.AddCircle, contentDescription = null, tint = primaryColor, modifier = Modifier.size(20.dp))
-                            Spacer(Modifier.width(12.dp))
-                            Text("Add Promotion", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = primaryColor)
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text("TOTAL LABELED FRAMES", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                                Text(
+                                    "$processed",
+                                    fontSize = 32.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = if (processed >= required) Color.Green else if (processed > 0) Color(0xFFFFA500) else Color.Red
+                                )
+                            }
+                            Icon(Icons.Default.PhotoLibrary, contentDescription = null, tint = primaryColor.copy(alpha = 0.2f), modifier = Modifier.size(32.dp))
                         }
-                    }
 
-                    if (isLoadingPromotions) {
-                        CircularProgressIndicator(modifier = Modifier.size(24.dp).align(Alignment.CenterHorizontally).padding(16.dp))
-                    } else if (promotions.isEmpty()) {
-                        HorizontalDivider(color = Color.Gray.copy(alpha = 0.2f))
-                        Text(
-                            "No promotions have been added for this landmark yet.",
-                            color = Color.Gray,
-                            fontSize = 14.sp,
-                            modifier = Modifier.padding(16.dp)
-                        )
-                    } else {
-                        promotions.forEach { promo ->
-                            HorizontalDivider(color = Color.Gray.copy(alpha = 0.2f))
-                            PromotionItemRow(
-                                promotion = promo,
-                                isSaving = savingPromotionIds.contains(promo.id),
-                                onEnabledChange = { enabled ->
-                                    coroutineScope.launch {
-                                        savingPromotionIds = savingPromotionIds + promo.id
-                                        try {
-                                            promotionService.updatePromotion(landmark.landmarkId, promo.id, enabled = enabled)
-                                            loadPromotions()
-                                        } catch (e: Exception) {
-                                            promotionErrorMessage = e.localizedMessage
-                                        } finally {
-                                            savingPromotionIds = savingPromotionIds - promo.id
-                                        }
-                                    }
-                                },
-                                onEdit = {
-                                    promotionEditorContext = BusinessPromotionEditorContext.Edit(promo)
-                                    showPromotionEditor = true
-                                },
-                                onDelete = { promotionPendingDelete = promo }
+                        if (processed < required) {
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color.White.copy(alpha = 0.1f))
+                            Text(
+                                "We recommend reaching $required frames for optimal AI detection accuracy. You can upload more media below.",
+                                fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Color.Gray
                             )
                         }
                     }
                 }
             }
 
-            // Location Section
-            item { LookSeeSectionHeader("Location") }
             item {
-                LookSeeCard(modifier = Modifier.padding(horizontal = 16.dp)) {
-                    DetailDataRow(label = "Latitude", value = String.format(Locale.US, "%.6f", landmark.latitude ?: 0.0))
-                    HorizontalDivider(Modifier.padding(vertical = 12.dp), color = Color.Gray.copy(alpha = 0.2f))
-                    DetailDataRow(label = "Longitude", value = String.format(Locale.US, "%.6f", landmark.longitude ?: 0.0))
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("MANAGEMENT", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray, modifier = Modifier.padding(horizontal = 20.dp))
+                    LookSeeCard(modifier = Modifier.padding(horizontal = 16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                            Icon(
+                                imageVector = if (landmark.isActive == true) Icons.Default.CheckCircle else Icons.Default.PauseCircle,
+                                contentDescription = null,
+                                tint = if (landmark.isActive == true) Color.Green else Color.Gray,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(Modifier.width(16.dp))
+                            Text(
+                                text = if (landmark.isActive == true) "Active Landmark" else "Inactive Landmark",
+                                color = if (landmark.isActive == true) Color.Green else Color.Gray,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Switch(
+                                checked = landmark.isActive ?: true,
+                                onCheckedChange = { newVal ->
+                                    coroutineScope.launch {
+                                        isSavingManagement = true
+                                        try {
+                                            val updated = landmarkService.updateLandmarkSettings(landmark.landmarkId, isActive = newVal)
+                                            landmark = updated
+                                            onLandmarkUpdated(updated)
+                                        } catch (e: Exception) {
+                                            managementErrorMessage = e.localizedMessage
+                                        } finally {
+                                            isSavingManagement = false
+                                        }
+                                    }
+                                },
+                                enabled = !isSavingManagement
+                            )
+                        }
+
+                        HorizontalDivider(Modifier.padding(vertical = 12.dp), color = Color.Gray.copy(alpha = 0.2f))
+
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                            Icon(
+                                imageVector = if (landmark.promotionEnabled == true) Icons.Default.LocalOffer else Icons.Default.LocalOffer,
+                                contentDescription = null,
+                                tint = if (landmark.promotionEnabled == true) Color(0xFFFFA500) else Color.Gray,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(Modifier.width(16.dp))
+                            Text(
+                                text = if (landmark.promotionEnabled == true) "Promotions Enabled" else "Promotions Disabled",
+                                color = if (landmark.promotionEnabled == true) Color(0xFFFFA500) else Color.Gray,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Switch(
+                                checked = landmark.promotionEnabled ?: false,
+                                onCheckedChange = { newVal ->
+                                    coroutineScope.launch {
+                                        isSavingManagement = true
+                                        try {
+                                            val updated = landmarkService.updateLandmarkSettings(landmark.landmarkId, promotionEnabled = newVal)
+                                            landmark = updated
+                                            onLandmarkUpdated(updated)
+                                        } catch (e: Exception) {
+                                            managementErrorMessage = e.localizedMessage
+                                        } finally {
+                                            isSavingManagement = false
+                                        }
+                                    }
+                                },
+                                enabled = !isSavingManagement,
+                                colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFFFFA500), checkedTrackColor = Color(0xFFFFA500).copy(alpha = 0.5f))
+                            )
+                        }
+                    }
                 }
             }
 
-            // Media Uploads Section
-            item { LookSeeSectionHeader("Media Uploads") }
             item {
-                LookSeeCard(modifier = Modifier.padding(horizontal = 16.dp)) {
-                    BusinessMediaHistoryNavigationRow(
-                        landmarkId = landmark.landmarkId,
-                        landmarkLabel = landmark.label,
-                        onClick = { onNavigate("BusinessMediaHistoryView", landmark) }
-                    )
-
-                    HorizontalDivider(color = Color.Gray.copy(alpha = 0.2f))
-
-                    MediaUploadButton(
-                        title = "Record Positive Video",
-                        subtitle = "Record new views of this landmark with the camera.",
-                        icon = Icons.Default.Videocam,
-                        color = primaryColor,
-                        onClick = { showPositiveCamera = true }
-                    )
-
-                    HorizontalDivider(color = Color.Gray.copy(alpha = 0.2f))
-
-                    MediaUploadButton(
-                        title = "Choose Positive Media",
-                        subtitle = "Select photos or videos of this landmark.",
-                        icon = Icons.Default.AddCircle,
-                        color = primaryColor,
-                        onClick = {
-                            activeUploadRole = BusinessDatasetRole.POSITIVE
-                            mediaPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("PROMOTIONS", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray, modifier = Modifier.padding(horizontal = 20.dp))
+                    LookSeeCard(modifier = Modifier.padding(horizontal = 16.dp)) {
+                        TextButton(
+                            onClick = {
+                                promotionEditorContext = BusinessPromotionEditorContext.Create()
+                                showPromotionEditor = true
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            contentPadding = PaddingValues(16.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                                Icon(Icons.Default.AddCircle, contentDescription = null, tint = primaryColor, modifier = Modifier.size(20.dp))
+                                Spacer(Modifier.width(12.dp))
+                                Text("Add Promotion", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = primaryColor)
+                            }
                         }
-                    )
 
-                    HorizontalDivider(color = Color.Gray.copy(alpha = 0.2f))
-
-                    MediaUploadButton(
-                        title = "Record Negative Video",
-                        subtitle = "Record nearby objects without including the landmark.",
-                        icon = Icons.Default.Videocam,
-                        color = Color(0xFFFFA500),
-                        onClick = { showNegativeCamera = true }
-                    )
-
-                    HorizontalDivider(color = Color.Gray.copy(alpha = 0.2f))
-
-                    MediaUploadButton(
-                        title = "Choose Negative Examples",
-                        subtitle = "Select nearby objects that are not this landmark.",
-                        icon = Icons.Default.RemoveCircle,
-                        color = Color(0xFFFFA500),
-                        onClick = {
-                            activeUploadRole = BusinessDatasetRole.HARD_NEGATIVE
-                            mediaPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
-                        }
-                    )
-
-                    if (isUploadingMedia) {
-                        Spacer(Modifier.height(16.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            CircularProgressIndicator(modifier = Modifier.size(20.dp), color = primaryColor)
-                            Spacer(Modifier.width(12.dp))
-                            Column {
-                                Text(uploadProgressText ?: "Uploading...", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        if (isLoadingPromotions) {
+                            CircularProgressIndicator(modifier = Modifier.size(24.dp).align(Alignment.CenterHorizontally).padding(16.dp))
+                        } else if (promotions.isEmpty()) {
+                            HorizontalDivider(color = Color.Gray.copy(alpha = 0.2f))
+                            Text(
+                                "No promotions have been added for this landmark yet.",
+                                color = Color.Gray,
+                                fontSize = 14.sp,
+                                modifier = Modifier.padding(16.dp)
+                            )
+                        } else {
+                            promotions.forEach { promo ->
+                                HorizontalDivider(color = Color.Gray.copy(alpha = 0.2f))
+                                PromotionItemRow(
+                                    promotion = promo,
+                                    isSaving = savingPromotionIds.contains(promo.id),
+                                    onEnabledChange = { enabled ->
+                                        coroutineScope.launch {
+                                            savingPromotionIds = savingPromotionIds + promo.id
+                                            try {
+                                                promotionService.updatePromotion(landmark.landmarkId, promo.id, enabled = enabled)
+                                                loadPromotions()
+                                            } catch (e: Exception) {
+                                                promotionErrorMessage = e.localizedMessage
+                                            } finally {
+                                                savingPromotionIds = savingPromotionIds - promo.id
+                                            }
+                                        }
+                                    },
+                                    onEdit = {
+                                        promotionEditorContext = BusinessPromotionEditorContext.Edit(promo)
+                                        showPromotionEditor = true
+                                    },
+                                    onDelete = { promotionPendingDelete = promo }
+                                )
                             }
                         }
                     }
+                }
+            }
 
-                    uploadStatusMessage?.let { msg ->
-                        Spacer(Modifier.height(16.dp))
-                        Row(verticalAlignment = Alignment.Top) {
-                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color.Green, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text(msg, color = Color.Green, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                        }
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("LOCATION", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray, modifier = Modifier.padding(horizontal = 20.dp))
+                    LookSeeCard(modifier = Modifier.padding(horizontal = 16.dp)) {
+                        DetailDataRow(label = "Latitude", value = String.format(java.util.Locale.US, "%.6f", landmark.latitude ?: 0.0))
+                        HorizontalDivider(Modifier.padding(vertical = 12.dp), color = Color.Gray.copy(alpha = 0.2f))
+                        DetailDataRow(label = "Longitude", value = String.format(java.util.Locale.US, "%.6f", landmark.longitude ?: 0.0))
                     }
+                }
+            }
 
-                    uploadErrorMessage?.let { msg ->
-                        Spacer(Modifier.height(16.dp))
-                        Row(verticalAlignment = Alignment.Top) {
-                            Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFFFA500), modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text(msg, color = Color(0xFFFFA500), fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            // 🚀 FIXED: Saved to read-only variable `legacyPromotion` to allow non-null smart casting!
+            val legacyPromotion = landmark.promotion
+            if (!legacyPromotion.isNullOrBlank()) {
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("LEGACY PROMOTION", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray, modifier = Modifier.padding(horizontal = 20.dp))
+                        LookSeeCard(modifier = Modifier.padding(horizontal = 16.dp)) {
+                            Text(
+                                text = legacyPromotion,
+                                color = Color.White,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Medium
+                            )
                         }
                     }
                 }
             }
 
-            // Danger Zone
-            item { LookSeeSectionHeader("Danger Zone") }
             item {
-                LookSeeCard(modifier = Modifier.padding(horizontal = 16.dp)) {
-                    Button(
-                        onClick = { showDeleteSheet = true },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(alpha = 0.1f), contentColor = Color.Red),
-                        shape = RoundedCornerShape(12.dp),
-                        contentPadding = PaddingValues(16.dp)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                            Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(20.dp))
-                            Spacer(Modifier.width(12.dp))
-                            Text("Delete Landmark", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("MEDIA UPLOADS", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray, modifier = Modifier.padding(horizontal = 20.dp))
+                    LookSeeCard(modifier = Modifier.padding(horizontal = 16.dp)) {
+                        BusinessMediaHistoryNavigationRow(
+                            landmarkId = landmark.landmarkId,
+                            landmarkLabel = landmark.label,
+                            onClick = { onNavigate("BusinessMediaHistoryView", landmark) }
+                        )
+
+                        HorizontalDivider(color = Color.Gray.copy(alpha = 0.2f))
+
+                        MediaUploadButton(
+                            title = "Record Positive Video",
+                            subtitle = "Record new views of this landmark with the camera.",
+                            icon = Icons.Default.Videocam,
+                            color = primaryColor,
+                            onClick = { showPositiveCamera = true }
+                        )
+
+                        HorizontalDivider(color = Color.Gray.copy(alpha = 0.2f))
+
+                        MediaUploadButton(
+                            title = "Choose Positive Media",
+                            subtitle = "Select photos or videos of this landmark.",
+                            icon = Icons.Default.AddCircle,
+                            color = primaryColor,
+                            onClick = {
+                                activeUploadRole = BusinessDatasetRole.POSITIVE
+                                mediaPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
+                            }
+                        )
+
+                        HorizontalDivider(color = Color.Gray.copy(alpha = 0.2f))
+
+                        MediaUploadButton(
+                            title = "Record Negative Video",
+                            subtitle = "Record nearby objects without including the landmark.",
+                            icon = Icons.Default.Videocam,
+                            color = Color(0xFFFFA500),
+                            onClick = { showNegativeCamera = true }
+                        )
+
+                        HorizontalDivider(color = Color.Gray.copy(alpha = 0.2f))
+
+                        MediaUploadButton(
+                            title = "Choose Negative Examples",
+                            subtitle = "Select nearby objects that are not this landmark.",
+                            icon = Icons.Default.RemoveCircle,
+                            color = Color(0xFFFFA500),
+                            onClick = {
+                                activeUploadRole = BusinessDatasetRole.HARD_NEGATIVE
+                                mediaPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
+                            }
+                        )
+
+                        if (isUploadingMedia) {
+                            Spacer(Modifier.height(16.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                CircularProgressIndicator(modifier = Modifier.size(20.dp), color = primaryColor)
+                                Spacer(Modifier.width(12.dp))
+                                Column {
+                                    Text(uploadProgressText ?: "Uploading...", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+
+                        uploadStatusMessage?.let { msg ->
+                            Spacer(Modifier.height(16.dp))
+                            Row(verticalAlignment = Alignment.Top) {
+                                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color.Green, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text(msg, color = Color.Green, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        uploadErrorMessage?.let { msg ->
+                            Spacer(Modifier.height(16.dp))
+                            Row(verticalAlignment = Alignment.Top) {
+                                Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFFFA500), modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text(msg, color = Color(0xFFFFA500), fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
-                    Spacer(Modifier.height(12.dp))
-                    Text(
-                        "Deleting a landmark removes it from your account and starts backend cleanup. This cannot be undone.",
-                        color = Color.Gray,
-                        fontSize = 13.sp,
-                        modifier = Modifier.padding(horizontal = 4.dp)
-                    )
                 }
             }
 
-            // Identifiers Section
-            item { LookSeeSectionHeader("Identifiers") }
             item {
-                LookSeeCard(modifier = Modifier.padding(horizontal = 16.dp)) {
-                    DetailDataRow(label = "Landmark ID", value = landmark.landmarkId)
-                    landmark.ownerUserId?.takeIf { it.isNotEmpty() }?.let {
-                        HorizontalDivider(Modifier.padding(vertical = 12.dp), color = Color.Gray.copy(alpha = 0.2f))
-                        DetailDataRow(label = "Owner User ID", value = it)
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("DANGER ZONE", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray, modifier = Modifier.padding(horizontal = 20.dp))
+                    LookSeeCard(modifier = Modifier.padding(horizontal = 16.dp)) {
+                        Button(
+                            onClick = { showDeleteSheet = true },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(alpha = 0.1f), contentColor = Color.Red),
+                            shape = RoundedCornerShape(12.dp),
+                            contentPadding = PaddingValues(16.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                                Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(20.dp))
+                                Spacer(Modifier.width(12.dp))
+                                Text("Delete Landmark", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                            }
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            "Deleting a landmark removes it from your account and starts backend cleanup for cluster mappings, dataset files, and promotions. This cannot be undone.",
+                            color = Color.Gray,
+                            fontSize = 13.sp,
+                            modifier = Modifier.padding(horizontal = 4.dp)
+                        )
                     }
-                    landmark.userEmail?.takeIf { it.isNotEmpty() }?.let {
-                        HorizontalDivider(Modifier.padding(vertical = 12.dp), color = Color.Gray.copy(alpha = 0.2f))
-                        DetailDataRow(label = "Owner Email", value = it)
+                }
+            }
+
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("IDENTIFIERS", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray, modifier = Modifier.padding(horizontal = 20.dp))
+                    LookSeeCard(modifier = Modifier.padding(horizontal = 16.dp)) {
+                        DetailDataRow(label = "Landmark ID", value = landmark.landmarkId)
+                        landmark.ownerUserId?.takeIf { it.isNotEmpty() }?.let {
+                            HorizontalDivider(Modifier.padding(vertical = 12.dp), color = Color.Gray.copy(alpha = 0.2f))
+                            DetailDataRow(label = "Owner User ID", value = it)
+                        }
+                        landmark.userEmail?.takeIf { it.isNotEmpty() }?.let {
+                            HorizontalDivider(Modifier.padding(vertical = 12.dp), color = Color.Gray.copy(alpha = 0.2f))
+                            DetailDataRow(label = "Owner Email", value = it)
+                        }
+                        landmark.updatedAt?.takeIf { it.isNotEmpty() }?.let {
+                            HorizontalDivider(Modifier.padding(vertical = 12.dp), color = Color.Gray.copy(alpha = 0.2f))
+                            DetailDataRow(label = "Updated At", value = it)
+                        }
                     }
                 }
             }
         }
     }
-
-    // Sheets & Dialogs
 
     if (showEditDescriptionSheet) {
         var draft by remember { mutableStateOf(displayedShortDescription) }
@@ -546,7 +705,7 @@ fun BusinessLandmarkDetailView(
 
         ModalBottomSheet(onDismissRequest = { showEditDescriptionSheet = false }, containerColor = secondaryGrouped) {
             Column(modifier = Modifier.padding(20.dp).fillMaxWidth()) {
-                Text("EDIT DESCRIPTION", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                Text("SHORT DESCRIPTION", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
                 Spacer(Modifier.height(16.dp))
                 OutlinedTextField(
                     value = draft,
@@ -555,6 +714,8 @@ fun BusinessLandmarkDetailView(
                     colors = OutlinedTextFieldDefaults.colors(unfocusedContainerColor = Color.Black, focusedContainerColor = Color.Black, focusedTextColor = Color.White, unfocusedTextColor = Color.White),
                     shape = RoundedCornerShape(16.dp)
                 )
+                Spacer(Modifier.height(8.dp))
+                Text("This description is shown to users when LookSee identifies this landmark.", fontSize = 13.sp, color = Color.Gray)
                 Spacer(Modifier.height(16.dp))
                 Button(
                     onClick = {
@@ -592,16 +753,19 @@ fun BusinessLandmarkDetailView(
 
         ModalBottomSheet(onDismissRequest = { showEditWebsiteSheet = false }, containerColor = secondaryGrouped) {
             Column(modifier = Modifier.padding(20.dp).fillMaxWidth()) {
-                Text("EDIT WEBSITE URL", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                Text("WEBSITE URL", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
                 Spacer(Modifier.height(16.dp))
                 OutlinedTextField(
                     value = draft,
                     onValueChange = { draft = it },
+                    placeholder = { Text("example.com") },
                     modifier = Modifier.fillMaxWidth(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
                     colors = OutlinedTextFieldDefaults.colors(unfocusedContainerColor = Color.Black, focusedContainerColor = Color.Black, focusedTextColor = Color.White, unfocusedTextColor = Color.White),
                     shape = RoundedCornerShape(16.dp)
                 )
+                Spacer(Modifier.height(8.dp))
+                Text("Users will be able to open this website from the landmark popup. You can enter example.com or a full https:// URL. Leave it blank to clear the website.", fontSize = 13.sp, color = Color.Gray)
                 Spacer(Modifier.height(16.dp))
                 Button(
                     onClick = {
@@ -731,7 +895,7 @@ fun BusinessLandmarkDetailView(
             BusinessPositiveVideoCameraScreen(
                 onDone = { uri ->
                     showPositiveCamera = false
-                    coroutineScope.launch { uploadMediaBatch(listOf(uri), BusinessDatasetRole.POSITIVE, BusinessMediaKind.VIDEO) }
+                    coroutineScope.launch { uploadMediaBatch(listOf(uri), BusinessDatasetRole.POSITIVE) }
                 },
                 onDismiss = { showPositiveCamera = false }
             )
@@ -743,7 +907,7 @@ fun BusinessLandmarkDetailView(
             NegativeVideoCameraView(
                 onDone = { video ->
                     showNegativeCamera = false
-                    coroutineScope.launch { uploadMediaBatch(listOf(Uri.fromFile(video.file)), BusinessDatasetRole.HARD_NEGATIVE, BusinessMediaKind.VIDEO) }
+                    coroutineScope.launch { uploadMediaBatch(listOf(Uri.fromFile(video.file)), BusinessDatasetRole.HARD_NEGATIVE) }
                 },
                 onDismiss = { showNegativeCamera = false }
             )

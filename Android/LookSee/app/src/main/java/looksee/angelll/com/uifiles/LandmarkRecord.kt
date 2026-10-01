@@ -1,8 +1,11 @@
 package looksee.angelll.com.uifiles
 
-import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.util.Log
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -27,23 +30,24 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.zIndex
-import androidx.compose.ui.text.font.FontWeight
-import looksee.angelll.com.viewmodels.*
-import looksee.angelll.com.models.*
-import looksee.angelll.com.detection.*
-import looksee.angelll.com.ui.theme.*
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
 import kotlin.math.ceil
+import kotlin.math.max
+import looksee.angelll.com.detection.*
+import looksee.angelll.com.models.*
+import looksee.angelll.com.ui.theme.*
+import looksee.angelll.com.viewmodels.*
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LandmarkRecordScreen(
     vm: AuthViewModel,
@@ -83,6 +87,9 @@ fun LandmarkRecordScreen(
     var isFormVisible by remember { mutableStateOf(archivedMedia != null) }
     var statusText by remember { mutableStateOf(if (archivedMedia != null) "Loaded archived media." else "No landmark media selected.") }
     var showBackgroundUploadAlert by remember { mutableStateOf(false) }
+
+    var showDiscardAlert by remember { mutableStateOf(false) }
+
     var showLimitAlert by remember { mutableStateOf(false) }
     var limitAlertTitle by remember { mutableStateOf("") }
     var limitAlertMessage by remember { mutableStateOf("") }
@@ -129,6 +136,9 @@ fun LandmarkRecordScreen(
         pickedVideoUris = emptyList()
         clipDurations = emptyMap()
         pickedImageUri = null
+
+        capturedNegativeVideo?.file?.let { try { it.delete() } catch(e:Exception){} }
+
         capturedNegativeVideo = null
         if (existingLandmarkId == null) { businessLandmarkId = null; labelText = ""; shortDescription = "" }
         isFormVisible = false
@@ -136,6 +146,7 @@ fun LandmarkRecordScreen(
     }
 
     fun startFullSubmission() {
+        Log.d("LookSee_Debug_Record", "Starting full submission!")
         if (completedPositiveResult == null) {
             if (!vm.hasActiveSubscription) {
                 limitAlertTitle = "Subscription Required"
@@ -158,12 +169,10 @@ fun LandmarkRecordScreen(
             val offlineManager = OfflineMediaManager.shared(context)
 
             if (archivedMedia != null) {
-                // 🚀 FIXED: Removed the 'context' parameter to match your existing OfflineMediaManager file
                 offlineManager.updateDraft(archivedMedia, labelText, shortDescription, null)
             } else {
                 if (pickedVideoUris.isNotEmpty()) {
                     val file = File(pickedVideoUris.first().path ?: "")
-                    // 🚀 FIXED: Reverted to passing 'file' and 'capturedNegativeVideo?.file' instead of Uris
                     offlineManager.archiveVideo(file, lat, lon, idToSave, labelText, shortDescription, "", capturedNegativeVideo?.file, false)
                 }
                 if (existingLandmarkId == null) {
@@ -172,6 +181,7 @@ fun LandmarkRecordScreen(
                 }
             }
 
+            Log.d("LookSee_Debug_Record", "Queued successfully. Retrying AutoUploadManager.")
             AutoUploadManager.shared(context).forceRetry()
             showBackgroundUploadAlert = true
         }
@@ -205,7 +215,7 @@ fun LandmarkRecordScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color(0xFF0F0F1A))
+                    .background(Color.Black)
                     .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) { focusManager.clearFocus() }
                     .verticalScroll(rememberScrollState())
                     .imePadding()
@@ -221,7 +231,7 @@ fun LandmarkRecordScreen(
                     Column(modifier = Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Icon(if (hasMinimumClipDuration) Icons.Default.CheckCircle else Icons.Default.Schedule, contentDescription = null, tint = if (hasMinimumClipDuration) Color.Green else Color(0xFFFFA500), modifier = Modifier.size(16.dp))
-                            Text("${String.format("%.1f", totalClipDuration)}s total — ready to upload", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = if (hasMinimumClipDuration) Color.Green else Color(0xFFFFA500))
+                            Text("${String.format(java.util.Locale.US, "%.1f", totalClipDuration)}s total — ready to upload", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = if (hasMinimumClipDuration) Color.Green else Color(0xFFFFA500))
                         }
 
                         pickedVideoUris.forEach { uri ->
@@ -237,16 +247,16 @@ fun LandmarkRecordScreen(
                     }
                 }
 
-                LookSeeCard(modifier = Modifier.padding(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                        Icon(Icons.Default.LocationOn, contentDescription = null, tint = AppleBlue)
+                Surface(modifier = Modifier.padding(16.dp).fillMaxWidth(), color = Color(0xFF1C1C1E), shape = RoundedCornerShape(16.dp)) {
+                    Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        Icon(Icons.Default.NearMe, contentDescription = null, tint = AppleBlue)
                         Column {
                             val fix = (locationState as? LookSeeLocationState.Ready)?.fix
                             if (fix != null) {
-                                Text("${fix.latitude}, ${fix.longitude}", fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, color = Color.White)
+                                Text(String.format(java.util.Locale.US, "%.6f, %.6f", fix.latitude, fix.longitude), fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, color = Color.White)
                                 Text("Accuracy: ±${fix.accuracyMeters.toInt()}m", fontSize = 13.sp, color = Color.Gray)
                             } else {
-                                Text("Requesting location...", fontSize = 14.sp, color = Color.Gray)
+                                Text("Requesting location...", fontSize = 15.sp, color = Color.Gray)
                             }
                         }
                     }
@@ -254,33 +264,51 @@ fun LandmarkRecordScreen(
 
                 if (isFormVisible) {
                     Text("LANDMARK LABEL", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
-                    LookSeeCard(modifier = Modifier.padding(horizontal = 16.dp)) {
-                        OutlinedTextField(
-                            value = labelText, onValueChange = { labelText = it },
-                            placeholder = { Text("e.g., Gampel Pavilion", color = Color.Gray) },
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Color.Transparent, unfocusedBorderColor = Color.Transparent, focusedTextColor = Color.White, unfocusedTextColor = Color.White),
-                            enabled = !arePositiveDetailsLocked
-                        )
+                    Surface(modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth(), color = Color(0xFF1C1C1E), shape = RoundedCornerShape(16.dp)) {
+                        Box(modifier = Modifier.padding(8.dp)) {
+                            OutlinedTextField(
+                                value = labelText, onValueChange = { labelText = it },
+                                placeholder = { Text("e.g., Gampel Pavilion", color = Color.Gray) },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Color.Transparent, unfocusedBorderColor = Color.Transparent, focusedTextColor = Color.White, unfocusedTextColor = Color.White),
+                                enabled = !arePositiveDetailsLocked
+                            )
+                        }
+                    }
+
+                    if (businessLandmarkId != null) {
+                        Text("ID: ${businessLandmarkId}", fontSize = 12.sp, color = Color.Gray, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
                     }
 
                     Spacer(Modifier.height(10.dp))
                     Text("SHORT DESCRIPTION", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
-                    LookSeeCard(modifier = Modifier.padding(horizontal = 16.dp)) {
-                        OutlinedTextField(
-                            value = shortDescription, onValueChange = { shortDescription = it },
-                            placeholder = { Text("e.g., Front entrance", color = Color.Gray) },
-                            modifier = Modifier.fillMaxWidth().heightIn(min = 100.dp),
-                            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Color.Transparent, unfocusedBorderColor = Color.Transparent, focusedTextColor = Color.White, unfocusedTextColor = Color.White),
-                            enabled = !arePositiveDetailsLocked
-                        )
+                    Surface(modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth(), color = Color(0xFF1C1C1E), shape = RoundedCornerShape(16.dp)) {
+                        Box(modifier = Modifier.padding(8.dp).fillMaxWidth().height(100.dp)) {
+                            OutlinedTextField(
+                                value = shortDescription, onValueChange = { shortDescription = it },
+                                placeholder = { Text("e.g., Front entrance", color = Color.Gray) },
+                                modifier = Modifier.fillMaxSize(),
+                                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Color.Transparent, unfocusedBorderColor = Color.Transparent, focusedTextColor = Color.White, unfocusedTextColor = Color.White),
+                                enabled = !arePositiveDetailsLocked
+                            )
+                            Box(modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp).size(36.dp).background(AppleBlue, CircleShape).clickable { }, contentAlignment = Alignment.Center) {
+                                Icon(Icons.Default.CenterFocusStrong, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                            }
+                        }
                     }
 
                     if (existingLandmarkId == null) {
-                        Spacer(Modifier.height(10.dp))
-                        Text("NEGATIVE BACKGROUND", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
-                        LookSeeCard(modifier = Modifier.padding(horizontal = 16.dp)) {
-                            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Spacer(Modifier.height(20.dp))
+                        Surface(modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth(), color = Color(0xFF1C1C1E), shape = RoundedCornerShape(16.dp)) {
+                            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                                    Text("Negative Background", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                    Icon(
+                                        imageVector = if (capturedNegativeVideo != null) Icons.Default.CheckCircle else Icons.Default.Error,
+                                        contentDescription = null,
+                                        tint = if (capturedNegativeVideo != null) Color.Green else Color(0xFFFFA500)
+                                    )
+                                }
                                 Text("Record a >= ${negativeTargetDuration}s video panning the area. Do NOT include the landmark.", fontSize = 14.sp, color = Color.Gray)
                                 Button(
                                     onClick = {
@@ -306,16 +334,29 @@ fun LandmarkRecordScreen(
                         }
                     }
 
-                    Button(
-                        onClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); startFullSubmission() },
-                        modifier = Modifier.padding(16.dp).fillMaxWidth().height(60.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = if(canUpload) AppleBlue else Color.DarkGray),
-                        shape = RoundedCornerShape(16.dp),
-                        enabled = canUpload
-                    ) {
-                        Icon(Icons.Default.CloudUpload, contentDescription = null)
-                        Spacer(Modifier.width(10.dp))
-                        Text(if (archivedMedia != null) "Upload Draft" else (if (existingLandmarkId != null) "Upload Additional Media" else "Upload Landmark"), fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                    Row(modifier = Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Button(
+                            onClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); startFullSubmission() },
+                            modifier = Modifier.weight(1f).height(60.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = if(canUpload) AppleBlue else Color(0xFF2C2C2E)),
+                            shape = RoundedCornerShape(16.dp),
+                            enabled = canUpload
+                        ) {
+                            Icon(Icons.Default.ArrowUpward, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(if (archivedMedia != null) "Upload Draft" else (if (existingLandmarkId != null) "Upload Media" else "Upload Landmark"), fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        if (archivedMedia == null) {
+                            Button(
+                                onClick = { showDiscardAlert = true },
+                                modifier = Modifier.size(60.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(alpha = 0.15f)),
+                                shape = RoundedCornerShape(16.dp)
+                            ) {
+                                Icon(Icons.Default.Delete, contentDescription = null, tint = Color.Red)
+                            }
+                        }
                     }
                 }
             }
@@ -356,10 +397,10 @@ fun LandmarkRecordScreen(
     if (showBackgroundUploadAlert) {
         AlertDialog(
             onDismissRequest = { showBackgroundUploadAlert = false; onDismiss() },
-            title = { Text("Upload Queued!") },
-            text = { Text("Your landmark has been securely queued! It will upload in the background. Feel free to keep using the app.") },
-            confirmButton = { TextButton(onClick = { showBackgroundUploadAlert = false; clearScreen() }) { Text("Record Another") } },
-            dismissButton = { TextButton(onClick = { showBackgroundUploadAlert = false; onDismiss() }) { Text("Done") } },
+            title = { Text("Upload Queued!", color = Color.White) },
+            text = { Text("Your landmark has been securely queued! It will upload in the background. Feel free to keep using the app, but please make sure to leave it open until the upload finishes.", color = Color.LightGray) },
+            confirmButton = { TextButton(onClick = { showBackgroundUploadAlert = false; clearScreen() }) { Text("Record Another", color = Color.White) } },
+            dismissButton = { TextButton(onClick = { showBackgroundUploadAlert = false; onDismiss() }) { Text("Done", color = Color.White) } },
             containerColor = Color(0xFF1C1C1E)
         )
     }
@@ -367,9 +408,20 @@ fun LandmarkRecordScreen(
     if (showLimitAlert) {
         AlertDialog(
             onDismissRequest = { showLimitAlert = false },
-            title = { Text(limitAlertTitle) },
-            text = { Text(limitAlertMessage) },
-            confirmButton = { TextButton(onClick = { showLimitAlert = false }) { Text("OK") } },
+            title = { Text(limitAlertTitle, color = Color.White) },
+            text = { Text(limitAlertMessage, color = Color.LightGray) },
+            confirmButton = { TextButton(onClick = { showLimitAlert = false }) { Text("OK", color = Color.White) } },
+            containerColor = Color(0xFF1C1C1E)
+        )
+    }
+
+    if (showDiscardAlert) {
+        AlertDialog(
+            onDismissRequest = { showDiscardAlert = false },
+            title = { Text("Discard this upload?", color = Color.White) },
+            text = { Text("This will remove the media and clear the form.", color = Color.LightGray) },
+            confirmButton = { TextButton(onClick = { showDiscardAlert = false; clearScreen() }) { Text("Discard", color = Color.Red) } },
+            dismissButton = { TextButton(onClick = { showDiscardAlert = false }) { Text("Cancel", color = Color.White) } },
             containerColor = Color(0xFF1C1C1E)
         )
     }

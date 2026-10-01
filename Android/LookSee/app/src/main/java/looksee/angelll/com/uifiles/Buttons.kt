@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.util.Log
 import androidx.compose.animation.*
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -21,7 +22,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -56,12 +57,9 @@ import looksee.angelll.com.detection.LocationManager
 import looksee.angelll.com.models.*
 import looksee.angelll.com.models.ModelAutoRefreshService
 import looksee.angelll.com.ui.theme.AppleBlue
-import looksee.angelll.com.ui.theme.CardBackground
 import looksee.angelll.com.ui.theme.DarkBackground
-import looksee.angelll.com.uifiles.LookSeeCard
 import looksee.angelll.com.viewmodels.AuthState
 import looksee.angelll.com.viewmodels.AuthViewModel
-
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalPermissionsApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -107,7 +105,6 @@ fun ButtonsScreen(
     var isReticlePulsing by remember { mutableStateOf(false) }
     var hasPreloadedMap by remember { mutableStateOf(false) }
 
-    // Notifications
     var showGenericNotification by remember { mutableStateOf(false) }
     var hasShownNotificationThisSession by remember { mutableStateOf(false) }
     var showMyLandmarksFromAlert by remember { mutableStateOf(false) }
@@ -116,7 +113,6 @@ fun ButtonsScreen(
     val isScanTab = currentTab == 0
     val topBarTitle = if (isScanTab) "LookSee" else "Map"
 
-    // Restoration logic
     val isScanCameraActive by remember {
         derivedStateOf {
             currentTab == 0 && !showRecordSheet && !showSignUpPrompt && !showTutorial && !showMyLandmarksFromAlert
@@ -129,7 +125,6 @@ fun ButtonsScreen(
         }
     }
 
-    // Keep screen on during scan
     val view = LocalView.current
     DisposableEffect(isScanCameraActive) {
         if (isScanCameraActive) {
@@ -140,7 +135,6 @@ fun ButtonsScreen(
         }
     }
 
-    // Permissions & Location
     val locationPermissionState = rememberPermissionState(
         android.Manifest.permission.ACCESS_FINE_LOCATION
     )
@@ -211,7 +205,6 @@ fun ButtonsScreen(
         }
     }
 
-    // Broadcast Receivers
     DisposableEffect(Unit) {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
@@ -222,14 +215,22 @@ fun ButtonsScreen(
                         }
                     }
                     "TriggerRedoRecord" -> {
+                        Log.d("LookSee_Debug_Nav", "BROADCAST RECEIVED! TriggerRedoRecord captured.")
                         redoLandmarkId = intent.getStringExtra("id")
                         redoLandmarkLabel = intent.getStringExtra("label")
                         redoLandmarkDesc = intent.getStringExtra("description")
                         redoSecondsNeeded = intent.getDoubleExtra("secondsNeeded", 30.0).takeIf { it > 0 }
 
                         coroutineScope.launch {
-                            delay(600)
+                            showMyLandmarksFromAlert = false
+                            delay(400)
+                            Log.d("LookSee_Debug_Nav", "Opening LandmarkRecord Sheet for ID: $redoLandmarkId")
                             showRecordSheet = true
+                        }
+                    }
+                    "looksee.action.NAVIGATE" -> {
+                        intent.getStringExtra("DESTINATION")?.let {
+                            onNavigate(it)
                         }
                     }
                 }
@@ -238,6 +239,7 @@ fun ButtonsScreen(
         val filter = IntentFilter().apply {
             addAction("CheckGlobalNotifications")
             addAction("TriggerRedoRecord")
+            addAction("looksee.action.NAVIGATE")
         }
         LocalBroadcastManager.getInstance(context).registerReceiver(receiver, filter)
 
@@ -416,7 +418,7 @@ fun ButtonsScreen(
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier.fillMaxSize(),
-                userScrollEnabled = !infoView.infoView
+                userScrollEnabled = !infoView.infoView && pagerState.currentPage != 1
             ) { page ->
                 if (page == 0) {
                     val blurModifier = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S && infoView.infoView) {
@@ -438,13 +440,15 @@ fun ButtonsScreen(
                         )
                     }
                 } else {
-                    Box(modifier = Modifier.padding(paddingValues)) {
-                        LandmarkMapScreen(vm = vm, nearbyService = nearbyService, locationManager = locationManager)
-                    }
+                        LandmarkMapScreen(
+                            vm = vm, 
+                            nearbyService = nearbyService, 
+                            locationManager = locationManager, 
+                            paddingValues = paddingValues
+                        )
                 }
             }
 
-            // Notification Pill
             AnimatedVisibility(
                 visible = showGenericNotification && isScanTab,
                 enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
@@ -488,7 +492,6 @@ fun ButtonsScreen(
                 }
             }
 
-            // Modals
             if (showSignUpPrompt) {
                 Box(
                     modifier = Modifier
@@ -497,9 +500,13 @@ fun ButtonsScreen(
                         .pointerInput(Unit) { detectTapGestures { showSignUpPrompt = false; coroutineScope.launch { pagerState.animateScrollToPage(0) } } },
                     contentAlignment = Alignment.Center
                 ) {
-                    LookSeeCard(modifier = Modifier.padding(24.dp)) {
+                    Surface(
+                        modifier = Modifier.padding(24.dp).fillMaxWidth(),
+                        color = Color(0xFF1C1C1E),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
                         Column(
-                            modifier = Modifier.padding(14.dp), // Additional padding for inside the card
+                            modifier = Modifier.padding(24.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.spacedBy(24.dp)
                         ) {
@@ -519,7 +526,7 @@ fun ButtonsScreen(
                                 ) {
                                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                         Text("Create Account", fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                                        Icon(Icons.Default.ArrowForward, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size(18.dp))
                                     }
                                 }
                                 Button(
@@ -645,96 +652,4 @@ fun RowScope.TabButton(title: String, icon: androidx.compose.ui.graphics.vector.
         Text(title, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (isLocked) Color.DarkGray else if (isSelected) AppleBlue else Color.Gray)
         if (isSelected && !isLocked) Box(modifier = Modifier.padding(top = 4.dp).size(width = 24.dp, height = 3.dp).background(AppleBlue, CircleShape))
     }
-}
-
-
-// --- Merged from EmptyView.kt ---
-@Composable
-fun EmptyView() {
-    Box(modifier = Modifier.fillMaxSize())
-}
-
-// --- Merged from LookSeeComponents.kt ---
-/**
- * iOS-style Card Container (#1C1C1E)
- */
-@Composable
-fun LookSeeCard(
-    modifier: Modifier = Modifier,
-    content: @Composable ColumnScope.() -> Unit
-) {
-    Surface(
-        modifier = modifier.fillMaxWidth(),
-        color = Color(0xFF1C1C1E),
-        shape = RoundedCornerShape(16.dp),
-        content = {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                content = content
-            )
-        }
-    )
-}
-
-/**
- * iOS-style List Row with optional Chevron
- */
-@Composable
-fun LookSeeRow(
-    icon: ImageVector,
-    iconContainerColor: Color,
-    title: String,
-    subtitle: String? = null,
-    onClick: () -> Unit
-) {
-    val haptic = LocalHapticFeedback.current
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = {
-                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                onClick()
-            })
-            .padding(vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            modifier = Modifier
-                .size(32.dp)
-                .background(iconContainerColor, RoundedCornerShape(8.dp)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
-        }
-        
-        Spacer(modifier = Modifier.width(16.dp))
-        
-        Column(modifier = Modifier.weight(1f)) {
-            Text(text = title, color = Color.White, fontSize = 17.sp)
-            if (subtitle != null) {
-                Text(text = subtitle, color = Color.Gray, fontSize = 13.sp)
-            }
-        }
-        
-        Icon(
-            imageVector = Icons.Default.ChevronRight,
-            contentDescription = null,
-            tint = Color(0xFFC7C7CC),
-            modifier = Modifier.size(20.dp)
-        )
-    }
-}
-
-/**
- * iOS-style Section Header
- */
-@Composable
-fun LookSeeSectionHeader(title: String) {
-    Text(
-        text = title.uppercase(),
-        color = Color(0xFF8E8E93),
-        fontSize = 13.sp,
-        fontWeight = FontWeight.SemiBold,
-        modifier = Modifier.padding(start = 16.dp, bottom = 8.dp, top = 24.dp)
-    )
 }

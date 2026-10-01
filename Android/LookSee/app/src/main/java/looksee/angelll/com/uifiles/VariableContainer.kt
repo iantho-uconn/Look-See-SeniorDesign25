@@ -162,7 +162,17 @@ class VariableContainer private constructor() {
         mapLongitude = landmark.longitude
         reportedOwnerId = landmark.createdBy
 
-        promoName = landmark.promotion ?: "No active promotion"
+        landmarkWebsiteUrl = landmark.websiteUrl ?: ""
+
+        promoName = landmark.promoName ?: landmark.promotion ?: "No active promotion"
+        promoDescription = landmark.promoDescription ?: ""
+        promoImageUrl = landmark.promoImageUrl ?: ""
+
+        merchantName = landmark.merchantName ?: ""
+        merchantBio = landmark.merchantBio ?: ""
+        merchantPhone = landmark.merchantPhone ?: ""
+        merchantAddress = landmark.merchantAddress ?: ""
+        merchantLogoUrl = landmark.merchantLogoUrl ?: ""
         
         infoView = true
         

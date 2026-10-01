@@ -140,7 +140,7 @@ fun RootView(vm: AuthViewModel, authState: AuthState) {
                 isAuthResolutionDone = true
                 advanceIfReady()
             }
-            
+
             ModelLoadingScreen(
                 onComplete = {
                     isModelLoadingDone = true
@@ -207,6 +207,7 @@ fun RootView(vm: AuthViewModel, authState: AuthState) {
         AppState.BusinessLandmarkDetail -> {
             selectedLandmark?.let { landmark ->
                 BusinessLandmarkDetailView(
+                    vm = vm, // 🚀 FIXED: Passed the missing AuthViewModel to allow Force Train functionality!
                     initialLandmark = landmark,
                     onNavigate = { route, payload ->
                         // Handle potential sub-navigation if needed

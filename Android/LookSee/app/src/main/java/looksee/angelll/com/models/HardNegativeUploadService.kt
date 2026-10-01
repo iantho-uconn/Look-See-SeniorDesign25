@@ -129,20 +129,22 @@ class HardNegativeUploadService internal constructor(
             throw HardNegativeUploadError.MissingLocalFile(video.filename)
         }
         try {
-            URL(target.uploadUrl)
+            URL(target.uploadUrl.url)
         } catch (_: Exception) {
             throw HardNegativeUploadError.InvalidUrl
         }
-        val response = httpClient.putFile(
-            url = target.uploadUrl,
+        val videoBytes = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { video.file.readBytes() }
+        val response = httpClient.postMultipartBytes(
+            presignedPost = target.uploadUrl,
             contentType = target.contentType,
-            file = video.file,
+            filename = video.filename,
+            bytes = videoBytes,
             timeoutMillis = MEDIA_UPLOAD_TIMEOUT_MILLIS,
         )
         if (response.statusCode !in 200..299) {
             throw HardNegativeUploadError.BadStatus(
                 response.statusCode,
-                "S3 PUT failed for ${video.filename}",
+                "S3 POST failed for ${video.filename}",
             )
         }
     }
@@ -221,7 +223,7 @@ private data class HardNegativeInitResponse(
 
 private data class HardNegativeUploadTarget(
     val negativeId: String,
-    val uploadUrl: String,
+    val uploadUrl: looksee.angelll.com.models.S3PresignedPost,
     val sourceBucket: String,
     val sourceKey: String,
     val contentType: String,

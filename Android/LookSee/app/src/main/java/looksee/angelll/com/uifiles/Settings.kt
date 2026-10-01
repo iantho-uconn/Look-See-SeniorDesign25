@@ -402,18 +402,18 @@ fun SettingsScreen(
                         onNavigate("DeepSettings")
                     }
                 }
-            }
 
-            androidx.compose.material3.Text(
-                text = "Copyright © 1999-2026 Information Outpost, LLC.  All rights reserved.",
-                fontSize = 10.sp,
-                color = Color.White.copy(alpha = 0.5f),
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp)
-                    .padding(top = 16.dp, bottom = 40.dp)
-            )
+                androidx.compose.material3.Text(
+                    text = "Copyright © 1999-2026 Information Outpost, LLC.  All rights reserved.",
+                    fontSize = 10.sp,
+                    color = Color.White.copy(alpha = 0.5f),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp)
+                        .padding(top = 16.dp, bottom = 40.dp)
+                )
+            }
         }
 
         if (showSignOutAlert) {
@@ -993,6 +993,17 @@ fun DeepSettingsView(
                     }
                 }
             }
+
+            androidx.compose.material3.Text(
+                text = "Copyright © 1999-2026 Information Outpost, LLC.  All rights reserved.",
+                fontSize = 10.sp,
+                color = Color.White.copy(alpha = 0.5f),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+                    .padding(top = 16.dp, bottom = 40.dp)
+            )
         }
     }
 

@@ -243,6 +243,23 @@ internal class RecordingUploadHttpClient(
         return nextResponse()
     }
 
+    override suspend fun postMultipartBytes(
+        presignedPost: S3PresignedPost,
+        contentType: String,
+        filename: String,
+        bytes: ByteArray,
+        timeoutMillis: Int,
+    ): UploadHttpResponse {
+        calls += RecordedUploadCall(
+            method = "POST_MULTIPART",
+            url = presignedPost.url,
+            contentType = contentType,
+            body = bytes.size.toString(),
+            timeoutMillis = timeoutMillis,
+        )
+        return nextResponse()
+    }
+
     private fun nextResponse(): UploadHttpResponse =
         if (scriptedResponses.isEmpty()) {
             error("No scripted HTTP response remains")

@@ -84,7 +84,7 @@ fun PopUp() {
         val maxHeightPx = maxHeight.value
 
         val popupWidth = minOf(maxOf(maxWidthPx - 56, 1f), 620f).dp
-        val maximumPopupHeight = minOf(maxOf(maxHeightPx - 32, 1f), 780f).dp
+        val maximumPopupHeight = minOf(maxOf(maxHeightPx - 90, 1f), 780f).dp
 
         // Shell: Equivalent to popupShell in PopUp.swift
         Surface(
@@ -241,7 +241,10 @@ fun PopUp() {
                             Button(
                                 onClick = {
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    // TODO: Show Report Sheet (can wire up to ReportIssueView)
+                                    val intent = Intent("looksee.action.NAVIGATE").apply {
+                                        putExtra("DESTINATION", "ReportIssueView")
+                                    }
+                                    androidx.localbroadcastmanager.content.LocalBroadcastManager.getInstance(context).sendBroadcast(intent)
                                 },
                                 modifier = Modifier.size(56.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(0.15f), contentColor = Color.Red),

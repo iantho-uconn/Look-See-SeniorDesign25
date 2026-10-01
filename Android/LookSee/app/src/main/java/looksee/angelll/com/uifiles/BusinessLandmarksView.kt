@@ -4,14 +4,13 @@ import android.content.Context
 import android.content.Intent
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -23,14 +22,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -51,14 +51,17 @@ import looksee.angelll.com.models.BusinessLandmarkDataSource
 import looksee.angelll.com.models.BusinessLandmarkService
 import looksee.angelll.com.models.BusinessPromotionListResponse
 import looksee.angelll.com.ui.theme.AppleBlue
-import looksee.angelll.com.uifiles.LookSeeCard
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.util.Locale
+import kotlin.math.ceil
+import kotlin.math.max
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BusinessLandmarksView(
     vm: AuthViewModel,
-    onNavigate: (String, Any?) -> Unit // Route string, optional payload (e.g., landmarkId)
+    onNavigate: (String, Any?) -> Unit
 ) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
@@ -68,18 +71,14 @@ fun BusinessLandmarksView(
     val PrimaryBlue = looksee.angelll.com.ui.theme.LookSeeBlue
     val SecondaryGrouped = Color(0xFF1C1C1E)
 
-    // ViewModels & Managers
     val viewModel = remember { BusinessLandmarksViewModel() }
     val offlineManager = remember { ArchiveManager.shared(context) }
     val uploadManager = remember { Uploader.shared(context) }
     val networkMonitor = remember { Monitor.getInstance(context) }
 
-    // State
     var searchText by remember { mutableStateOf("") }
     var promotionTitlesByLandmarkId by remember { mutableStateOf<Map<String, List<String>>>(emptyMap()) }
-    var isIndexingPromotionTitles by remember { mutableStateOf(false) }
 
-    // Selection Mode
     var isSelectionMode by remember { mutableStateOf(false) }
     var selectedLandmarkIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var showBulkPromotionSheet by remember { mutableStateOf(false) }
@@ -96,15 +95,12 @@ fun BusinessLandmarksView(
 
     val landmarks by viewModel.landmarks.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
-
     val promotionService = remember { BusinessPromotionService() }
 
-    // Computed Properties
     val cleanedSearchText = searchText.trim()
 
     val displayedLandmarks = remember(landmarks, cleanedSearchText, promotionTitlesByLandmarkId) {
         if (cleanedSearchText.isEmpty()) return@remember landmarks
-
         landmarks.mapNotNull { landmark ->
             if (landmark.label.contains(cleanedSearchText, ignoreCase = true)) Pair(landmark, 0)
             else if (promotionTitlesByLandmarkId[landmark.landmarkId].orEmpty().any { it.contains(cleanedSearchText, ignoreCase = true) }) Pair(landmark, 1)
@@ -133,10 +129,9 @@ fun BusinessLandmarksView(
         }
     }
 
-    // Auto-refresh logic (90 seconds)
     LaunchedEffect(Unit) {
         while (true) {
-            kotlinx.coroutines.delay(90_000)
+            delay(90_000)
             if (!viewModel.isLoading.value) {
                 refreshLandmarksAndSearchIndex()
             }
@@ -155,9 +150,7 @@ fun BusinessLandmarksView(
         containerColor = Color.Black,
         topBar = {
             CenterAlignedTopAppBar(
-                title = { 
-                    Text("My Landmarks", fontWeight = FontWeight.Bold, color = Color.White) 
-                },
+                title = { Text("My Landmarks", fontWeight = FontWeight.Bold, color = Color.White) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Black),
                 navigationIcon = {
                     IconButton(onClick = { onNavigate("back", null) }) {
@@ -166,8 +159,8 @@ fun BusinessLandmarksView(
                 },
                 actions = {
                     if (isSelectionMode) {
-                        TextButton(onClick = { isSelectionMode = false; selectedLandmarkIds = emptySet() }) { 
-                            Text("Done", color = PrimaryBlue, fontWeight = FontWeight.Bold) 
+                        TextButton(onClick = { isSelectionMode = false; selectedLandmarkIds = emptySet() }) {
+                            Text("Done", color = PrimaryBlue, fontWeight = FontWeight.Bold)
                         }
                     } else {
                         IconButton(onClick = { refreshLandmarksAndSearchIndex() }) {
@@ -180,7 +173,6 @@ fun BusinessLandmarksView(
                 },
             )
         },
-
         bottomBar = {
             if (isSelectionMode) {
                 Surface(color = SecondaryGrouped.copy(alpha = 0.95f), shadowElevation = 8.dp) {
@@ -204,7 +196,6 @@ fun BusinessLandmarksView(
             }
         }
     ) { paddingValues ->
-
         PullToRefreshBox(
             isRefreshing = isLoading,
             onRefresh = { refreshLandmarksAndSearchIndex() },
@@ -214,49 +205,23 @@ fun BusinessLandmarksView(
                 contentPadding = PaddingValues(bottom = 80.dp),
                 verticalArrangement = Arrangement.spacedBy(24.dp)
             ) {
-
-                // Pending Uploads (Integrated Upload Queue)
+                // Pending Uploads Card
                 if (archivedItems.isNotEmpty()) {
                     item {
-                        Column(
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            Text(
-                                "PENDING UPLOADS",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.Gray,
-                                modifier = Modifier.padding(horizontal = 4.dp)
-                            )
+                        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text("PENDING UPLOADS", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray, modifier = Modifier.padding(horizontal = 4.dp))
                             LookSeeCard(modifier = Modifier.fillMaxWidth()) {
                                 Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
-                                    SyncBannerRow(
-                                        isUploading = currentlyUploadingId != null,
-                                        isOffline = !isOnline,
-                                        itemCount = archivedItems.size,
-                                        primaryColor = PrimaryBlue
-                                    )
+                                    SyncBannerRow(isUploading = currentlyUploadingId != null, isOffline = !isOnline, itemCount = archivedItems.size, primaryColor = PrimaryBlue)
                                     HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
-                                    
                                     archivedItems.forEachIndexed { index, item ->
                                         PendingRow(
-                                            item = item,
-                                            isUploading = currentlyUploadingId == item.id,
-                                            progress = currentUploadProgress,
-                                            primaryColor = PrimaryBlue,
+                                            item = item, isUploading = currentlyUploadingId == item.id, progress = currentUploadProgress, primaryColor = PrimaryBlue,
                                             onNavigate = { onNavigate("LandmarkRecord", item) },
-                                            onDelete = {
-                                                coroutineScope.launch {
-                                                    offlineManager.deleteArchive(item)
-                                                }
-                                            }
+                                            onDelete = { coroutineScope.launch { offlineManager.deleteArchive(item) } }
                                         )
                                         if (index < archivedItems.size - 1) {
-                                            HorizontalDivider(
-                                                color = Color.White.copy(alpha = 0.05f),
-                                                modifier = Modifier.padding(start = 64.dp)
-                                            )
+                                            HorizontalDivider(color = Color.White.copy(alpha = 0.05f), modifier = Modifier.padding(start = 64.dp))
                                         }
                                     }
                                 }
@@ -271,7 +236,7 @@ fun BusinessLandmarksView(
                 item {
                     OutlinedTextField(
                         value = searchText, onValueChange = { searchText = it },
-                        placeholder = { Text("Search labels", color = Color.Gray) },
+                        placeholder = { Text("Search labels or promotion titles", color = Color.Gray) },
                         leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color.Gray) },
                         colors = OutlinedTextFieldDefaults.colors(focusedContainerColor = SecondaryGrouped, unfocusedContainerColor = SecondaryGrouped, focusedBorderColor = Color.Transparent, unfocusedBorderColor = Color.Transparent, focusedTextColor = Color.White, unfocusedTextColor = Color.White),
                         shape = RoundedCornerShape(12.dp),
@@ -279,85 +244,113 @@ fun BusinessLandmarksView(
                     )
                 }
 
-                // Action Needed Section
+                // Needs Attention Section
                 if (actionNeededLandmarks.isNotEmpty()) {
                     item { Text("NEEDS ATTENTION", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFF453A), modifier = Modifier.padding(horizontal = 20.dp)) }
                     items(actionNeededLandmarks) { landmark ->
-                        BusinessLandmarkRowWrapper(landmark, isSelectionMode, selectedLandmarkIds.contains(landmark.landmarkId), null, onNavigate) {
+                        BusinessLandmarkRowWrapper(
+                            landmark = landmark,
+                            isSelectionMode = isSelectionMode,
+                            isSelected = selectedLandmarkIds.contains(landmark.landmarkId),
+                            matchedPromotionTitle = null,
+                            onNavigate = onNavigate,
+                            onCardClick = {
+                                if (isSelectionMode) {
+                                    val current = selectedLandmarkIds.toMutableSet()
+                                    if (current.contains(landmark.landmarkId)) current.remove(landmark.landmarkId) else current.add(landmark.landmarkId)
+                                    selectedLandmarkIds = current
+                                } else {
+                                    onNavigate("BusinessLandmarkDetailView", landmark)
+                                }
+                            },
+                            onDetailsClick = {
+                                landmarkNeedingMedia = landmark
+                            }
+                        )
+                    }
+                }
+
+                // Processing Section
+                if (processingLandmarks.isNotEmpty()) {
+                    item { Text("PROCESSING & TRAINING", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFFA500), modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) }
+                    items(processingLandmarks) { landmark ->
+                        BusinessLandmarkRowWrapper(
+                            landmark = landmark,
+                            isSelectionMode = isSelectionMode,
+                            isSelected = selectedLandmarkIds.contains(landmark.landmarkId),
+                            matchedPromotionTitle = null,
+                            onNavigate = onNavigate,
+                            onCardClick = {
+                                if (isSelectionMode) {
+                                    val current = selectedLandmarkIds.toMutableSet()
+                                    if (current.contains(landmark.landmarkId)) current.remove(landmark.landmarkId) else current.add(landmark.landmarkId)
+                                    selectedLandmarkIds = current
+                                } else {
+                                    onNavigate("BusinessLandmarkDetailView", landmark)
+                                }
+                            },
+                            onDetailsClick = {}
+                        )
+                    }
+                }
+
+                // Active Section
+                item { Text("ACTIVE LANDMARKS ${activeLandmarkCountText(activeLandmarks.size)}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF32D74B), modifier = Modifier.padding(horizontal = 20.dp)) }
+                items(activeLandmarks) { landmark ->
+                    BusinessLandmarkRowWrapper(
+                        landmark = landmark,
+                        isSelectionMode = isSelectionMode,
+                        isSelected = selectedLandmarkIds.contains(landmark.landmarkId),
+                        matchedPromotionTitle = null,
+                        onNavigate = onNavigate,
+                        onCardClick = {
                             if (isSelectionMode) {
                                 val current = selectedLandmarkIds.toMutableSet()
                                 if (current.contains(landmark.landmarkId)) current.remove(landmark.landmarkId) else current.add(landmark.landmarkId)
                                 selectedLandmarkIds = current
                             } else {
-                                landmarkNeedingMedia = landmark
+                                onNavigate("BusinessLandmarkDetailView", landmark)
                             }
-                        }
-                    }
-                }
-
-                // Processing & Training Section
-                if (processingLandmarks.isNotEmpty()) {
-                    item { 
-                        Text(
-                            "PROCESSING & TRAINING", 
-                            fontSize = 13.sp, 
-                            fontWeight = FontWeight.Bold, 
-                            color = Color(0xFFFFA500), 
-                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
-                        ) 
-                    }
-                    items(processingLandmarks) { landmark ->
-                        BusinessLandmarkRowWrapper(landmark, isSelectionMode, selectedLandmarkIds.contains(landmark.landmarkId), null, onNavigate) {
-                            if (isSelectionMode) {
-                                val current = selectedLandmarkIds.toMutableSet()
-                                if (current.contains(landmark.landmarkId)) current.remove(landmark.landmarkId) else current.add(landmark.landmarkId)
-                                selectedLandmarkIds = current
-                            }
-                        }
-                    }
-                }
-
-                // Active Section
-                item { Text("ACTIVE LANDMARKS ${activeLandmarkCountText(activeLandmarks.size)}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray, modifier = Modifier.padding(horizontal = 20.dp)) }
-                items(activeLandmarks) { landmark ->
-                    BusinessLandmarkRowWrapper(landmark, isSelectionMode, selectedLandmarkIds.contains(landmark.landmarkId), null, onNavigate) {
-                        if (isSelectionMode) {
-                            val current = selectedLandmarkIds.toMutableSet()
-                            if (current.contains(landmark.landmarkId)) current.remove(landmark.landmarkId) else current.add(landmark.landmarkId)
-                            selectedLandmarkIds = current
-                        }
-                    }
+                        },
+                        onDetailsClick = {}
+                    )
                 }
             }
         }
     }
 
     if (landmarkNeedingMedia != null) {
+        val targetLandmark = landmarkNeedingMedia!!
+        val processedFrames = targetLandmark.cleanFrameCount ?: 0
+        val requiredFrames = targetLandmark.requiredFrames ?: 2000
+        val calcSecs = targetLandmark.secondsNeeded ?: ceil(max(0, requiredFrames - processedFrames) / 30.0).toInt()
+
         NeedsMoreMediaSheet(
-            landmark = landmarkNeedingMedia!!,
+            landmark = targetLandmark,
             onDismiss = { landmarkNeedingMedia = null },
             onForceTrain = {
                 coroutineScope.launch {
-                    val success = vm.forceTrainLandmark(landmarkNeedingMedia!!.landmarkId)
-                    if (success) {
-                        viewModel.refresh()
-                    }
+                    val success = vm.forceTrainLandmark(targetLandmark.landmarkId)
+                    if (success) { viewModel.refresh() }
                     landmarkNeedingMedia = null
                 }
             },
             onAddMedia = {
                 landmarkNeedingMedia = null
-                val intent = Intent("TriggerRedoRecord").apply {
-                    putExtra("id", it.landmarkId)
-                    putExtra("label", it.label)
-                    putExtra("description", it.shortDescription ?: "")
-                    putExtra("secondsNeeded", (it.secondsNeeded ?: 30).toDouble())
+                coroutineScope.launch {
+                    kotlinx.coroutines.delay(300)
+                    val intent = Intent("TriggerRedoRecord").apply {
+                        putExtra("id", targetLandmark.landmarkId)
+                        putExtra("label", targetLandmark.label)
+                        putExtra("description", targetLandmark.shortDescription ?: "")
+                        putExtra("secondsNeeded", calcSecs.toDouble())
+                    }
+                    LocalBroadcastManager.getInstance(context).sendBroadcast(intent)
                 }
-                LocalBroadcastManager.getInstance(context).sendBroadcast(intent)
             }
         )
     }
-    
+
     if (showBulkPromotionSheet) { Dialog(onDismissRequest = { showBulkPromotionSheet = false }) { BusinessBulkPromotionEditor(selectedLandmarks, onCompleted = { showBulkPromotionSheet = false }, onDismiss = { showBulkPromotionSheet = false }) } }
     if (showBulkDeleteSheet) { Dialog(onDismissRequest = { showBulkDeleteSheet = false }) { BusinessBulkDeleteView(selectedLandmarks, onCompleted = { showBulkDeleteSheet = false }, onDismiss = { showBulkDeleteSheet = false }) } }
 }
@@ -369,58 +362,123 @@ private fun BusinessLandmarkRowWrapper(
     isSelected: Boolean,
     matchedPromotionTitle: String?,
     onNavigate: (String, Any?) -> Unit,
-    onClick: (BusinessLandmark) -> Unit
+    onCardClick: () -> Unit,
+    onDetailsClick: () -> Unit
 ) {
     val needsMoreMedia = landmark.status == "NEEDS_MORE_MEDIA"
-    val SecondaryGrouped = Color(0xFF1C1C1E)
+    val cardBg = Color(0xFF1C1C1E)
 
-    LookSeeCard(modifier = Modifier.padding(horizontal = 16.dp).clickable {
-        if (isSelectionMode || needsMoreMedia) onClick(landmark)
-        else onNavigate("BusinessLandmarkDetailView", landmark)
-    }) {
-        Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            if (isSelectionMode) {
-                Icon(if (isSelected) Icons.Default.CheckCircle else Icons.Outlined.Circle, contentDescription = null, tint = looksee.angelll.com.ui.theme.LookSeeBlue, modifier = Modifier.size(24.dp))
-            }
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(landmark.label, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                    
-                    val badgeColor = when (landmark.status) {
-                        "NEEDS_MORE_MEDIA" -> Color(0xFFFF453A)
-                        "PREPARING_DATA" -> Color(0xFFFF9F0A)
-                        "PENDING_TRAINING" -> Color(0xFFAF52DE) // iOS System Purple
-                        "TRAINING_MODEL" -> Color(0xFFFFD60A)
-                        "OPTIMIZING_MODEL" -> Color(0xFF64D2FF)
-                        else -> if (landmark.isActive == false) Color.Gray else Color(0xFF32D74B)
-                    }
-                    val badgeBg = when (landmark.status) {
-                        "NEEDS_MORE_MEDIA" -> Color(0xFF2C0E0E)
-                        "PREPARING_DATA" -> Color(0xFF2C1E0E)
-                        "PENDING_TRAINING" -> Color(0xFF1E0E2C) // Dark Purple
-                        "TRAINING_MODEL" -> Color(0xFF2C280E)
-                        "OPTIMIZING_MODEL" -> Color(0xFF0E222C)
-                        else -> if (landmark.isActive == false) Color(0xFF1C1C1E) else Color(0xFF0E2C14)
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .clip(RoundedCornerShape(20.dp))
+            .background(cardBg)
+            .then(
+                if (needsMoreMedia) Modifier.border(1.5.dp, Color.Red.copy(alpha = 0.6f), RoundedCornerShape(20.dp))
+                else Modifier
+            )
+            .clickable { onCardClick() }
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(20.dp),
+                verticalAlignment = Alignment.Top,
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                if (isSelectionMode) {
+                    Icon(
+                        if (isSelected) Icons.Default.CheckCircle else Icons.Outlined.Circle,
+                        contentDescription = null,
+                        tint = AppleBlue,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            landmark.label.ifEmpty { "Untitled Landmark" },
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+
+                        val badgeColor = if (needsMoreMedia) Color.Red else when (landmark.status) {
+                            "PREPARING_DATA" -> Color(0xFFFF9F0A)
+                            "PENDING_TRAINING" -> Color(0xFFAF52DE)
+                            "TRAINING_MODEL" -> Color(0xFFFFD60A)
+                            "OPTIMIZING_MODEL" -> Color(0xFF64D2FF)
+                            else -> if (landmark.isActive == false) Color.Gray else Color(0xFF32D74B)
+                        }
+
+                        Text(
+                            if (needsMoreMedia) "NEEDS MEDIA" else landmark.displayStatus.uppercase(),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = badgeColor,
+                            modifier = Modifier
+                                .background(badgeColor.copy(alpha = 0.15f), CircleShape)
+                                .padding(horizontal = 10.dp, vertical = 5.dp)
+                        )
                     }
 
                     Text(
-                        landmark.displayStatus.uppercase(),
-                        fontSize = 10.sp, fontWeight = FontWeight.Bold,
-                        color = badgeColor,
-                        modifier = Modifier
-                            .background(badgeBg, RoundedCornerShape(6.dp))
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                        landmark.displayDescription,
+                        fontSize = 14.sp,
+                        color = Color.Gray,
+                        maxLines = 2
                     )
-                }
-                Text(landmark.displayDescription, fontSize = 14.sp, color = Color.Gray, maxLines = 2)
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Icon(Icons.Default.Image, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(12.dp))
-                        Text("${landmark.cleanFrameCount ?: 0} Frames", fontSize = 12.sp, color = Color.Gray)
+
+                    if (landmark.latitude != null && landmark.longitude != null) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Icon(Icons.Default.Navigation, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(12.dp))
+                            Text(
+                                String.format(Locale.US, "%.4f, %.4f", landmark.latitude, landmark.longitude),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = Color.Gray
+                            )
+                        }
                     }
                 }
             }
-            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(16.dp).align(Alignment.CenterVertically))
+
+            if (needsMoreMedia) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color.Red.copy(alpha = 0.20f))
+                        .clickable { onDetailsClick() }
+                        .padding(horizontal = 20.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.Default.Flag, contentDescription = null, tint = Color.Red, modifier = Modifier.size(14.dp))
+                        Text(
+                            "Not enough video data to train",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.Red
+                        )
+                    }
+                    Text(
+                        "Details",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.Red,
+                        textDecoration = TextDecoration.Underline
+                    )
+                }
+            }
         }
     }
 }
@@ -557,7 +615,7 @@ private fun EmptyQueueCard() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun NeedsMoreMediaSheet(
+private fun NeedsMoreMediaSheet(
     landmark: BusinessLandmark,
     onDismiss: () -> Unit,
     onForceTrain: () -> Unit,
@@ -565,14 +623,22 @@ fun NeedsMoreMediaSheet(
 ) {
     var isForcingTrain by remember { mutableStateOf(false) }
     var showForceTrainAlert by remember { mutableStateOf(false) }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val coroutineScope = rememberCoroutineScope()
 
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Color(0xFF1C1C1E)) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = Color(0xFF1C1C1E),
+        dragHandle = { BottomSheetDefaults.DragHandle() }
+    ) {
         Column(
             modifier = Modifier
-                .padding(20.dp)
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 32.dp)
                 .fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(20.dp)
+            verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
             Box(
                 modifier = Modifier
@@ -588,37 +654,41 @@ fun NeedsMoreMediaSheet(
                 )
             }
 
-            Text("More Media Required", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color.White)
-            Text(
-                "We couldn't extract enough unique frames of ${landmark.label} to train a reliable model.",
-                fontSize = 14.sp,
-                color = Color.Gray,
-                textAlign = TextAlign.Center
-            )
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("More Media Required", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                Text(
+                    "We couldn't extract enough unique frames of ${landmark.label} to train a reliable model.",
+                    fontSize = 14.sp,
+                    color = Color.Gray,
+                    textAlign = TextAlign.Center,
+                    lineHeight = 20.sp
+                )
+            }
 
             val processed = landmark.cleanFrameCount ?: 0
             val required = landmark.requiredFrames ?: 2000
-            val seconds = landmark.secondsNeeded ?: 30
+            val seconds = landmark.secondsNeeded ?: ceil(max(0, required - processed) / 30.0).toInt()
 
-            LookSeeCard(modifier = Modifier.fillMaxWidth()) {
+            Surface(modifier = Modifier.fillMaxWidth(), color = Color(0xFF1C1C1E), shape = RoundedCornerShape(16.dp)) {
                 Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    modifier = Modifier.padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Column {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text("Frames Extracted", fontSize = 12.sp, color = Color.Gray)
                             Text(
                                 "$processed / $required",
                                 fontSize = 18.sp,
                                 fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
                                 color = if (processed < 1500) Color.Red else Color(0xFFFFA500)
                             )
                         }
-                        Column(horizontalAlignment = Alignment.End) {
+                        Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text("Target Video", fontSize = 12.sp, color = Color.Gray)
                             Text("~$seconds Secs", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.Red)
                         }
@@ -640,27 +710,32 @@ fun NeedsMoreMediaSheet(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Button(
-                    onClick = { onAddMedia(landmark) },
+                    onClick = {
+                        coroutineScope.launch {
+                            sheetState.hide()
+                            onAddMedia(landmark)
+                        }
+                    },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(52.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = looksee.angelll.com.ui.theme.LookSeeBlue),
-                    shape = RoundedCornerShape(14.dp),
+                        .height(56.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = AppleBlue),
+                    shape = RoundedCornerShape(16.dp),
                     enabled = !isForcingTrain
                 ) {
-                    Text("Add Media Now", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text("Add Media Now", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.White)
                 }
 
                 Button(
                     onClick = { showForceTrainAlert = true },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(52.dp),
+                        .height(56.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Color.Red.copy(0.15f),
                         contentColor = Color.Red
                     ),
-                    shape = RoundedCornerShape(14.dp),
+                    shape = RoundedCornerShape(16.dp),
                     enabled = !isForcingTrain
                 ) {
                     if (isForcingTrain) {
@@ -670,16 +745,14 @@ fun NeedsMoreMediaSheet(
                     }
                 }
             }
-
-            Spacer(Modifier.height(16.dp))
         }
     }
 
     if (showForceTrainAlert) {
         AlertDialog(
             onDismissRequest = { showForceTrainAlert = false },
-            title = { Text("Force Train Landmark?") },
-            text = { Text("This landmark has less than the recommended 2,000 frames. Detection reliability may be reduced. Are you sure you want to train it anyway?") },
+            title = { Text("Force Train Landmark?", color = Color.White) },
+            text = { Text("This landmark has less than the recommended 2,000 frames. Detection reliability may be reduced. Are you sure you want to train it anyway?", color = Color.Gray) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -693,7 +766,7 @@ fun NeedsMoreMediaSheet(
             },
             dismissButton = {
                 TextButton(onClick = { showForceTrainAlert = false }) {
-                    Text("Cancel", color = Color.Gray)
+                    Text("Cancel", color = Color.White)
                 }
             },
             containerColor = Color(0xFF1C1C1E)

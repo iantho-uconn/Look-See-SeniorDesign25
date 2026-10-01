@@ -537,6 +537,14 @@ interface UploadHttpClient {
         bytes: ByteArray,
         timeoutMillis: Int,
     ): UploadHttpResponse
+
+    suspend fun postMultipartBytes(
+        presignedPost: S3PresignedPost,
+        contentType: String,
+        filename: String,
+        bytes: ByteArray,
+        timeoutMillis: Int,
+    ): UploadHttpResponse
 }
 
 class UrlConnectionUploadHttpClient : UploadHttpClient {
@@ -588,7 +596,7 @@ class UrlConnectionUploadHttpClient : UploadHttpClient {
         }
     }
 
-    suspend fun postMultipartBytes(
+    override suspend fun postMultipartBytes(
         presignedPost: S3PresignedPost,
         contentType: String,
         filename: String,
