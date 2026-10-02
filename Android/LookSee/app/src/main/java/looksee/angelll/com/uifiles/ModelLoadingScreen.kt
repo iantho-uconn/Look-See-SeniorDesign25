@@ -39,7 +39,6 @@ fun ModelLoadingScreen(
     val locationManager = remember { LocationManager(context) }
 
     val modelState by modelService.state.collectAsState()
-    val pullReason by modelService.pullReason.collectAsState()
     val locationState by locationManager.state.collectAsState()
 
     val opacity = remember { Animatable(0f) }
@@ -67,19 +66,19 @@ fun ModelLoadingScreen(
         failed = false
         statusMessage = "Getting your location…"
 
-        // Wait on location fix without getting blocked by strict fine-only checks
+        // 🚀 THE FIX: Check the raw value inside the loop so we don't restart when location shifts slightly
         var attempts = 0
-        while (locationState !is LookSeeLocationState.Ready) {
+        while (locationManager.state.value !is LookSeeLocationState.Ready) {
             delay(500)
             attempts++
-            if (attempts > 40) { // 🚀 FIXED: Allow 20 seconds for cold Android network locations to settle
+            if (attempts > 40) { // Allow 20 seconds for cold Android network locations to settle
                 failed = true
                 statusMessage = "Could not get your location. Ensure location access is enabled."
                 return
             }
         }
 
-        val readyState = locationState as? LookSeeLocationState.Ready
+        val readyState = locationManager.state.value as? LookSeeLocationState.Ready
         val fix = readyState?.fix
         if (fix == null) {
             failed = true
@@ -91,9 +90,17 @@ fun ModelLoadingScreen(
         modelService.loadModels(latitude = fix.latitude, longitude = fix.longitude)
 
         val finalState = modelService.state.value
-        if (finalState is ModelState.Loaded) {
+        if (finalState is ModelState.Failed) {
+            // 🚀 THE FIX: Filter out internal Compose cancellation messages so they never show up
+            if (finalState.message.contains("coroutine", ignoreCase = true) ||
+                finalState.message.contains("cancel", ignoreCase = true)) {
+                return
+            }
+            failed = true
+            statusMessage = finalState.message
+        } else if (finalState is ModelState.Loaded) {
             val models = finalState.models
-            when (val reason = pullReason) {
+            when (val reason = modelService.pullReason.value) {
                 is ModelPullReason.None -> {
                     opacity.animateTo(0f, tween(300))
                     onComplete()
@@ -114,15 +121,6 @@ fun ModelLoadingScreen(
                     onComplete()
                 }
             }
-        } else if (finalState is ModelState.Failed) {
-            failed = true
-            statusMessage = finalState.message
-        }
-    }
-
-    LaunchedEffect(locationState) {
-        if (locationState is LookSeeLocationState.Ready && modelState is ModelState.NotLoaded) {
-            startLoading()
         }
     }
 
@@ -210,13 +208,16 @@ fun ModelLoadingScreen(
                     )
                 }
             }
-            
+
             Text(
-                text = "Copyright © 1999-2026 Information Outpost, LLC.  All rights reserved.",
-                fontSize = 10.sp,
-                color = Color.White.copy(alpha = 0.5f),
+                text = "Copyright © 2026 Information Outpost, LLC. All rights reserved.",
+                fontSize = 11.sp,
+                color = Color.White.copy(alpha = 0.9f), // Made brighter
                 textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp, start = 20.dp, end = 20.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding() // Ensures it respects the system nav bar
+                    .padding(bottom = 24.dp, start = 20.dp, end = 20.dp) // Pushes it up
             )
         }
     }

@@ -2,6 +2,7 @@ package looksee.angelll.com.uifiles
 
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -35,16 +36,19 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import looksee.angelll.com.models.*
 import looksee.angelll.com.ui.theme.AppleBlue
 import looksee.angelll.com.viewmodels.AuthViewModel
+import java.io.File
 import java.util.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BusinessLandmarkDetailView(
-    vm: AuthViewModel, // 🚀 ADDED: Required to call forceTrainLandmark!
+    vm: AuthViewModel,
     initialLandmark: BusinessLandmark,
     onLandmarkUpdated: (BusinessLandmark) -> Unit = {},
     onLandmarkDeleted: (String) -> Unit = {},
@@ -102,6 +106,7 @@ fun BusinessLandmarkDetailView(
         isUploadingMedia = true
         activeUploadRole = role
         uploadStatusMessage = null
+        uploadErrorMessage = null
 
         var completedCount = 0
         var failedCount = 0
@@ -109,33 +114,40 @@ fun BusinessLandmarkDetailView(
         uris.forEachIndexed { index, uri ->
             uploadProgressText = "Uploading item ${index + 1} of ${uris.size}..."
             try {
-                val inputStream = context.contentResolver.openInputStream(uri) ?: return@forEachIndexed
-                val bytes = inputStream.readBytes()
-                inputStream.close()
+                // 🚀 THE FIX: Offload file reading and uploading to a background thread to prevent UI blocks
+                withContext(Dispatchers.IO) {
+                    val inputStream = context.contentResolver.openInputStream(uri)
+                        ?: throw Exception("Could not open file stream")
+                    val bytes = inputStream.readBytes()
+                    inputStream.close()
 
-                val mimeType = if (uri.scheme == "file") {
-                    val ext = android.webkit.MimeTypeMap.getFileExtensionFromUrl(uri.toString())
-                    android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext.lowercase()) ?: "video/mp4"
-                } else {
-                    context.contentResolver.getType(uri) ?: "application/octet-stream"
+                    var mimeType = context.contentResolver.getType(uri)
+                    if (mimeType == null) {
+                        val ext = android.webkit.MimeTypeMap.getFileExtensionFromUrl(uri.toString())?.takeIf { it.isNotEmpty() }
+                            ?: File(uri.path ?: "").extension
+                        mimeType = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext.lowercase()) ?: "video/mp4"
+                    }
+
+                    val isVideo = mimeType.startsWith("video/") || uri.toString().endsWith(".mp4", true) || uri.toString().endsWith(".mov", true)
+                    val kind = if (isVideo) BusinessMediaKind.VIDEO else BusinessMediaKind.PHOTO
+                    val fileExt = if (isVideo) "mp4" else "jpg"
+
+                    // 🚀 THE FIX: Strip all special characters, spaces, and punctuation to prevent AWS S3 Signature mismatches!
+                    val safeLabel = landmark.label.replace(Regex("[^A-Za-z0-9]"), "_")
+                    val filename = "${safeLabel}_${role.wireValue}_${index}_${UUID.randomUUID()}.$fileExt"
+
+                    landmarkService.uploadBusinessMedia(
+                        landmarkId = landmark.landmarkId,
+                        datasetRole = role,
+                        mediaKind = kind,
+                        filename = filename,
+                        contentType = mimeType,
+                        data = bytes
+                    )
                 }
-                
-                val isVideo = mimeType.startsWith("video/") || uri.toString().endsWith(".mp4", true) || uri.toString().endsWith(".mov", true)
-                val kind = if (isVideo) BusinessMediaKind.VIDEO else BusinessMediaKind.PHOTO
-                val ext = if (isVideo) "mp4" else "jpg"
-
-                val filename = "${landmark.label.replace(" ", "_").replace("/", "_")}_${role.wireValue}_${index}_${UUID.randomUUID()}.$ext"
-
-                landmarkService.uploadBusinessMedia(
-                    landmarkId = landmark.landmarkId,
-                    datasetRole = role,
-                    mediaKind = kind,
-                    filename = filename,
-                    contentType = mimeType,
-                    data = bytes
-                )
                 completedCount++
             } catch (e: Exception) {
+                Log.e("LookSee_Debug_Upload", "Failed to upload item $index", e)
                 failedCount++
             }
         }
@@ -144,9 +156,7 @@ fun BusinessLandmarkDetailView(
         if (failedCount == 0) {
             uploadStatusMessage = "$completedCount item(s) uploaded successfully."
         } else {
-            if (uploadErrorMessage == null) {
-                uploadErrorMessage = "$failedCount item(s) failed to upload."
-            }
+            uploadErrorMessage = "$failedCount item(s) failed to upload."
             if (completedCount > 0) uploadStatusMessage = "$completedCount item(s) uploaded successfully."
         }
         uploadProgressText = null
@@ -541,7 +551,6 @@ fun BusinessLandmarkDetailView(
                 }
             }
 
-            // 🚀 FIXED: Saved to read-only variable `legacyPromotion` to allow non-null smart casting!
             val legacyPromotion = landmark.promotion
             if (!legacyPromotion.isNullOrBlank()) {
                 item {
@@ -904,7 +913,8 @@ fun BusinessLandmarkDetailView(
 
     if (showNegativeCamera) {
         Dialog(onDismissRequest = { showNegativeCamera = false }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-            NegativeVideoCameraView(
+            // 🚀 THE FIX: Properly hooks up the BUSINESS negative camera instead of standard
+            BusinessNegativeVideoCameraView(
                 onDone = { video ->
                     showNegativeCamera = false
                     coroutineScope.launch { uploadMediaBatch(listOf(Uri.fromFile(video.file)), BusinessDatasetRole.HARD_NEGATIVE) }

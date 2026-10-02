@@ -72,47 +72,68 @@ class LocationManager(context: Context) : AutoCloseable {
     fun start() {
         Log.d("LookSee_Debug_Location", "Starting LocationManager...")
         if (!hasLocationPermission()) {
-            Log.e("LookSee_Debug_Location", "No permission!")
+            Log.e("LookSee_Debug_Location", "No permission! Cannot start location tracking.")
             _state.value = LookSeeLocationState.PermissionRequired
             return
+        }
+
+        val androidLocationManager = applicationContext.getSystemService(Context.LOCATION_SERVICE) as? android.location.LocationManager
+        val isGpsEnabled = androidLocationManager?.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER) == true
+        val isNetworkEnabled = androidLocationManager?.isProviderEnabled(android.location.LocationManager.NETWORK_PROVIDER) == true
+        
+        Log.d("LookSee_Debug_Location", "Hardware Check - GPS Enabled: $isGpsEnabled, Network Enabled: $isNetworkEnabled")
+        
+        if (!isGpsEnabled && !isNetworkEnabled) {
+            Log.e("LookSee_Debug_Location", "Both GPS and Network location providers are DISABLED in system settings.")
+            _state.value = LookSeeLocationState.Unavailable("Location services are disabled in device settings.")
+            // We still proceed in case it gets enabled or cached location exists, but it's unlikely to work well.
         }
 
         stopUpdatesOnly()
         _state.value = LookSeeLocationState.Searching
         cancellationTokenSource = CancellationTokenSource()
 
+        Log.d("LookSee_Debug_Location", "Requesting last known location (Cache)...")
         fusedLocationClient.lastLocation.addOnSuccessListener { location: Location? ->
             if (location != null) {
-                Log.d("LookSee_Debug_Location", "Cached location found: acc=${location.accuracy}m")
+                Log.d("LookSee_Debug_Location", "✅ Cached location found: lat=${location.latitude}, lon=${location.longitude}, acc=${location.accuracy}m")
                 publish(location)
             } else {
-                Log.d("LookSee_Debug_Location", "No cached location available.")
+                Log.d("LookSee_Debug_Location", "❌ No cached location available.")
             }
         }.addOnFailureListener { error ->
-            Log.e("LookSee_Debug_Location", "Failed to get cached location", error)
+            Log.e("LookSee_Debug_Location", "❌ Failed to get cached location", error)
         }
 
+        Log.d("LookSee_Debug_Location", "Requesting current location (Fresh Fix)...")
         fusedLocationClient.getCurrentLocation(
-            Priority.PRIORITY_BALANCED_POWER_ACCURACY,
+            Priority.PRIORITY_HIGH_ACCURACY,
             cancellationTokenSource!!.token
         ).addOnSuccessListener { location: Location? ->
             if (location != null) {
-                Log.d("LookSee_Debug_Location", "Current fix fetched: acc=${location.accuracy}m")
+                Log.d("LookSee_Debug_Location", "✅ Current fresh fix fetched: lat=${location.latitude}, lon=${location.longitude}, acc=${location.accuracy}m")
                 publish(location)
+            } else {
+                Log.d("LookSee_Debug_Location", "❌ Current fresh fix returned null. Device might be struggling to find satellites or network.")
             }
+        }.addOnFailureListener { error ->
+            Log.e("LookSee_Debug_Location", "❌ Failed to get current fresh fix", error)
         }
 
         // Match iOS distance filter 15 meters
-        val locationRequest = LocationRequest.Builder(Priority.PRIORITY_BALANCED_POWER_ACCURACY, 10_000L)
-            .setMinUpdateDistanceMeters(15f)
+        val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 2000L)
+            .setMinUpdateDistanceMeters(10f)
             .build()
 
+        Log.d("LookSee_Debug_Location", "Requesting continuous location updates...")
         fusedLocationClient.requestLocationUpdates(
             locationRequest,
             locationCallback,
             Looper.getMainLooper()
-        ).addOnFailureListener { error ->
-            Log.e("LookSee_Debug_Location", "Update request failed", error)
+        ).addOnSuccessListener {
+            Log.d("LookSee_Debug_Location", "✅ Successfully subscribed to continuous location updates.")
+        }.addOnFailureListener { error ->
+            Log.e("LookSee_Debug_Location", "❌ Continuous update request failed", error)
             _state.value = LookSeeLocationState.Unavailable(error.localizedMessage ?: "Unknown error")
         }
     }

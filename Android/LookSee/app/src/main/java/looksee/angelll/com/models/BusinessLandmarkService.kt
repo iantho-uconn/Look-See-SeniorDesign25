@@ -4,6 +4,11 @@ import android.util.Log
 import com.amplifyframework.auth.cognito.AWSCognitoAuthSession
 import com.amplifyframework.kotlin.core.Amplify
 import com.google.gson.Gson
+import com.google.gson.GsonBuilder
+import com.google.gson.JsonDeserializationContext
+import com.google.gson.JsonDeserializer
+import com.google.gson.JsonElement
+import java.lang.reflect.Type
 import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
@@ -34,21 +39,40 @@ fun interface HardNegativeRetryDataSource {
     ): BusinessHardNegativeCompleteResponse
 }
 
+sealed class BusinessMediaUploadTarget {
+    data class Put(val url: String) : BusinessMediaUploadTarget()
+    data class Post(val postData: S3PresignedPost) : BusinessMediaUploadTarget()
+}
+
+class BusinessMediaUploadTargetDeserializer : JsonDeserializer<BusinessMediaUploadTarget> {
+    override fun deserialize(json: JsonElement, typeOfT: Type, context: JsonDeserializationContext): BusinessMediaUploadTarget {
+        return if (json.isJsonPrimitive) {
+            BusinessMediaUploadTarget.Put(json.asString)
+        } else {
+            val postData = context.deserialize<S3PresignedPost>(json, S3PresignedPost::class.java)
+            BusinessMediaUploadTarget.Post(postData)
+        }
+    }
+}
+
 class BusinessLandmarkService internal constructor(
     private val tokenProvider: IdTokenProvider,
     private val httpClient: BusinessHttpClient,
     private val gson: Gson,
 ) : BusinessLandmarkDataSource, HardNegativeRetryDataSource {
+
     constructor() : this(
         AmplifyCognitoIdTokenProvider(),
         UrlConnectionBusinessHttpClient(),
-        Gson(),
+        GsonBuilder()
+            .registerTypeAdapter(BusinessMediaUploadTarget::class.java, BusinessMediaUploadTargetDeserializer())
+            .create()
     )
 
     internal constructor(
         tokenProvider: IdTokenProvider,
         httpClient: BusinessHttpClient,
-    ) : this(tokenProvider, httpClient, Gson())
+    ) : this(tokenProvider, httpClient, GsonBuilder().registerTypeAdapter(BusinessMediaUploadTarget::class.java, BusinessMediaUploadTargetDeserializer()).create())
 
     override suspend fun fetchBusinessLandmarks(): BusinessLandmarkListResponse =
         requestJson(
@@ -80,14 +104,28 @@ class BusinessLandmarkService internal constructor(
         BusinessDatasetRole.HARD_NEGATIVE -> uploadHardNegativeMedia(landmarkId = landmarkId, filename = filename, contentType = contentType, data = data)
     }
 
+    // 🚀 THE FIX: Match iOS Global Negative specific /submissions endpoint perfectly
     suspend fun uploadGlobalNegativeVideo(file: java.io.File): BusinessMediaUploadCompleteResponse {
         val bytes = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { file.readBytes() }
         val contentType = if (file.extension.equals("mov", ignoreCase = true)) "video/quicktime" else "video/mp4"
-        return uploadHardNegativeMedia(
-            landmarkId = "global",
-            filename = file.name,
-            contentType = contentType,
-            data = bytes
+
+        Log.d("LookSee_Debug_Upload", "[GLOBAL NEGATIVE] Initiating network request for: ${file.name}")
+        val init = requestJson(
+            method = "POST",
+            url = "$LOOKSEE_API_BASE_URL/submissions/init",
+            body = GlobalNegativeInitBody(filename = file.name, contentType = contentType),
+            responseType = BusinessMediaUploadInitResponse::class.java
+        )
+
+        Log.d("LookSee_Debug_Upload", "[GLOBAL NEGATIVE] Got Presigned URL. Uploading payload to S3...")
+        uploadToPresignedUrl(init.uploadUrl, contentType, file.name, bytes)
+
+        Log.d("LookSee_Debug_Upload", "[GLOBAL NEGATIVE] S3 Upload Complete. Finalizing submission...")
+        return requestJson(
+            method = "POST",
+            url = "$LOOKSEE_API_BASE_URL/submissions/complete",
+            body = GlobalNegativeCompleteBody(submissionId = init.submissionId, s3Key = init.s3Key),
+            responseType = BusinessMediaUploadCompleteResponse::class.java
         )
     }
 
@@ -122,7 +160,10 @@ class BusinessLandmarkService internal constructor(
         landmarkId: String, filename: String, contentType: String, data: ByteArray,
     ): BusinessMediaUploadCompleteResponse {
         Log.d("LookSee_Debug_Upload", "Initiating NEGATIVE upload for $filename")
-        val endpoint = "$LOOKSEE_API_BASE_URL/business/landmarks/${encodedPathSegment(landmarkId)}/hard-negatives"
+
+        // 🚀 THE FIX: Omit the "/business" path component to match iOS
+        val endpoint = "$LOOKSEE_API_BASE_URL/landmarks/${encodedPathSegment(landmarkId)}/hard-negatives"
+
         val init = requestJson(
             method = "POST",
             url = "$endpoint/init",
@@ -153,7 +194,8 @@ class BusinessLandmarkService internal constructor(
     }
 
     override suspend fun retryHardNegativeProcessing(landmarkId: String, batchId: String, negativeId: String): BusinessHardNegativeCompleteResponse {
-        val endpoint = "$LOOKSEE_API_BASE_URL/business/landmarks/${encodedPathSegment(landmarkId)}/hard-negatives/complete"
+        // 🚀 THE FIX: Omit the "/business" path component to match iOS
+        val endpoint = "$LOOKSEE_API_BASE_URL/landmarks/${encodedPathSegment(landmarkId)}/hard-negatives/complete"
         val response = requestJson(
             method = "POST",
             url = endpoint,
@@ -165,50 +207,72 @@ class BusinessLandmarkService internal constructor(
     }
 
     private suspend fun uploadToPresignedUrl(
-        uploadUrl: S3PresignedPost,
+        uploadTarget: BusinessMediaUploadTarget,
         contentType: String,
         filename: String,
         data: ByteArray,
     ) {
-        val boundary = "Boundary-${java.util.UUID.randomUUID()}"
-        val multipartContentType = "multipart/form-data; boundary=$boundary"
+        when (uploadTarget) {
+            is BusinessMediaUploadTarget.Put -> {
+                val response = httpClient.execute(
+                    BusinessHttpRequest(
+                        method = "PUT",
+                        url = uploadTarget.url,
+                        contentType = contentType,
+                        accept = null,
+                        timeoutMillis = MEDIA_UPLOAD_TIMEOUT_MILLIS,
+                        body = data
+                    )
+                )
+                if (response.statusCode !in 200..299) {
+                    Log.e("LookSee_Debug_Upload", "❌ S3 PUT FAILED! HTTP ${response.statusCode}: ${response.bodyText}")
+                    throw BusinessLandmarkServiceError.BadStatus(response.statusCode, response.bodyText)
+                } else {
+                    Log.d("LookSee_Debug_Upload", "✅ S3 PUT SUCCESS! HTTP ${response.statusCode}")
+                }
+            }
+            is BusinessMediaUploadTarget.Post -> {
+                val uploadUrl = uploadTarget.postData
+                val boundary = "Boundary-${java.util.UUID.randomUUID()}"
+                val multipartContentType = "multipart/form-data; boundary=$boundary"
 
-        val bodyStream = java.io.ByteArrayOutputStream()
+                val bodyStream = java.io.ByteArrayOutputStream()
 
-        for ((key, value) in uploadUrl.fields) {
-            bodyStream.write("--$boundary\r\n".toByteArray(Charsets.UTF_8))
-            bodyStream.write("Content-Disposition: form-data; name=\"$key\"\r\n\r\n".toByteArray(Charsets.UTF_8))
-            bodyStream.write("$value\r\n".toByteArray(Charsets.UTF_8))
+                for ((key, value) in uploadUrl.fields) {
+                    bodyStream.write("--$boundary\r\n".toByteArray(Charsets.UTF_8))
+                    bodyStream.write("Content-Disposition: form-data; name=\"$key\"\r\n\r\n".toByteArray(Charsets.UTF_8))
+                    bodyStream.write("$value\r\n".toByteArray(Charsets.UTF_8))
+                }
+
+                bodyStream.write("--$boundary\r\n".toByteArray(Charsets.UTF_8))
+                bodyStream.write("Content-Disposition: form-data; name=\"file\"; filename=\"$filename\"\r\n".toByteArray(Charsets.UTF_8))
+                bodyStream.write("Content-Type: $contentType\r\n\r\n".toByteArray(Charsets.UTF_8))
+                bodyStream.write(data)
+                bodyStream.write("\r\n".toByteArray(Charsets.UTF_8))
+                bodyStream.write("--$boundary--\r\n".toByteArray(Charsets.UTF_8))
+
+                val finalBytes = bodyStream.toByteArray()
+                Log.d("LookSee_Debug_Upload", "Executing S3 POST to ${uploadUrl.url}. Payload size: ${finalBytes.size} bytes.")
+
+                val response = httpClient.execute(
+                    BusinessHttpRequest(
+                        method = "POST",
+                        url = uploadUrl.url,
+                        contentType = multipartContentType,
+                        accept = null,
+                        timeoutMillis = MEDIA_UPLOAD_TIMEOUT_MILLIS,
+                        body = finalBytes
+                    )
+                )
+
+                if (response.statusCode !in 200..299) {
+                    Log.e("LookSee_Debug_Upload", "❌ S3 POST FAILED! HTTP ${response.statusCode}: ${response.bodyText}")
+                    throw BusinessLandmarkServiceError.BadStatus(response.statusCode, response.bodyText)
+                } else {
+                    Log.d("LookSee_Debug_Upload", "✅ S3 POST SUCCESS! HTTP ${response.statusCode}")
+                }
+            }
         }
-
-        bodyStream.write("--$boundary\r\n".toByteArray(Charsets.UTF_8))
-        bodyStream.write("Content-Disposition: form-data; name=\"file\"; filename=\"$filename\"\r\n".toByteArray(Charsets.UTF_8))
-        bodyStream.write("Content-Type: $contentType\r\n\r\n".toByteArray(Charsets.UTF_8))
-        bodyStream.write(data)
-        bodyStream.write("\r\n".toByteArray(Charsets.UTF_8))
-        bodyStream.write("--$boundary--\r\n".toByteArray(Charsets.UTF_8))
-
-        val finalBytes = bodyStream.toByteArray()
-        Log.d("LookSee_Debug_Upload", "Executing S3 POST to ${uploadUrl.url}. Payload size: ${finalBytes.size} bytes.")
-
-        val response = httpClient.execute(
-            BusinessHttpRequest(
-                method = "POST",
-                url = uploadUrl.url,
-                contentType = multipartContentType,
-                accept = null,
-                timeoutMillis = MEDIA_UPLOAD_TIMEOUT_MILLIS,
-                body = finalBytes
-            )
-        )
-
-        if (response.statusCode !in 200..299) {
-            Log.e("LookSee_Debug_Upload", "❌ S3 UPLOAD FAILED! HTTP ${response.statusCode}: ${response.bodyText}")
-        } else {
-            Log.d("LookSee_Debug_Upload", "✅ S3 UPLOAD SUCCESS! HTTP ${response.statusCode}")
-        }
-
-        validate(response)
     }
 
     private suspend fun <T> requestJson(
@@ -244,7 +308,8 @@ class BusinessLandmarkService internal constructor(
                 ?: throw BusinessLandmarkServiceError.InvalidResponse
         } catch (error: BusinessLandmarkServiceError) {
             throw error
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.e("LookSee_Debug_Network", "Gson parse error: ${e.localizedMessage}", e)
             throw BusinessLandmarkServiceError.InvalidResponse
         }
     }
@@ -294,6 +359,20 @@ class BusinessLandmarkService internal constructor(
         val forceRetry: Boolean? = null,
     )
 
+    private data class GlobalNegativeInitBody(
+        val filename: String,
+        val mediaKind: String = "video",
+        val contentType: String,
+        val datasetRole: String = "global_negative",
+        val label: String = "Global Negative Admin"
+    )
+
+    private data class GlobalNegativeCompleteBody(
+        val submissionId: String,
+        val s3Key: String,
+        val datasetRole: String = "global_negative"
+    )
+
     private companion object {
         const val MEDIA_UPLOAD_TIMEOUT_MILLIS = 300_000
     }
@@ -339,10 +418,10 @@ enum class BusinessDatasetRole(val wireValue: String, val displayName: String, v
 
 enum class BusinessMediaKind(val wireValue: String) { PHOTO("photo"), VIDEO("video") }
 
-data class BusinessMediaUploadInitResponse(val submissionId: String = "", val uploadUrl: S3PresignedPost, val s3Key: String = "", val bucket: String? = null, val datasetRole: String = "", val mediaKind: String = "", val landmarkId: String = "")
+data class BusinessMediaUploadInitResponse(val submissionId: String = "", val uploadUrl: BusinessMediaUploadTarget, val s3Key: String = "", val bucket: String? = null, val datasetRole: String = "", val mediaKind: String = "", val landmarkId: String = "")
 data class BusinessMediaUploadCompleteResponse(val ok: Boolean = false, val submissionId: String = "", val status: String? = null, val datasetRole: String? = null, val mediaKind: String? = null, val landmarkId: String? = null, val s3Key: String? = null)
 internal data class BusinessHardNegativeInitResponse(val message: String? = null, val batchId: String = "", val landmarkId: String = "", val landmarkLabel: String? = null, val landmarkFolder: String? = null, val expiresInSeconds: Int? = null, val uploads: List<BusinessHardNegativeUploadTarget> = emptyList())
-internal data class BusinessHardNegativeUploadTarget(val negativeId: String = "", val uploadUrl: S3PresignedPost, val sourceBucket: String? = null, val sourceKey: String = "", val contentType: String = "")
+internal data class BusinessHardNegativeUploadTarget(val negativeId: String = "", val uploadUrl: BusinessMediaUploadTarget, val sourceBucket: String? = null, val sourceKey: String = "", val contentType: String = "")
 data class BusinessHardNegativeCompleteResponse(val message: String? = null, val landmarkId: String = "", val batchId: String = "", val processedCount: Int = 0, val failedCount: Int = 0, val processed: List<BusinessHardNegativeProcessedItem>? = null)
 data class BusinessHardNegativeProcessedItem(val negativeId: String = "", val status: String = "")
 

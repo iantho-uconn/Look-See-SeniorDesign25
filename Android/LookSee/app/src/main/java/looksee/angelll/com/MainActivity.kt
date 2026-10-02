@@ -58,7 +58,6 @@ class MainActivity : ComponentActivity() {
             Amplify.configure(applicationContext)
             Log.i("AmplifyEngine", "✅ Amplify configured")
         } catch (error: AmplifyException) {
-            // 🚀 FIXED: Safely catch the AlreadyConfiguredException on Activity restart
             Log.i("AmplifyEngine", "ℹ️ Amplify was already configured.")
         } catch (error: Exception) {
             Log.e("AmplifyEngine", "❌ Failed to configure Amplify", error)
@@ -69,9 +68,7 @@ class MainActivity : ComponentActivity() {
         try {
             SentryAndroid.init(this) { options ->
                 options.dsn = "https://e9ee0e43b4735fe777a4d240a4423a56@o4512005291573248.ingest.us.sentry.io/4512005296816128"
-                // Set tracesSampleRate to 1.0 to capture 100% of transactions for performance monitoring.
                 options.tracesSampleRate = 1.0
-                // Set profilesSampleRate to 1.0 to enable CPU profiling.
                 options.profilesSampleRate = 1.0
             }
             Log.i("SentryEngine", "✅ Sentry configured")
@@ -194,11 +191,8 @@ fun RootView(vm: AuthViewModel, authState: AuthState) {
                     if (route == "BusinessLandmarkDetailView" && payload is BusinessLandmark) {
                         selectedLandmark = payload
                         appState = AppState.BusinessLandmarkDetail
-                    } else if (route == "back") {
+                    } else if (route == "back" || route == "Dismiss") {
                         appState = AppState.Settings
-                    } else if (route == "LandmarkRecord" && payload is looksee.angelll.com.models.ArchivedMedia) {
-                        // Special case for routing from upload queue to record screen?
-                        // Actually, I'll just open record screen with payload later.
                     }
                 }
             )
@@ -207,11 +201,9 @@ fun RootView(vm: AuthViewModel, authState: AuthState) {
         AppState.BusinessLandmarkDetail -> {
             selectedLandmark?.let { landmark ->
                 BusinessLandmarkDetailView(
-                    vm = vm, // 🚀 FIXED: Passed the missing AuthViewModel to allow Force Train functionality!
+                    vm = vm,
                     initialLandmark = landmark,
-                    onNavigate = { route, payload ->
-                        // Handle potential sub-navigation if needed
-                    },
+                    onNavigate = { _, _ -> },
                     onDismiss = { appState = AppState.BusinessLandmarks }
                 )
             }

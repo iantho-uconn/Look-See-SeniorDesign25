@@ -34,6 +34,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import looksee.angelll.com.models.OfflineMediaManager as ArchiveManager
 import looksee.angelll.com.models.AutoUploadManager as Uploader
@@ -85,6 +86,9 @@ fun BusinessLandmarksView(
     var showBulkDeleteSheet by remember { mutableStateOf(false) }
 
     var landmarkNeedingMedia by remember { mutableStateOf<BusinessLandmark?>(null) }
+    var redoRecordLandmark by remember { mutableStateOf<BusinessLandmark?>(null) }
+    var draftToEdit by remember { mutableStateOf<ArchivedMedia?>(null) }
+
     var hasLoadedOnce by remember { mutableStateOf(false) }
 
     val archivedItems by offlineManager.archivedItems.collectAsState()
@@ -217,7 +221,7 @@ fun BusinessLandmarksView(
                                     archivedItems.forEachIndexed { index, item ->
                                         PendingRow(
                                             item = item, isUploading = currentlyUploadingId == item.id, progress = currentUploadProgress, primaryColor = PrimaryBlue,
-                                            onNavigate = { onNavigate("LandmarkRecord", item) },
+                                            onNavigate = { draftToEdit = item },
                                             onDelete = { coroutineScope.launch { offlineManager.deleteArchive(item) } }
                                         )
                                         if (index < archivedItems.size - 1) {
@@ -321,9 +325,6 @@ fun BusinessLandmarksView(
 
     if (landmarkNeedingMedia != null) {
         val targetLandmark = landmarkNeedingMedia!!
-        val processedFrames = targetLandmark.cleanFrameCount ?: 0
-        val requiredFrames = targetLandmark.requiredFrames ?: 2000
-        val calcSecs = targetLandmark.secondsNeeded ?: ceil(max(0, requiredFrames - processedFrames) / 30.0).toInt()
 
         NeedsMoreMediaSheet(
             landmark = targetLandmark,
@@ -337,18 +338,46 @@ fun BusinessLandmarksView(
             },
             onAddMedia = {
                 landmarkNeedingMedia = null
-                coroutineScope.launch {
-                    kotlinx.coroutines.delay(300)
-                    val intent = Intent("TriggerRedoRecord").apply {
-                        putExtra("id", targetLandmark.landmarkId)
-                        putExtra("label", targetLandmark.label)
-                        putExtra("description", targetLandmark.shortDescription ?: "")
-                        putExtra("secondsNeeded", calcSecs.toDouble())
-                    }
-                    LocalBroadcastManager.getInstance(context).sendBroadcast(intent)
-                }
+                redoRecordLandmark = targetLandmark
             }
         )
+    }
+
+    if (draftToEdit != null) {
+        Dialog(
+            onDismissRequest = { draftToEdit = null },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            LandmarkRecordScreen(
+                vm = vm,
+                archivedMedia = draftToEdit,
+                onDismiss = { draftToEdit = null }
+            )
+        }
+    }
+
+    if (redoRecordLandmark != null) {
+        val landmark = redoRecordLandmark!!
+        val processed = landmark.cleanFrameCount ?: 0
+        val required = landmark.requiredFrames ?: 2000
+        val calcSecs = landmark.secondsNeeded ?: ceil(max(0, required - processed) / 30.0).toInt()
+
+        Dialog(
+            onDismissRequest = { redoRecordLandmark = null },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            LandmarkRecordScreen(
+                vm = vm,
+                existingLandmarkId = landmark.landmarkId,
+                existingLabel = landmark.label,
+                existingDescription = landmark.shortDescription,
+                existingSecondsNeeded = calcSecs.toDouble(),
+                onDismiss = {
+                    redoRecordLandmark = null
+                    refreshLandmarksAndSearchIndex()
+                }
+            )
+        }
     }
 
     if (showBulkPromotionSheet) { Dialog(onDismissRequest = { showBulkPromotionSheet = false }) { BusinessBulkPromotionEditor(selectedLandmarks, onCompleted = { showBulkPromotionSheet = false }, onDismiss = { showBulkPromotionSheet = false }) } }

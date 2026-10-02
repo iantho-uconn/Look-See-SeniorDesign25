@@ -74,6 +74,16 @@ fun LandmarkRecordScreen(
     val locationManager = remember { LocationManager(context) }
     val locationState by locationManager.state.collectAsState()
 
+    // Flag to determine if this is an "Add Additional Media" flow
+    val isAdditionalMedia = existingLandmarkId != null
+
+    DisposableEffect(Unit) {
+        locationManager.start()
+        onDispose {
+            locationManager.stop()
+        }
+    }
+
     var labelText by remember { mutableStateOf(existingLabel ?: "") }
     var shortDescription by remember { mutableStateOf(existingDescription ?: "") }
     var businessLandmarkId by remember { mutableStateOf(existingLandmarkId) }
@@ -100,7 +110,31 @@ fun LandmarkRecordScreen(
     var completedPositiveResult by remember { mutableStateOf<PositiveSubmissionResult?>(null) }
     var isFullSubmissionComplete by remember { mutableStateOf(false) }
 
+    LaunchedEffect(isFormVisible) {
+        if (isFormVisible && archivedMedia == null) {
+            val fix = (locationState as? LookSeeLocationState.Ready)?.fix
+            if (fix != null) {
+                extractedLatitude = fix.latitude
+                extractedLongitude = fix.longitude
+            }
+        }
+    }
+
+    LaunchedEffect(locationState) {
+        if (isFormVisible && archivedMedia == null && extractedLatitude == null) {
+            val fix = (locationState as? LookSeeLocationState.Ready)?.fix
+            if (fix != null) {
+                extractedLatitude = fix.latitude
+                extractedLongitude = fix.longitude
+            }
+        }
+    }
+
     LaunchedEffect(pickedVideoUris) {
+        if (archivedMedia != null) {
+            extractedLatitude = archivedMedia.latitude
+            extractedLongitude = archivedMedia.longitude
+        }
         withContext(Dispatchers.IO) {
             val newDurations = mutableMapOf<Uri, Double>()
             for (uri in pickedVideoUris) {
@@ -130,7 +164,7 @@ fun LandmarkRecordScreen(
             (if (completedPositiveResult != null) (existingLandmarkId != null || capturedNegativeVideo != null)
             else ( (pickedVideoUris.isNotEmpty() || pickedImageUri != null) && labelText.isNotBlank() && shortDescription.isNotBlank() && (existingLandmarkId != null || capturedNegativeVideo != null) && hasMinimumClipDuration ))
 
-    val arePositiveDetailsLocked = isUploading || isHardNegativeUploading || completedPositiveResult != null || isFullSubmissionComplete
+    val arePositiveDetailsLocked = isUploading || isHardNegativeUploading || completedPositiveResult != null || isFullSubmissionComplete || isAdditionalMedia
 
     fun clearScreen() {
         pickedVideoUris = emptyList()
@@ -237,7 +271,7 @@ fun LandmarkRecordScreen(
                         pickedVideoUris.forEach { uri ->
                             Box(modifier = Modifier.fillMaxWidth().height(240.dp).clip(RoundedCornerShape(16.dp))) {
                                 PositiveSafeVideoPlayer(uri = uri, modifier = Modifier.fillMaxSize())
-                                if (!arePositiveDetailsLocked) {
+                                if (!arePositiveDetailsLocked && !isAdditionalMedia) {
                                     Box(modifier = Modifier.align(Alignment.TopEnd).padding(12.dp).size(32.dp).background(Color.Black.copy(0.6f), CircleShape).clickable { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove); clearScreen() }, contentAlignment = Alignment.Center) {
                                         Icon(Icons.Default.Close, contentDescription = "Remove", tint = Color.White, modifier = Modifier.size(14.dp))
                                     }
@@ -251,12 +285,17 @@ fun LandmarkRecordScreen(
                     Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         Icon(Icons.Default.NearMe, contentDescription = null, tint = AppleBlue)
                         Column {
-                            val fix = (locationState as? LookSeeLocationState.Ready)?.fix
-                            if (fix != null) {
-                                Text(String.format(java.util.Locale.US, "%.6f, %.6f", fix.latitude, fix.longitude), fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, color = Color.White)
-                                Text("Accuracy: ±${fix.accuracyMeters.toInt()}m", fontSize = 13.sp, color = Color.Gray)
+                            if (extractedLatitude != null && extractedLongitude != null) {
+                                Text(String.format(java.util.Locale.US, "%.6f, %.6f", extractedLatitude, extractedLongitude), fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, color = Color.White)
+                                Text("Location Locked", fontSize = 13.sp, color = Color.Gray)
                             } else {
-                                Text("Requesting location...", fontSize = 15.sp, color = Color.Gray)
+                                val fix = (locationState as? LookSeeLocationState.Ready)?.fix
+                                if (fix != null) {
+                                    Text(String.format(java.util.Locale.US, "%.6f, %.6f", fix.latitude, fix.longitude), fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, color = Color.White)
+                                    Text("Accuracy: ±${fix.accuracyMeters.toInt()}m", fontSize = 13.sp, color = Color.Gray)
+                                } else {
+                                    Text("Requesting location...", fontSize = 15.sp, color = Color.Gray)
+                                }
                             }
                         }
                     }
@@ -265,14 +304,23 @@ fun LandmarkRecordScreen(
                 if (isFormVisible) {
                     Text("LANDMARK LABEL", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
                     Surface(modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth(), color = Color(0xFF1C1C1E), shape = RoundedCornerShape(16.dp)) {
-                        Box(modifier = Modifier.padding(8.dp)) {
-                            OutlinedTextField(
-                                value = labelText, onValueChange = { labelText = it },
-                                placeholder = { Text("e.g., Gampel Pavilion", color = Color.Gray) },
-                                modifier = Modifier.fillMaxWidth(),
-                                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Color.Transparent, unfocusedBorderColor = Color.Transparent, focusedTextColor = Color.White, unfocusedTextColor = Color.White),
-                                enabled = !arePositiveDetailsLocked
-                            )
+                        Box(modifier = Modifier.padding(if (isAdditionalMedia) 16.dp else 8.dp)) {
+                            if (isAdditionalMedia) {
+                                Text(
+                                    text = labelText.ifEmpty { "Untitled Landmark" },
+                                    color = Color.White,
+                                    fontSize = 16.sp,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            } else {
+                                OutlinedTextField(
+                                    value = labelText, onValueChange = { labelText = it },
+                                    placeholder = { Text("e.g., Gampel Pavilion", color = Color.Gray) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Color.Transparent, unfocusedBorderColor = Color.Transparent, focusedTextColor = Color.White, unfocusedTextColor = Color.White),
+                                    enabled = !arePositiveDetailsLocked
+                                )
+                            }
                         }
                     }
 
@@ -283,21 +331,31 @@ fun LandmarkRecordScreen(
                     Spacer(Modifier.height(10.dp))
                     Text("SHORT DESCRIPTION", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
                     Surface(modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth(), color = Color(0xFF1C1C1E), shape = RoundedCornerShape(16.dp)) {
-                        Box(modifier = Modifier.padding(8.dp).fillMaxWidth().height(100.dp)) {
-                            OutlinedTextField(
-                                value = shortDescription, onValueChange = { shortDescription = it },
-                                placeholder = { Text("e.g., Front entrance", color = Color.Gray) },
-                                modifier = Modifier.fillMaxSize(),
-                                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Color.Transparent, unfocusedBorderColor = Color.Transparent, focusedTextColor = Color.White, unfocusedTextColor = Color.White),
-                                enabled = !arePositiveDetailsLocked
-                            )
-                            Box(modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp).size(36.dp).background(AppleBlue, CircleShape).clickable { }, contentAlignment = Alignment.Center) {
-                                Icon(Icons.Default.CenterFocusStrong, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                        Box(modifier = Modifier.padding(if (isAdditionalMedia) 16.dp else 8.dp).fillMaxWidth().defaultMinSize(minHeight = if (isAdditionalMedia) 60.dp else 100.dp)) {
+                            if (isAdditionalMedia) {
+                                Text(
+                                    text = shortDescription.ifEmpty { "No description provided." },
+                                    color = Color.White,
+                                    fontSize = 16.sp,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            } else {
+                                OutlinedTextField(
+                                    value = shortDescription, onValueChange = { shortDescription = it },
+                                    placeholder = { Text("e.g., Front entrance", color = Color.Gray) },
+                                    modifier = Modifier.fillMaxSize(),
+                                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Color.Transparent, unfocusedBorderColor = Color.Transparent, focusedTextColor = Color.White, unfocusedTextColor = Color.White),
+                                    enabled = !arePositiveDetailsLocked
+                                )
+                                Box(modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp).size(36.dp).background(AppleBlue, CircleShape).clickable { }, contentAlignment = Alignment.Center) {
+                                    Icon(Icons.Default.CenterFocusStrong, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                                }
                             }
                         }
                     }
 
-                    if (existingLandmarkId == null) {
+                    // 🚀 THE FIX: Only show Negative Background requirement for brand new landmarks
+                    if (!isAdditionalMedia) {
                         Spacer(Modifier.height(20.dp))
                         Surface(modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth(), color = Color(0xFF1C1C1E), shape = RoundedCornerShape(16.dp)) {
                             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -342,9 +400,14 @@ fun LandmarkRecordScreen(
                             shape = RoundedCornerShape(16.dp),
                             enabled = canUpload
                         ) {
-                            Icon(Icons.Default.ArrowUpward, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Icon(Icons.Default.ArrowUpward, contentDescription = null, modifier = Modifier.size(18.dp), tint = Color.White)
                             Spacer(Modifier.width(8.dp))
-                            Text(if (archivedMedia != null) "Upload Draft" else (if (existingLandmarkId != null) "Upload Media" else "Upload Landmark"), fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                            Text(
+                                text = if (archivedMedia != null) "Upload Draft" else (if (isAdditionalMedia) "Upload Additional Media" else "Upload Landmark"),
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
                         }
 
                         if (archivedMedia == null) {
@@ -399,7 +462,11 @@ fun LandmarkRecordScreen(
             onDismissRequest = { showBackgroundUploadAlert = false; onDismiss() },
             title = { Text("Upload Queued!", color = Color.White) },
             text = { Text("Your landmark has been securely queued! It will upload in the background. Feel free to keep using the app, but please make sure to leave it open until the upload finishes.", color = Color.LightGray) },
-            confirmButton = { TextButton(onClick = { showBackgroundUploadAlert = false; clearScreen() }) { Text("Record Another", color = Color.White) } },
+            confirmButton = {
+                TextButton(onClick = { showBackgroundUploadAlert = false; clearScreen() }) {
+                    Text(if (isAdditionalMedia) "Record More" else "Record Another", color = Color.White)
+                }
+            },
             dismissButton = { TextButton(onClick = { showBackgroundUploadAlert = false; onDismiss() }) { Text("Done", color = Color.White) } },
             containerColor = Color(0xFF1C1C1E)
         )
