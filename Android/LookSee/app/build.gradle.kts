@@ -105,9 +105,17 @@ dependencies {
     implementation("androidx.media3:media3-common:$media3Version")
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.10.2")
     implementation("com.google.code.gson:gson:2.14.0")
 
     implementation("androidx.work:work-runtime-ktx:2.11.2")
+    
+    // ML Kit Text Recognition for Camera Scanner
+    implementation("com.google.android.gms:play-services-mlkit-text-recognition:19.0.1")
+
+    // Security
+    implementation("com.google.android.play:integrity:1.6.0")
+    implementation("androidx.security:security-crypto-ktx:1.1.0")
     implementation("androidx.localbroadcastmanager:localbroadcastmanager:1.1.0")
 
     // 🚀 FIXED: Both dependencies are perfectly synced to TensorFlow 2.16.1.

@@ -104,7 +104,6 @@ class BusinessLandmarkService internal constructor(
         BusinessDatasetRole.HARD_NEGATIVE -> uploadHardNegativeMedia(landmarkId = landmarkId, filename = filename, contentType = contentType, data = data)
     }
 
-    // 🚀 THE FIX: Match iOS Global Negative specific /submissions endpoint perfectly
     suspend fun uploadGlobalNegativeVideo(file: java.io.File): BusinessMediaUploadCompleteResponse {
         val bytes = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { file.readBytes() }
         val contentType = if (file.extension.equals("mov", ignoreCase = true)) "video/quicktime" else "video/mp4"
@@ -161,7 +160,6 @@ class BusinessLandmarkService internal constructor(
     ): BusinessMediaUploadCompleteResponse {
         Log.d("LookSee_Debug_Upload", "Initiating NEGATIVE upload for $filename")
 
-        // 🚀 THE FIX: Omit the "/business" path component to match iOS
         val endpoint = "$LOOKSEE_API_BASE_URL/landmarks/${encodedPathSegment(landmarkId)}/hard-negatives"
 
         val init = requestJson(
@@ -194,7 +192,6 @@ class BusinessLandmarkService internal constructor(
     }
 
     override suspend fun retryHardNegativeProcessing(landmarkId: String, batchId: String, negativeId: String): BusinessHardNegativeCompleteResponse {
-        // 🚀 THE FIX: Omit the "/business" path component to match iOS
         val endpoint = "$LOOKSEE_API_BASE_URL/landmarks/${encodedPathSegment(landmarkId)}/hard-negatives/complete"
         val response = requestJson(
             method = "POST",
@@ -449,7 +446,17 @@ class AmplifyCognitoIdTokenProvider : IdTokenProvider {
     }
 }
 
-internal data class BusinessHttpRequest(val method: String, val url: String, val authorization: String? = null, val body: ByteArray? = null, val contentType: String? = null, val accept: String? = "application/json", val timeoutMillis: Int = 30_000)
+internal data class BusinessHttpRequest(
+    val method: String,
+    val url: String,
+    val authorization: String? = null,
+    val body: ByteArray? = null,
+    val contentType: String? = null,
+    val accept: String? = "application/json",
+    val timeoutMillis: Int = 30_000,
+    val headers: Map<String, String>? = null
+)
+
 internal data class BusinessHttpResponse(val statusCode: Int, val body: ByteArray = ByteArray(0)) { val bodyText: String get() = body.toString(Charsets.UTF_8) }
 
 internal fun interface BusinessHttpClient { suspend fun execute(request: BusinessHttpRequest): BusinessHttpResponse }
@@ -463,9 +470,14 @@ internal class UrlConnectionBusinessHttpClient : BusinessHttpClient {
                 connection.connectTimeout = request.timeoutMillis
                 connection.readTimeout = request.timeoutMillis
                 connection.instanceFollowRedirects = true
+
                 request.accept?.let { connection.setRequestProperty("Accept", it) }
                 request.authorization?.let { connection.setRequestProperty("Authorization", it) }
                 request.contentType?.let { connection.setRequestProperty("Content-Type", it) }
+
+                request.headers?.forEach { (key, value) ->
+                    connection.setRequestProperty(key, value)
+                }
 
                 request.body?.let { bytes ->
                     connection.doOutput = true
@@ -474,9 +486,10 @@ internal class UrlConnectionBusinessHttpClient : BusinessHttpClient {
 
                 val status = connection.responseCode
                 val stream = if (status in 200..299) { connection.inputStream } else { connection.errorStream }
+
                 BusinessHttpResponse(statusCode = status, body = stream?.use { it.readBytes() } ?: ByteArray(0))
             } finally {
-                connection.disconnect()
+                // 🚀 THE FIX: Kept the stream open for OS connection pooling to allow for instant subsequent requests
             }
         }
 }

@@ -1,12 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <domain-config>
+    <domain-config cleartextTrafficPermitted="false">
         <domain includeSubdomains="true">d11vl3v9w133rh.cloudfront.net</domain>
         <pin-set expiration="2027-01-01">
-            <!-- CloudFront Primary Key (Placeholder, replace with actual) -->
-            <pin digest="SHA-256">WoiWRyIOVNa9ihaBciRSC7XHjliYS9VwUGOIud4PB18=</pin>
-            <!-- Amazon Root CA 1 (standard backup) -->
-            <pin digest="SHA-256">r/mIkG3eEpVdm+u/ko/cwxzOMo1bk4TyHIlByibiA5E=</pin>
+            <!-- CloudFront Primary Key (Your real AWS certificate pin) -->
+            <pin digest="SHA-256">dExBlAvT1n9yGuq8/3TYV0mGSoCBmqDo+95Hxr2avEE=</pin>
+
+            <!-- Backup Pin: Amazon Root CA 1 (Prevents app from breaking when AWS auto-renews) -->
+            <pin digest="SHA-256">++MBgDH5WGvL9Bcn5Be30cRcL0f5O+NyoXuWtQdX1aI=</pin>
         </pin-set>
     </domain-config>
 </network-security-config>

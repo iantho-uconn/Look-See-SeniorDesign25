@@ -26,6 +26,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -64,6 +66,8 @@ fun PopUp() {
     val shouldShowPromotion = cleanedPromoName.isNotEmpty() &&
             cleanedPromoName != "No active promotion" &&
             cleanedPromoName != "Checking promotions..."
+            
+    var showReportSheet by remember { mutableStateOf(false) }
 
     // URL Handling Helper
     fun normalizedURL(rawValue: String): String? {
@@ -77,7 +81,9 @@ fun PopUp() {
     }
 
     BoxWithConstraints(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(Unit) { detectTapGestures { infoView.dismissLandmark() } },
         contentAlignment = Alignment.Center
     ) {
         val maxWidthPx = maxWidth.value
@@ -95,7 +101,8 @@ fun PopUp() {
                     elevation = 30.dp,
                     shape = RoundedCornerShape(30.dp),
                     spotColor = Color.Black.copy(alpha = 0.30f)
-                ),
+                )
+                .pointerInput(Unit) { detectTapGestures { } }, // consume taps so it doesn't dismiss
             color = Color(0xFF1C1C1E).copy(alpha = 0.95f), // UltraThickMaterial-ish
             shape = RoundedCornerShape(30.dp),
             border = BorderStroke(1.dp, Color.White.copy(alpha = 0.20f))
@@ -241,10 +248,7 @@ fun PopUp() {
                             Button(
                                 onClick = {
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    val intent = Intent("looksee.action.NAVIGATE").apply {
-                                        putExtra("DESTINATION", "ReportIssueView")
-                                    }
-                                    androidx.localbroadcastmanager.content.LocalBroadcastManager.getInstance(context).sendBroadcast(intent)
+                                    showReportSheet = true
                                 },
                                 modifier = Modifier.size(56.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(0.15f), contentColor = Color.Red),
@@ -303,10 +307,20 @@ fun PopUp() {
             }
         }
     }
+    
+    if (showReportSheet) {
+        MapReportSheet(
+            landmarkId = infoView.landmarkId,
+            landmarkLabel = infoView.landmarkName,
+            reportedOwnerId = infoView.reportedOwnerId ?: "unknown",
+            userEmail = "unknown@user.com", // In a real app we'd fetch from vm, but this matches iOS fallback pattern
+            onDismiss = { showReportSheet = false }
+        )
+    }
 }
 
 @Composable
-private fun PromoImageLoader(url: String, contentScale: ContentScale = ContentScale.Fit) {
+fun PromoImageLoader(url: String, contentScale: ContentScale = ContentScale.Fit) {
     var bitmap by remember { mutableStateOf<Bitmap?>(null) }
     var isLoading by remember { mutableStateOf(true) }
     

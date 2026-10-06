@@ -47,7 +47,7 @@ fun SubscriptionPlans(
     val scope = rememberCoroutineScope()
     val defaultCheckoutService = remember { CheckoutService() }
     val service = checkoutService ?: defaultCheckoutService
-    
+
     var selectedTab by rememberSaveable { mutableStateOf(startingTab) }
     var selectedPlanIndex by rememberSaveable { mutableIntStateOf(0) }
     var selectedAddOnIndex by rememberSaveable { mutableIntStateOf(0) }
@@ -57,7 +57,18 @@ fun SubscriptionPlans(
     var pendingUpdate by remember { mutableStateOf<SubscriptionPurchaseUpdate?>(null) }
     var consumedResume by rememberSaveable { mutableStateOf(false) }
 
+    var currentOrderId by rememberSaveable { mutableStateOf<String?>(null) }
+
     val isTokenOnlyMode = startingTab == SubscriptionTab.TOKENS && account.hasActiveSubscription
+
+    // 🚀 THE FIX: Pre-warm Amplify, the TLS Handshake, and wake up the AWS Lambda safely!
+    LaunchedEffect(Unit) {
+        scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            // This single lightweight call ensures the whole pipeline is fully loaded
+            // without leaking any TCP sockets.
+            kotlin.runCatching { service.cancelPendingCheckout("warmup", "warmup") }
+        }
+    }
 
     fun finishPayment(result: PaymentSheetResult) {
         when (result) {
@@ -82,13 +93,22 @@ fun SubscriptionPlans(
                     }
                 }
             }
-            is PaymentSheetResult.Canceled -> {
+            is PaymentSheetResult.Canceled, is PaymentSheetResult.Failed -> {
+                val orderToCancel = currentOrderId
+                currentOrderId = null
+
                 isProcessing = false
-                paymentStatusMessage = "Payment was canceled."
-            }
-            is PaymentSheetResult.Failed -> {
-                isProcessing = false
-                paymentStatusMessage = "Payment failed: ${result.error.message.orEmpty()}"
+                paymentStatusMessage = if (result is PaymentSheetResult.Canceled) {
+                    "Payment was canceled."
+                } else {
+                    "Payment failed: ${(result as PaymentSheetResult.Failed).error.message}"
+                }
+
+                scope.launch {
+                    if (orderToCancel != null) {
+                        runCatching { service.cancelPendingCheckout(account.userId, orderToCancel) }
+                    }
+                }
             }
         }
     }
@@ -104,6 +124,8 @@ fun SubscriptionPlans(
         paymentStatusMessage = null
         pendingConfirm = confirmation
         pendingUpdate = update
+        currentOrderId = request.checkoutRequestId
+
         scope.launch {
             try {
                 when (val preparation = service.prepare(request)) {
@@ -124,6 +146,7 @@ fun SubscriptionPlans(
                     }
                 }
             } catch (error: Throwable) {
+                currentOrderId = null
                 isProcessing = false
                 paymentStatusMessage = error.message ?: "Could not prepare checkout."
             }
@@ -138,14 +161,17 @@ fun SubscriptionPlans(
             return
         }
         val addedTokens = plan.baseTokens + addOn.tokens
+        val request = CheckoutPrepareRequest.yearly(account, plan, addOn)
+
         prepareCheckout(
-            request = CheckoutPrepareRequest.yearly(account, plan, addOn),
+            request = request,
             confirmation = CheckoutConfirmRequest(
                 userId = account.userId,
                 addTokens = addedTokens,
                 isBusiness = true,
                 planCents = plan.priceCents,
                 planYears = plan.years,
+                orderId = request.checkoutRequestId
             ),
             update = SubscriptionPurchaseUpdate(addedTokens, true, plan.priceCents, plan.years)
         )
@@ -156,14 +182,16 @@ fun SubscriptionPlans(
             onRequireSignUp(PendingCheckout(SubscriptionTab.FREE_TRIAL))
             return
         }
+        val request = CheckoutPrepareRequest.freeTrial(account)
         prepareCheckout(
-            request = CheckoutPrepareRequest.freeTrial(account),
+            request = request,
             confirmation = CheckoutConfirmRequest(
                 userId = account.userId,
                 addTokens = 2,
                 isBusiness = true,
                 planCents = 1000,
                 planYears = 1,
+                orderId = request.checkoutRequestId
             ),
             update = SubscriptionPurchaseUpdate(2, true, 1000, 1, true)
         )
@@ -174,12 +202,14 @@ fun SubscriptionPlans(
             onRequireSignUp(PendingCheckout(SubscriptionTab.TOKENS, tokenCount = pack.tokens, tokenPriceCents = pack.priceCents))
             return
         }
+        val request = CheckoutPrepareRequest.tokenPack(account, pack)
         prepareCheckout(
-            request = CheckoutPrepareRequest.tokenPack(account, pack),
+            request = request,
             confirmation = CheckoutConfirmRequest(
                 userId = account.userId,
                 addTokens = pack.tokens,
                 isBusiness = false,
+                orderId = request.checkoutRequestId
             ),
             update = SubscriptionPurchaseUpdate(pack.tokens, false)
         )
@@ -323,9 +353,9 @@ private fun PlanContent(account: SubscriptionAccountState, selectedPlanIndex: In
             }
             HorizontalDivider(color = Color.White.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 14.dp))
         }
-        item { 
-            Text("OPTIONAL TOKEN ADD-ON", color = Color.Gray, fontSize = 12.sp, fontWeight = FontWeight.Bold); 
-            Spacer(Modifier.height(8.dp)) 
+        item {
+            Text("OPTIONAL TOKEN ADD-ON", color = Color.Gray, fontSize = 12.sp, fontWeight = FontWeight.Bold);
+            Spacer(Modifier.height(8.dp))
         }
         item {
             var expanded by remember { mutableStateOf(false) }
@@ -346,15 +376,15 @@ private fun PlanContent(account: SubscriptionAccountState, selectedPlanIndex: In
         }
         item {
             Button(
-                onClick = onSubscribe, 
-                enabled = !unavailable && !isProcessing, 
-                modifier = Modifier.fillMaxWidth().height(56.dp), 
-                shape = RoundedCornerShape(14.dp), 
+                onClick = onSubscribe,
+                enabled = !unavailable && !isProcessing,
+                modifier = Modifier.fillMaxWidth().height(56.dp),
+                shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = if (unavailable) Color.White.copy(0.1f) else LookSeeBlue)
             ) {
                 val total = selectedPlan.priceCents + selectedAddOn.priceCents
                 val totalStr = (total / 100.0).let { String.format(Locale.US, "%.2f", it) }
-                
+
                 if (account.hasActiveSubscription) {
                     if (account.isFreeTrial) {
                         Text("Upgrade to ${selectedPlan.label} - \$$totalStr", fontWeight = FontWeight.Bold, color = Color.White)
@@ -402,10 +432,10 @@ private fun TrialContent(account: SubscriptionAccountState, isProcessing: Boolea
         }
         Text("Test out the platform risk-free with zero commitment.", color = Color.Gray, fontSize = 13.sp, modifier = Modifier.padding(top = 2.dp))
         HorizontalDivider(color = Color.White.copy(0.12f), modifier = Modifier.padding(vertical = 14.dp))
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) { 
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             FeatureRow("Includes exactly 2 Tokens")
             FeatureRow("Full access to business tools")
-            FeatureRow("Auto-renews to 1-Year Plan ($10)") 
+            FeatureRow("Auto-renews to 1-Year Plan ($10)")
         }
         Spacer(Modifier.weight(1f))
         Text("Payment information is required to start your trial. You will not be charged today. If you do not cancel before your 14 days are up, you will be billed $10 for the 1-Year Business Plan. Cancel anytime.", color = Color.Gray, fontSize = 11.sp, modifier = Modifier.padding(bottom = 16.dp))

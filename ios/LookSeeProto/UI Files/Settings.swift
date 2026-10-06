@@ -311,7 +311,7 @@ struct Settings: View {
                     }
                     .buttonStyle(.plain)
 
-                    NavigationLink { Text("Help & Support Center") } label: { settingsRow(icon: "questionmark.circle.fill", iconBg: .orange, title: "Help & Support", showDivider: true) }
+                    NavigationLink { Help() } label: { settingsRow(icon: "questionmark.circle.fill", iconBg: .orange, title: "Help & Support", showDivider: true) }
                     .buttonStyle(.plain)
                     
                     NavigationLink { PrivacyPolicyView() } label: { settingsRow(icon: "hand.raised.fill", iconBg: .purple, title: "Privacy Policy", showDivider: true) }

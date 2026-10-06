@@ -522,6 +522,7 @@ interface UploadHttpClient {
         authorization: String,
         jsonBody: String,
         timeoutMillis: Int,
+        extraHeaders: Map<String, String> = emptyMap()
     ): UploadHttpResponse
 
     suspend fun putFile(
@@ -553,12 +554,14 @@ class UrlConnectionUploadHttpClient : UploadHttpClient {
         authorization: String,
         jsonBody: String,
         timeoutMillis: Int,
+        extraHeaders: Map<String, String>
     ): UploadHttpResponse = withContext(Dispatchers.IO) {
         val bytes = jsonBody.toByteArray(Charsets.UTF_8)
         execute(url, "POST", timeoutMillis) { connection ->
             connection.setRequestProperty("Content-Type", "application/json")
             connection.setRequestProperty("Accept", "application/json")
             connection.setRequestProperty("Authorization", authorization)
+            extraHeaders.forEach { (key, value) -> connection.setRequestProperty(key, value) }
             connection.doOutput = true
             connection.setFixedLengthStreamingMode(bytes.size)
             connection.outputStream.use { it.write(bytes) }

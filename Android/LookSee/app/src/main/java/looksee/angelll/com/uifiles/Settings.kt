@@ -572,26 +572,25 @@ fun GuestPromoCard(presenter: SettingsPresenter, isFullyLoggedIn: Boolean, onNav
         modifier = Modifier
             .padding(horizontal = 16.dp)
             .fillMaxWidth()
-            .clip(RoundedCornerShape(24.dp))
-            .background(Brush.linearGradient(listOf(Color(0xFF142659), Color(0xFF0D0D1F))))
-            .border(1.dp, Brush.linearGradient(listOf(AppleBlue.copy(alpha = 0.5f), Color.Transparent)), RoundedCornerShape(24.dp))
+            .clip(RoundedCornerShape(20.dp))
+            .background(Color(0xFF0F172A)) // Match the solid dark blue from the screenshot
     ) {
         Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier
-                        .size(48.dp)
-                        .shadow(8.dp, CircleShape, ambientColor = AppleBlue, spotColor = AppleBlue)
+                        .size(56.dp)
+                        .shadow(16.dp, CircleShape, ambientColor = AppleBlue, spotColor = AppleBlue)
                         .clip(CircleShape)
                         .background(AppleBlue),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(Icons.Default.WorkspacePremium, contentDescription = null, tint = Color.White)
+                    Text("👑", fontSize = 28.sp, color = Color.White) // Match iOS "crown.fill"
                 }
-                Column {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(
                         if (isFullyLoggedIn) "Upgrade to Business" else "Join LookSee",
-                        fontSize = 18.sp,
+                        fontSize = 19.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White
                     )
@@ -599,8 +598,8 @@ fun GuestPromoCard(presenter: SettingsPresenter, isFullyLoggedIn: Boolean, onNav
                         if (isFullyLoggedIn) "Unlock landmark management, uploads, promotions, and tokens."
                         else "Create a free account to save your profile and future progress.",
                         fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = Color.White.copy(alpha = 0.7f)
+                        color = Color.White.copy(alpha = 0.7f),
+                        lineHeight = 20.sp
                     )
                 }
             }
@@ -615,9 +614,9 @@ fun GuestPromoCard(presenter: SettingsPresenter, isFullyLoggedIn: Boolean, onNav
                             onNavigate("signup")
                         }
                     },
-                    modifier = Modifier.weight(1.2f).height(64.dp),
+                    modifier = Modifier.weight(1.3f).height(56.dp), // Matched iOS standard height
                     colors = ButtonDefaults.buttonColors(containerColor = AppleBlue),
-                    shape = RoundedCornerShape(14.dp)
+                    shape = RoundedCornerShape(12.dp)
                 ) {
                     Text(if (isFullyLoggedIn) "View Business Plans" else "Create Free Account", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                 }
@@ -627,11 +626,11 @@ fun GuestPromoCard(presenter: SettingsPresenter, isFullyLoggedIn: Boolean, onNav
                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             onNavigate("login")
                         },
-                        modifier = Modifier.weight(1f).height(64.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.15f)),
-                        shape = RoundedCornerShape(14.dp)
+                        modifier = Modifier.weight(1f).height(56.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.12f)),
+                        shape = RoundedCornerShape(12.dp)
                     ) {
-                        Text("Log In", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        Text("Log In", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.White)
                     }
                 }
             }

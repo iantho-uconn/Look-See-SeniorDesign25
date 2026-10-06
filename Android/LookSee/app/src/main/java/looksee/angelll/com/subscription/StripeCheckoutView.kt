@@ -35,15 +35,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.amplifyframework.auth.cognito.AWSCognitoAuthSession
+import com.amplifyframework.kotlin.core.Amplify
 import com.google.gson.Gson
 import com.stripe.android.PaymentConfiguration
 import com.stripe.android.paymentsheet.PaymentSheet
 import com.stripe.android.paymentsheet.PaymentSheetResult
-import looksee.angelll.com.subscription.CheckoutPreparation
-import looksee.angelll.com.subscription.CheckoutPrepareRequest
-import looksee.angelll.com.subscription.CheckoutService
-import looksee.angelll.com.subscription.CheckoutSession
-
+import kotlinx.coroutines.delay
+import java.util.UUID
 
 /** Generic Stripe PaymentSheet screen translated from StripeCheckoutView.swift. */
 @Composable
@@ -177,7 +176,7 @@ fun StripeCheckoutView(
 }
 
 
-// --- Merged from CheckoutService.kt ---
+// --- CheckoutService.kt ---
 enum class CheckoutPurchaseType(val wireValue: String) {
     YEARLY_SUBSCRIPTION("yearly_subscription"),
     TOKEN_PACK("token_pack"),
@@ -196,6 +195,7 @@ data class CheckoutPrepareRequest(
     val isFreeTrial: Boolean? = null,
     val selectedPlanIndex: Int? = null,
     val stripeSubscriptionId: String? = null,
+    val checkoutRequestId: String = UUID.randomUUID().toString().lowercase(),
 ) {
     companion object {
         fun yearly(
@@ -261,6 +261,7 @@ data class CheckoutConfirmRequest(
     val subscriptionId: String? = null,
     val planCents: Int? = null,
     val planYears: Int? = null,
+    val orderId: String? = null,
 )
 
 data class CheckoutSession(
@@ -281,10 +282,16 @@ sealed interface CheckoutPreparation {
 
 sealed class CheckoutError(message: String) : Exception(message) {
     data class Backend(val statusCode: Int, val responseBody: String) :
-        CheckoutError("Checkout failed with HTTP $statusCode: $responseBody")
+        CheckoutError(
+            if (statusCode == 409 && responseBody.contains("pending", ignoreCase = true)) {
+                "A previous checkout is still pending. Please try again in a moment."
+            } else {
+                "Checkout failed with HTTP $statusCode"
+            }
+        )
 
     data class Stripe(val detail: String) : CheckoutError("Stripe error: $detail")
-    data object InvalidResponse : CheckoutError("The checkout service returned an invalid response.")
+    class InvalidResponse : CheckoutError("The checkout service returned an invalid response.")
 }
 
 class CheckoutService internal constructor(
@@ -293,11 +300,30 @@ class CheckoutService internal constructor(
 ) {
     constructor() : this(UrlConnectionBusinessHttpClient())
 
+    init {
+        // 🚀 THE FIX: Forces Android Emulator networking to skip IPv6 lookups,
+        // instantly eliminating the 5-second timeout delay.
+        System.setProperty("java.net.preferIPv4Stack", "true")
+    }
+
+    private suspend fun fetchAuthHeaders(): Map<String, String> {
+        return try {
+            val session = com.amplifyframework.kotlin.core.Amplify.Auth.fetchAuthSession() as? AWSCognitoAuthSession
+            val idToken = session?.userPoolTokensResult?.value?.idToken
+            if (!idToken.isNullOrEmpty()) {
+                mapOf("Authorization" to "Bearer $idToken")
+            } else emptyMap()
+        } catch (_: Exception) {
+            emptyMap()
+        }
+    }
+
     suspend fun prepare(request: CheckoutPrepareRequest): CheckoutPreparation {
         val response = httpClient.execute(
             BusinessHttpRequest(
                 method = "POST",
                 url = "$LOOKSEE_API_BASE_URL/checkout",
+                headers = fetchAuthHeaders(),
                 body = gson.toJson(request).toByteArray(Charsets.UTF_8),
                 contentType = "application/json",
                 timeoutMillis = 60_000,
@@ -311,29 +337,67 @@ class CheckoutService internal constructor(
         return CheckoutPreparation.Ready(
             CheckoutSession(
                 clientSecret = body.setupIntent?.takeIf(String::isNotBlank)
-                    ?: throw CheckoutError.InvalidResponse,
+                    ?: throw CheckoutError.InvalidResponse(),
                 customerId = body.customer?.takeIf(String::isNotBlank)
-                    ?: throw CheckoutError.InvalidResponse,
+                    ?: throw CheckoutError.InvalidResponse(),
                 ephemeralKeySecret = body.ephemeralKey?.takeIf(String::isNotBlank)
-                    ?: throw CheckoutError.InvalidResponse,
+                    ?: throw CheckoutError.InvalidResponse(),
                 publishableKey = body.publishableKey?.takeIf(String::isNotBlank)
-                    ?: throw CheckoutError.InvalidResponse,
+                    ?: throw CheckoutError.InvalidResponse(),
                 subscriptionId = body.subscriptionId,
             ),
         )
     }
 
     suspend fun confirm(request: CheckoutConfirmRequest): Boolean {
-        val response = httpClient.execute(
-            BusinessHttpRequest(
-                method = "POST",
-                url = "$LOOKSEE_API_BASE_URL/checkout",
-                body = gson.toJson(request).toByteArray(Charsets.UTF_8),
-                contentType = "application/json",
-                timeoutMillis = 60_000,
-            ),
+        var attempts = 0
+        // 🚀 THE FIX: Retry loop to handle Stripe Webhook race conditions
+        while (attempts < 4) {
+            val response = httpClient.execute(
+                BusinessHttpRequest(
+                    method = "POST",
+                    url = "$LOOKSEE_API_BASE_URL/checkout",
+                    headers = fetchAuthHeaders(),
+                    body = gson.toJson(request).toByteArray(Charsets.UTF_8),
+                    contentType = "application/json",
+                    timeoutMillis = 60_000,
+                ),
+            )
+
+            if (response.statusCode in 200..299) {
+                return true
+            } else if (response.statusCode == 409) {
+                // Backend is currently locked by the Stripe Webhook. Wait 1.5 seconds and retry.
+                delay(1500)
+                attempts++
+            } else {
+                return false
+            }
+        }
+        return false
+    }
+
+    suspend fun cancelPendingCheckout(userId: String, orderId: String): Boolean {
+        val requestBody = mapOf(
+            "purchaseType" to "cancel_pending_checkout",
+            "userId" to userId,
+            "orderId" to orderId
         )
-        return response.statusCode == 200
+        return try {
+            val response = httpClient.execute(
+                BusinessHttpRequest(
+                    method = "POST",
+                    url = "$LOOKSEE_API_BASE_URL/checkout",
+                    headers = fetchAuthHeaders(),
+                    body = gson.toJson(requestBody).toByteArray(Charsets.UTF_8),
+                    contentType = "application/json",
+                    timeoutMillis = 15_000,
+                )
+            )
+            response.statusCode == 200
+        } catch (_: Exception) {
+            false
+        }
     }
 
     private fun validate(response: BusinessHttpResponse) {
@@ -343,11 +407,11 @@ class CheckoutService internal constructor(
     }
 
     private fun decode(json: String): CheckoutResponse = try {
-        gson.fromJson(json, CheckoutResponse::class.java) ?: throw CheckoutError.InvalidResponse
+        gson.fromJson(json, CheckoutResponse::class.java) ?: throw CheckoutError.InvalidResponse()
     } catch (error: CheckoutError) {
         throw error
     } catch (_: Exception) {
-        throw CheckoutError.InvalidResponse
+        throw CheckoutError.InvalidResponse()
     }
 }
 
@@ -360,7 +424,7 @@ private data class CheckoutResponse(
     val error: String? = null,
 )
 
-// --- Merged from StripePaymentSupport.kt ---
+// --- StripePaymentSupport.kt ---
 @Composable
 internal fun rememberLookSeePaymentSheet(
     onResult: (PaymentSheetResult) -> Unit,

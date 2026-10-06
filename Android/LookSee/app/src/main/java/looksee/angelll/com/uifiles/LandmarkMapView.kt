@@ -27,9 +27,7 @@ import androidx.compose.ui.unit.sp
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.MapStyleOptions
-import com.google.maps.android.clustering.ClusterItem
 import com.google.maps.android.compose.*
-import com.google.maps.android.compose.clustering.Clustering
 import kotlinx.coroutines.launch
 import looksee.angelll.com.R
 import looksee.angelll.com.models.*
@@ -37,6 +35,8 @@ import looksee.angelll.com.viewmodels.*
 import looksee.angelll.com.services.*
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectDragGestures
 import looksee.angelll.com.detection.*
 import looksee.angelll.com.ui.theme.AppleBlue
 import looksee.angelll.com.ui.theme.AppleOrange
@@ -47,6 +47,7 @@ fun LandmarkMapScreen(
     vm: AuthViewModel,
     nearbyService: NearbyLandmarkService,
     locationManager: LocationManager,
+    onSwipeToScan: () -> Unit,
     paddingValues: PaddingValues = PaddingValues(0.dp)
 ) {
     val context = LocalContext.current
@@ -60,8 +61,8 @@ fun LandmarkMapScreen(
     var showFilterSheet by remember { mutableStateOf(false) }
     var searchText by remember { mutableStateOf("") }
 
-    // Filter State
-    var isGlobalSearch by remember { mutableStateOf(true) }
+    // 🚀 THE FIX: Defaulted isGlobalSearch to false so we don't query an 80,000km radius and crash the backend query
+    var isGlobalSearch by remember { mutableStateOf(false) }
     var searchRadiusMiles by remember { mutableStateOf(10.0f) }
     var myUploadsOnly by remember { mutableStateOf(false) }
     var promotedOnly by remember { mutableStateOf(false) }
@@ -71,8 +72,10 @@ fun LandmarkMapScreen(
         position = CameraPosition.fromLatLngZoom(LatLng(37.7749, -122.4194), 13f)
     }
 
+    val filterSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
     // Filter Logic
-    val activeLandmarks = remember(rawLandmarks, searchText, myUploadsOnly, promotedOnly, selectedClusters.size) {
+    val activeLandmarks = remember(rawLandmarks, searchText, myUploadsOnly, promotedOnly, selectedClusters.toList()) {
         rawLandmarks.filter { landmark ->
             val matchesUser = if (myUploadsOnly) landmark.createdBy == vm.userEmail else true
             val matchesPromo = if (promotedOnly) landmark.promotionEnabled else true
@@ -87,24 +90,31 @@ fun LandmarkMapScreen(
         rawLandmarks.mapNotNull { it.clusterId }.distinct().sortedBy { it.toIntOrNull() ?: Int.MAX_VALUE }
     }
 
-    // Map Style
     val mapStyleOptions = remember {
         MapStyleOptions.loadRawResourceStyle(context, R.raw.map_style)
     }
 
+    var hasSetInitialCameraPosition by remember { mutableStateOf(false) }
+
     LaunchedEffect(Unit) {
+        vm.fetchUserEmail()
         if (locationManager.hasLocationPermission()) {
             locationManager.start()
-            vm.fetchUserEmail()
         }
+        // 🚀 THE FIX: Even if GPS is hanging on the emulator, immediately fetch landmarks for the default camera view!
+        val fallbackTarget = cameraPositionState.position.target
+        val meters = (if (isGlobalSearch) 50000.0 else searchRadiusMiles.toDouble()) * 1609.34
+        nearbyService.fetchNearby(fallbackTarget.latitude, fallbackTarget.longitude, meters)
     }
 
     LaunchedEffect(locationState) {
-        if (locationState is LookSeeLocationState.Ready) {
+        if (locationState is LookSeeLocationState.Ready && !hasSetInitialCameraPosition) {
             val fix = (locationState as LookSeeLocationState.Ready).fix
             cameraPositionState.position = CameraPosition.fromLatLngZoom(
                 LatLng(fix.latitude, fix.longitude), 13f
             )
+            hasSetInitialCameraPosition = true
+
             val meters = (if (isGlobalSearch) 50000.0 else searchRadiusMiles.toDouble()) * 1609.34
             nearbyService.fetchNearby(fix.latitude, fix.longitude, meters)
         }
@@ -118,10 +128,9 @@ fun LandmarkMapScreen(
         }
     }
 
-    // 🚀 FIXED: Isolated the Box and map constraints to prevent touch ingestion bugs
     Box(modifier = Modifier.fillMaxSize()) {
         GoogleMap(
-            modifier = Modifier.fillMaxSize().padding(bottom = paddingValues.calculateBottomPadding()), // iOS safe area match
+            modifier = Modifier.fillMaxSize().padding(bottom = paddingValues.calculateBottomPadding()),
             cameraPositionState = cameraPositionState,
             properties = MapProperties(
                 isMyLocationEnabled = locationState !is LookSeeLocationState.PermissionRequired,
@@ -131,15 +140,22 @@ fun LandmarkMapScreen(
                 myLocationButtonEnabled = true,
                 compassEnabled = true,
                 zoomControlsEnabled = false,
-                scrollGesturesEnabled = true, // 🚀 Explicitly forced to true
+                scrollGesturesEnabled = true,
                 tiltGesturesEnabled = true,
                 zoomGesturesEnabled = true,
                 rotationGesturesEnabled = true
             )
         ) {
             activeLandmarks.forEach { landmark ->
-                val state = rememberUpdatedMarkerState(position = LatLng(landmark.latitude, landmark.longitude))
+                // 🚀 THE FIX: properly initialized rememberMarkerState
+                val state = rememberMarkerState(
+                    key = landmark.landmarkId,
+                    position = LatLng(landmark.latitude, landmark.longitude)
+                )
+
+                // 🚀 THE FIX: Added "keys = arrayOf(landmark.landmarkId)" - Compose will swallow markers without this!
                 MarkerComposable(
+                    keys = arrayOf(landmark.landmarkId),
                     state = state,
                     onClick = {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -155,103 +171,125 @@ fun LandmarkMapScreen(
             }
         }
 
-        // Overlay UI: Search and Filters
-        Column(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .statusBarsPadding()
-                .padding(top = 16.dp, start = 20.dp, end = 20.dp), // iOS topChromeReservedHeight spacing match
-            horizontalAlignment = Alignment.End,
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+        AnimatedVisibility(
+            visible = true,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.align(Alignment.TopEnd)
         ) {
-            // Search Bar
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                color = Color(0xB32C2C2E), // Match iOS .regularMaterial better
-                shape = RoundedCornerShape(20.dp)
+            Column(
+                modifier = Modifier
+                    .statusBarsPadding()
+                    .padding(top = 80.dp, start = 20.dp, end = 20.dp),
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                // Search Bar
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = Color(0xB32C2C2E),
+                    shape = RoundedCornerShape(20.dp)
                 ) {
-                    Icon(Icons.Default.Search, contentDescription = null, tint = AppleBlue, modifier = Modifier.size(20.dp))
-                    Spacer(Modifier.width(12.dp))
-                    Box(modifier = Modifier.weight(1f)) {
-                        if (searchText.isEmpty()) {
-                            Text("Search landmarks...", color = Color.Gray, fontSize = 16.sp, fontWeight = FontWeight.Medium)
-                        }
-                        androidx.compose.foundation.text.BasicTextField(
-                            value = searchText,
-                            onValueChange = { searchText = it },
-                            textStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Medium),
-                            modifier = Modifier.fillMaxWidth(),
-                            cursorBrush = androidx.compose.ui.graphics.SolidColor(AppleBlue),
-                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                                imeAction = androidx.compose.ui.text.input.ImeAction.Search
-                            ),
-                            keyboardActions = androidx.compose.foundation.text.KeyboardActions(
-                                onSearch = {
-                                    activeLandmarks.firstOrNull()?.let { firstMatch ->
-                                        coroutineScope.launch {
-                                            cameraPositionState.animate(
-                                                com.google.android.gms.maps.CameraUpdateFactory.newLatLngZoom(
-                                                    LatLng(firstMatch.latitude, firstMatch.longitude), 17f
-                                                ),
-                                                1000
-                                            )
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Search, contentDescription = null, tint = AppleBlue, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(12.dp))
+                        Box(modifier = Modifier.weight(1f)) {
+                            if (searchText.isEmpty()) {
+                                Text("Search landmarks...", color = Color.Gray, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                            }
+                            androidx.compose.foundation.text.BasicTextField(
+                                value = searchText,
+                                onValueChange = { searchText = it },
+                                textStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Medium),
+                                modifier = Modifier.fillMaxWidth(),
+                                cursorBrush = androidx.compose.ui.graphics.SolidColor(AppleBlue),
+                                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                                    imeAction = androidx.compose.ui.text.input.ImeAction.Search
+                                ),
+                                keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+                                    onSearch = {
+                                        activeLandmarks.firstOrNull()?.let { firstMatch ->
+                                            coroutineScope.launch {
+                                                cameraPositionState.animate(
+                                                    com.google.android.gms.maps.CameraUpdateFactory.newLatLngZoom(
+                                                        LatLng(firstMatch.latitude, firstMatch.longitude), 17f
+                                                    ),
+                                                    1000
+                                                )
+                                            }
                                         }
                                     }
-                                }
+                                )
                             )
-                        )
-                    }
-                    if (searchText.isNotEmpty()) {
-                        Icon(
-                            Icons.Default.Cancel,
-                            contentDescription = "Clear",
-                            tint = Color.Gray,
-                            modifier = Modifier
-                                .size(20.dp)
-                                .clickable { searchText = "" }
-                        )
+                        }
+                        if (searchText.isNotEmpty()) {
+                            Icon(
+                                Icons.Default.Cancel,
+                                contentDescription = "Clear",
+                                tint = Color.Gray,
+                                modifier = Modifier
+                                    .size(20.dp)
+                                    .clickable { searchText = "" }
+                            )
+                        }
                     }
                 }
-            }
 
-            // Filter FAB
-            Box(
-                modifier = Modifier
-                    .size(50.dp)
-                    .clip(CircleShape)
-                    .background(Color(0xB32C2C2E))
-                    .clickable {
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        showFilterSheet = true
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                BadgedBox(badge = {
-                    if (myUploadsOnly || promotedOnly || selectedClusters.isNotEmpty()) {
-                        Badge(containerColor = AppleOrange, modifier = Modifier.size(14.dp).offset(x = (-2).dp, y = 2.dp))
+                // Filter FAB
+                Box(
+                    modifier = Modifier
+                        .size(50.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xB32C2C2E))
+                        .clickable {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            showFilterSheet = true
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    BadgedBox(badge = {
+                        if (myUploadsOnly || promotedOnly || selectedClusters.isNotEmpty()) {
+                            Badge(containerColor = AppleOrange, modifier = Modifier.size(14.dp).offset(x = (-2).dp, y = 2.dp))
+                        }
+                    }) {
+                        Icon(Icons.Default.Tune, contentDescription = "Filter", tint = Color.White, modifier = Modifier.size(20.dp))
                     }
-                }) {
-                    Icon(Icons.Default.Tune, contentDescription = "Filter", tint = Color.White, modifier = Modifier.size(20.dp))
                 }
             }
         }
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .fillMaxHeight()
+                .width(40.dp)
+                .background(Color.Transparent)
+                .pointerInput(Unit) {
+                    detectDragGestures { change, dragAmount ->
+                        if (dragAmount.x > 20f) {
+                            change.consume()
+                            onSwipeToScan()
+                        }
+                    }
+                }
+        )
     }
 
     if (showFilterSheet) {
         ModalBottomSheet(
-            onDismissRequest = { 
-                showFilterSheet = false 
+            onDismissRequest = {
+                showFilterSheet = false
                 val target = cameraPositionState.position.target
                 val meters = (if (isGlobalSearch) 50000.0 else searchRadiusMiles.toDouble()) * 1609.34
                 coroutineScope.launch {
                     nearbyService.fetchNearby(target.latitude, target.longitude, meters)
                 }
             },
-            containerColor = Color(0xFF1C1C1E),
+            sheetState = filterSheetState,
+            containerColor = Color(0xFFF2F2F7),
             dragHandle = { BottomSheetDefaults.DragHandle() },
             scrimColor = Color.Black.copy(alpha = 0.5f)
         ) {
@@ -266,8 +304,8 @@ fun LandmarkMapScreen(
                 onPromotedChange = { promotedOnly = it },
                 availableClusters = availableClusters,
                 selectedClusters = selectedClusters,
-                onApply = { 
-                    showFilterSheet = false 
+                onApply = {
+                    showFilterSheet = false
                     val target = cameraPositionState.position.target
                     val meters = (if (isGlobalSearch) 50000.0 else searchRadiusMiles.toDouble()) * 1609.34
                     coroutineScope.launch {
@@ -279,12 +317,10 @@ fun LandmarkMapScreen(
     }
 }
 
-// 🚀 FIXED: Custom marker shapes that perfectly match the iOS map screenshot!
 @Composable
 fun LandmarkMarker(landmark: NearbyLandmark, isSelected: Boolean) {
     val scale by animateFloatAsState(targetValue = if (isSelected) 1.3f else 1.0f, label = "marker_scale")
 
-    // Provide a fixed-size container so Compose doesn't change layout size, which stops map jumping
     Box(
         contentAlignment = Alignment.Center,
         modifier = Modifier.size(60.dp)
@@ -298,11 +334,11 @@ fun LandmarkMarker(landmark: NearbyLandmark, isSelected: Boolean) {
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
                         .size(36.dp)
-                        .clip(CircleShape)
-                        .background(AppleOrange)
-                        .shadow(6.dp, CircleShape)
+                        .shadow(4.dp, CircleShape)
+                        .background(AppleOrange, CircleShape)
+                        .border(2.dp, Color.White, CircleShape)
                 ) {
-                    Text("👑", fontSize = 18.sp) // matching "crown.fill"
+                    Text("👑", fontSize = 18.sp)
                 }
                 Icon(
                     Icons.Default.ArrowDropDown,
@@ -310,23 +346,22 @@ fun LandmarkMarker(landmark: NearbyLandmark, isSelected: Boolean) {
                     tint = AppleOrange,
                     modifier = Modifier
                         .size(24.dp)
-                        .offset(y = (-8).dp)
+                        .offset(y = (-10).dp)
                 )
             } else {
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
-                        .size(36.dp)
-                        .clip(CircleShape)
-                        .background(Color.White)
+                        .size(32.dp)
                         .shadow(4.dp, CircleShape)
+                        .background(AppleBlue, CircleShape)
+                        .border(2.dp, Color.White, CircleShape)
                 ) {
-                    // Match iOS "mappin.circle.fill" primary color style
                     Icon(
                         imageVector = Icons.Default.LocationOn,
                         contentDescription = null,
-                        tint = AppleBlue,
-                        modifier = Modifier.size(24.dp)
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
                     )
                 }
                 Icon(
@@ -335,7 +370,7 @@ fun LandmarkMarker(landmark: NearbyLandmark, isSelected: Boolean) {
                     tint = AppleBlue,
                     modifier = Modifier
                         .size(24.dp)
-                        .offset(y = (-8).dp)
+                        .offset(y = (-10).dp)
                 )
             }
         }
@@ -356,58 +391,84 @@ fun FilterMenuContent(
     selectedClusters: MutableList<String>,
     onApply: () -> Unit
 ) {
+    val iOSLightBackground = Color(0xFFF2F2F7)
+    val iOSCardBackground = Color.White
+    val iOSTextPrimary = Color.Black
+    val iOSTextSecondary = Color(0xFF6E6E73)
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp)
-            .padding(bottom = 20.dp)
+            .background(iOSLightBackground)
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+        Box(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
         ) {
-            Text("Map Filters", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White)
-            TextButton(onClick = onApply) {
-                Text("Apply", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = AppleBlue)
+            Text(
+                "Map Filters",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                color = iOSTextPrimary,
+                modifier = Modifier.align(Alignment.Center)
+            )
+
+            Button(
+                onClick = onApply,
+                modifier = Modifier.align(Alignment.CenterEnd).height(32.dp),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 0.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = AppleBlue.copy(alpha = 0.12f), contentColor = AppleBlue),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Text("Apply", fontSize = 15.sp, fontWeight = FontWeight.Bold)
             }
         }
-        
-        Column(modifier = Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(24.dp)) {
-            FilterSection(title = "Search Radius") {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Global Search (Everywhere)", color = Color.White, modifier = Modifier.weight(1f))
-                    Switch(checked = isGlobalSearch, onCheckedChange = onGlobalSearchChange, colors = SwitchDefaults.colors(checkedThumbColor = AppleBlue, checkedTrackColor = AppleBlue.copy(alpha = 0.5f)))
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f, fill = false)
+                .verticalScroll(rememberScrollState())
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(24.dp)
+        ) {
+            FilterSection(title = "SEARCH RADIUS", cardColor = iOSCardBackground, titleColor = iOSTextSecondary) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(16.dp)) {
+                    Text("Global Search (Everywhere)", color = iOSTextPrimary, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                    Switch(checked = isGlobalSearch, onCheckedChange = onGlobalSearchChange, colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = AppleBlue))
                 }
                 if (!isGlobalSearch) {
-                    HorizontalDivider(color = Color.White.copy(alpha = 0.1f), modifier = Modifier.padding(vertical = 8.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Distance: ${searchRadiusMiles.toInt()} mi", color = Color.White, modifier = Modifier.weight(1f))
+                    HorizontalDivider(color = Color.LightGray.copy(alpha = 0.5f), modifier = Modifier.padding(start = 16.dp))
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Distance:", color = iOSTextPrimary, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                            Text("${searchRadiusMiles.toInt()}", color = iOSTextPrimary, fontSize = 16.sp)
+                            Text(" mi", color = iOSTextSecondary, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Slider(
+                            value = searchRadiusMiles,
+                            onValueChange = onSearchRadiusChange,
+                            valueRange = 1f..100f,
+                            colors = SliderDefaults.colors(thumbColor = AppleBlue, activeTrackColor = AppleBlue, inactiveTrackColor = Color.LightGray)
+                        )
                     }
-                    Slider(
-                        value = searchRadiusMiles,
-                        onValueChange = onSearchRadiusChange,
-                        valueRange = 1f..100f,
-                        colors = SliderDefaults.colors(thumbColor = AppleBlue, activeTrackColor = AppleBlue)
-                    )
                 }
             }
 
-            FilterSection(title = "Visibility") {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("My Uploads Only", color = Color.White, modifier = Modifier.weight(1f))
-                    Switch(checked = myUploadsOnly, onCheckedChange = onMyUploadsChange, colors = SwitchDefaults.colors(checkedThumbColor = AppleBlue, checkedTrackColor = AppleBlue.copy(alpha = 0.5f)))
+            FilterSection(title = "VISIBILITY", cardColor = iOSCardBackground, titleColor = iOSTextSecondary) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                    Text("My Uploads Only", color = iOSTextPrimary, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                    Switch(checked = myUploadsOnly, onCheckedChange = onMyUploadsChange, colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = AppleBlue))
                 }
-                HorizontalDivider(color = Color.White.copy(alpha = 0.1f), modifier = Modifier.padding(vertical = 8.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Promoted Only", color = Color.White, modifier = Modifier.weight(1f))
-                    Switch(checked = promotedOnly, onCheckedChange = onPromotedChange, colors = SwitchDefaults.colors(checkedThumbColor = AppleOrange, checkedTrackColor = AppleOrange.copy(alpha = 0.5f)))
+                HorizontalDivider(color = Color.LightGray.copy(alpha = 0.5f), modifier = Modifier.padding(start = 16.dp))
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                    Text("Promoted Only", color = iOSTextPrimary, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                    Switch(checked = promotedOnly, onCheckedChange = onPromotedChange, colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = Color.LightGray, uncheckedTrackColor = Color.LightGray))
                 }
             }
 
             if (availableClusters.isNotEmpty()) {
-                FilterSection(title = "Filter by Cluster") {
-                    availableClusters.forEach { clusterId ->
+                FilterSection(title = "FILTER BY CLUSTER", cardColor = iOSCardBackground, titleColor = iOSTextSecondary) {
+                    availableClusters.forEachIndexed { index, clusterId ->
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -415,33 +476,37 @@ fun FilterMenuContent(
                                     if (clusterId in selectedClusters) selectedClusters.remove(clusterId)
                                     else selectedClusters.add(clusterId)
                                 }
-                                .padding(vertical = 8.dp),
+                                .padding(horizontal = 16.dp, vertical = 14.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("Cluster $clusterId", color = Color.White, modifier = Modifier.weight(1f))
+                            Text("Cluster $clusterId", color = AppleBlue, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
                             if (clusterId in selectedClusters) {
-                                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = AppleBlue)
+                                Icon(Icons.Default.RadioButtonChecked, contentDescription = null, tint = AppleBlue)
                             } else {
-                                Icon(Icons.Default.RadioButtonUnchecked, contentDescription = null, tint = Color.Gray)
+                                Icon(Icons.Default.RadioButtonUnchecked, contentDescription = null, tint = Color.LightGray)
                             }
+                        }
+                        if (index < availableClusters.size - 1) {
+                            HorizontalDivider(color = Color.LightGray.copy(alpha = 0.5f), modifier = Modifier.padding(start = 16.dp))
                         }
                     }
                 }
             }
+            Spacer(modifier = Modifier.height(20.dp))
         }
     }
 }
 
 @Composable
-fun FilterSection(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(title.uppercase(), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+fun FilterSection(title: String, cardColor: Color = Color.White.copy(alpha = 0.05f), titleColor: Color = Color.Gray, content: @Composable ColumnScope.() -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(title.uppercase(), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = titleColor, modifier = Modifier.padding(horizontal = 16.dp))
         Surface(
-            color = Color.White.copy(alpha = 0.05f),
+            color = cardColor,
             shape = RoundedCornerShape(16.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Column(modifier = Modifier.padding(16.dp)) {
+            Column {
                 content()
             }
         }

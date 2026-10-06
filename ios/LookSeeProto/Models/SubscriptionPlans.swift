@@ -20,6 +20,8 @@ struct SubscriptionPlans: View {
     @State private var paymentSheet: PaymentSheet?
     @State private var showPaymentSheet = false
     @State private var paymentStatusMessage: String?
+    @State private var currentOrderId: String? = nil
+    @State private var wasPaymentSuccessful = false
     
     @State private var pendingTokenReward: Int = 0
     @State private var tokenBalanceBeforePurchase: Int = 0
@@ -134,6 +136,7 @@ struct SubscriptionPlans: View {
                 }
                 
                 if let action = presenter.resumeCheckoutAction {
+                    wasPaymentSuccessful = false
                     if action == "yearly" {
                         selectedAddOnIndex = presenter.savedAddOnIndex
                         selectedTab = 0
@@ -142,7 +145,6 @@ struct SubscriptionPlans: View {
                     } else if action == "trial" {
                         selectedTab = 2
                         isProcessing = true
-                        // 🚀 Reroute to Stripe instead of the old direct bypass
                         Task { await preparePaymentSheet(purchaseType: "yearly_subscription", isFreeTrial: true) }
                     } else if action == "tokens" {
                         selectedTab = 1
@@ -165,6 +167,25 @@ struct SubscriptionPlans: View {
                     if let ps = paymentSheet { Color.clear.paymentSheet(isPresented: $showPaymentSheet, paymentSheet: ps, onCompletion: onPaymentCompletion) }
                 }
             )
+            .onChange(of: showPaymentSheet) { _, isShowing in
+                if !isShowing && !wasPaymentSuccessful {
+                    if let orderToCancel = currentOrderId {
+                        // 🚀 Synchronous wipe prevents the double-firing race condition
+                        self.currentOrderId = nil
+                        print("🟡 Stripe sheet disappeared manually! Triggering cancellation.")
+                        Task {
+                            await cancelPendingOrder(orderId: orderToCancel)
+                            await MainActor.run {
+                                self.isProcessing = false
+                                self.presenter.resumeCheckoutAction = nil
+                            }
+                        }
+                    } else {
+                        self.isProcessing = false
+                        self.presenter.resumeCheckoutAction = nil
+                    }
+                }
+            }
         }
         .environment(\.colorScheme, .dark)
         .interactiveDismissDisabled(isProcessing)
@@ -264,6 +285,7 @@ struct SubscriptionPlans: View {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { presenter.showSignUpSheet = true }
                 } else {
                     isProcessing = true
+                    wasPaymentSuccessful = false
                     Task { await preparePaymentSheet(purchaseType: "yearly_subscription") }
                 }
             } label: {
@@ -315,7 +337,6 @@ struct SubscriptionPlans: View {
             Divider().background(Color.white.opacity(0.12)).padding(.vertical, 14)
             
             VStack(alignment: .leading, spacing: 10) {
-                // 🚀 Changed token count and updated feature descriptions
                 featureRow("Includes exactly 2 Tokens")
                 featureRow("Full access to business tools")
                 featureRow("Auto-renews to 1-Year Plan ($10)")
@@ -323,7 +344,6 @@ struct SubscriptionPlans: View {
             
             Spacer()
             
-            // 🚀 Clear payment disclaimer before they trigger Apple Pay
             Text("Payment information is required to start your trial. You will not be charged today. If you do not cancel before your 14 days are up, you will be billed $10 for the 1-Year Business Plan. Cancel anytime.")
                 .font(.system(size: 11))
                 .foregroundStyle(secondaryTextColor)
@@ -339,7 +359,7 @@ struct SubscriptionPlans: View {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { presenter.showSignUpSheet = true }
                 } else {
                     isProcessing = true
-                    // 🚀 Requests payment sheet for the Trial via Stripe Subscription payload
+                    wasPaymentSuccessful = false
                     Task { await preparePaymentSheet(purchaseType: "yearly_subscription", isFreeTrial: true) }
                 }
             } label: {
@@ -448,6 +468,7 @@ struct SubscriptionPlans: View {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { presenter.showSignUpSheet = true }
             } else {
                 isProcessing = true
+                wasPaymentSuccessful = false
                 Task { await preparePaymentSheet(purchaseType: "token_pack", amountCents: amountCents, tokenCount: tokens) }
             }
         } label: {
@@ -461,7 +482,6 @@ struct SubscriptionPlans: View {
         .disabled(isProcessing)
     }
 
-    // 🚀 THE FIX: preparePaymentSheet now handles isFreeTrial safely
     private func preparePaymentSheet(purchaseType: String, amountCents: Int = 0, tokenCount: Int = 0, isFreeTrial: Bool = false) async {
         await vm.fetchUserDetails()
         tokenBalanceBeforePurchase = vm.tokenBalance
@@ -476,7 +496,7 @@ struct SubscriptionPlans: View {
             pendingTokenReward = tokenCount
         } else if purchaseType == "yearly_subscription" {
             if isFreeTrial {
-                pendingTokenReward = 2 // 🚀 Local reference updated to 2
+                pendingTokenReward = 2
             } else {
                 pendingTokenReward = selectedPlan.baseTokens + addOns[selectedAddOnIndex].tokens
             }
@@ -494,7 +514,16 @@ struct SubscriptionPlans: View {
         }
         request.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
         
-        var body: [String: Any] = ["purchaseType": purchaseType, "userId": vm.userId, "userEmail": vm.userEmail]
+        // 🚀 THE FIX: Force lowercase so DynamoDB matches the format saved by Python
+        let newOrderId = UUID().uuidString.lowercased()
+        self.currentOrderId = newOrderId
+        
+        var body: [String: Any] = [
+            "purchaseType": purchaseType,
+            "userId": vm.userId,
+            "userEmail": vm.userEmail,
+            "checkoutRequestId": newOrderId
+        ]
         
         if purchaseType == "token_pack" {
             body["amountCents"] = amountCents
@@ -516,14 +545,18 @@ struct SubscriptionPlans: View {
         
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         
-        // 🚀 ADDED: Attaches App Attest and Cognito token headers automatically
         await request.signWithAppAttest(idToken: idToken)
         
         do {
             let (data, _) = try await URLSession.shared.data(for: request)
             if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
                 if let errorMsg = json["error"] as? String {
-                    DispatchQueue.main.async { self.isProcessing = false; self.presenter.resumeCheckoutAction = nil; self.paymentStatusMessage = String(localized: "Stripe Error: \(errorMsg)") }
+                    DispatchQueue.main.async {
+                        self.isProcessing = false
+                        self.currentOrderId = nil
+                        self.presenter.resumeCheckoutAction = nil
+                        self.paymentStatusMessage = String(localized: "Stripe Error: \(errorMsg)")
+                    }
                     return
                 }
                 
@@ -580,6 +613,7 @@ struct SubscriptionPlans: View {
         switch result {
         case .completed:
             UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+            wasPaymentSuccessful = true
             
             Task {
                 let backendConfirmed = await waitForWebhookConfirmation()
@@ -617,10 +651,65 @@ struct SubscriptionPlans: View {
             }
              
         case .canceled, .failed:
-            DispatchQueue.main.async {
-                self.isProcessing = false
-                self.presenter.resumeCheckoutAction = nil
+            if let orderToCancel = currentOrderId {
+                self.currentOrderId = nil // 🚀 Instantly removed so the UI dismiss doesn't fire it again
+                print("🟡 Stripe returned canceled/failed. Triggering cancellation.")
+                Task {
+                    await cancelPendingOrder(orderId: orderToCancel)
+                    await MainActor.run {
+                        self.isProcessing = false
+                        self.presenter.resumeCheckoutAction = nil
+                    }
+                }
+            } else {
+                DispatchQueue.main.async {
+                    self.isProcessing = false
+                    self.presenter.resumeCheckoutAction = nil
+                }
             }
+        }
+    }
+    
+    // 🚀 Pass the orderId directly in so we don't rely on the global variable that we just wiped
+    private func cancelPendingOrder(orderId: String) async {
+        guard let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/checkout") else {
+            print("🚨 CANCEL ERROR: Invalid URL")
+            return
+        }
+        
+        print("🟡 Attempting to cancel pending order: \(orderId)")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let idToken = await vm.fetchIdToken()
+        guard !idToken.isEmpty else {
+            print("🚨 CANCEL ERROR: Missing auth token")
+            return
+        }
+        request.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
+        
+        let body: [String: Any] = [
+            "purchaseType": "cancel_pending_checkout",
+            "userId": vm.userId,
+            "orderId": orderId
+        ]
+        
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        await request.signWithAppAttest(idToken: idToken)
+        
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse {
+                let responseBody = String(data: data, encoding: .utf8) ?? "Empty body"
+                if httpResponse.statusCode == 200 {
+                    print("✅ Successfully canceled pending order: \(orderId)")
+                } else {
+                    print("🚨 BACKEND REJECTED CANCELLATION (Code \(httpResponse.statusCode)): \(responseBody)")
+                }
+            }
+        } catch {
+            print("🚨 NETWORK ERROR DURING CANCELLATION: \(error)")
         }
     }
 }

@@ -443,7 +443,8 @@ fun ButtonsScreen(
                         LandmarkMapScreen(
                             vm = vm, 
                             nearbyService = nearbyService, 
-                            locationManager = locationManager, 
+                            locationManager = locationManager,
+                            onSwipeToScan = { coroutineScope.launch { pagerState.animateScrollToPage(0) } },
                             paddingValues = paddingValues
                         )
                 }

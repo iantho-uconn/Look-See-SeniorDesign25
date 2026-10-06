@@ -334,7 +334,7 @@ struct ReportIssueView: View {
 
             Task {
                 // 1. Prepare the JSON Payload
-                let payload: [String: Any] = [
+                var payload: [String: Any] = [
                     "email": safeEmail,
                     "category": safeCategory,
                     "severity": safeSeverity,
@@ -342,13 +342,30 @@ struct ReportIssueView: View {
                     "description": safeDesc
                 ]
 
+                // Resize the massive iPhone screenshot
+                if let originalImage = screenshot {
+                    let maxWidth: CGFloat = 800
+                    let scale = maxWidth / originalImage.size.width
+                    let newHeight = originalImage.size.height * scale
+                    let newSize = CGSize(width: maxWidth, height: newHeight)
+                    
+                    UIGraphicsBeginImageContextWithOptions(newSize, false, 1.0)
+                    originalImage.draw(in: CGRect(origin: .zero, size: newSize))
+                    let resizedImage = UIGraphicsGetImageFromCurrentImageContext()
+                    UIGraphicsEndImageContext()
+                    
+                    if let jpegData = resizedImage?.jpegData(compressionQuality: 0.6) {
+                        payload["screenshotBase64"] = jpegData.base64EncodedString()
+                        payload["screenshotMimeType"] = "image/jpeg"
+                    }
+                }
+
                 guard let jsonData = try? JSONSerialization.data(withJSONObject: payload) else {
                     await MainActor.run { isResolvingIdentity = false }
                     return
                 }
 
                 // 2. Make the HTTP POST Request
-                // 🚀 Uses your secure CloudFront endpoint
                 guard let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/support/report") else { return }
                 
                 var request = URLRequest(url: url)
@@ -357,18 +374,24 @@ struct ReportIssueView: View {
                 request.httpBody = jsonData
 
                 do {
-                    let (_, response) = try await URLSession.shared.data(for: request)
-                    if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
-                        await MainActor.run {
-                            isResolvingIdentity = false
-                            showSentConfirmation = true
+                    let (data, response) = try await URLSession.shared.data(for: request)
+                    
+                    if let httpResponse = response as? HTTPURLResponse {
+                        if httpResponse.statusCode == 200 {
+                            await MainActor.run {
+                                isResolvingIdentity = false
+                                showSentConfirmation = true
+                            }
+                        } else {
+                            // 🚀 THE FIX: We are now extracting the EXACT error message from the backend!
+                            let errorBody = String(data: data, encoding: .utf8) ?? "No data"
+                            print("🚨 BACKEND ERROR \(httpResponse.statusCode): \(errorBody)")
+                            
+                            await MainActor.run { isResolvingIdentity = false }
                         }
-                    } else {
-                        print("Backend rejected the support ticket.")
-                        await MainActor.run { isResolvingIdentity = false }
                     }
                 } catch {
-                    print("Failed to send support ticket: \(error)")
+                    print("🚨 NETWORK ERROR: \(error)")
                     await MainActor.run { isResolvingIdentity = false }
                 }
             }

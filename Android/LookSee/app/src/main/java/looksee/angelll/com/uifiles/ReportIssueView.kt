@@ -75,6 +75,22 @@ fun ReportIssueView(
         
         val draft = MailReportService.buildDraft(report, vm.userEmail, deviceInfo)
         
+        // 🚀 Compress and Base64 encode the screenshot if one exists
+        var screenshotBase64: String? = null
+        screenshotUri?.let { uri ->
+            try {
+                val inputStream = context.contentResolver.openInputStream(uri)
+                val bitmap = android.graphics.BitmapFactory.decodeStream(inputStream)
+                val outputStream = java.io.ByteArrayOutputStream()
+                // Compress to JPEG at 70% quality to prevent payload from being too massive
+                bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 70, outputStream)
+                val imageBytes = outputStream.toByteArray()
+                screenshotBase64 = android.util.Base64.encodeToString(imageBytes, android.util.Base64.NO_WRAP)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+        
         // 🚀 Uses your secure CloudFront endpoint to route this to Jira
         val payload = org.json.JSONObject().apply {
             put("email", vm.userEmail.ifEmpty { "unknown@user.com" })
@@ -82,6 +98,10 @@ fun ReportIssueView(
             put("severity", severity.name)
             put("title", "[${category.displayName}] $title")
             put("description", draft.body)
+            if (screenshotBase64 != null) {
+                put("screenshotBase64", screenshotBase64)
+                put("screenshotMimeType", "image/jpeg")
+            }
         }
 
         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
