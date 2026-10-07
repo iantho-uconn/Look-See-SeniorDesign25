@@ -20,6 +20,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -52,6 +53,7 @@ fun LandmarkMapScreen(
 ) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
+    val focusManager = LocalFocusManager.current
     val infoView = remember { VariableContainer.shared }
     val coroutineScope = rememberCoroutineScope()
 
@@ -61,7 +63,6 @@ fun LandmarkMapScreen(
     var showFilterSheet by remember { mutableStateOf(false) }
     var searchText by remember { mutableStateOf("") }
 
-    // 🚀 THE FIX: Defaulted isGlobalSearch to false so we don't query an 80,000km radius and crash the backend query
     var isGlobalSearch by remember { mutableStateOf(false) }
     var searchRadiusMiles by remember { mutableStateOf(10.0f) }
     var myUploadsOnly by remember { mutableStateOf(false) }
@@ -74,7 +75,6 @@ fun LandmarkMapScreen(
 
     val filterSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    // Filter Logic
     val activeLandmarks = remember(rawLandmarks, searchText, myUploadsOnly, promotedOnly, selectedClusters.toList()) {
         rawLandmarks.filter { landmark ->
             val matchesUser = if (myUploadsOnly) landmark.createdBy == vm.userEmail else true
@@ -101,7 +101,6 @@ fun LandmarkMapScreen(
         if (locationManager.hasLocationPermission()) {
             locationManager.start()
         }
-        // 🚀 THE FIX: Even if GPS is hanging on the emulator, immediately fetch landmarks for the default camera view!
         val fallbackTarget = cameraPositionState.position.target
         val meters = (if (isGlobalSearch) 50000.0 else searchRadiusMiles.toDouble()) * 1609.34
         nearbyService.fetchNearby(fallbackTarget.latitude, fallbackTarget.longitude, meters)
@@ -128,9 +127,10 @@ fun LandmarkMapScreen(
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+
         GoogleMap(
-            modifier = Modifier.fillMaxSize().padding(bottom = paddingValues.calculateBottomPadding()),
+            modifier = Modifier.fillMaxSize(),
             cameraPositionState = cameraPositionState,
             properties = MapProperties(
                 isMyLocationEnabled = locationState !is LookSeeLocationState.PermissionRequired,
@@ -147,18 +147,17 @@ fun LandmarkMapScreen(
             )
         ) {
             activeLandmarks.forEach { landmark ->
-                // 🚀 THE FIX: properly initialized rememberMarkerState
                 val state = rememberMarkerState(
                     key = landmark.landmarkId,
                     position = LatLng(landmark.latitude, landmark.longitude)
                 )
 
-                // 🚀 THE FIX: Added "keys = arrayOf(landmark.landmarkId)" - Compose will swallow markers without this!
                 MarkerComposable(
                     keys = arrayOf(landmark.landmarkId),
                     state = state,
                     onClick = {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        focusManager.clearFocus()
                         infoView.presentNearbyLandmark(landmark)
                         true
                     }
@@ -179,7 +178,9 @@ fun LandmarkMapScreen(
         ) {
             Column(
                 modifier = Modifier
-                    .statusBarsPadding()
+                    .fillMaxWidth()
+                    // 🚀 THE FIX: Use safeDrawingPadding() again now that the rigid background blocks are gone
+                    .safeDrawingPadding()
                     .padding(top = 80.dp, start = 20.dp, end = 20.dp),
                 horizontalAlignment = Alignment.End,
                 verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -211,6 +212,8 @@ fun LandmarkMapScreen(
                                 ),
                                 keyboardActions = androidx.compose.foundation.text.KeyboardActions(
                                     onSearch = {
+                                        focusManager.clearFocus()
+
                                         activeLandmarks.firstOrNull()?.let { firstMatch ->
                                             coroutineScope.launch {
                                                 cameraPositionState.animate(
@@ -232,7 +235,10 @@ fun LandmarkMapScreen(
                                 tint = Color.Gray,
                                 modifier = Modifier
                                     .size(20.dp)
-                                    .clickable { searchText = "" }
+                                    .clickable {
+                                        searchText = ""
+                                        focusManager.clearFocus()
+                                    }
                             )
                         }
                     }
@@ -246,6 +252,7 @@ fun LandmarkMapScreen(
                         .background(Color(0xB32C2C2E))
                         .clickable {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            focusManager.clearFocus()
                             showFilterSheet = true
                         },
                     contentAlignment = Alignment.Center
@@ -276,6 +283,25 @@ fun LandmarkMapScreen(
                     }
                 }
         )
+
+        // Transparent dismissal layer for the popup
+        if (infoView.infoView) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.35f)
+                    .align(Alignment.BottomCenter)
+                    .background(Color.Transparent)
+                    .pointerInput(Unit) {
+                        detectDragGestures { change, dragAmount ->
+                            if (dragAmount.y > 15f) {
+                                change.consume()
+                                infoView.infoView = false
+                            }
+                        }
+                    }
+            )
+        }
     }
 
     if (showFilterSheet) {

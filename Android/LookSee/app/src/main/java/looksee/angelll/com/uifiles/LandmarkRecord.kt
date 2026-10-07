@@ -14,6 +14,7 @@ import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -29,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
@@ -51,10 +53,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.ceil
 import kotlin.math.max
+import kotlin.math.min
 import looksee.angelll.com.detection.*
 import looksee.angelll.com.models.*
 import looksee.angelll.com.ui.theme.*
@@ -66,12 +71,11 @@ fun TextScannerSheet(
     onTextScanned: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
-    // 🚀 THE FIX: Force the sheet to skip the half-way expanded state
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = sheetState, // 🚀 Apply the state here
+        sheetState = sheetState,
         containerColor = Color(0xFF1C1C1E),
         dragHandle = null,
         contentWindowInsets = { WindowInsets(0.dp) },
@@ -119,6 +123,12 @@ private fun TextScannerCameraView(onTextTapped: (String) -> Unit) {
     var imageWidth by remember { mutableIntStateOf(1) }
     var imageHeight by remember { mutableIntStateOf(1) }
 
+    var camera by remember { mutableStateOf<Camera?>(null) }
+    var currentZoom by remember { mutableFloatStateOf(1f) }
+    var maxZoomRatio by remember { mutableFloatStateOf(5f) }
+
+    val isAnalyzing = remember { AtomicBoolean(false) }
+
     DisposableEffect(Unit) {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
         val executor = Executors.newSingleThreadExecutor()
@@ -137,25 +147,29 @@ private fun TextScannerCameraView(onTextTapped: (String) -> Unit) {
                 .build()
                 .also { analysis ->
                     analysis.setAnalyzer(executor) { imageProxy ->
+                        if (isAnalyzing.get()) {
+                            imageProxy.close()
+                            return@setAnalyzer
+                        }
+
                         val mediaImage = imageProxy.image
                         if (mediaImage != null) {
+                            isAnalyzing.set(true)
                             val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
 
                             val isPortrait = imageProxy.imageInfo.rotationDegrees == 90 || imageProxy.imageInfo.rotationDegrees == 270
                             val newWidth = if (isPortrait) imageProxy.height else imageProxy.width
                             val newHeight = if (isPortrait) imageProxy.width else imageProxy.height
 
-                            if (imageWidth != newWidth || imageHeight != newHeight) {
-                                imageWidth = newWidth
-                                imageHeight = newHeight
-                            }
-
                             recognizer.process(image)
                                 .addOnSuccessListener { visionText ->
+                                    imageWidth = newWidth
+                                    imageHeight = newHeight
                                     recognizedTextBlocks = visionText.textBlocks
                                 }
                                 .addOnCompleteListener {
                                     imageProxy.close()
+                                    isAnalyzing.set(false)
                                 }
                         } else {
                             imageProxy.close()
@@ -167,7 +181,12 @@ private fun TextScannerCameraView(onTextTapped: (String) -> Unit) {
 
             try {
                 cameraProvider?.unbindAll()
-                cameraProvider?.bindToLifecycle(lifecycleOwner, cameraSelector, preview, imageAnalyzer)
+                val boundCamera = cameraProvider?.bindToLifecycle(lifecycleOwner, cameraSelector, preview, imageAnalyzer)
+                camera = boundCamera
+                boundCamera?.cameraInfo?.zoomState?.observe(lifecycleOwner) { state ->
+                    currentZoom = state.zoomRatio
+                    maxZoomRatio = state.maxZoomRatio.coerceAtMost(5f)
+                }
             } catch (e: Exception) {
                 Log.e("LookSeeScanner", "Use case binding failed", e)
             }
@@ -180,7 +199,22 @@ private fun TextScannerCameraView(onTextTapped: (String) -> Unit) {
         }
     }
 
-    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(camera) {
+                detectTransformGestures { _, _, zoom, _ ->
+                    camera?.let { cam ->
+                        val zoomState = cam.cameraInfo.zoomState.value ?: return@detectTransformGestures
+                        val newZoom = (zoomState.zoomRatio * zoom).coerceIn(
+                            zoomState.minZoomRatio,
+                            maxZoomRatio
+                        )
+                        cam.cameraControl.setZoomRatio(newZoom)
+                    }
+                }
+            }
+    ) {
         val containerWidth = constraints.maxWidth.toFloat()
         val containerHeight = constraints.maxHeight.toFloat()
         val density = LocalDensity.current
@@ -192,8 +226,8 @@ private fun TextScannerCameraView(onTextTapped: (String) -> Unit) {
 
         recognizedTextBlocks.forEach { block ->
             block.boundingBox?.let { boundingBox ->
-                val scaleX = containerWidth / imageWidth
-                val scaleY = containerHeight / imageHeight
+                val scaleX = containerWidth / imageWidth.toFloat()
+                val scaleY = containerHeight / imageHeight.toFloat()
                 val scale = maxOf(scaleX, scaleY)
 
                 val scaledWidth = imageWidth * scale
@@ -207,24 +241,57 @@ private fun TextScannerCameraView(onTextTapped: (String) -> Unit) {
                 val right = boundingBox.right * scale + offsetX
                 val bottom = boundingBox.bottom * scale + offsetY
 
-                Box(
-                    modifier = Modifier
-                        .offset(
-                            x = with(density) { left.toDp() },
-                            y = with(density) { top.toDp() }
+                // Strict Viewport Culling: Discard any text that is cropped off screen
+                if (right > 15f && left < containerWidth - 15f && bottom > 15f && top < containerHeight - 15f) {
+                    val boxLeft = max(0f, left)
+                    val boxTop = max(0f, top)
+                    val boxWidth = min(containerWidth, right) - boxLeft
+                    val boxHeight = min(containerHeight, bottom) - boxTop
+
+                    if (boxWidth > 20f && boxHeight > 12f) {
+                        Box(
+                            modifier = Modifier
+                                .offset(
+                                    x = with(density) { boxLeft.toDp() },
+                                    y = with(density) { boxTop.toDp() }
+                                )
+                                .size(
+                                    width = with(density) { boxWidth.toDp() },
+                                    height = with(density) { boxHeight.toDp() }
+                                )
+                                .background(Color(0xFFFFCC00).copy(alpha = 0.25f), RoundedCornerShape(4.dp))
+                                .border(1.5.dp, Color(0xFFFFD60A).copy(alpha = 0.85f), RoundedCornerShape(4.dp))
+                                .clickable {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    onTextTapped(block.text)
+                                }
                         )
-                        .size(
-                            width = with(density) { (right - left).toDp() },
-                            height = with(density) { (bottom - top).toDp() }
-                        )
-                        .background(Color.Yellow.copy(alpha = 0.3f), RoundedCornerShape(4.dp))
-                        .border(2.dp, Color.Yellow, RoundedCornerShape(4.dp))
-                        .clickable {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            onTextTapped(block.text)
-                        }
-                )
+                    }
+                }
             }
+        }
+
+        // Floating Zoom Indicator Pill
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 24.dp)
+                .clip(CircleShape)
+                .background(Color.Black.copy(alpha = 0.65f))
+                .clickable {
+                    camera?.let { cam ->
+                        val nextZoom = if (currentZoom > 1.8f) 1f else 2f
+                        cam.cameraControl.setZoomRatio(nextZoom)
+                    }
+                }
+                .padding(horizontal = 14.dp, vertical = 6.dp)
+        ) {
+            Text(
+                text = String.format(Locale.US, "%.1fx", currentZoom),
+                color = Color.White,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold
+            )
         }
     }
 }
@@ -448,7 +515,7 @@ fun LandmarkRecordScreen(
                     Column(modifier = Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Icon(if (hasMinimumClipDuration) Icons.Default.CheckCircle else Icons.Default.Schedule, contentDescription = null, tint = if (hasMinimumClipDuration) Color.Green else Color(0xFFFFA500), modifier = Modifier.size(16.dp))
-                            Text("${String.format(java.util.Locale.US, "%.1f", totalClipDuration)}s total — ready to upload", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = if (hasMinimumClipDuration) Color.Green else Color(0xFFFFA500))
+                            Text("${String.format(Locale.US, "%.1f", totalClipDuration)}s total — ready to upload", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = if (hasMinimumClipDuration) Color.Green else Color(0xFFFFA500))
                         }
 
                         pickedVideoUris.forEach { uri ->
@@ -469,12 +536,12 @@ fun LandmarkRecordScreen(
                         Icon(Icons.Default.NearMe, contentDescription = null, tint = AppleBlue)
                         Column {
                             if (extractedLatitude != null && extractedLongitude != null) {
-                                Text(String.format(java.util.Locale.US, "%.6f, %.6f", extractedLatitude, extractedLongitude), fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, color = Color.White)
+                                Text(String.format(Locale.US, "%.6f, %.6f", extractedLatitude, extractedLongitude), fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, color = Color.White)
                                 Text("Location Locked", fontSize = 13.sp, color = Color.Gray)
                             } else {
                                 val fix = (locationState as? LookSeeLocationState.Ready)?.fix
                                 if (fix != null) {
-                                    Text(String.format(java.util.Locale.US, "%.6f, %.6f", fix.latitude, fix.longitude), fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, color = Color.White)
+                                    Text(String.format(Locale.US, "%.6f, %.6f", fix.latitude, fix.longitude), fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, color = Color.White)
                                     Text("Accuracy: ±${fix.accuracyMeters.toInt()}m", fontSize = 13.sp, color = Color.Gray)
                                 } else {
                                     Text("Requesting location...", fontSize = 15.sp, color = Color.Gray)
@@ -645,11 +712,7 @@ fun LandmarkRecordScreen(
         if (showTextScanner) {
             TextScannerSheet(
                 onTextScanned = { newText: String ->
-                    if (shortDescription.trim().isEmpty()) {
-                        shortDescription = newText
-                    } else {
-                        shortDescription += " $newText"
-                    }
+                    shortDescription = newText
                 },
                 onDismiss = { showTextScanner = false }
             )

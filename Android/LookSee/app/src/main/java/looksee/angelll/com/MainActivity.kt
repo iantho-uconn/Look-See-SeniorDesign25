@@ -4,6 +4,7 @@ import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge // 🚀 Added Edge-to-Edge import
 import androidx.activity.viewModels
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -36,6 +37,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // 🚀 THE FIX: Tell Android to stop blocking the status bars
+        enableEdgeToEdge()
+
+        androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
         configureAmplify()
         configureSentry()
 

@@ -79,7 +79,7 @@ fun MapReportSheet(
         dragHandle = { BottomSheetDefaults.DragHandle() },
         contentWindowInsets = { WindowInsets(0, 0, 0, 0) }
     ) {
-        Box(modifier = Modifier.fillMaxWidth().fillMaxHeight(0.75f)) {
+        Box(modifier = Modifier.fillMaxWidth().fillMaxHeight(0.9f)) {
             if (reportSuccess) {
                 Column(
                     modifier = Modifier.fillMaxWidth().padding(top = 64.dp),
@@ -91,7 +91,7 @@ fun MapReportSheet(
                     Text("Thank you for keeping LookSee clean. Our team will review this landmark shortly.", color = Color.Gray, textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 32.dp))
                 }
             } else {
-                Column(modifier = Modifier.fillMaxSize()) {
+                Column(modifier = Modifier.fillMaxSize().imePadding()) {
                     Column(
                         modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 16.dp),
                         verticalArrangement = Arrangement.spacedBy(20.dp)

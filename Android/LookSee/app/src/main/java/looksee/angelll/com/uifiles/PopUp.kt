@@ -53,12 +53,10 @@ fun PopUp() {
 
     var selectedPromotionImage by remember { mutableStateOf<String?>(null) }
 
-    // Colors matching SwiftUI PopUp.swift
     val purpleStart = Color(red = 0.25f, green = 0.10f, blue = 0.90f)
     val purpleEnd = Color(red = 0.50f, green = 0.15f, blue = 0.95f)
     val promotionOrange = Color(red = 1.00f, green = 0.58f, blue = 0.18f)
 
-    // Derived Display Values
     val displayName = infoView.landmarkName.trim().ifEmpty { "Unknown Landmark" }
     val displayDescription = infoView.landmarkDescription.trim().ifEmpty { "No description is available for this landmark." }
     val cleanedPromoDescription = infoView.promoDescription.trim()
@@ -66,10 +64,9 @@ fun PopUp() {
     val shouldShowPromotion = cleanedPromoName.isNotEmpty() &&
             cleanedPromoName != "No active promotion" &&
             cleanedPromoName != "Checking promotions..."
-            
+
     var showReportSheet by remember { mutableStateOf(false) }
 
-    // URL Handling Helper
     fun normalizedURL(rawValue: String): String? {
         val cleaned = rawValue.trim()
         if (cleaned.isEmpty()) return null
@@ -89,34 +86,37 @@ fun PopUp() {
         val maxWidthPx = maxWidth.value
         val maxHeightPx = maxHeight.value
 
-        val popupWidth = minOf(maxOf(maxWidthPx - 56, 1f), 620f).dp
-        val maximumPopupHeight = minOf(maxOf(maxHeightPx - 90, 1f), 780f).dp
+        val popupWidth = minOf(maxOf(maxWidthPx - 56f, 1f), 620f).dp
+        val maximumPopupHeight = (maxHeightPx * 0.80f).dp
 
-        // Shell: Equivalent to popupShell in PopUp.swift
         Surface(
             modifier = Modifier
                 .width(popupWidth)
                 .heightIn(max = maximumPopupHeight)
+                .wrapContentHeight()
                 .shadow(
                     elevation = 30.dp,
                     shape = RoundedCornerShape(30.dp),
                     spotColor = Color.Black.copy(alpha = 0.30f)
                 )
-                .pointerInput(Unit) { detectTapGestures { } }, // consume taps so it doesn't dismiss
-            color = Color(0xFF1C1C1E).copy(alpha = 0.95f), // UltraThickMaterial-ish
+                .pointerInput(Unit) { detectTapGestures { } },
+            color = Color(0xFF1C1C1E).copy(alpha = 0.95f),
             shape = RoundedCornerShape(30.dp),
             border = BorderStroke(1.dp, Color.White.copy(alpha = 0.20f))
         ) {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                // Scrolling Content
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .wrapContentHeight()
+            ) {
                 Column(
                     modifier = Modifier
+                        .fillMaxWidth()
                         .weight(1f, fill = false)
                         .verticalScroll(rememberScrollState())
                         .padding(start = 20.dp, end = 20.dp, top = 26.dp, bottom = 22.dp),
                     verticalArrangement = Arrangement.spacedBy(18.dp)
                 ) {
-                    // Landmark Text
                     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                         Text(
                             text = displayName,
@@ -135,7 +135,6 @@ fun PopUp() {
                         )
                     }
 
-                    // Website Button
                     val websiteUrl = normalizedURL(infoView.landmarkWebsiteUrl)
                     if (websiteUrl != null) {
                         Row(
@@ -167,7 +166,6 @@ fun PopUp() {
                         }
                     }
 
-                    // Promotion Section
                     if (shouldShowPromotion) {
                         Column(
                             modifier = Modifier
@@ -181,7 +179,7 @@ fun PopUp() {
                             if (cleanedPromoDescription.isNotEmpty()) {
                                 Text(cleanedPromoDescription, fontSize = 14.sp, color = Color.White.copy(alpha = 0.7f))
                             }
-                            
+
                             val promoImg = normalizedURL(infoView.promoImageUrl)
                             if (promoImg != null) {
                                 Box(
@@ -214,10 +212,9 @@ fun PopUp() {
                         }
                     }
 
-                    // Merchant Card
+                    // 🚀 THE FIX: Restored the Merchant Card
                     MerchantCardView()
 
-                    // Map Action Buttons
                     if (infoView.isMapPin) {
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
                             Button(
@@ -281,7 +278,6 @@ fun PopUp() {
         }
     }
 
-    // Fullscreen Image Preview
     if (selectedPromotionImage != null) {
         Dialog(
             onDismissRequest = { selectedPromotionImage = null },
@@ -307,13 +303,13 @@ fun PopUp() {
             }
         }
     }
-    
+
     if (showReportSheet) {
         MapReportSheet(
             landmarkId = infoView.landmarkId,
             landmarkLabel = infoView.landmarkName,
             reportedOwnerId = infoView.reportedOwnerId ?: "unknown",
-            userEmail = "unknown@user.com", // In a real app we'd fetch from vm, but this matches iOS fallback pattern
+            userEmail = "unknown@user.com",
             onDismiss = { showReportSheet = false }
         )
     }
@@ -323,7 +319,7 @@ fun PopUp() {
 fun PromoImageLoader(url: String, contentScale: ContentScale = ContentScale.Fit) {
     var bitmap by remember { mutableStateOf<Bitmap?>(null) }
     var isLoading by remember { mutableStateOf(true) }
-    
+
     LaunchedEffect(url) {
         withContext(Dispatchers.IO) {
             try {
