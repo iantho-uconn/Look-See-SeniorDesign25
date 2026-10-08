@@ -8,6 +8,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -30,7 +31,8 @@ import java.time.format.FormatStyle
 @Composable
 fun BusinessMediaHistoryView(
     landmarkId: String,
-    landmarkLabel: String
+    landmarkLabel: String,
+    onBack: () -> Unit
 ) {
     val viewModel = remember { BusinessMediaHistoryViewModel(landmarkId, landmarkLabel) }
     val items by viewModel.items.collectAsState()
@@ -52,18 +54,28 @@ fun BusinessMediaHistoryView(
     }
 
     Scaffold(
+        containerColor = Color.Black,
         topBar = {
             TopAppBar(
-                title = { Text("Upload History") },
+                title = { Text("Upload History", color = Color.White) },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color.Black,
+                    titleContentColor = Color.White,
+                    navigationIconContentColor = Color(0xFF007AFF)
+                ),
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
                 actions = {
                     IconButton(onClick = { coroutineScope.launch { viewModel.refresh() } }, enabled = !isRefreshing) {
-                        if (isRefreshing) CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-                        else Icon(Icons.Default.Refresh, contentDescription = "Refresh")
+                        if (isRefreshing) CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp, color = Color(0xFF007AFF))
+                        else Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = Color(0xFF007AFF))
                     }
                 }
             )
-        },
-        containerColor = Color(0xFFF2F2F7)
+        }
     ) { paddingValues ->
         if (isLoadingInitial) {
             Box(modifier = Modifier.fillMaxSize().padding(paddingValues), contentAlignment = Alignment.Center) {
@@ -86,7 +98,7 @@ fun BusinessMediaHistoryView(
                 // Header Section
                 item {
                     Column(verticalArrangement = Arrangement.spacedBy(5.dp), modifier = Modifier.padding(vertical = 2.dp)) {
-                        Text(landmarkTitle, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                        Text(landmarkTitle, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color.White)
                         Text(
                             text = "${items.size} upload${if (items.size == 1) "" else "s"} loaded",
                             fontSize = 12.sp,
@@ -103,7 +115,7 @@ fun BusinessMediaHistoryView(
                 items(items) { item ->
                     Surface(
                         shape = RoundedCornerShape(12.dp),
-                        color = Color.White,
+                        color = Color(0xFF1C1C1E),
                         modifier = Modifier.fillMaxWidth(),
                         shadowElevation = 1.dp
                     ) {
@@ -164,6 +176,7 @@ fun BusinessMediaHistoryRow(
                 text = item.roleAndMediaTitle,
                 fontWeight = FontWeight.Bold,
                 fontSize = 17.sp,
+                color = Color.White,
                 lineHeight = 22.sp
             )
 
@@ -201,7 +214,7 @@ fun BusinessMediaHistoryRow(
                 Text(
                     text = item.displayFilename,
                     fontSize = 12.sp,
-                    color = Color.Gray,
+                    color = Color.LightGray,
                     maxLines = 1
                 )
             }

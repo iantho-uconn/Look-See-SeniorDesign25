@@ -11,6 +11,10 @@ import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.animation.*
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -28,7 +32,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -60,6 +68,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.pow
+import kotlin.math.sqrt
 import looksee.angelll.com.detection.*
 import looksee.angelll.com.models.*
 import looksee.angelll.com.ui.theme.*
@@ -85,12 +95,12 @@ fun TextScannerSheet(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp),
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    "Tap highlighted text to copy",
+                    "Point at text and tap to copy",
                     fontSize = 17.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White
@@ -110,6 +120,11 @@ fun TextScannerSheet(
     }
 }
 
+private data class TargetTextChunk(
+    val text: String,
+    val bounds: Rect
+)
+
 @SuppressLint("UnsafeOptInUsageError")
 @Composable
 private fun TextScannerCameraView(onTextTapped: (String) -> Unit) {
@@ -119,7 +134,7 @@ private fun TextScannerCameraView(onTextTapped: (String) -> Unit) {
 
     val previewView = remember { PreviewView(context).apply { scaleType = PreviewView.ScaleType.FILL_CENTER } }
 
-    var recognizedTextBlocks by remember { mutableStateOf<List<Text.TextBlock>>(emptyList()) }
+    var rawTextBlocks by remember { mutableStateOf<List<Text.TextBlock>>(emptyList()) }
     var imageWidth by remember { mutableIntStateOf(1) }
     var imageHeight by remember { mutableIntStateOf(1) }
 
@@ -165,7 +180,7 @@ private fun TextScannerCameraView(onTextTapped: (String) -> Unit) {
                                 .addOnSuccessListener { visionText ->
                                     imageWidth = newWidth
                                     imageHeight = newHeight
-                                    recognizedTextBlocks = visionText.textBlocks
+                                    rawTextBlocks = visionText.textBlocks
                                 }
                                 .addOnCompleteListener {
                                     imageProxy.close()
@@ -188,7 +203,7 @@ private fun TextScannerCameraView(onTextTapped: (String) -> Unit) {
                     maxZoomRatio = state.maxZoomRatio.coerceAtMost(5f)
                 }
             } catch (e: Exception) {
-                Log.e("LookSeeScanner", "Use case binding failed", e)
+                Log.e("LookSeeScanner", "Binding failed", e)
             }
         }, ContextCompat.getMainExecutor(context))
 
@@ -217,81 +232,148 @@ private fun TextScannerCameraView(onTextTapped: (String) -> Unit) {
     ) {
         val containerWidth = constraints.maxWidth.toFloat()
         val containerHeight = constraints.maxHeight.toFloat()
-        val density = LocalDensity.current
+        val screenCenterX = containerWidth / 2f
+        val screenCenterY = containerHeight / 2f
 
         AndroidView(
             factory = { previewView },
             modifier = Modifier.fillMaxSize()
         )
 
-        recognizedTextBlocks.forEach { block ->
-            block.boundingBox?.let { boundingBox ->
-                val scaleX = containerWidth / imageWidth.toFloat()
-                val scaleY = containerHeight / imageHeight.toFloat()
-                val scale = maxOf(scaleX, scaleY)
+        // 1. Convert ML Kit blocks to Screen Coordinates & prune offscreen artifacts
+        val visibleChunks = remember(rawTextBlocks, imageWidth, imageHeight, containerWidth, containerHeight) {
+            val scaleX = containerWidth / imageWidth.toFloat()
+            val scaleY = containerHeight / imageHeight.toFloat()
+            val scale = maxOf(scaleX, scaleY)
 
-                val scaledWidth = imageWidth * scale
-                val scaledHeight = imageHeight * scale
+            val scaledWidth = imageWidth * scale
+            val scaledHeight = imageHeight * scale
 
-                val offsetX = (containerWidth - scaledWidth) / 2f
-                val offsetY = (containerHeight - scaledHeight) / 2f
+            val offsetX = (containerWidth - scaledWidth) / 2f
+            val offsetY = (containerHeight - scaledHeight) / 2f
 
-                val left = boundingBox.left * scale + offsetX
-                val top = boundingBox.top * scale + offsetY
-                val right = boundingBox.right * scale + offsetX
-                val bottom = boundingBox.bottom * scale + offsetY
+            rawTextBlocks.mapNotNull { block ->
+                val box = block.boundingBox ?: return@mapNotNull null
 
-                // Strict Viewport Culling: Discard any text that is cropped off screen
-                if (right > 15f && left < containerWidth - 15f && bottom > 15f && top < containerHeight - 15f) {
-                    val boxLeft = max(0f, left)
-                    val boxTop = max(0f, top)
-                    val boxWidth = min(containerWidth, right) - boxLeft
-                    val boxHeight = min(containerHeight, bottom) - boxTop
+                val left = box.left * scale + offsetX
+                val top = box.top * scale + offsetY
+                val right = box.right * scale + offsetX
+                val bottom = box.bottom * scale + offsetY
 
-                    if (boxWidth > 20f && boxHeight > 12f) {
-                        Box(
-                            modifier = Modifier
-                                .offset(
-                                    x = with(density) { boxLeft.toDp() },
-                                    y = with(density) { boxTop.toDp() }
-                                )
-                                .size(
-                                    width = with(density) { boxWidth.toDp() },
-                                    height = with(density) { boxHeight.toDp() }
-                                )
-                                .background(Color(0xFFFFCC00).copy(alpha = 0.25f), RoundedCornerShape(4.dp))
-                                .border(1.5.dp, Color(0xFFFFD60A).copy(alpha = 0.85f), RoundedCornerShape(4.dp))
-                                .clickable {
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    onTextTapped(block.text)
-                                }
-                        )
-                    }
-                }
+                // Strict Viewport Culling: drop items outside view bounds
+                if (right > 20f && left < containerWidth - 20f && bottom > 20f && top < containerHeight - 20f) {
+                    val clampedBounds = Rect(
+                        left = max(10f, left),
+                        top = max(10f, top),
+                        right = min(containerWidth - 10f, right),
+                        bottom = min(containerHeight - 10f, bottom)
+                    )
+                    TargetTextChunk(block.text.trim(), clampedBounds)
+                } else null
             }
         }
 
-        // Floating Zoom Indicator Pill
-        Box(
+        // 2. Select the single focused chunk closest to screen center (iOS Style)
+        val targetChunk = remember(visibleChunks, screenCenterX, screenCenterY) {
+            visibleChunks.minByOrNull { chunk ->
+                val chunkCenterX = (chunk.bounds.left + chunk.bounds.right) / 2f
+                val chunkCenterY = (chunk.bounds.top + chunk.bounds.bottom) / 2f
+                val dx = chunkCenterX - screenCenterX
+                val dy = chunkCenterY - screenCenterY
+                sqrt(dx * dx + dy * dy)
+            }
+        }
+
+        // 3. Hardware-smoothed corner box animation to eliminate 30Hz jitter
+        val targetLeft = targetChunk?.bounds?.left ?: screenCenterX
+        val targetTop = targetChunk?.bounds?.top ?: screenCenterY
+        val targetRight = targetChunk?.bounds?.right ?: screenCenterX
+        val targetBottom = targetChunk?.bounds?.bottom ?: screenCenterY
+
+        val animSpec = spring<Float>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow)
+        val smoothLeft by animateFloatAsState(targetValue = targetLeft, animationSpec = animSpec, label = "boxLeft")
+        val smoothTop by animateFloatAsState(targetValue = targetTop, animationSpec = animSpec, label = "boxTop")
+        val smoothRight by animateFloatAsState(targetValue = targetRight, animationSpec = animSpec, label = "boxRight")
+        val smoothBottom by animateFloatAsState(targetValue = targetBottom, animationSpec = animSpec, label = "boxBottom")
+
+        // 4. Draw iOS-Style Corner Brackets and Tap Overlay
+        if (targetChunk != null && smoothRight > smoothLeft + 20f && smoothBottom > smoothTop + 14f) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val pad = 12f
+                val left = smoothLeft - pad
+                val top = smoothTop - pad
+                val right = smoothRight + pad
+                val bottom = smoothBottom + pad
+
+                val bracketLen = min(28f, min(right - left, bottom - top) / 3f)
+                val strokeW = 3.5.dp.toPx()
+                val bracketColor = Color(0xFFFFD60A)
+
+                // Soft background tint inside the target
+                drawRoundRect(
+                    color = Color(0xFFFFCC00).copy(alpha = 0.16f),
+                    topLeft = Offset(left, top),
+                    size = Size(right - left, bottom - top),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(10f, 10f)
+                )
+
+                // Top-Left Corner
+                drawLine(bracketColor, Offset(left, top + bracketLen), Offset(left, top), strokeW)
+                drawLine(bracketColor, Offset(left, top), Offset(left + bracketLen, top), strokeW)
+
+                // Top-Right Corner
+                drawLine(bracketColor, Offset(right - bracketLen, top), Offset(right, top), strokeW)
+                drawLine(bracketColor, Offset(right, top), Offset(right, top + bracketLen), strokeW)
+
+                // Bottom-Left Corner
+                drawLine(bracketColor, Offset(left, bottom - bracketLen), Offset(left, bottom), strokeW)
+                drawLine(bracketColor, Offset(left, bottom), Offset(left + bracketLen, bottom), strokeW)
+
+                // Bottom-Right Corner
+                drawLine(bracketColor, Offset(right - bracketLen, bottom), Offset(right, bottom), strokeW)
+                drawLine(bracketColor, Offset(right, bottom), Offset(right, bottom - bracketLen), strokeW)
+            }
+
+            // Tap anywhere on screen to copy the focused block
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clickable {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        val cleanLines = targetChunk.text
+                            .lines()
+                            .map { it.trim() }
+                            .filter { it.isNotBlank() }
+                            .joinToString("\n")
+                        onTextTapped(cleanLines)
+                    }
+            )
+        }
+
+        // 5. Floating Zoom Control Pill (Pinch or Tap)
+        Row(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = 24.dp)
+                .padding(bottom = 28.dp)
                 .clip(CircleShape)
-                .background(Color.Black.copy(alpha = 0.65f))
-                .clickable {
-                    camera?.let { cam ->
-                        val nextZoom = if (currentZoom > 1.8f) 1f else 2f
-                        cam.cameraControl.setZoomRatio(nextZoom)
-                    }
-                }
-                .padding(horizontal = 14.dp, vertical = 6.dp)
+                .background(Color.Black.copy(alpha = 0.70f))
+                .border(1.dp, Color.White.copy(alpha = 0.20f), CircleShape)
+                .padding(horizontal = 14.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text(
-                text = String.format(Locale.US, "%.1fx", currentZoom),
-                color = Color.White,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold
-            )
+            listOf(1f, 2f, 3f).forEach { zoomLevel ->
+                val isSelected = (currentZoom in (zoomLevel - 0.4f)..(zoomLevel + 0.4f))
+                Text(
+                    text = "${zoomLevel.toInt()}x",
+                    color = if (isSelected) AppleBlue else Color.White,
+                    fontSize = 14.sp,
+                    fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Medium,
+                    modifier = Modifier.clickable {
+                        camera?.cameraControl?.setZoomRatio(zoomLevel)
+                    }
+                )
+            }
         }
     }
 }
@@ -659,7 +741,7 @@ fun LandmarkRecordScreen(
                                 text = if (archivedMedia != null) "Upload Draft" else (if (isAdditionalMedia) "Upload Additional Media" else "Upload Landmark"),
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color.White
+                                color = if (canUpload) Color.White else Color.Gray
                             )
                         }
 
@@ -668,7 +750,8 @@ fun LandmarkRecordScreen(
                                 onClick = { showDiscardAlert = true },
                                 modifier = Modifier.size(60.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(alpha = 0.15f)),
-                                shape = RoundedCornerShape(16.dp)
+                                shape = RoundedCornerShape(16.dp),
+                                contentPadding = PaddingValues(0.dp)
                             ) {
                                 Icon(Icons.Default.Delete, contentDescription = null, tint = Color.Red)
                             }

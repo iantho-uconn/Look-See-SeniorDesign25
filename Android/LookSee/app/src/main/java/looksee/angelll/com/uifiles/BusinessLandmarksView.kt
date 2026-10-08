@@ -180,7 +180,7 @@ fun BusinessLandmarksView(
         bottomBar = {
             if (isSelectionMode) {
                 Surface(color = SecondaryGrouped.copy(alpha = 0.95f), shadowElevation = 8.dp) {
-                    Column(modifier = Modifier.padding(20.dp).fillMaxWidth()) {
+                    Column(modifier = Modifier.navigationBarsPadding().padding(20.dp).fillMaxWidth()) {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Column {
                                 Text(selectionCountText, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)

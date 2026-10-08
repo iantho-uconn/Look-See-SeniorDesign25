@@ -15,6 +15,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -31,6 +33,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.amplifyframework.kotlin.core.Amplify
@@ -48,6 +51,7 @@ fun LoginScreen(
 ) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var passwordVisible by remember { mutableStateOf(false) }
     var isLoggingIn by remember { mutableStateOf(false) }
     
     val focusManager = LocalFocusManager.current
@@ -126,7 +130,13 @@ fun LoginScreen(
                         placeholder = { Text("••••••••", color = Color.Gray) },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
-                        visualTransformation = PasswordVisualTransformation(),
+                        visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingIcon = {
+                            val image = if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff
+                            IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                                Icon(imageVector = image, contentDescription = if (passwordVisible) "Hide password" else "Show password", tint = Color.Gray)
+                            }
+                        },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedContainerColor = Color(0xFF2D2D3D),
                             unfocusedContainerColor = Color(0xFF2D2D3D),
@@ -204,11 +214,11 @@ fun LoginScreen(
                             onClick = {
                                 coroutineScope.launch {
                                     try {
-                                        val result = Amplify.Auth.confirmSignUp(email, verificationCode)
+                                        val result = Amplify.Auth.confirmSignUp(email.trim(), verificationCode)
                                         if (result.isSignUpComplete) {
                                             showVerificationDialog = false
                                             vm.errorMessage = ""
-                                            vm.signIn(email, password)
+                                            vm.signIn(email.trim(), password)
                                         } else {
                                             verificationMessage = "Verification incomplete. Please check the code."
                                         }
@@ -251,7 +261,7 @@ fun LoginScreen(
             Button(
                 onClick = {
                     focusManager.clearFocus()
-                    vm.signIn(email, password)
+                    vm.signIn(email.trim(), password)
                 },
                 modifier = Modifier.fillMaxWidth().height(56.dp),
                 shape = RoundedCornerShape(14.dp),

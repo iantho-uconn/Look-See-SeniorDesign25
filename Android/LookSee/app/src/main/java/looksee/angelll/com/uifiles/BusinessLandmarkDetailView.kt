@@ -819,7 +819,12 @@ fun BusinessLandmarkDetailView(
                         onValueChange = { deleteConfirmationText = it },
                         placeholder = { Text("delete landmark") },
                         modifier = Modifier.fillMaxWidth(),
-                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White)
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White, 
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = Color.Transparent,
+                            unfocusedBorderColor = Color.Transparent
+                        )
                     )
                 }
                 Spacer(Modifier.height(8.dp))

@@ -104,7 +104,8 @@ enum class AppState {
     BusinessProfile,
     GuestSignUp,
     ScanHistory,
-    BusinessAnalytics
+    BusinessAnalytics,
+    BusinessMediaHistory
 }
 
 @Composable
@@ -209,8 +210,23 @@ fun RootView(vm: AuthViewModel, authState: AuthState) {
                 BusinessLandmarkDetailView(
                     vm = vm,
                     initialLandmark = landmark,
-                    onNavigate = { _, _ -> },
+                    onNavigate = { route, _ -> 
+                        if (route == "BusinessMediaHistoryView") {
+                            appState = AppState.BusinessMediaHistory
+                        }
+                    },
+                    onLandmarkDeleted = { appState = AppState.BusinessLandmarks },
                     onDismiss = { appState = AppState.BusinessLandmarks }
+                )
+            }
+        }
+
+        AppState.BusinessMediaHistory -> {
+            selectedLandmark?.let { landmark ->
+                BusinessMediaHistoryView(
+                    landmarkId = landmark.landmarkId,
+                    landmarkLabel = landmark.label,
+                    onBack = { appState = AppState.BusinessLandmarkDetail }
                 )
             }
         }

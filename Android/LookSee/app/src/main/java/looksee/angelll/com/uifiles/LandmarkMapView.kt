@@ -137,7 +137,7 @@ fun LandmarkMapScreen(
                 mapStyleOptions = mapStyleOptions
             ),
             uiSettings = MapUiSettings(
-                myLocationButtonEnabled = true,
+                myLocationButtonEnabled = false,
                 compassEnabled = true,
                 zoomControlsEnabled = false,
                 scrollGesturesEnabled = true,
@@ -328,8 +328,7 @@ fun LandmarkMapScreen(
                 onMyUploadsChange = { myUploadsOnly = it },
                 promotedOnly = promotedOnly,
                 onPromotedChange = { promotedOnly = it },
-                availableClusters = availableClusters,
-                selectedClusters = selectedClusters,
+
                 onApply = {
                     showFilterSheet = false
                     val target = cameraPositionState.position.target
@@ -413,8 +412,6 @@ fun FilterMenuContent(
     onMyUploadsChange: (Boolean) -> Unit,
     promotedOnly: Boolean,
     onPromotedChange: (Boolean) -> Unit,
-    availableClusters: List<String>,
-    selectedClusters: MutableList<String>,
     onApply: () -> Unit
 ) {
     val iOSLightBackground = Color(0xFFF2F2F7)
@@ -487,37 +484,12 @@ fun FilterMenuContent(
                 }
                 HorizontalDivider(color = Color.LightGray.copy(alpha = 0.5f), modifier = Modifier.padding(start = 16.dp))
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-                    Text("Promoted Only", color = iOSTextPrimary, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                    Text("Promotions Only", color = iOSTextPrimary, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
                     Switch(checked = promotedOnly, onCheckedChange = onPromotedChange, colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = Color.LightGray, uncheckedTrackColor = Color.LightGray))
                 }
             }
 
-            if (availableClusters.isNotEmpty()) {
-                FilterSection(title = "FILTER BY CLUSTER", cardColor = iOSCardBackground, titleColor = iOSTextSecondary) {
-                    availableClusters.forEachIndexed { index, clusterId ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    if (clusterId in selectedClusters) selectedClusters.remove(clusterId)
-                                    else selectedClusters.add(clusterId)
-                                }
-                                .padding(horizontal = 16.dp, vertical = 14.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("Cluster $clusterId", color = AppleBlue, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                            if (clusterId in selectedClusters) {
-                                Icon(Icons.Default.RadioButtonChecked, contentDescription = null, tint = AppleBlue)
-                            } else {
-                                Icon(Icons.Default.RadioButtonUnchecked, contentDescription = null, tint = Color.LightGray)
-                            }
-                        }
-                        if (index < availableClusters.size - 1) {
-                            HorizontalDivider(color = Color.LightGray.copy(alpha = 0.5f), modifier = Modifier.padding(start = 16.dp))
-                        }
-                    }
-                }
-            }
+
             Spacer(modifier = Modifier.height(20.dp))
         }
     }

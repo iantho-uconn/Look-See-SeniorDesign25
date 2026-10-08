@@ -795,6 +795,9 @@ fun DeepSettingsView(
     var showAlertSignOut by remember { mutableStateOf(false) }
     var isReloading by remember { mutableStateOf(false) }
     var showReloadSuccess by remember { mutableStateOf(false) }
+    
+    var showGlobalNegativeCamera by remember { mutableStateOf(false) }
+    var isUploadingGlobalNegative by remember { mutableStateOf(false) }
 
     val isFullyLoggedIn = vm.isSignedIn && vm.userEmail.isNotEmpty()
 
@@ -900,7 +903,7 @@ fun DeepSettingsView(
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("ADMIN TOOLS", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
                     Surface(
-                        onClick = { onNavigate("global_negatives") },
+                        onClick = { showGlobalNegativeCamera = true },
                         color = Color(0xFF1C1C1E),
                         shape = RoundedCornerShape(16.dp)
                     ) {
@@ -1003,6 +1006,43 @@ fun DeepSettingsView(
                     .padding(horizontal = 24.dp)
                     .padding(top = 16.dp, bottom = 40.dp)
             )
+        }
+        if (showGlobalNegativeCamera) {
+            looksee.angelll.com.uifiles.NegativeVideoCameraView(
+                uiTargetDuration = 10,
+                minTotalTimeLimit = 2,
+                maxTotalTimeLimit = 30,
+                onDone = { video ->
+                    coroutineScope.launch {
+                        isUploadingGlobalNegative = true
+                        try {
+                            looksee.angelll.com.models.BusinessLandmarkService().uploadGlobalNegativeVideo(video.file)
+                        } catch (e: Exception) {
+                            // Ignored for now
+                        } finally {
+                            isUploadingGlobalNegative = false
+                            try { video.file.delete() } catch(e:Exception){}
+                            showGlobalNegativeCamera = false
+                        }
+                    }
+                },
+                onDismiss = { showGlobalNegativeCamera = false }
+            )
+            
+            if (isUploadingGlobalNegative) {
+                Box(
+                    modifier = Modifier.fillMaxSize().background(Color.Black.copy(0.6f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        CircularProgressIndicator(color = Color.White)
+                        Text("Uploading Global Negative...", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
         }
     }
 
@@ -1144,6 +1184,8 @@ fun ModelRow(
                 Icon(Icons.Default.CheckCircle, contentDescription = "Selected", tint = AppleBlue, modifier = Modifier.size(20.dp))
             }
         }
+        
+
     }
 }
 

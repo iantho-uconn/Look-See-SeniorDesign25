@@ -13,6 +13,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -107,7 +108,6 @@ fun ButtonsScreen(
 
     var showGenericNotification by remember { mutableStateOf(false) }
     var hasShownNotificationThisSession by remember { mutableStateOf(false) }
-    var showMyLandmarksFromAlert by remember { mutableStateOf(false) }
 
     val isBusinessMode = vm.hasActiveSubscription
     val isScanTab = currentTab == 0
@@ -115,7 +115,7 @@ fun ButtonsScreen(
 
     val isScanCameraActive by remember {
         derivedStateOf {
-            currentTab == 0 && !showRecordSheet && !showSignUpPrompt && !showTutorial && !showMyLandmarksFromAlert
+            currentTab == 0 && !showRecordSheet && !showSignUpPrompt && !showTutorial
         }
     }
 
@@ -222,7 +222,6 @@ fun ButtonsScreen(
                         redoSecondsNeeded = intent.getDoubleExtra("secondsNeeded", 30.0).takeIf { it > 0 }
 
                         coroutineScope.launch {
-                            showMyLandmarksFromAlert = false
                             delay(400)
                             Log.d("LookSee_Debug_Nav", "Opening LandmarkRecord Sheet for ID: $redoLandmarkId")
                             showRecordSheet = true
@@ -471,7 +470,7 @@ fun ButtonsScreen(
                     .clickable {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         showGenericNotification = false
-                        showMyLandmarksFromAlert = true
+                        onNavigate("BusinessLandmarksView")
                     }
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -607,11 +606,7 @@ fun ButtonsScreen(
         )
     }
 
-    if (showMyLandmarksFromAlert) {
-        BusinessLandmarksView(vm = vm) { route, _ ->
-            if (route == "Dismiss") showMyLandmarksFromAlert = false
-        }
-    }
+
 
 }
 
@@ -625,17 +620,16 @@ fun NavButton(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
             .width(60.dp)
-            .clickable { onClick() }
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null
+            ) { onClick() }
     ) {
         Box(
-            modifier = Modifier
-                .size(42.dp)
-                .clip(CircleShape)
-                .background(Color.White.copy(alpha = 0.2f))
-                .border(0.5.dp, Color.White.copy(alpha = 0.2f), CircleShape),
+            modifier = Modifier.size(42.dp),
             contentAlignment = Alignment.Center
         ) {
-            Icon(icon, contentDescription = label, tint = Color.White, modifier = Modifier.size(20.dp))
+            Icon(icon, contentDescription = label, tint = Color.White, modifier = Modifier.size(24.dp))
         }
         Spacer(Modifier.height(2.dp))
         Text(label, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)

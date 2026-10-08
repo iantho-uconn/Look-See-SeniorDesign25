@@ -144,11 +144,16 @@ fun BusinessBulkPromotionEditor(
     }
 
     Scaffold(
+        containerColor = Color(0xFF000000),
         topBar = {
             TopAppBar(
-                title = { Text("Add Promotion") },
+                title = { Text("Add Promotion", color = Color.White) },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color(0xFF000000),
+                    titleContentColor = Color.White
+                ),
                 navigationIcon = {
-                    IconButton(onClick = onDismiss, enabled = !isSaving) {
+                    TextButton(onClick = onDismiss, enabled = !isSaving) {
                         Text(if (completedResult == null) "Cancel" else "Close", color = Color(0xFF007AFF), modifier = Modifier.padding(horizontal = 8.dp))
                     }
                 },
@@ -168,8 +173,7 @@ fun BusinessBulkPromotionEditor(
                     }
                 }
             )
-        },
-        containerColor = Color(0xFFF2F2F7)
+        }
     ) { paddingValues ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(paddingValues).padding(16.dp),
@@ -185,12 +189,12 @@ fun BusinessBulkPromotionEditor(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color.Blue, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("${landmarks.size} landmark${if (landmarks.size == 1) "" else "s"}", fontWeight = FontWeight.Bold)
+                            Text("${landmarks.size} landmark${if (landmarks.size == 1) "" else "s"}", fontWeight = FontWeight.Bold, color = Color.White)
                         }
                         Spacer(modifier = Modifier.height(16.dp))
                         landmarks.forEach { landmark ->
                             Column(modifier = Modifier.padding(vertical = 4.dp)) {
-                                Text(displayLabel(landmark), fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                                Text(displayLabel(landmark), fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = Color.White)
                                 Text(landmark.landmarkId, fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = Color.Gray)
                             }
                         }
@@ -208,6 +212,12 @@ fun BusinessBulkPromotionEditor(
                         value = name, onValueChange = { name = it },
                         placeholder = { Text("Promotion name") },
                         enabled = !isSaving && completedResult == null,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = Color.Transparent,
+                            unfocusedBorderColor = Color.Transparent
+                        ),
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
                     )
                     OutlinedTextField(
@@ -215,6 +225,12 @@ fun BusinessBulkPromotionEditor(
                         placeholder = { Text("Promotion description") },
                         enabled = !isSaving && completedResult == null,
                         minLines = 3, maxLines = 4,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = Color.Transparent,
+                            unfocusedBorderColor = Color.Transparent
+                        ),
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
                     )
                     OutlinedTextField(
@@ -222,6 +238,12 @@ fun BusinessBulkPromotionEditor(
                         placeholder = { Text("Image URL (optional)") },
                         enabled = !isSaving && completedResult == null,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, autoCorrectEnabled = false),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = Color.Transparent,
+                            unfocusedBorderColor = Color.Transparent
+                        ),
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
                     )
                     Row(
@@ -229,7 +251,7 @@ fun BusinessBulkPromotionEditor(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text("Promotion enabled", fontSize = 16.sp)
+                        Text("Promotion enabled", fontSize = 16.sp, color = Color.White)
                         Switch(checked = enabled, onCheckedChange = { enabled = it }, enabled = !isSaving && completedResult == null)
                     }
                 }
@@ -246,7 +268,7 @@ fun BusinessBulkPromotionEditor(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text("Turn on promotions for selected landmarks", fontSize = 16.sp, modifier = Modifier.weight(1f))
+                        Text("Turn on promotions for selected landmarks", fontSize = 16.sp, modifier = Modifier.weight(1f), color = Color.White)
                         Switch(checked = enablePromotionsOnLandmarks, onCheckedChange = { enablePromotionsOnLandmarks = it }, enabled = !isSaving && completedResult == null)
                     }
                 }
@@ -259,15 +281,15 @@ fun BusinessBulkPromotionEditor(
                         modifier = Modifier.fillMaxWidth().clickable(enabled = !isSaving && completedResult == null) { showStartDatePicker = true }.padding(16.dp),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text("Start Date", fontSize = 16.sp)
+                        Text("Start Date", fontSize = 16.sp, color = Color.White)
                         Text(startDate.format(dateFormatter), color = Color.Gray)
                     }
-                    HorizontalDivider()
+                    HorizontalDivider(color = Color.Gray.copy(0.2f))
                     Row(
                         modifier = Modifier.fillMaxWidth().clickable(enabled = !isSaving && completedResult == null) { showEndDatePicker = true }.padding(16.dp),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text("End Date", fontSize = 16.sp)
+                        Text("End Date", fontSize = 16.sp, color = Color.White)
                         Text(endDate.format(dateFormatter), color = Color.Gray)
                     }
                 }
@@ -278,10 +300,10 @@ fun BusinessBulkPromotionEditor(
                 item {
                     SettingsSection {
                         Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                            CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                            CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color(0xFF007AFF))
                             Spacer(modifier = Modifier.width(16.dp))
                             Column {
-                                Text("Applying promotion...", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                                Text("Applying promotion...", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.White)
                                 if (progressText != null) Text(progressText!!, fontSize = 13.sp, color = Color.Gray)
                             }
                         }
@@ -302,7 +324,7 @@ fun BusinessBulkPromotionEditor(
                                 )
                                 Spacer(modifier = Modifier.width(10.dp))
                                 Column {
-                                    Text("Applied to ${result.successfulCount} of ${landmarks.size} landmarks", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                                    Text("Applied to ${result.successfulCount} of ${landmarks.size} landmarks", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.White)
                                     if (result.failedLandmarks.isNotEmpty()) {
                                         Text("Failed landmarks remain selected so you can retry them.", fontSize = 12.sp, color = Color.Gray)
                                     }
@@ -312,7 +334,7 @@ fun BusinessBulkPromotionEditor(
                                 Spacer(modifier = Modifier.height(16.dp))
                                 result.failedLandmarks.forEach { failure ->
                                     Column(modifier = Modifier.padding(vertical = 4.dp)) {
-                                        Text(if (failure.landmarkLabel.isEmpty()) failure.landmarkId else failure.landmarkLabel, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                        Text(if (failure.landmarkLabel.isEmpty()) failure.landmarkId else failure.landmarkLabel, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color.White)
                                         Text(failure.error, fontSize = 12.sp, color = Color.Gray)
                                     }
                                 }
@@ -334,46 +356,44 @@ fun BusinessBulkPromotionEditor(
                 }
             }
         }
-
-        // Native Android Date Picker Dialogs
-        if (showStartDatePicker) {
-            val datePickerState = rememberDatePickerState(initialSelectedDateMillis = startDate.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli())
-            DatePickerDialog(
-                onDismissRequest = { showStartDatePicker = false },
-                confirmButton = {
-                    TextButton(onClick = {
-                        datePickerState.selectedDateMillis?.let {
-                            startDate = Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate()
-                        }
-                        showStartDatePicker = false
-                    }) { Text("OK") }
-                },
-                dismissButton = { TextButton(onClick = { showStartDatePicker = false }) { Text("Cancel") } }
-            ) {
-                DatePicker(state = datePickerState)
-            }
-        }
-
-        if (showEndDatePicker) {
-            val datePickerState = rememberDatePickerState(initialSelectedDateMillis = endDate.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli())
-            DatePickerDialog(
-                onDismissRequest = { showEndDatePicker = false },
-                confirmButton = {
-                    TextButton(onClick = {
-                        datePickerState.selectedDateMillis?.let {
-                            endDate = Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate()
-                        }
-                        showEndDatePicker = false
-                    }) { Text("OK") }
-                },
-                dismissButton = { TextButton(onClick = { showEndDatePicker = false }) { Text("Cancel") } }
-            ) {
-                DatePicker(state = datePickerState)
-            }
+    }
+    
+    // Native Android Date Picker Dialogs
+    if (showStartDatePicker) {
+        val datePickerState = rememberDatePickerState(initialSelectedDateMillis = startDate.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli())
+        DatePickerDialog(
+            onDismissRequest = { showStartDatePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    datePickerState.selectedDateMillis?.let {
+                        startDate = Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate()
+                    }
+                    showStartDatePicker = false
+                }) { Text("OK") }
+            },
+            dismissButton = { TextButton(onClick = { showStartDatePicker = false }) { Text("Cancel") } }
+        ) {
+            DatePicker(state = datePickerState)
         }
     }
-}
 
-private fun displayLabel(landmark: BusinessLandmark): String {
+    if (showEndDatePicker) {
+        val datePickerState = rememberDatePickerState(initialSelectedDateMillis = endDate.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli())
+        DatePickerDialog(
+            onDismissRequest = { showEndDatePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    datePickerState.selectedDateMillis?.let {
+                        endDate = Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate()
+                    }
+                    showEndDatePicker = false
+                }) { Text("OK") }
+            },
+            dismissButton = { TextButton(onClick = { showEndDatePicker = false }) { Text("Cancel") } }
+        ) {
+            DatePicker(state = datePickerState)
+        }
+    }
+}private fun displayLabel(landmark: BusinessLandmark): String {
     return if (landmark.label.isEmpty()) "Untitled Landmark" else landmark.label
 }
