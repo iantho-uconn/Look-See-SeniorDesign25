@@ -498,7 +498,13 @@ fun SettingsScreen(
                     isCancelling = true
                     coroutineScope.launch {
                         vm.cancelSubscription()
+                        try {
+                            com.amplifyframework.kotlin.core.Amplify.Auth.deleteUser()
+                        } catch (e: Exception) {
+                            println("Failed to delete user on cancel membership: ${e.message}")
+                        }
                         isCancelling = false
+                        vm.signOut()
                     }
                 }) { Text("Cancel Plan", color = Color.Red) }
             },

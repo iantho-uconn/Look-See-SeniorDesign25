@@ -371,7 +371,7 @@ class BusinessLandmarkService internal constructor(
     )
 
     private companion object {
-        const val MEDIA_UPLOAD_TIMEOUT_MILLIS = 300_000
+        const val MEDIA_UPLOAD_TIMEOUT_MILLIS = 900_000
     }
 }
 

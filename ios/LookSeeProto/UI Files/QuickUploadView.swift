@@ -252,7 +252,6 @@ struct QuickUploadView: View {
 
         do {
             let _ = try await uploadService.upload(
-                userEmail: vm.userEmail,
                 idToken: idToken,
                 label: landmark.label,
                 landmarkId: landmark.landmarkId,

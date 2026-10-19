@@ -7,7 +7,7 @@
 
 import Network
 import Foundation
-import Combine 
+import Combine
 
 @MainActor
 class NetworkMonitor: ObservableObject {
@@ -21,8 +21,12 @@ class NetworkMonitor: ObservableObject {
         monitor.pathUpdateHandler = { [weak self] path in
             DispatchQueue.main.async {
                 let connected = path.status == .satisfied
+                let isCellular = path.usesInterfaceType(.cellular)
+                let isWiFi = path.usesInterfaceType(.wifi)
+                
                 if connected != self?.isConnected {
-                    print("📡 Network status changed: \(connected ? "Connected" : "Disconnected")")
+                    let connectionType = isWiFi ? "Wi-Fi" : (isCellular ? "Cellular" : "Other")
+                    print("📡 Network status changed: \(connected ? "Connected" : "Disconnected") via \(connectionType)")
                     self?.isConnected = connected
                 }
             }

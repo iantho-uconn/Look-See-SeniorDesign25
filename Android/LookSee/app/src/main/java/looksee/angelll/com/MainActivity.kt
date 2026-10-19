@@ -73,7 +73,7 @@ class MainActivity : ComponentActivity() {
     private fun configureSentry() {
         try {
             SentryAndroid.init(this) { options ->
-                options.dsn = "https://e9ee0e43b4735fe777a4d240a4423a56@o4512005291573248.ingest.us.sentry.io/4512005296816128"
+                options.dsn = BuildConfig.SENTRY_DSN
                 options.tracesSampleRate = 1.0
                 options.profilesSampleRate = 1.0
             }
@@ -210,7 +210,7 @@ fun RootView(vm: AuthViewModel, authState: AuthState) {
                 BusinessLandmarkDetailView(
                     vm = vm,
                     initialLandmark = landmark,
-                    onNavigate = { route, _ -> 
+                    onNavigate = { route, _ ->
                         if (route == "BusinessMediaHistoryView") {
                             appState = AppState.BusinessMediaHistory
                         }

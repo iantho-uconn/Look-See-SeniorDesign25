@@ -504,7 +504,7 @@ class UploadService(
         private const val BASE_URL =
             "https://d11vl3v9w133rh.cloudfront.net"
         private const val API_TIMEOUT_MILLIS = 60_000
-        private const val MEDIA_UPLOAD_TIMEOUT_MILLIS = 300_000
+        private const val MEDIA_UPLOAD_TIMEOUT_MILLIS = 900_000
         private const val MINIMUM_COMBINED_VIDEO_DURATION_SECONDS = 1.0
     }
 }

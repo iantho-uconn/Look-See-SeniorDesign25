@@ -28,6 +28,7 @@ class AuthViewModel: ObservableObject {
     @Published private var subscriptionStatusUserId: String?
     @Published private var sessionChecksInProgress = 0
     @Published private var hasCheckedSession = false
+    private var isAttesting = false
 
     var isEligibleForBannerAds: Bool {
         guard hasCheckedSession, sessionChecksInProgress == 0 else { return false }
@@ -85,6 +86,7 @@ class AuthViewModel: ObservableObject {
             if isSignedIn {
                 await fetchUserDetails()
                 if isSignedIn {
+                    await performAppAttest()
                     await fetchUserUsageStats()
                 }
             }
@@ -131,6 +133,7 @@ class AuthViewModel: ObservableObject {
                 userId = user.userId
             }
 
+            await performAppAttest()
             await initDatabaseRow(emailToSave: normalizedEmail)
 
             if !pendingUsernameToSave.isEmpty {
@@ -171,6 +174,7 @@ class AuthViewModel: ObservableObject {
                         self.userId = user.userId
                     }
                     
+                    await performAppAttest()
                     await initDatabaseRow(emailToSave: self.userEmail)
                     await fetchUserDetails()
                     await fetchUserUsageStats()
@@ -490,7 +494,6 @@ class AuthViewModel: ObservableObject {
         return finalImageUrl
     }
 
-    // 🚀 FIXED: Deep logging added to catch the silent Lambda crash
     func updateUserIdentity(newUsername: String, emailToSave: String, profileBase64: String? = nil) async -> (success: Bool, error: String?) {
         guard !userId.isEmpty else { return (false, "User not found") }
         guard let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/checkout") else { return (false, "Invalid URL") }
@@ -542,7 +545,7 @@ class AuthViewModel: ObservableObject {
                     return (true, nil)
                 } else {
                     let err = String(data: data, encoding: .utf8) ?? "Unknown Error"
-                    print("❌ LAMBDA REJECTED SAVE (\(httpResponse.statusCode)): \(err)") // <-- This will tell us the exact issue!
+                    print("❌ LAMBDA REJECTED SAVE (\(httpResponse.statusCode)): \(err)")
                     
                     if err.contains("ERR_USERNAME_TAKEN") {
                         return (false, "That username is already taken.")
@@ -587,7 +590,6 @@ class AuthViewModel: ObservableObject {
         return false
     }
 
-    // 🚀 FIXED: Deep logging added to catch the silent Lambda crash
     func updateBusinessProfile(storeName: String, phoneNumber: String, storeWebsite: String, storeAddress: String, storeBio: String, storeLogoUrl: String, storeLogoBase64: String? = nil) async -> Bool {
         guard !userId.isEmpty else { return false }
         guard let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/checkout") else { return false }
@@ -651,7 +653,7 @@ class AuthViewModel: ObservableObject {
                     return true
                 } else {
                     let errorString = String(data: data, encoding: .utf8) ?? "Unknown Error"
-                    print("❌ LAMBDA REJECTED SAVE (\(httpResponse.statusCode)): \(errorString)") // <-- This will tell us the exact issue!
+                    print("❌ LAMBDA REJECTED SAVE (\(httpResponse.statusCode)): \(errorString)")
                 }
             }
         } catch {
@@ -684,6 +686,51 @@ class AuthViewModel: ObservableObject {
             if description.contains("UserNotConfirmed") { return String(localized: "Please verify your email.") }
             return String(localized: "Something went wrong. Please try again.")
         default: return String(localized: "Something went wrong. Please try again.")
+        }
+    }
+    
+    // MARK: - App Attest Registration
+    private func performAppAttest() async {
+        guard !isAttesting else { return }
+        let syncKey = "AppAttestSyncedV6_\(self.userId)" 
+        
+        if AppAttestService.shared.currentKeyId == nil || !UserDefaults.standard.bool(forKey: syncKey) {
+            isAttesting = true
+            defer { isAttesting = false }
+            
+            do {
+                let challenge = self.userId.isEmpty ? UUID().uuidString : self.userId
+                let (keyId, attestation) = try await AppAttestService.shared.attestDevice(challenge: challenge)
+                print("✅ App Attest Phase 1 Successful! KeyId: \(keyId)")
+                
+                guard let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/checkout") else { return }
+                
+                let bodyPayload: [String: Any] = [
+                    "purchaseType": "register_device",
+                    "userId": self.userId,
+                    "keyId": keyId,
+                    "attestation": attestation,
+                    "challenge": challenge
+                ]
+                
+                guard let bodyData = try? JSONSerialization.data(withJSONObject: bodyPayload) else { return }
+                let request = await authorizedJSONRequest(url: url, body: bodyData)
+                
+                let (data, response) = try await URLSession.shared.data(for: request)
+                let httpResponse = response as? HTTPURLResponse
+                
+                if httpResponse?.statusCode == 200 {
+                    UserDefaults.standard.set(true, forKey: syncKey)
+                    print("✅ Backend successfully saved the App Attest Public Key!")
+                } else {
+                    let err = String(data: data, encoding: .utf8) ?? ""
+                    let status = httpResponse?.statusCode ?? 0
+                    print("❌ Backend rejected the App Attest Key. Status: \(status) \(err)")
+                }
+                
+            } catch {
+                print("❌ App Attest Phase 1 Failed: \(error.localizedDescription)")
+            }
         }
     }
 }

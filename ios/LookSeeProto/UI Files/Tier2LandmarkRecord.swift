@@ -659,7 +659,7 @@ struct Tier2LandmarkRecord: View {
         Task {
             await vm.fetchUserEmail(); let idToken = await vm.fetchIdToken()
             do {
-                _ = try await uploadService.upload(userEmail: vm.userEmail, idToken: idToken, label: selectedLandmark.label, landmarkId: selectedLandmark.landmarkId, landmarkLabel: selectedLandmark.label, shortDescription: selectedLandmark.shortDescription, userDescription: nil, latitude: extractedLatitude ?? locationManager.latitude, longitude: extractedLongitude ?? locationManager.longitude, horizontalAccuracy: locationManager.horizontalAccuracy, videoURLs: [url], image: nil)
+                _ = try await uploadService.upload(idToken: idToken, label: selectedLandmark.label, landmarkId: selectedLandmark.landmarkId, landmarkLabel: selectedLandmark.label, shortDescription: selectedLandmark.shortDescription, userDescription: nil, latitude: extractedLatitude ?? locationManager.latitude, longitude: extractedLongitude ?? locationManager.longitude, horizontalAccuracy: locationManager.horizontalAccuracy, videoURLs: [url], image: nil)
                 if let negativeVideo = capturedNegativeVideo { _ = try await hardNegativeUploadService.upload(landmarkId: selectedLandmark.landmarkId, idToken: idToken, video: negativeVideo) }
                 clearScreen(); statusText = "Media uploaded successfully."
             } catch { print("Tier-2 upload failed:", error.localizedDescription) }

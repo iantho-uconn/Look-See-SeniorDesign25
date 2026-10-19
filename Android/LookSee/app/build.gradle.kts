@@ -13,6 +13,7 @@ val localProperties = Properties().apply {
     }
 }
 val mapsApiKey: String = localProperties.getProperty("MAPS_API_KEY") ?: ""
+val sentryDsn: String = localProperties.getProperty("SENTRY_DSN") ?: ""
 
 android {
     namespace = "looksee.angelll.com"
@@ -27,9 +28,10 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // Injects the key into AndroidManifest.xml and BuildConfig
+        // Injects the keys into AndroidManifest.xml and BuildConfig
         manifestPlaceholders["MAPS_API_KEY"] = mapsApiKey
         buildConfigField("String", "MAPS_API_KEY", "\"$mapsApiKey\"")
+        buildConfigField("String", "SENTRY_DSN", "\"$sentryDsn\"")
     }
 
     buildTypes {
@@ -109,7 +111,7 @@ dependencies {
     implementation("com.google.code.gson:gson:2.14.0")
 
     implementation("androidx.work:work-runtime-ktx:2.11.2")
-    
+
     // ML Kit Text Recognition for Camera Scanner
     implementation("com.google.android.gms:play-services-mlkit-text-recognition:19.0.1")
 

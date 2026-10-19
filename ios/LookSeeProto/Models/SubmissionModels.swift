@@ -20,7 +20,6 @@ enum MediaKind: String, Codable {
 }
 
 struct InitSubmissionRequest: Codable {
-    let userEmail: String
     let label: String
     let landmarkId: String?     // 🚀 THE FIX: This tells AWS to use the existing S3 folder!
     let mediaKind: MediaKind
@@ -38,7 +37,6 @@ struct InitSubmissionResponse: Codable {
 struct CompleteSubmissionRequest: Codable {
     let submissionId: String
     let s3Key: String
-    let userEmail: String
 
     let label: String
     let landmarkId: String?
