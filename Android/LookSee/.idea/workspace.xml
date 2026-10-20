@@ -17,28 +17,8 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="07f21855-e7c7-4afa-a99c-977bf161748a" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/LookSeeProto/LookSeeProto.entitlements" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/LookSeeProto/Secrets.xcconfig" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/build.gradle.kts" beforeDir="false" afterPath="$PROJECT_DIR$/app/build.gradle.kts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/AndroidManifest.xml" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/AndroidManifest.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/MainActivity.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/MainActivity.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/models/BusinessLandmarkService.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/models/BusinessLandmarkService.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/models/HardNegativeUploadService.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/models/HardNegativeUploadService.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/models/UploadService.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/models/UploadService.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/Settings.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/Settings.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/res/xml/network_security_config.xml" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/res/xml/network_security_config.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/Detection/NetworkMonitor.swift" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/Detection/NetworkMonitor.swift" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/LookSeeProto.xcodeproj/project.pbxproj" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/LookSeeProto.xcodeproj/project.pbxproj" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/LookSeeProto/Info.plist" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/LookSeeProto/Info.plist" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/LookSeeProto/Localizable.xcstrings" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/LookSeeProto/Localizable.xcstrings" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/LookSeeProto/LookSeeProtoApp.swift" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/LookSeeProto/LookSeeProtoApp.swift" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/Models/AppAttestService.swift" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/Models/AppAttestService.swift" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/Models/UploadService.swift" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/Models/UploadService.swift" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/UI Files/LoadingAnimation_2.swift" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/UI Files/LoadingAnimation_2.swift" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/UI Files/privacypolicy.swift" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/UI Files/privacypolicy.swift" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/UI Files/termsofservice.swift" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/UI Files/termsofservice.swift" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/ViewModels/AuthViewModel.swift" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/ViewModels/AuthViewModel.swift" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/UI Files/BusinessLandmarksView.swift" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/UI Files/BusinessLandmarksView.swift" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />

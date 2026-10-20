@@ -70,6 +70,10 @@ struct LookSeeProtoApp: App {
                 )
                 .task {
                     await adConsentManager.start()
+                    
+                    // 🚀 THE FIX: Attach the AuthViewModel to the queue globally!
+                    // Now background uploads start the moment the app opens, no matter what screen the user is on.
+                    AutoUploadManager.shared.attachAuthVM(authViewModel)
                 }
         }
     }

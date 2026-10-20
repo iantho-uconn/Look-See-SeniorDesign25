@@ -216,7 +216,6 @@ struct BusinessLandmarksView: View {
             }
         }
         .onAppear {
-            uploadManager.attachAuthVM(vm)
             startAutoRefresh()
 
             guard hasLoadedOnce else { return }
