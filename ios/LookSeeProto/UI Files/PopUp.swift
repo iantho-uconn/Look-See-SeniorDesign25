@@ -419,7 +419,7 @@ struct PopUp: View {
     // MARK: - URL Handling
 
     private func normalizedURL(_ rawValue: String) -> URL? {
-        let cleaned = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleaned = rawValue.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "looksee-app-uploads.s3.us-east-1.amazonaws.com", with: "d1fjsmhmay9z6x.cloudfront.net").replacingOccurrences(of: "looksee-app-uploads.s3.amazonaws.com", with: "d1fjsmhmay9z6x.cloudfront.net")
         guard !cleaned.isEmpty else { return nil }
         if let directURL = URL(string: cleaned), let scheme = directURL.scheme?.lowercased(), scheme == "http" || scheme == "https" {
             return directURL

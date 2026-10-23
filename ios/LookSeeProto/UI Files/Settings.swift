@@ -77,7 +77,7 @@ struct Settings: View {
                             HStack(spacing: 16) {
                                 ZStack {
                                     Circle().fill(primaryColor.opacity(0.15))
-                                    if let url = URL(string: vm.profileImageUrl), !vm.profileImageUrl.isEmpty {
+                                    if let url = URL(string: vm.profileImageUrl.replacingOccurrences(of: "looksee-app-uploads.s3.us-east-1.amazonaws.com", with: "d1fjsmhmay9z6x.cloudfront.net").replacingOccurrences(of: "looksee-app-uploads.s3.amazonaws.com", with: "d1fjsmhmay9z6x.cloudfront.net")), !vm.profileImageUrl.isEmpty {
                                         AsyncImage(url: url) { phase in
                                             switch phase {
                                             case .empty:
@@ -973,7 +973,7 @@ struct BusinessProfileEditSheet: View {
                                     .resizable()
                                     .scaledToFill()
                                     .clipShape(Circle())
-                            } else if let url = URL(string: draftLogoUrl), !draftLogoUrl.isEmpty {
+                            } else if let url = URL(string: draftLogoUrl.replacingOccurrences(of: "looksee-app-uploads.s3.us-east-1.amazonaws.com", with: "d1fjsmhmay9z6x.cloudfront.net").replacingOccurrences(of: "looksee-app-uploads.s3.amazonaws.com", with: "d1fjsmhmay9z6x.cloudfront.net")), !draftLogoUrl.isEmpty {
                                 AsyncImage(url: url) { phase in
                                     if let image = phase.image {
                                         image.resizable().scaledToFill().clipShape(Circle())
@@ -1164,7 +1164,7 @@ struct UserProfileEditSheet: View {
                                             .scaledToFill()
                                             .frame(width: 108, height: 108)
                                             .clipShape(Circle())
-                                    } else if let url = URL(string: vm.profileImageUrl), !vm.profileImageUrl.isEmpty {
+                                    } else if let url = URL(string: vm.profileImageUrl.replacingOccurrences(of: "looksee-app-uploads.s3.us-east-1.amazonaws.com", with: "d1fjsmhmay9z6x.cloudfront.net").replacingOccurrences(of: "looksee-app-uploads.s3.amazonaws.com", with: "d1fjsmhmay9z6x.cloudfront.net")), !vm.profileImageUrl.isEmpty {
                                         AsyncImage(url: url) { phase in
                                             if let image = phase.image {
                                                 image.resizable().scaledToFill().frame(width: 108, height: 108).clipShape(Circle())

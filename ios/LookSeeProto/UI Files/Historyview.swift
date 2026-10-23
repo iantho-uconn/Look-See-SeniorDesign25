@@ -74,7 +74,7 @@ struct HistoryView: View {
                                 } label: {
                                     HStack(spacing: 14) {
                                         // Thumbnail
-                                        if let imgUrl = item.imageUrl, let url = URL(string: imgUrl), !imgUrl.isEmpty {
+                                        if let imgUrl = item.imageUrl, let url = URL(string: imgUrl.replacingOccurrences(of: "looksee-app-uploads.s3.us-east-1.amazonaws.com", with: "d1fjsmhmay9z6x.cloudfront.net").replacingOccurrences(of: "looksee-app-uploads.s3.amazonaws.com", with: "d1fjsmhmay9z6x.cloudfront.net")), !imgUrl.isEmpty {
                                             AsyncImage(url: url) { phase in
                                                 if let image = phase.image {
                                                     image.resizable().scaledToFill()
@@ -197,7 +197,7 @@ struct HistoryDetailSheet: View {
                 // --- HEADER SECTION ---
                 VStack(alignment: .leading, spacing: 20) {
                     HStack(alignment: .center, spacing: 16) {
-                        if let imgUrl = item.imageUrl, let url = URL(string: imgUrl), !imgUrl.isEmpty {
+                        if let imgUrl = item.imageUrl, let url = URL(string: imgUrl.replacingOccurrences(of: "looksee-app-uploads.s3.us-east-1.amazonaws.com", with: "d1fjsmhmay9z6x.cloudfront.net").replacingOccurrences(of: "looksee-app-uploads.s3.amazonaws.com", with: "d1fjsmhmay9z6x.cloudfront.net")), !imgUrl.isEmpty {
                             AsyncImage(url: url) { phase in
                                 if let image = phase.image {
                                     image.resizable().scaledToFill()
@@ -224,7 +224,7 @@ struct HistoryDetailSheet: View {
                                 .lineLimit(2)
                                 .minimumScaleFactor(0.8)
                             
-                            Text("\(formatFullDate(item.scannedAt)) • \(item.locationString)")
+                            Text("\(formatFullDate(item.scannedAt))\n\(item.locationString)")
                                 .font(.subheadline)
                                 .foregroundStyle(.white.opacity(0.6))
                         }
@@ -295,7 +295,7 @@ struct HistoryDetailSheet: View {
                                     .foregroundStyle(.white.opacity(0.8))
                                     .fixedSize(horizontal: false, vertical: true)
                                 
-                                if !promoImageUrl.isEmpty, let url = URL(string: promoImageUrl) {
+                                if !promoImageUrl.isEmpty, let url = URL(string: promoImageUrl.replacingOccurrences(of: "looksee-app-uploads.s3.us-east-1.amazonaws.com", with: "d1fjsmhmay9z6x.cloudfront.net").replacingOccurrences(of: "looksee-app-uploads.s3.amazonaws.com", with: "d1fjsmhmay9z6x.cloudfront.net")) {
                                     AsyncImage(url: url) { phase in
                                         if let image = phase.image {
                                             image.resizable().scaledToFill()
