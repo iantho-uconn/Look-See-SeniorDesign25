@@ -5,7 +5,6 @@
 //  Created by Angel Pineda on 6/19/26.
 //
 
-
 import SwiftUI
 import MapKit
 import CoreLocation
@@ -21,24 +20,19 @@ struct LandmarkMapView: View {
     @State private var showFilterSheet = false
     
     @State private var searchText: String = ""
-    @State private var isGlobalSearch: Bool = true
+    @State private var isGlobalSearch: Bool = false
     @State private var searchRadiusMiles: Double = 10.0
     @State private var myUploadsOnly = false
     @State private var promotedOnly = false
     @State private var selectedClusters: Set<String> = []
     
+    @State private var filteredLandmarks: [NearbyLandmark] = []
+    
     @FocusState private var IsKeyboard: Bool
     
     private let topChromeReservedHeight: CGFloat = 80
-
     private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00)
     private let promoColor = Color.orange
-
-    // Height reserved at the bottom of the map so MapKit's own Legal /
-    // attribution control clears the custom bottom tab bar. Kept in sync
-    // with the ~90pt safeAreaInset height Buttons.swift reserves for its
-    // bottom bar, but applied here directly so this view doesn't depend on
-    // that propagating correctly through any ancestor container.
     private let mapBottomReservedHeight: CGFloat = 50
 
     private var availableClusters: [String] {
@@ -49,20 +43,7 @@ struct LandmarkMapView: View {
             if let lhsNum = Int(lhs), let rhsNum = Int(rhs) {
                 return lhsNum < rhsNum
             }
-            // Fallback for any non-numeric cluster IDs, so this doesn't crash
-            // or silently misorder if a cluster ID is ever a non-integer string.
             return lhs < rhs
-        }
-    }
-
-    private var activeLandmarks: [NearbyLandmark] {
-        nearbyService.items.filter { landmark in
-            let matchesUser = myUploadsOnly ? (landmark.createdBy == vm.userEmail) : true
-            let matchesPromo = promotedOnly ? landmark.promotionEnabled : true
-            let matchesCluster = selectedClusters.isEmpty ? true : (landmark.clusterId != nil && selectedClusters.contains(landmark.clusterId!))
-            let matchesSearch = searchText.isEmpty ? true : landmark.label.localizedCaseInsensitiveContains(searchText)
-            
-            return matchesUser && matchesPromo && matchesCluster && matchesSearch
         }
     }
 
@@ -71,26 +52,50 @@ struct LandmarkMapView: View {
             ZStack(alignment: .top) {
                 Map(position: $cameraPosition) {
                     UserAnnotation()
-                    ForEach(activeLandmarks) { landmark in
+                    
+                    ForEach(filteredLandmarks) { landmark in
                         Annotation(landmark.label, coordinate: CLLocationCoordinate2D(latitude: landmark.latitude, longitude: landmark.longitude)) {
-                            Button {
-                                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                                withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) { selectedLandmark = landmark }
-                            } label: {
-                                VStack(spacing: 0) {
-                                    if landmark.promotionEnabled {
-                                        Image(systemName: "crown.fill").font(.title3).foregroundStyle(.white).padding(8).background(Circle().fill(promoColor)).shadow(color: promoColor.opacity(0.8), radius: 6, x: 0, y: 2)
-                                    } else {
-                                        Image(systemName: "mappin.circle.fill").font(.title).foregroundStyle(.white, primaryColor).background(Circle().fill(.white)).shadow(color: .black.opacity(0.3), radius: 4, x: 0, y: 2)
-                                    }
-                                    Image(systemName: "triangle.fill").font(.caption2).foregroundStyle(landmark.promotionEnabled ? promoColor : primaryColor).rotationEffect(.degrees(180)).offset(y: -2)
+                            
+                            // 🚀 THE FIX: We use a passive VStack with onTapGesture instead of a Button.
+                            // A Button actively eats gesture inputs, blocking your pinch/zooms!
+                            VStack(spacing: 0) {
+                                if landmark.promotionEnabled {
+                                    Image(systemName: "crown.fill").font(.title3).foregroundStyle(.white).padding(8).background(Circle().fill(promoColor)).shadow(color: promoColor.opacity(0.8), radius: 6, x: 0, y: 2)
+                                } else {
+                                    Image(systemName: "mappin.circle.fill").font(.title).foregroundStyle(.white, primaryColor).background(Circle().fill(.white)).shadow(color: .black.opacity(0.3), radius: 4, x: 0, y: 2)
                                 }
-                                .scaleEffect(selectedLandmark?.id == landmark.id ? 1.3 : 1.0)
+                                Image(systemName: "triangle.fill").font(.caption2).foregroundStyle(landmark.promotionEnabled ? promoColor : primaryColor).rotationEffect(.degrees(180)).offset(y: -2)
+                            }
+                            .scaleEffect(selectedLandmark?.id == landmark.id ? 1.3 : 1.0)
+                            .onTapGesture {
+                                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                                withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                                    selectedLandmark = landmark
+                                }
+                                
+                                // 🚀 Removed DispatchQueue wrapper so it opens INSTANTLY
+                                VariableContainer.shared.presentMapLandmark(
+                                    id: landmark.id,
+                                    name: landmark.label,
+                                    description: landmark.shortDescription,
+                                    latitude: landmark.latitude,
+                                    longitude: landmark.longitude,
+                                    promotionEnabled: landmark.promotionEnabled,
+                                    promotion: landmark.promotion,
+                                    ownerId: landmark.createdBy,
+                                    websiteUrl: landmark.websiteUrl,
+                                    promoName: landmark.promoName,
+                                    promoDescription: landmark.promoDescription,
+                                    promoImageUrl: landmark.promoImageUrl,
+                                    merchantName: landmark.merchantName,
+                                    merchantBio: landmark.merchantBio,
+                                    merchantPhone: landmark.merchantPhone,
+                                    merchantAddress: landmark.merchantAddress,
+                                    merchantLogoUrl: landmark.merchantLogoUrl
+                                )
                             }
                         }
                     }
-                }
-                .mapControls {
                 }
                 .safeAreaPadding(.bottom, mapBottomReservedHeight)
                 .ignoresSafeArea(edges: .top)
@@ -107,7 +112,7 @@ struct LandmarkMapView: View {
                             .autocorrectionDisabled()
                             .submitLabel(.search)
                             .onSubmit {
-                                if let firstMatch = activeLandmarks.first {
+                                if let firstMatch = filteredLandmarks.first {
                                     withAnimation(.easeInOut(duration: 1.0)) {
                                         cameraPosition = .region(MKCoordinateRegion(center: CLLocationCoordinate2D(latitude: firstMatch.latitude, longitude: firstMatch.longitude), span: MKCoordinateSpan(latitudeDelta: 0.02, longitudeDelta: 0.02)))
                                     }
@@ -148,11 +153,6 @@ struct LandmarkMapView: View {
                     }
                     .padding(.trailing, 20)
                 }
-                // Dynamic top offset: device's own safe area (Dynamic Island vs
-                // notch vs none) + the fixed 45pt Buttons.swift reserves as its
-                // top safeAreaInset + the topBar's own rendered height + a
-                // small buffer, instead of one hardcoded constant that only
-                // matched one specific device.
                 .padding(.top, proxy.safeAreaInsets.top + topChromeReservedHeight)
             }
             .ignoresSafeArea(edges: .top)
@@ -162,16 +162,22 @@ struct LandmarkMapView: View {
             await vm.fetchUserEmail()
             await fetchMapData()
         }
-        .sheet(item: $selectedLandmark) { landmark in
-            landmarkDetailSheet(landmark)
-                .presentationDetents([.height(landmark.promotionEnabled ? 340 : 260)])
-                .presentationDragIndicator(.visible)
-                .presentationBackground(.regularMaterial)
-        }
         .sheet(isPresented: $showFilterSheet, onDismiss: { Task { await fetchMapData() } }) {
             filterMenuSheet
                 .presentationDetents([.fraction(0.85)])
         }
+        .onChange(of: VariableContainer.shared.infoView) { _, isPopUpOpen in
+            if !isPopUpOpen {
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                    selectedLandmark = nil
+                }
+            }
+        }
+        .onChange(of: nearbyService.items) { _, _ in applyFilters() }
+        .onChange(of: searchText) { _, _ in applyFilters() }
+        .onChange(of: selectedClusters) { _, _ in applyFilters() }
+        .onChange(of: myUploadsOnly) { _, _ in applyFilters() }
+        .onChange(of: promotedOnly) { _, _ in applyFilters() }
     }
     
     private var filterMenuSheet: some View {
@@ -194,7 +200,6 @@ struct LandmarkMapView: View {
                     .contentShape(Rectangle())
                     .simultaneousGesture(
                         TapGesture().onEnded {
-                            print("tap detected please work inside if ")
                             IsKeyboard = false
                         }
                     ).padding(20).background(Color(uiColor: .secondarySystemGroupedBackground)).clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
@@ -203,7 +208,7 @@ struct LandmarkMapView: View {
                         Text("Visibility").font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.gray).textCase(.uppercase)
                         Toggle("My Uploads Only", isOn: $myUploadsOnly).tint(primaryColor).foregroundStyle(.primary).font(.system(size: 16, weight: .semibold))
                         Divider()
-                        Toggle("Promoted Only", isOn: $promotedOnly).tint(promoColor).foregroundStyle(.primary).font(.system(size: 16, weight: .semibold))
+                        Toggle("Promotions Only", isOn: $promotedOnly).tint(promoColor).foregroundStyle(.primary).font(.system(size: 16, weight: .semibold))
                     }.padding(20).background(Color(uiColor: .secondarySystemGroupedBackground)).clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
                     
                     if !availableClusters.isEmpty {
@@ -225,7 +230,6 @@ struct LandmarkMapView: View {
             .contentShape(Rectangle())
             .simultaneousGesture(
                 TapGesture().onEnded {
-                    print("tap detected please work")
                     IsKeyboard = false
                 }
             )
@@ -236,68 +240,21 @@ struct LandmarkMapView: View {
         }
     }
 
-    private func landmarkDetailSheet(_ landmark: NearbyLandmark) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
-            if landmark.promotionEnabled {
-                HStack {
-                    Image(systemName: "sparkles")
-                    Text(landmark.promotion ?? "Special Promotion Available!")
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
-                    Spacer()
-                }
-                .padding(12)
-                .background(promoColor.opacity(0.2))
-                .foregroundStyle(promoColor)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            }
-            
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(landmark.label)
-                        .font(.system(size: 24, weight: .bold, design: .rounded))
-                        .foregroundStyle(.primary)
-                    Text("\(String(format: "%.1f", landmark.distanceMeters / 1609.34)) miles away")
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
-                        .foregroundStyle(primaryColor)
-                }
-                Spacer()
-            }
-            
-            Text(landmark.shortDescription)
-                .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(.secondary)
-            
-            Spacer()
-            
-            // "Directions" is now the only button, taking up the full width.
-            Button {
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                openAppleMaps(for: landmark)
-            } label: {
-                HStack {
-                    Image(systemName: "location.fill")
-                    Text("Directions").fontWeight(.bold)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
-                .background(Color(uiColor: .tertiarySystemFill))
-                .foregroundStyle(.primary)
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            }
-            .padding(.bottom, 10)
-        }
-        .padding(24)
-    }
-
     private func fetchMapData() async {
         guard locationManager.isAuthorized, let lat = locationManager.latitude, let lon = locationManager.longitude else { return }
         let meters = (isGlobalSearch ? 50000.0 : searchRadiusMiles) * 1609.34
         await nearbyService.fetchNearby(latitude: lat, longitude: lon, radiusMeters: meters)
     }
     
-    private func openAppleMaps(for landmark: NearbyLandmark) {
-        let mapItem = MKMapItem(placemark: MKPlacemark(coordinate: CLLocationCoordinate2D(latitude: landmark.latitude, longitude: landmark.longitude)))
-        mapItem.name = landmark.label
-        mapItem.openInMaps(launchOptions: [MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeDriving])
+    private func applyFilters() {
+        let currentEmail = vm.userEmail
+        filteredLandmarks = nearbyService.items.filter { landmark in
+            let matchesUser = myUploadsOnly ? (landmark.createdBy == currentEmail) : true
+            let matchesPromo = promotedOnly ? landmark.promotionEnabled : true
+            let matchesCluster = selectedClusters.isEmpty ? true : (landmark.clusterId != nil && selectedClusters.contains(landmark.clusterId!))
+            let matchesSearch = searchText.isEmpty ? true : landmark.label.localizedCaseInsensitiveContains(searchText)
+
+            return matchesUser && matchesPromo && matchesCluster && matchesSearch
+        }
     }
 }

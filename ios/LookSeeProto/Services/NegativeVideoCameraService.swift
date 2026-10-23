@@ -129,8 +129,13 @@ final class NegativeVideoCameraService: NSObject, ObservableObject {
 
     func startRecording() {
         guard !isRecording else { return }
+        isRecording = true // 🚀 Optimistic UI update
         segmentURLs = []
-        beginNewSegment()
+        
+        // 🚀 FIXED: Push the heavy recording setup to the background session queue
+        sessionQueue.async { [weak self] in
+            self?.beginNewSegment()
+        }
     }
 
     private func beginNewSegment() {
@@ -144,13 +149,16 @@ final class NegativeVideoCameraService: NSObject, ObservableObject {
         }
         
         videoOutput.startRecording(to: fileURL, recordingDelegate: self)
-        isRecording = true
     }
 
     func stopRecording() {
         guard isRecording else { return }
         isIntentionalStop = true
-        videoOutput.stopRecording()
+        
+        // 🚀 FIXED: Push the heavy video stop/seal command to the background session queue
+        sessionQueue.async { [weak self] in
+            self?.videoOutput.stopRecording()
+        }
     }
 
     // MARK: - Interruption handling
@@ -181,7 +189,9 @@ final class NegativeVideoCameraService: NSObject, ObservableObject {
 
     private func resumeRecordingAfterInterruption() {
         guard !isRecording else { return }
-        beginNewSegment()
+        sessionQueue.async { [weak self] in
+            self?.beginNewSegment()
+        }
     }
 
     // MARK: - Segment merging
@@ -196,7 +206,6 @@ final class NegativeVideoCameraService: NSObject, ObservableObject {
             return
         }
         
-        // 🚀 THE FIX: Removed the rogue internal merger and routed safely through the fixed VideoMerger!
         if let merged = try? await VideoMerger.mergeAndValidate(clipURLs: urls, minimumDuration: 1.0) {
             for url in urls { try? FileManager.default.removeItem(at: url) }
             onVideoRecorded?(merged)

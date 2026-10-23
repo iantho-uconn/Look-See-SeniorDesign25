@@ -11,6 +11,7 @@ import Amplify
 
 struct Login: View {
     @ObservedObject var vm: AuthViewModel
+    @EnvironmentObject var authState: AuthState
 
     @State private var username = ""
     @State private var password = ""
@@ -257,6 +258,7 @@ struct Login: View {
         }
         .onChange(of: vm.isSignedIn) { _, newValue in
             if newValue {
+                Task { await authState.resolveTier() }
                 onSignedIn()
             }
         }

@@ -10,6 +10,7 @@ import UIKit
 import Combine
 import Amplify
 import AWSPluginsCore
+import CryptoKit
 
 // MARK: - User-facing upload stage
 
@@ -52,18 +53,17 @@ final class UploadService: ObservableObject {
     @Published private(set) var stage: PositiveUploadStage = .idle
 
     // MARK: API configuration
-    private let baseURL = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev")!
+    private let baseURL = URL(string: "https://d11vl3v9w133rh.cloudfront.net")!
     private let apiTimeout: TimeInterval = 60
-    private let mediaUploadTimeout: TimeInterval = 300
     
-    // 🚀 THE FIX: Changed from 30 to 1.0 to prevent server/timer blocking on Business or 'Needs More' submissions
+    private let mediaUploadTimeout: TimeInterval = 900
+    
     private let minimumCombinedVideoDuration: Double = 1.0
 
     // MARK: Errors
     enum UploadError: LocalizedError {
         case uploadAlreadyInProgress
         case missingLabel
-        case missingUserEmail
         case notSignedIn
         case tokensUnavailable
         case noMediaSelected
@@ -77,7 +77,6 @@ final class UploadService: ObservableObject {
             switch self {
             case .uploadAlreadyInProgress: return String(localized: "An upload is already in progress.")
             case .missingLabel: return String(localized: "Please enter a landmark label before uploading.")
-            case .missingUserEmail: return String(localized: "We could not verify your account. Please sign in again and retry.")
             case .notSignedIn: return String(localized: "You must be signed in before uploading.")
             case .tokensUnavailable: return String(localized: "We could not access your secure login token. Please sign out, sign back in, and try again.")
             case .noMediaSelected: return String(localized: "Please record one or more videos (totaling at least 15 seconds) or take one landmark photo.")
@@ -85,8 +84,8 @@ final class UploadService: ObservableObject {
             case .invalidURL: return String(localized: "The server returned an invalid upload link. Please try again.")
             case .invalidResponse: return String(localized: "The server returned an unexpected response. Please try again.")
             case .missingImageData: return String(localized: "The selected photo could not be prepared for upload.")
-            case .badStatus(let code, _):
-                if code == 401 || code == 403 { return String(localized: "Your session is no longer authorized. Please sign in again.") }
+            case .badStatus(let code, let msg):
+                if code == 401 || code == 403 { return String(localized: "Backend Error (403): \(msg)") }
                 if code == 404 { return String(localized: "The upload service could not find the requested resource.") }
                 if code == 408 { return String(localized: "The upload request timed out. Please try again.") }
                 if code == 413 { return String(localized: "The selected media file is too large to upload.") }
@@ -100,7 +99,6 @@ final class UploadService: ObservableObject {
     // MARK: - Main upload flow
 
     func upload(
-        userEmail: String,
         idToken: String,
         label: String,
         landmarkId: String? = nil,
@@ -117,7 +115,6 @@ final class UploadService: ObservableObject {
         guard !isUploading else { throw UploadError.uploadAlreadyInProgress }
 
         isUploading = true
-
         defer { isUploading = false }
 
         do {
@@ -130,9 +127,6 @@ final class UploadService: ObservableObject {
 
             let trimmedLabel = label.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmedLabel.isEmpty else { throw UploadError.missingLabel }
-
-            let trimmedUserEmail = userEmail.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmedUserEmail.isEmpty else { throw UploadError.missingUserEmail }
 
             let hasVideo = !videoURLs.isEmpty
             let hasImage = image != nil
@@ -151,7 +145,7 @@ final class UploadService: ObservableObject {
                 let filename = "photo.jpg"
                 let contentType = "image/jpeg"
 
-                let initRequest = InitSubmissionRequest(userEmail: trimmedUserEmail, label: trimmedLabel, landmarkId: landmarkId, mediaKind: mediaKind, filename: filename, contentType: contentType)
+                let initRequest = InitSubmissionRequest(label: trimmedLabel, landmarkId: landmarkId, mediaKind: mediaKind, filename: filename, contentType: contentType)
 
                 updateStage(
                     .preparingUpload,
@@ -169,7 +163,7 @@ final class UploadService: ObservableObject {
                     detail: String(localized: "Keep LookSee open while your photo is uploaded.")
                 )
 
-                try await putToS3(presignedURL: initResponse.uploadUrl, contentType: contentType, videoURL: nil, image: image)
+                try await postToS3(presignedPost: initResponse.uploadUrl, contentType: contentType, videoURL: nil, image: image)
 
                 updateStage(
                     .finalizing,
@@ -178,7 +172,7 @@ final class UploadService: ObservableObject {
                     detail: String(localized: "Your media is uploaded. We’re attaching its information and location.")
                 )
 
-                let completeRequest = CompleteSubmissionRequest(submissionId: initResponse.submissionId, s3Key: initResponse.s3Key, userEmail: trimmedUserEmail, label: trimmedLabel, landmarkId: landmarkId, landmarkLabel: landmarkLabel, mediaKind: mediaKind, shortDescription: normalizedShortDescription, userDescription: normalizedUserDescription, latitude: latitude, longitude: longitude, horizontalAccuracy: horizontalAccuracy)
+                let completeRequest = CompleteSubmissionRequest(submissionId: initResponse.submissionId, s3Key: initResponse.s3Key, label: trimmedLabel, landmarkId: landmarkId, landmarkLabel: landmarkLabel, mediaKind: mediaKind, shortDescription: normalizedShortDescription, userDescription: normalizedUserDescription, latitude: latitude, longitude: longitude, horizontalAccuracy: horizontalAccuracy)
 
                 try await completeSubmission(completeRequest, token: idToken)
 
@@ -207,7 +201,7 @@ final class UploadService: ObservableObject {
             let filename = "\(label).mov"
             let contentType = "video/quicktime"
 
-            let initRequest = InitSubmissionRequest(userEmail: trimmedUserEmail, label: trimmedLabel, landmarkId: landmarkId, mediaKind: mediaKind, filename: filename, contentType: contentType)
+            let initRequest = InitSubmissionRequest(label: trimmedLabel, landmarkId: landmarkId, mediaKind: mediaKind, filename: filename, contentType: contentType)
 
             updateStage(
                 .preparingUpload,
@@ -225,7 +219,7 @@ final class UploadService: ObservableObject {
                 detail: String(localized: "Videos can take a little longer. Keep LookSee open until the upload finishes.")
             )
 
-            try await putToS3(presignedURL: initResponse.uploadUrl, contentType: contentType, videoURL: mergedURL, image: nil)
+            try await postToS3(presignedPost: initResponse.uploadUrl, contentType: contentType, videoURL: mergedURL, image: nil)
 
             updateStage(
                 .finalizing,
@@ -234,7 +228,7 @@ final class UploadService: ObservableObject {
                 detail: String(localized: "Your media is uploaded. We’re attaching its information and location.")
             )
 
-            let completeRequest = CompleteSubmissionRequest(submissionId: initResponse.submissionId, s3Key: initResponse.s3Key, userEmail: trimmedUserEmail, label: trimmedLabel, landmarkId: landmarkId, landmarkLabel: landmarkLabel, mediaKind: mediaKind, shortDescription: normalizedShortDescription, userDescription: normalizedUserDescription, latitude: latitude, longitude: longitude, horizontalAccuracy: horizontalAccuracy)
+            let completeRequest = CompleteSubmissionRequest(submissionId: initResponse.submissionId, s3Key: initResponse.s3Key, label: trimmedLabel, landmarkId: landmarkId, landmarkLabel: landmarkLabel, mediaKind: mediaKind, shortDescription: normalizedShortDescription, userDescription: normalizedUserDescription, latitude: latitude, longitude: longitude, horizontalAccuracy: horizontalAccuracy)
 
             try await completeSubmission(completeRequest, token: idToken)
 
@@ -268,9 +262,9 @@ final class UploadService: ObservableObject {
 
     private func updateStage(_ newStage: PositiveUploadStage, progress newProgress: Double, status newStatus: String, detail newDetail: String) {
         stage = newStage
-        progress = min(max(newProgress, 0), 1)
-        status = newStatus
-        detail = newDetail
+        self.progress = min(max(newProgress, 0), 1)
+        self.status = newStatus
+        self.detail = newDetail
     }
 
     private func userFriendlyMessage(for error: Error) -> String {
@@ -307,12 +301,37 @@ final class UploadService: ObservableObject {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.timeoutInterval = apiTimeout
+        
+        request.allowsCellularAccess = true
+        request.allowsExpensiveNetworkAccess = true
+        request.allowsConstrainedNetworkAccess = true
+
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
         try await addAuthorizationHeader(to: &request)
         request.setValue(token, forHTTPHeaderField: "Authorization")
-        request.httpBody = try JSONEncoder().encode(requestBody)
+        
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        let payload = try encoder.encode(requestBody)
+        request.httpBody = payload
+        
+        do {
+            let assertion = try await AppAttestService.shared.generateAssertion(for: payload)
+            if let keyId = AppAttestService.shared.currentKeyId {
+                print("✅ [Upload Init] Hardware signature generated! Attaching headers.")
+                request.setValue(keyId, forHTTPHeaderField: "X-LookSee-App-Attest-KeyId")
+                request.setValue(assertion, forHTTPHeaderField: "X-LookSee-App-Attest")
+                
+                let hashString = Data(SHA256.hash(data: payload)).base64EncodedString()
+                request.setValue(hashString, forHTTPHeaderField: "X-LookSee-App-Attest-Payload-Hash")
+            } else {
+                print("❌ [Upload Init] Hardware signature generated, but currentKeyId is missing from memory.")
+            }
+        } catch {
+            print("❌ [Upload Init] FAILED to generate hardware signature: \(error.localizedDescription)")
+        }
 
         let (data, response) = try await URLSession.shared.data(for: request)
         try validateAPIResponse(response, data: data)
@@ -324,32 +343,63 @@ final class UploadService: ObservableObject {
         }
     }
 
-    private func putToS3(presignedURL: String, contentType: String, videoURL: URL?, image: UIImage?) async throws {
-        guard let url = URL(string: presignedURL) else { throw UploadError.invalidURL }
+    private func postToS3(presignedPost: S3PresignedPost, contentType: String, videoURL: URL?, image: UIImage?) async throws {
+        guard let url = URL(string: presignedPost.url) else { throw UploadError.invalidURL }
+        
         var request = URLRequest(url: url)
-        request.httpMethod = "PUT"
+        request.httpMethod = "POST"
         request.timeoutInterval = mediaUploadTimeout
-        request.setValue(contentType, forHTTPHeaderField: "Content-Type")
+        
+        request.allowsCellularAccess = true
+        request.allowsExpensiveNetworkAccess = true
+        request.allowsConstrainedNetworkAccess = true
+        
+        let boundary = "Boundary-\(UUID().uuidString)"
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
 
-        if let videoURL {
+        var body = Data()
+        
+        for (key, value) in presignedPost.fields {
+            body.append("--\(boundary)\r\n".data(using: .utf8)!)
+            body.append("Content-Disposition: form-data; name=\"\(key)\"\r\n\r\n".data(using: .utf8)!)
+            body.append("\(value)\r\n".data(using: .utf8)!)
+        }
+
+        if let videoURL = videoURL {
             guard FileManager.default.fileExists(atPath: videoURL.path) else { throw UploadError.noMediaSelected }
-            let (_, response) = try await URLSession.shared.upload(for: request, fromFile: videoURL)
-            try validateS3Response(response)
-            return
+            let videoData = try Data(contentsOf: videoURL)
+            let filename = videoURL.lastPathComponent
+            
+            body.append("--\(boundary)\r\n".data(using: .utf8)!)
+            body.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(filename)\"\r\n".data(using: .utf8)!)
+            body.append("Content-Type: \(contentType)\r\n\r\n".data(using: .utf8)!)
+            body.append(videoData)
+            body.append("\r\n".data(using: .utf8)!)
+            
+        } else if let image = image {
+            guard let imageData = image.jpegData(compressionQuality: 0.9) else { throw UploadError.missingImageData }
+            
+            body.append("--\(boundary)\r\n".data(using: .utf8)!)
+            body.append("Content-Disposition: form-data; name=\"file\"; filename=\"photo.jpg\"\r\n".data(using: .utf8)!)
+            body.append("Content-Type: \(contentType)\r\n\r\n".data(using: .utf8)!)
+            body.append(imageData)
+            body.append("\r\n".data(using: .utf8)!)
+        } else {
+            throw UploadError.noMediaSelected
         }
 
-        if let image {
-            guard let imageData = image.jpegData(compressionQuality: 0.9) else { throw UploadError.missingImageData }
-            let (_, response) = try await URLSession.shared.upload(for: request, from: imageData)
-            try validateS3Response(response)
-            return
-        }
-        throw UploadError.noMediaSelected
+        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+
+        let (responseData, response) = try await URLSession.shared.upload(for: request, from: body)
+        try validateS3Response(response, data: responseData)
     }
 
-    private func validateS3Response(_ response: URLResponse) throws {
+    private func validateS3Response(_ response: URLResponse, data: Data? = nil) throws {
         guard let httpResponse = response as? HTTPURLResponse else { throw UploadError.invalidResponse }
         guard (200...299).contains(httpResponse.statusCode) else {
+            if let data = data, let errorString = String(data: data, encoding: .utf8) {
+                print("❌ S3 ERROR: \(errorString)")
+            }
             throw UploadError.badStatus(httpResponse.statusCode, String(localized: "The S3 media upload failed."))
         }
     }
@@ -359,12 +409,37 @@ final class UploadService: ObservableObject {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.timeoutInterval = apiTimeout
+        
+        request.allowsCellularAccess = true
+        request.allowsExpensiveNetworkAccess = true
+        request.allowsConstrainedNetworkAccess = true
+
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
         try await addAuthorizationHeader(to: &request)
         request.setValue(token, forHTTPHeaderField: "Authorization")
-        request.httpBody = try JSONEncoder().encode(requestBody)
+        
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        let payload = try encoder.encode(requestBody)
+        request.httpBody = payload
+        
+        do {
+            let assertion = try await AppAttestService.shared.generateAssertion(for: payload)
+            if let keyId = AppAttestService.shared.currentKeyId {
+                print("✅ [Upload Complete] Hardware signature generated! Attaching headers.")
+                request.setValue(keyId, forHTTPHeaderField: "X-LookSee-App-Attest-KeyId")
+                request.setValue(assertion, forHTTPHeaderField: "X-LookSee-App-Attest")
+                
+                let hashString = Data(SHA256.hash(data: payload)).base64EncodedString()
+                request.setValue(hashString, forHTTPHeaderField: "X-LookSee-App-Attest-Payload-Hash")
+            } else {
+                print("❌ [Upload Complete] Hardware signature generated, but currentKeyId is missing from memory.")
+            }
+        } catch {
+            print("❌ [Upload Complete] FAILED to generate hardware signature: \(error.localizedDescription)")
+        }
 
         let (data, response) = try await URLSession.shared.data(for: request)
         try validateAPIResponse(response, data: data)
@@ -372,9 +447,10 @@ final class UploadService: ObservableObject {
 
     private func validateAPIResponse(_ response: URLResponse, data: Data) throws {
         guard let httpResponse = response as? HTTPURLResponse else { throw UploadError.invalidResponse }
+        let bodyString = String(data: data, encoding: .utf8) ?? ""
+        print("🌐 API Response [\(httpResponse.statusCode)]: \(bodyString)")
         guard (200...299).contains(httpResponse.statusCode) else {
-            let body = String(data: data, encoding: .utf8) ?? ""
-            throw UploadError.badStatus(httpResponse.statusCode, body)
+            throw UploadError.badStatus(httpResponse.statusCode, bodyString)
         }
     }
 }

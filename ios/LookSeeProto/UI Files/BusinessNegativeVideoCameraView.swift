@@ -924,6 +924,6 @@ private struct BusinessNegativeSafeVideoPlayer: UIViewControllerRepresentable, E
     static func dismantleUIViewController(_ uiViewController: AVPlayerViewController, coordinator: ()) {
         let player = uiViewController.player
         uiViewController.player = nil
-        DispatchQueue.global(qos: .background).async { player?.pause() }
+        player?.pause()
     }
 }

@@ -12,6 +12,15 @@ data class NearbyLandmark(
     val promotionEnabled: Boolean = false,
     val promotion: String? = null,
     val clusterId: String? = null,
+    val websiteUrl: String? = null,
+    val promoName: String? = null,
+    val promoDescription: String? = null,
+    val promoImageUrl: String? = null,
+    val merchantName: String? = null,
+    val merchantBio: String? = null,
+    val merchantPhone: String? = null,
+    val merchantAddress: String? = null,
+    val merchantLogoUrl: String? = null
 ) {
     val id: String
         get() = landmarkId

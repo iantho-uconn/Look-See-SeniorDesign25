@@ -1,4 +1,8 @@
 package looksee.angelll.com.models
+import looksee.angelll.com.uifiles.BugReport
+
+import looksee.angelll.com.uifiles.ReportDeviceInfo
+
 
 import com.google.gson.Gson
 import java.io.ByteArrayOutputStream

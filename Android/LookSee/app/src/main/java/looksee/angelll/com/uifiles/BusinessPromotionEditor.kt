@@ -22,8 +22,7 @@ import looksee.angelll.com.models.BusinessPromotion
 import looksee.angelll.com.models.BusinessPromotionEditorContext
 import looksee.angelll.com.models.BusinessPromotionService
 import looksee.angelll.com.ui.theme.AppleBlue
-import looksee.angelll.com.ui.theme.LookSeeCard
-import looksee.angelll.com.ui.theme.LookSeeSectionHeader
+import looksee.angelll.com.uifiles.LookSeeCard
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId

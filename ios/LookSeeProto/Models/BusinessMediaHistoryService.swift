@@ -31,7 +31,7 @@ enum BusinessMediaHistoryServiceError: LocalizedError {
 
 final class BusinessMediaHistoryService {
     private let baseURL = URL(
-        string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev"
+        string: "https://d11vl3v9w133rh.cloudfront.net"
     )!
 
     private func getCognitoIDToken() async throws -> String {
@@ -91,15 +91,10 @@ final class BusinessMediaHistoryService {
 
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
-        request.setValue(
-            "Bearer \(idToken)",
-            forHTTPHeaderField: "Authorization"
-        )
-        request.setValue(
-            "application/json",
-            forHTTPHeaderField: "Accept"
-        )
         request.timeoutInterval = 30
+
+        // 🚀 ADDED: Attaches App Attest and Cognito token headers automatically
+        await request.signWithAppAttest(idToken: idToken)
 
         let (data, response) = try await URLSession.shared.data(for: request)
 

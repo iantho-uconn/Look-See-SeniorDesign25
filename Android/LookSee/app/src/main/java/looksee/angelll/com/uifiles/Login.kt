@@ -15,10 +15,16 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -27,11 +33,13 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.amplifyframework.core.Amplify
+import com.amplifyframework.kotlin.core.Amplify
 import com.amplifyframework.auth.AuthException
 import com.amplifyframework.auth.result.step.*
+import kotlinx.coroutines.launch
 import looksee.angelll.com.models.*
 import looksee.angelll.com.viewmodels.*
 import looksee.angelll.com.services.*
@@ -43,6 +51,7 @@ fun LoginScreen(
 ) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var passwordVisible by remember { mutableStateOf(false) }
     var isLoggingIn by remember { mutableStateOf(false) }
     
     val focusManager = LocalFocusManager.current
@@ -57,10 +66,7 @@ fun LoginScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xFF0F0F1A))
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null
-            ) { focusManager.clearFocus() },
+            .pointerInput(Unit) { detectTapGestures(onTap = { focusManager.clearFocus() }) },
         contentAlignment = Alignment.Center
     ) {
         // Glow effect
@@ -124,7 +130,13 @@ fun LoginScreen(
                         placeholder = { Text("••••••••", color = Color.Gray) },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
-                        visualTransformation = PasswordVisualTransformation(),
+                        visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingIcon = {
+                            val image = if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff
+                            IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                                Icon(imageVector = image, contentDescription = if (passwordVisible) "Hide password" else "Show password", tint = Color.Gray)
+                            }
+                        },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedContainerColor = Color(0xFF2D2D3D),
                             unfocusedContainerColor = Color(0xFF2D2D3D),
@@ -150,8 +162,98 @@ fun LoginScreen(
             
             Spacer(modifier = Modifier.height(14.dp))
 
+            var showVerificationDialog by remember { mutableStateOf(false) }
+            var verificationCode by remember { mutableStateOf("") }
+            var verificationMessage by remember { mutableStateOf("") }
+            val coroutineScope = rememberCoroutineScope()
+
             if (vm.errorMessage.isNotEmpty()) {
-                Text(vm.errorMessage, color = Color.Red, fontSize = 12.sp, modifier = Modifier.fillMaxWidth())
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(vm.errorMessage, color = Color.Red, fontSize = 12.sp)
+
+                    if (vm.errorMessage.contains("verif", ignoreCase = true)) {
+                        Text(
+                            text = "Account unverified? Tap here to enter code.",
+                            color = Color(0xFF387DFF),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.clickable {
+                                focusManager.clearFocus()
+                                showVerificationDialog = true
+                            }
+                        )
+                    }
+                }
+            }
+
+            if (showVerificationDialog) {
+                AlertDialog(
+                    onDismissRequest = { showVerificationDialog = false },
+                    title = { Text("Verify Email") },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text("Enter the 6-digit code sent to $email.", fontSize = 13.sp, color = Color.Gray)
+                            OutlinedTextField(
+                                value = verificationCode,
+                                onValueChange = { if (it.length <= 6) verificationCode = it },
+                                placeholder = { Text("123456", color = Color.Gray) },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                            )
+                            if (verificationMessage.isNotEmpty()) {
+                                Text(verificationMessage, fontSize = 12.sp, color = if (verificationMessage.contains("sent", ignoreCase = true)) Color.Green else Color.Red)
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                coroutineScope.launch {
+                                    try {
+                                        val result = Amplify.Auth.confirmSignUp(email.trim(), verificationCode)
+                                        if (result.isSignUpComplete) {
+                                            showVerificationDialog = false
+                                            vm.errorMessage = ""
+                                            vm.signIn(email.trim(), password)
+                                        } else {
+                                            verificationMessage = "Verification incomplete. Please check the code."
+                                        }
+                                    } catch (e: Exception) {
+                                        verificationMessage = e.localizedMessage ?: "Verification failed."
+                                    }
+                                }
+                            }
+                        ) {
+                            Text("Verify", color = Color(0xFF387DFF), fontWeight = FontWeight.Bold)
+                        }
+                    },
+                    dismissButton = {
+                        Row {
+                            TextButton(
+                                onClick = {
+                                    coroutineScope.launch {
+                                        try {
+                                            Amplify.Auth.resendSignUpCode(email)
+                                            verificationMessage = "A new code was sent! Check your email."
+                                        } catch (e: Exception) {
+                                            verificationMessage = e.localizedMessage ?: "Failed to resend code."
+                                        }
+                                    }
+                                }
+                            ) {
+                                Text("Resend Code", color = Color.Gray)
+                            }
+                            TextButton(onClick = { showVerificationDialog = false }) {
+                                Text("Cancel", color = Color.Gray)
+                            }
+                        }
+                    },
+                    containerColor = Color(0xFF1C1C1E)
+                )
             }
             
             Spacer(modifier = Modifier.height(14.dp))
@@ -159,7 +261,7 @@ fun LoginScreen(
             Button(
                 onClick = {
                     focusManager.clearFocus()
-                    vm.signIn(email, password)
+                    vm.signIn(email.trim(), password)
                 },
                 modifier = Modifier.fillMaxWidth().height(56.dp),
                 shape = RoundedCornerShape(14.dp),

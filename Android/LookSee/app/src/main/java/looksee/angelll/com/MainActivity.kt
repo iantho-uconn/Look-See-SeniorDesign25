@@ -4,6 +4,7 @@ import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge // 🚀 Added Edge-to-Edge import
 import androidx.activity.viewModels
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -17,6 +18,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import com.amplifyframework.AmplifyException
 import com.amplifyframework.auth.cognito.AWSCognitoAuthPlugin
 import com.amplifyframework.core.Amplify
 import com.amplifyframework.storage.s3.AWSS3StoragePlugin
@@ -35,6 +37,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // 🚀 THE FIX: Tell Android to stop blocking the status bars
+        enableEdgeToEdge()
+
+        androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
         configureAmplify()
         configureSentry()
 
@@ -56,20 +63,24 @@ class MainActivity : ComponentActivity() {
             Amplify.addPlugin(AWSS3StoragePlugin())
             Amplify.configure(applicationContext)
             Log.i("AmplifyEngine", "✅ Amplify configured")
+        } catch (error: AmplifyException) {
+            Log.i("AmplifyEngine", "ℹ️ Amplify was already configured.")
         } catch (error: Exception) {
             Log.e("AmplifyEngine", "❌ Failed to configure Amplify", error)
         }
     }
 
     private fun configureSentry() {
-        SentryAndroid.init(this) { options ->
-            options.dsn = "https://e9ee0e43b4735fe777a4d240a4423a56@o4512005291573248.ingest.us.sentry.io/4512005296816128"
-            // Set tracesSampleRate to 1.0 to capture 100% of transactions for performance monitoring.
-            options.tracesSampleRate = 1.0
-            // Set profilesSampleRate to 1.0 to enable CPU profiling.
-            options.profilesSampleRate = 1.0
+        try {
+            SentryAndroid.init(this) { options ->
+                options.dsn = BuildConfig.SENTRY_DSN
+                options.tracesSampleRate = 1.0
+                options.profilesSampleRate = 1.0
+            }
+            Log.i("SentryEngine", "✅ Sentry configured")
+        } catch (error: Exception) {
+            Log.e("SentryEngine", "❌ Failed to configure Sentry", error)
         }
-        Log.i("SentryEngine", "✅ Sentry configured")
     }
 }
 
@@ -91,7 +102,10 @@ enum class AppState {
     BusinessLandmarkDetail,
     AccountSecurity,
     BusinessProfile,
-    GuestSignUp
+    GuestSignUp,
+    ScanHistory,
+    BusinessAnalytics,
+    BusinessMediaHistory
 }
 
 @Composable
@@ -108,21 +122,36 @@ fun RootView(vm: AuthViewModel, authState: AuthState) {
         }
     }
 
+
+    var isModelLoadingDone by remember { mutableStateOf(false) }
+    var isAuthResolutionDone by remember { mutableStateOf(false) }
+
+    fun advanceIfReady() {
+        if (isModelLoadingDone && isAuthResolutionDone) {
+            appState = AppState.Main
+            isModelLoadingDone = false
+            isAuthResolutionDone = false
+        }
+    }
+
     when (appState) {
         AppState.LoadingModel -> {
+            LaunchedEffect(Unit) {
+                vm.checkSession()
+                if (vm.isSignedIn) {
+                    authState.resolveTier()
+                }
+                isAuthResolutionDone = true
+                advanceIfReady()
+            }
+
             ModelLoadingScreen(
                 onComplete = {
-                    appState = AppState.Main
-                    coroutineScope.launch {
-                        vm.checkSession()
-                        if (vm.isSignedIn) {
-                            authState.resolveTier()
-                        }
-                    }
+                    isModelLoadingDone = true
+                    advanceIfReady()
                 }
             )
         }
-
         AppState.Main -> {
             ButtonsScreen(
                 vm = vm,
@@ -155,6 +184,8 @@ fun RootView(vm: AuthViewModel, authState: AuthState) {
                         "login" -> appState = AppState.Login
                         "signup" -> appState = AppState.Signup
                         "guest_signup" -> appState = AppState.GuestSignUp
+                        "HistoryView" -> appState = AppState.ScanHistory
+                        "BusinessAnalyticsView" -> appState = AppState.BusinessAnalytics
                     }
                 }
             )
@@ -167,11 +198,8 @@ fun RootView(vm: AuthViewModel, authState: AuthState) {
                     if (route == "BusinessLandmarkDetailView" && payload is BusinessLandmark) {
                         selectedLandmark = payload
                         appState = AppState.BusinessLandmarkDetail
-                    } else if (route == "back") {
+                    } else if (route == "back" || route == "Dismiss") {
                         appState = AppState.Settings
-                    } else if (route == "LandmarkRecord" && payload is looksee.angelll.com.models.ArchivedMedia) {
-                        // Special case for routing from upload queue to record screen?
-                        // Actually, I'll just open record screen with payload later.
                     }
                 }
             )
@@ -180,11 +208,25 @@ fun RootView(vm: AuthViewModel, authState: AuthState) {
         AppState.BusinessLandmarkDetail -> {
             selectedLandmark?.let { landmark ->
                 BusinessLandmarkDetailView(
+                    vm = vm,
                     initialLandmark = landmark,
-                    onNavigate = { route, payload ->
-                        // Handle potential sub-navigation if needed
+                    onNavigate = { route, _ ->
+                        if (route == "BusinessMediaHistoryView") {
+                            appState = AppState.BusinessMediaHistory
+                        }
                     },
+                    onLandmarkDeleted = { appState = AppState.BusinessLandmarks },
                     onDismiss = { appState = AppState.BusinessLandmarks }
+                )
+            }
+        }
+
+        AppState.BusinessMediaHistory -> {
+            selectedLandmark?.let { landmark ->
+                BusinessMediaHistoryView(
+                    landmarkId = landmark.landmarkId,
+                    landmarkLabel = landmark.label,
+                    onBack = { appState = AppState.BusinessLandmarkDetail }
                 )
             }
         }
@@ -207,12 +249,12 @@ fun RootView(vm: AuthViewModel, authState: AuthState) {
         AppState.GuestSignUp -> {
             GuestSignUpView(
                 vm = vm,
-                onNavigate = { route ->
-                    if (route.startsWith("confirm_signup/")) {
-                        appState = AppState.Login // Or handle confirmation specifically
-                    } else if (route == "login") {
-                        appState = AppState.Login
-                    }
+                initialBusinessAccount = false,
+                onSignupSuccess = { email, wantsBusiness ->
+                    appState = AppState.LoadingModel
+                },
+                onGoToLogin = {
+                    appState = AppState.Login
                 },
                 onDismiss = { appState = AppState.Settings }
             )
@@ -237,6 +279,14 @@ fun RootView(vm: AuthViewModel, authState: AuthState) {
 
         AppState.Archive -> {
             ArchiveView(vm = vm, onBack = { appState = AppState.Settings })
+        }
+
+        AppState.ScanHistory -> {
+            HistoryView(vm = vm, onBack = { appState = AppState.Settings })
+        }
+
+        AppState.BusinessAnalytics -> {
+            BusinessAnalyticsView(vm = vm, onBack = { appState = AppState.Settings })
         }
 
         AppState.ReportIssue -> {
@@ -269,10 +319,17 @@ fun RootView(vm: AuthViewModel, authState: AuthState) {
         }
 
         AppState.Signup -> {
-            Signup(
+            SignupScreen(
                 vm = vm,
-                onSignupSuccess = { appState = AppState.Login },
-                onGoToLogin = { appState = AppState.Login }
+                initialBusinessAccount = false,
+                onSignupSuccess = { email, wantsBusiness ->
+                    appState = AppState.LoadingModel
+                },
+                onNavigate = { route ->
+                    if (route == "login") {
+                        appState = AppState.Login
+                    }
+                }
             )
         }
 

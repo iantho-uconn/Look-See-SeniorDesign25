@@ -5,7 +5,6 @@
 
 import SwiftUI
 import PhotosUI
-import Sentry // 🚀 ADDED: Sentry SDK
 
 // MARK: - Report Models
 
@@ -13,6 +12,7 @@ enum ReportCategory: String, CaseIterable, Identifiable {
     case uiBug = "ui_bug"
     case detectionBug = "detection_bug"
     case uploadBug = "upload_bug"
+    case copyright = "copyright" // 🚀 New DMCA category
     case other = "other"
 
     var id: String { rawValue }
@@ -22,6 +22,7 @@ enum ReportCategory: String, CaseIterable, Identifiable {
         case .uiBug: return String(localized: "UI Bug")
         case .detectionBug: return String(localized: "Detection Bug")
         case .uploadBug: return String(localized: "Upload Bug")
+        case .copyright: return String(localized: "Copyright / DMCA")
         case .other: return String(localized: "Other")
         }
     }
@@ -31,6 +32,7 @@ enum ReportCategory: String, CaseIterable, Identifiable {
         case .uiBug: return "rectangle.on.rectangle.slash"
         case .detectionBug: return "viewfinder.circle"
         case .uploadBug: return "arrow.up.circle"
+        case .copyright: return "c.circle" // 🚀 Standard copyright © icon
         case .other: return "questionmark.circle"
         }
     }
@@ -90,6 +92,10 @@ struct ReportIssueView: View {
     private enum Field { case title, description }
 
     private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00)
+    
+    // 🚀 Safe character limits
+    private let maxTitleLength = 100
+    private let maxDescLength = 3000
 
     private var isValid: Bool {
         !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -205,7 +211,15 @@ struct ReportIssueView: View {
     private var detailsSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 8) {
-                sectionHeader("Title")
+                HStack {
+                    sectionHeader("Title")
+                    Spacer()
+                    Text("\(title.count)/\(maxTitleLength)")
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundStyle(title.count >= maxTitleLength ? .red : .secondary)
+                        .padding(.horizontal, 20)
+                }
+                
                 TextField("Short summary of the issue", text: $title)
                     .focused($focusedField, equals: .title)
                     .font(.system(size: 16, weight: .medium))
@@ -213,10 +227,23 @@ struct ReportIssueView: View {
                     .background(Color(uiColor: .secondarySystemGroupedBackground))
                     .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                     .padding(.horizontal)
+                    .onChange(of: title) { _, newValue in
+                        if newValue.count > maxTitleLength {
+                            title = String(newValue.prefix(maxTitleLength))
+                        }
+                    }
             }
 
             VStack(alignment: .leading, spacing: 8) {
-                sectionHeader("Description")
+                HStack {
+                    sectionHeader("Description")
+                    Spacer()
+                    Text("\(description.count)/\(maxDescLength)")
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundStyle(description.count >= maxDescLength ? .red : .secondary)
+                        .padding(.horizontal, 20)
+                }
+                
                 TextField(
                     "What happened? What did you expect instead?",
                     text: $description,
@@ -229,6 +256,11 @@ struct ReportIssueView: View {
                 .background(Color(uiColor: .secondarySystemGroupedBackground))
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .padding(.horizontal)
+                .onChange(of: description) { _, newValue in
+                    if newValue.count > maxDescLength {
+                        description = String(newValue.prefix(maxDescLength))
+                    }
+                }
             }
         }
     }
@@ -294,21 +326,75 @@ struct ReportIssueView: View {
             guard !isResolvingIdentity else { return }
             isResolvingIdentity = true
 
-            // 🚀 Sends the Bug Report directly to your Sentry / Jira Dashboard silently!
-            SentrySDK.capture(message: "[\(category.displayName)] \(title)") { scope in
-                scope.setExtra(value: description, key: "User Description")
-                scope.setTag(value: severity.displayName, key: "Severity")
-                scope.setTag(value: category.displayName, key: "Category")
-                scope.setExtra(value: vm.userEmail, key: "User Email")
+            let safeEmail = vm.userEmail ?? "unknown@user.com"
+            let safeCategory = category.displayName
+            let safeTitle = title
+            let safeDesc = description
+            let safeSeverity = severity.displayName
 
-                if let screenshot = screenshot, let data = screenshot.jpegData(compressionQuality: 0.8) {
-                    let attachment = Attachment(data: data, filename: "screenshot.jpg", contentType: "image/jpeg")
-                    scope.addAttachment(attachment)
+            Task {
+                // 1. Prepare the JSON Payload
+                var payload: [String: Any] = [
+                    "email": safeEmail,
+                    "category": safeCategory,
+                    "severity": safeSeverity,
+                    "title": safeTitle,
+                    "description": safeDesc
+                ]
+
+                // Resize the massive iPhone screenshot
+                if let originalImage = screenshot {
+                    let maxWidth: CGFloat = 800
+                    let scale = maxWidth / originalImage.size.width
+                    let newHeight = originalImage.size.height * scale
+                    let newSize = CGSize(width: maxWidth, height: newHeight)
+                    
+                    UIGraphicsBeginImageContextWithOptions(newSize, false, 1.0)
+                    originalImage.draw(in: CGRect(origin: .zero, size: newSize))
+                    let resizedImage = UIGraphicsGetImageFromCurrentImageContext()
+                    UIGraphicsEndImageContext()
+                    
+                    if let jpegData = resizedImage?.jpegData(compressionQuality: 0.6) {
+                        payload["screenshotBase64"] = jpegData.base64EncodedString()
+                        payload["screenshotMimeType"] = "image/jpeg"
+                    }
+                }
+
+                guard let jsonData = try? JSONSerialization.data(withJSONObject: payload) else {
+                    await MainActor.run { isResolvingIdentity = false }
+                    return
+                }
+
+                // 2. Make the HTTP POST Request
+                guard let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/support/report") else { return }
+                
+                var request = URLRequest(url: url)
+                request.httpMethod = "POST"
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                request.httpBody = jsonData
+
+                do {
+                    let (data, response) = try await URLSession.shared.data(for: request)
+                    
+                    if let httpResponse = response as? HTTPURLResponse {
+                        if httpResponse.statusCode == 200 {
+                            await MainActor.run {
+                                isResolvingIdentity = false
+                                showSentConfirmation = true
+                            }
+                        } else {
+                            // 🚀 THE FIX: We are now extracting the EXACT error message from the backend!
+                            let errorBody = String(data: data, encoding: .utf8) ?? "No data"
+                            print("🚨 BACKEND ERROR \(httpResponse.statusCode): \(errorBody)")
+                            
+                            await MainActor.run { isResolvingIdentity = false }
+                        }
+                    }
+                } catch {
+                    print("🚨 NETWORK ERROR: \(error)")
+                    await MainActor.run { isResolvingIdentity = false }
                 }
             }
-
-            isResolvingIdentity = false
-            showSentConfirmation = true
 
         } label: {
             HStack(spacing: 10) {
@@ -339,54 +425,46 @@ struct ReportIssueView: View {
     }
 }
 
-// MARK: - Report Button + Screenshot Capture
-// This handles the screenshot capture and opens the Report Issue sheet.
-
+// MARK: - Report Button
 struct ReportIssueButton: View {
     @State private var showReportSheet = false
-    @State private var capturedScreenshot: UIImage?
 
     var body: some View {
-        Button {
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            capturedScreenshot = Self.captureCurrentScreen()
-            showReportSheet = true
-        } label: {
-            HStack(spacing: 16) {
-                Image(systemName: "ladybug.fill")
-                    .font(.system(size: 18))
-                    .foregroundStyle(.white)
-                    .frame(width: 36, height: 36)
-                    .background(Color.red)
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Report a Bug")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(.primary)
+        VStack(spacing: 0) {
+            Button {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                self.showReportSheet = true
+            } label: {
+                HStack(spacing: 16) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(Color.blue)
+                            .frame(width: 36, height: 36)
+                        
+                        Image(systemName: "ladybug.fill")
+                            .font(.system(size: 18))
+                            .foregroundStyle(.white)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Report a Bug")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(.primary)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(Color(uiColor: .tertiaryLabel))
                 }
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(Color(uiColor: .tertiaryLabel))
+                .padding(16)
+                .contentShape(Rectangle()) // 🚀 Makes the entire row clickable
             }
-            .padding(16)
+            .buttonStyle(.plain)
+            
+            Divider().padding(.leading, 68)
         }
-        Divider().padding(.leading, 68)
         .sheet(isPresented: $showReportSheet) {
-            ReportIssueView(initialScreenshot: capturedScreenshot)
-        }
-    }
-
-    private static func captureCurrentScreen() -> UIImage? {
-        guard
-            let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-            let window = scene.windows.first(where: { $0.isKeyWindow })
-        else { return nil }
-
-        let renderer = UIGraphicsImageRenderer(bounds: window.bounds)
-        return renderer.image { _ in
-            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+            ReportIssueView(initialScreenshot: nil)
         }
     }
 }

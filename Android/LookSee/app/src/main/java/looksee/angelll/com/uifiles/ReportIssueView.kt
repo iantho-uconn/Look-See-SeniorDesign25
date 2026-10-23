@@ -1,9 +1,12 @@
 package looksee.angelll.com.uifiles
 
-import android.content.Intent
+import android.content.Context
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.*
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -30,7 +33,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.rememberAsyncImagePainter
-import io.sentry.Sentry
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import looksee.angelll.com.models.*
 import looksee.angelll.com.viewmodels.*
 
@@ -45,11 +51,17 @@ fun ReportIssueView(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+
     var category by remember { mutableStateOf(ReportCategory.UI_BUG) }
     var severity by remember { mutableStateOf(ReportSeverity.MEDIUM) }
     var title by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
     var screenshotUri by remember { mutableStateOf<Uri?>(null) }
+
+    var isSubmitting by remember { mutableStateOf(false) }
+    var isSuccess by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -57,47 +69,88 @@ fun ReportIssueView(
         screenshotUri = uri
     }
 
-    val isValid = title.isNotBlank() && description.isNotBlank()
+    val isValid = title.isNotBlank() && description.isNotBlank() && !isSubmitting
 
-    val handleSend = {
-        val deviceInfo = ReportDeviceInfo.current(context)
-        val report = BugReport(
-            category = category,
-            severity = severity,
-            title = title,
-            description = description
-        )
-        
-        val draft = MailReportService.buildDraft(report, vm.userEmail, deviceInfo)
-        
-        // 🚀 Sends the Bug Report directly to your Sentry Dashboard silently!
-        Sentry.captureMessage("[${category.displayName}] $title") { scope ->
-            scope.setLevel(when(severity) {
-                ReportSeverity.LOW -> io.sentry.SentryLevel.DEBUG
-                ReportSeverity.MEDIUM -> io.sentry.SentryLevel.INFO
-                ReportSeverity.HIGH -> io.sentry.SentryLevel.WARNING
-                ReportSeverity.CRITICAL -> io.sentry.SentryLevel.ERROR
-            })
-            scope.setTag("category", category.name)
-            scope.setTag("user_email", vm.userEmail)
-            scope.setTag("device_model", deviceInfo.deviceModel)
-            scope.setTag("os_version", deviceInfo.osVersion)
-            scope.setContexts("Description", description)
-        }
+    fun handleSend() {
+        if (!isValid) return
+        isSubmitting = true
+        errorMessage = null
 
-        val intent = Intent(Intent.ACTION_SENDTO).apply {
-            data = Uri.parse("mailto:")
-            putExtra(Intent.EXTRA_EMAIL, draft.recipients.toTypedArray())
-            putExtra(Intent.EXTRA_SUBJECT, draft.subject)
-            putExtra(Intent.EXTRA_TEXT, draft.body)
-            screenshotUri?.let {
-                putExtra(Intent.EXTRA_STREAM, it)
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        coroutineScope.launch {
+            try {
+                val deviceInfo = ReportDeviceInfo.current(context)
+
+                var screenshotBase64: String? = null
+                screenshotUri?.let { uri ->
+                    withContext(Dispatchers.IO) {
+                        try {
+                            context.contentResolver.openInputStream(uri)?.use { inputStream ->
+                                val bitmap = android.graphics.BitmapFactory.decodeStream(inputStream)
+                                val outputStream = java.io.ByteArrayOutputStream()
+                                bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 70, outputStream)
+                                val imageBytes = outputStream.toByteArray()
+                                screenshotBase64 = android.util.Base64.encodeToString(imageBytes, android.util.Base64.NO_WRAP)
+                            }
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }
+                }
+
+                val fullDescription = """
+                    ${description.trim()}
+
+                    ---
+                    Category: ${category.displayName}
+                    Severity: ${severity.displayName}
+                    Reported by: ${vm.userEmail.ifEmpty { "unknown@user.com" }}
+                    App version: ${deviceInfo.appVersion} (${deviceInfo.buildNumber})
+                    OS: Android ${deviceInfo.osVersion}
+                    Device: ${deviceInfo.deviceModel}
+                """.trimIndent()
+
+                val payload = org.json.JSONObject().apply {
+                    put("email", vm.userEmail.ifEmpty { "unknown@user.com" })
+                    put("category", category.displayName)
+                    put("severity", severity.name)
+                    put("title", "[${category.displayName}] $title")
+                    put("description", fullDescription)
+                    if (screenshotBase64 != null) {
+                        put("screenshotBase64", screenshotBase64)
+                        put("screenshotMimeType", "image/jpeg")
+                    }
+                }
+
+                val success = withContext(Dispatchers.IO) {
+                    try {
+                        val url = java.net.URL("https://d11vl3v9w133rh.cloudfront.net/support/report")
+                        val conn = url.openConnection() as java.net.HttpURLConnection
+                        conn.requestMethod = "POST"
+                        conn.setRequestProperty("Content-Type", "application/json")
+                        conn.connectTimeout = 15_000
+                        conn.readTimeout = 15_000
+                        conn.doOutput = true
+                        java.io.OutputStreamWriter(conn.outputStream).use { it.write(payload.toString()) }
+                        conn.responseCode in 200..299
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        false
+                    }
+                }
+
+                if (success) {
+                    isSuccess = true
+                    delay(1800)
+                    onDismiss()
+                } else {
+                    errorMessage = "Failed to submit report. Please try again."
+                    isSubmitting = false
+                }
+            } catch (e: Exception) {
+                errorMessage = e.localizedMessage ?: "An error occurred."
+                isSubmitting = false
             }
         }
-        
-        context.startActivity(Intent.createChooser(intent, "Send Bug Report"))
-        onDismiss()
     }
 
     Scaffold(
@@ -106,162 +159,214 @@ fun ReportIssueView(
                 title = { Text("Report a Bug", color = Color.White) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = backgroundColor),
                 navigationIcon = {
-                    IconButton(onClick = onDismiss) {
+                    IconButton(onClick = onDismiss, enabled = !isSubmitting) {
                         Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
                     }
                 }
             )
         },
-        containerColor = backgroundColor
+        containerColor = backgroundColor,
+        modifier = Modifier.imePadding()
     ) { paddingValues ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(24.dp)
+                .padding(paddingValues),
+            contentAlignment = Alignment.Center
         ) {
-            // Category Section
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                SectionHeader("What kind of issue?")
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(2),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                    modifier = Modifier.height(180.dp) // Fixed height for the 2x2 grid
+            if (isSuccess) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    modifier = Modifier.padding(32.dp)
                 ) {
-                    items(ReportCategory.entries) { cat ->
-                        CategoryChip(
-                            option = cat,
-                            isSelected = category == cat,
-                            onClick = { category = cat }
-                        )
-                    }
-                }
-            }
-
-            // Severity Section
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                SectionHeader("Severity")
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    ReportSeverity.entries.forEach { sev ->
-                        SeverityChip(
-                            option = sev,
-                            isSelected = severity == sev,
-                            onClick = { severity = sev },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                }
-            }
-
-            // Details Section
-            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SectionHeader("Title")
-                    TextField(
-                        value = title,
-                        onValueChange = { title = it },
-                        placeholder = { Text("Short summary of the issue", color = Color.Gray) },
-                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)),
-                        colors = TextFieldDefaults.colors(
-                            focusedContainerColor = cardColor,
-                            unfocusedContainerColor = cardColor,
-                            disabledContainerColor = cardColor,
-                            focusedIndicatorColor = Color.Transparent,
-                            unfocusedIndicatorColor = Color.Transparent,
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White
-                        )
+                    Icon(
+                        imageVector = Icons.Default.CheckCircle,
+                        contentDescription = null,
+                        tint = Color(0xFF34C759),
+                        modifier = Modifier.size(72.dp)
+                    )
+                    Text(
+                        "Report Submitted",
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    Text(
+                        "Thank you for your feedback! Our team has received your ticket and will review it shortly.",
+                        fontSize = 15.sp,
+                        color = Color.Gray,
+                        textAlign = TextAlign.Center
                     )
                 }
-
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SectionHeader("Description")
-                    TextField(
-                        value = description,
-                        onValueChange = { description = it },
-                        placeholder = { Text("What happened? What did you expect instead?", color = Color.Gray) },
-                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)),
-                        minLines = 4,
-                        maxLines = 10,
-                        colors = TextFieldDefaults.colors(
-                            focusedContainerColor = cardColor,
-                            unfocusedContainerColor = cardColor,
-                            disabledContainerColor = cardColor,
-                            focusedIndicatorColor = Color.Transparent,
-                            unfocusedIndicatorColor = Color.Transparent,
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White
-                        )
-                    )
-                }
-            }
-
-            // Screenshot Section
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                SectionHeader("Screenshot")
-                
-                if (screenshotUri != null) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(260.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(cardColor)
-                    ) {
-                        Image(
-                            painter = rememberAsyncImagePainter(screenshotUri),
-                            contentDescription = null,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Fit
-                        )
-                        IconButton(
-                            onClick = { screenshotUri = null },
-                            modifier = Modifier
-                                .align(Alignment.TopEnd)
-                                .padding(10.dp)
-                                .size(32.dp)
-                                .background(Color.Black.copy(alpha = 0.6f), CircleShape)
+            } else {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(24.dp)
+                ) {
+                    // Category Section
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        SectionHeader("What kind of issue?")
+                        LazyVerticalGrid(
+                            columns = GridCells.Fixed(2),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.height(180.dp)
                         ) {
-                            Icon(Icons.Default.Close, contentDescription = "Remove", tint = Color.White, modifier = Modifier.size(16.dp))
+                            items(ReportCategory.entries) { cat ->
+                                CategoryChip(
+                                    option = cat,
+                                    isSelected = category == cat,
+                                    onClick = { if (!isSubmitting) category = cat }
+                                )
+                            }
+                        }
+                    }
+
+                    // Severity Section
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        SectionHeader("Severity")
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            ReportSeverity.entries.forEach { sev ->
+                                SeverityChip(
+                                    option = sev,
+                                    isSelected = severity == sev,
+                                    onClick = { if (!isSubmitting) severity = sev },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+                    }
+
+                    // Details Section
+                    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            SectionHeader("Title")
+                            TextField(
+                                value = title,
+                                onValueChange = { title = it },
+                                placeholder = { Text("Short summary of the issue", color = Color.Gray) },
+                                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)),
+                                enabled = !isSubmitting,
+                                colors = TextFieldDefaults.colors(
+                                    focusedContainerColor = cardColor,
+                                    unfocusedContainerColor = cardColor,
+                                    disabledContainerColor = cardColor,
+                                    focusedIndicatorColor = Color.Transparent,
+                                    unfocusedIndicatorColor = Color.Transparent,
+                                    focusedTextColor = Color.White,
+                                    unfocusedTextColor = Color.White
+                                )
+                            )
+                        }
+
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            SectionHeader("Description")
+                            TextField(
+                                value = description,
+                                onValueChange = { description = it },
+                                placeholder = { Text("What happened? What did you expect instead?", color = Color.Gray) },
+                                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)),
+                                minLines = 4,
+                                maxLines = 10,
+                                enabled = !isSubmitting,
+                                colors = TextFieldDefaults.colors(
+                                    focusedContainerColor = cardColor,
+                                    unfocusedContainerColor = cardColor,
+                                    disabledContainerColor = cardColor,
+                                    focusedIndicatorColor = Color.Transparent,
+                                    unfocusedIndicatorColor = Color.Transparent,
+                                    focusedTextColor = Color.White,
+                                    unfocusedTextColor = Color.White
+                                )
+                            )
+                        }
+                    }
+
+                    // Screenshot Section
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        SectionHeader("Screenshot")
+
+                        if (screenshotUri != null) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(260.dp)
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(cardColor)
+                            ) {
+                                Image(
+                                    painter = rememberAsyncImagePainter(screenshotUri),
+                                    contentDescription = null,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Fit
+                                )
+                                IconButton(
+                                    onClick = { screenshotUri = null },
+                                    enabled = !isSubmitting,
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .padding(10.dp)
+                                        .size(32.dp)
+                                        .background(Color.Black.copy(alpha = 0.6f), CircleShape)
+                                ) {
+                                    Icon(Icons.Default.Close, contentDescription = "Remove", tint = Color.White, modifier = Modifier.size(16.dp))
+                                }
+                            }
+                        }
+
+                        Button(
+                            onClick = { photoPickerLauncher.launch("image/*") },
+                            enabled = !isSubmitting,
+                            modifier = Modifier.fillMaxWidth().height(50.dp),
+                            shape = RoundedCornerShape(14.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = primaryColor.copy(alpha = 0.1f),
+                                contentColor = primaryColor
+                            )
+                        ) {
+                            Icon(Icons.Default.AddPhotoAlternate, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(if (screenshotUri == null) "Attach a Screenshot" else "Replace Screenshot", fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    errorMessage?.let {
+                        Text(
+                            text = it,
+                            color = Color(0xFFFF453A),
+                            fontSize = 14.sp,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+
+                    // Submit Button
+                    Button(
+                        onClick = { handleSend() },
+                        enabled = isValid,
+                        modifier = Modifier.fillMaxWidth().height(56.dp).padding(bottom = 24.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = primaryColor,
+                            disabledContainerColor = Color.Gray.copy(alpha = 0.3f)
+                        )
+                    ) {
+                        if (isSubmitting) {
+                            CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
+                        } else {
+                            Icon(Icons.Default.Send, contentDescription = null)
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text("Submit Report", fontWeight = FontWeight.Bold, fontSize = 17.sp)
                         }
                     }
                 }
-
-                Button(
-                    onClick = { photoPickerLauncher.launch("image/*") },
-                    modifier = Modifier.fillMaxWidth().height(50.dp),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = primaryColor.copy(alpha = 0.1f),
-                        contentColor = primaryColor
-                    )
-                ) {
-                    Icon(Icons.Default.AddPhotoAlternate, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(if (screenshotUri == null) "Attach a Screenshot" else "Replace Screenshot", fontWeight = FontWeight.Bold)
-                }
-            }
-
-            // Submit Button
-            Button(
-                onClick = handleSend,
-                enabled = isValid,
-                modifier = Modifier.fillMaxWidth().height(56.dp).padding(bottom = 24.dp),
-                shape = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = primaryColor,
-                    disabledContainerColor = Color.Gray.copy(alpha = 0.3f)
-                )
-            ) {
-                Icon(Icons.Default.Send, contentDescription = null)
-                Spacer(modifier = Modifier.width(10.dp))
-                Text("Submit Report", fontWeight = FontWeight.Bold, fontSize = 17.sp)
             }
         }
     }
@@ -285,10 +390,11 @@ fun CategoryChip(
     onClick: () -> Unit
 ) {
     val icon = when (option) {
-        ReportCategory.UI_BUG -> Icons.Default.Layers // Closest to rectangle.on.rectangle.slash
-        ReportCategory.DETECTION_BUG -> Icons.Default.CenterFocusStrong // Closest to viewfinder.circle
-        ReportCategory.UPLOAD_BUG -> Icons.Default.ArrowCircleUp // Closest to arrow.up.circle
-        ReportCategory.OTHER -> Icons.Default.QuestionMark // Closest to questionmark.circle
+        ReportCategory.UI_BUG -> Icons.Default.WebAssetOff
+        ReportCategory.DETECTION_BUG -> Icons.Default.CenterFocusStrong
+        ReportCategory.UPLOAD_BUG -> Icons.Default.ArrowCircleUp
+        ReportCategory.COPYRIGHT -> Icons.Default.Copyright
+        ReportCategory.OTHER -> Icons.Default.QuestionMark
     }
 
     Column(
@@ -304,7 +410,7 @@ fun CategoryChip(
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = if (isSelected) Color.White else Color.White,
+            tint = Color.White,
             modifier = Modifier.size(24.dp)
         )
         Spacer(modifier = Modifier.height(8.dp))
@@ -312,7 +418,7 @@ fun CategoryChip(
             text = option.displayName,
             fontSize = 13.sp,
             fontWeight = FontWeight.Bold,
-            color = if (isSelected) Color.White else Color.White,
+            color = Color.White,
             textAlign = TextAlign.Center
         )
     }
@@ -349,3 +455,112 @@ fun SeverityChip(
     }
 }
 
+enum class ReportCategory(
+    val wireValue: String,
+    val displayName: String,
+    val jiraLabel: String,
+) {
+    UI_BUG("ui_bug", "UI Bug", "mobile-ui"),
+    DETECTION_BUG("detection_bug", "Detection Bug", "detection"),
+    UPLOAD_BUG("upload_bug", "Upload Bug", "upload-pipeline"),
+    COPYRIGHT("copyright", "Copyright / DMCA", "copyright"),
+    OTHER("other", "Other", "unclassified"),
+}
+
+enum class ReportSeverity(
+    val wireValue: String,
+    val displayName: String,
+    val jiraPriority: String,
+) {
+    LOW("low", "Low", "Low"),
+    MEDIUM("medium", "Medium", "Medium"),
+    HIGH("high", "High", "High"),
+    CRITICAL("critical", "Critical", "Highest"),
+}
+
+data class BugReport(
+    val category: ReportCategory,
+    val severity: ReportSeverity,
+    val title: String,
+    val description: String,
+    val screenshotJpeg: ByteArray? = null,
+)
+
+data class ReportDeviceInfo(
+    val appVersion: String,
+    val buildNumber: String,
+    val osVersion: String,
+    val deviceModel: String,
+) {
+    companion object {
+        fun current(context: Context): ReportDeviceInfo {
+            val packageInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.packageManager.getPackageInfo(
+                    context.packageName,
+                    PackageManager.PackageInfoFlags.of(0),
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                context.packageManager.getPackageInfo(context.packageName, 0)
+            }
+            val buildNumber = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                packageInfo.longVersionCode.toString()
+            } else {
+                @Suppress("DEPRECATION")
+                packageInfo.versionCode.toString()
+            }
+            return ReportDeviceInfo(
+                appVersion = packageInfo.versionName ?: "unknown",
+                buildNumber = buildNumber,
+                osVersion = Build.VERSION.RELEASE.ifBlank { "unknown" },
+                deviceModel = listOf(Build.MANUFACTURER, Build.MODEL)
+                    .map { it.trim() }
+                    .filter(String::isNotEmpty)
+                    .joinToString(" ")
+                    .ifBlank { "unknown" },
+            )
+        }
+    }
+}
+
+data class MailReportDraft(
+    val recipients: List<String>,
+    val subject: String,
+    val body: String,
+    val attachmentJpeg: ByteArray?,
+    val attachmentFilename: String? = attachmentJpeg?.let { "screenshot.jpg" },
+)
+
+object MailReportService {
+    val recipients = listOf("Looksee.support@informationoutpost.com")
+
+    fun subject(report: BugReport): String =
+        "[${report.category.displayName} · ${report.severity.displayName}] ${report.title}"
+
+    fun body(
+        report: BugReport,
+        userEmail: String?,
+        deviceInfo: ReportDeviceInfo,
+    ): String = """
+        ${report.description}
+
+        ---
+        Category: ${report.category.displayName}
+        Severity: ${report.severity.displayName}
+        Reported by: ${userEmail.orEmpty()}
+        App version: ${deviceInfo.appVersion} (${deviceInfo.buildNumber})
+        OS: Android ${deviceInfo.osVersion}
+        Device: ${deviceInfo.deviceModel}
+    """.trimIndent()
+
+    fun buildDraft(
+        report: BugReport,
+        userEmail: String?,
+        deviceInfo: ReportDeviceInfo,
+    ): MailReportDraft = MailReportDraft(
+        recipients = recipients,
+        subject = subject(report),
+        body = body(report, userEmail, deviceInfo),
+        attachmentJpeg = report.screenshotJpeg,
+    )
+}

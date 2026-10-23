@@ -236,7 +236,7 @@ fun PlanView(
         HorizontalDivider(color = Color.White.copy(alpha = 0.12f))
         Spacer(modifier = Modifier.height(14.dp))
 
-        VStack(spacing = 10.dp) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             FeatureRow("Tokens included instantly", primaryColor)
             FeatureRow("Add or swap landmarks anytime", primaryColor)
             FeatureRow("Unlock promotion dashboard", primaryColor)
@@ -370,7 +370,7 @@ fun FreeTrialView(primaryColor: Color) {
         HorizontalDivider(color = Color.White.copy(alpha = 0.12f))
         Spacer(modifier = Modifier.height(14.dp))
 
-        VStack(spacing = 10.dp) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             FeatureRow("Includes exactly 2 Tokens", primaryColor)
             FeatureRow("Full access to business tools", primaryColor)
             FeatureRow("Auto-renews to 1-Year Plan ($10)", primaryColor)

@@ -8,13 +8,18 @@
 
 import Foundation
 
+// 🚀 NEW: Parses the AWS Presigned POST dictionary
+struct S3PresignedPost: Codable {
+    let url: String
+    let fields: [String: String]
+}
+
 enum MediaKind: String, Codable {
     case video
     case photo
 }
 
 struct InitSubmissionRequest: Codable {
-    let userEmail: String
     let label: String
     let landmarkId: String?     // 🚀 THE FIX: This tells AWS to use the existing S3 folder!
     let mediaKind: MediaKind
@@ -24,15 +29,14 @@ struct InitSubmissionRequest: Codable {
 
 struct InitSubmissionResponse: Codable {
     let submissionId: String
-    let uploadUrl: String
+    let uploadUrl: S3PresignedPost // 🚀 CHANGED from String
     let s3Key: String
 }
 
-// Sent on /submissions/complete after PUT upload succeeds.
+// Sent on /submissions/complete after POST upload succeeds.
 struct CompleteSubmissionRequest: Codable {
     let submissionId: String
     let s3Key: String
-    let userEmail: String
 
     let label: String
     let landmarkId: String?

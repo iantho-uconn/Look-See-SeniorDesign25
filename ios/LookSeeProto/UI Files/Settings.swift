@@ -15,6 +15,7 @@ class SettingsPresenter: ObservableObject {
     @Published var showLoginSheet = false
     @Published var showSignUpSheet = false
     @Published var showUserProfileEditor = false
+    @Published var signupStartsAsBusiness = false
     
     @Published var resumeCheckoutAction: String? = nil
     @Published var savedAddOnIndex: Int = 0
@@ -28,10 +29,14 @@ struct Settings: View {
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var vm: AuthViewModel
     @EnvironmentObject var authState: AuthState
+    @EnvironmentObject private var adConsentManager: AdConsentManager
 
     @StateObject private var presenter = SettingsPresenter()
     @State private var showCancelAlert = false
-    @State private var isCancelling = false
+    @State private var isOpeningPrivacyOptions = false
+    @State private var showPrivacyOptionsError = false
+    
+    @State private var showReportSheet = false
 
     private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00)
 
@@ -71,8 +76,7 @@ struct Settings: View {
                             HStack(spacing: 16) {
                                 ZStack {
                                     Circle().fill(primaryColor.opacity(0.15))
-                                    if let url = URL(string: vm.profileImageUrl), !vm.profileImageUrl.isEmpty {
-                                        // 🚀 THE FIX: Handles the network dropping gracefully!
+                                    if let url = URL(string: vm.profileImageUrl.replacingOccurrences(of: "looksee-app-uploads.s3.us-east-1.amazonaws.com", with: "d1fjsmhmay9z6x.cloudfront.net").replacingOccurrences(of: "looksee-app-uploads.s3.amazonaws.com", with: "d1fjsmhmay9z6x.cloudfront.net")), !vm.profileImageUrl.isEmpty {
                                         AsyncImage(url: url) { phase in
                                             switch phase {
                                             case .empty:
@@ -148,15 +152,33 @@ struct Settings: View {
                         
                         VStack(spacing: 0) {
                             NavigationLink { BusinessLandmarksView() } label: {
-                                settingsRow(icon: "building.2.crop.circle.fill", iconBg: primaryColor, title: "Manage My Landmarks", subtitle: "View the landmarks assigned to your account.")
+                                settingsRow(icon: "building.2.crop.circle.fill", iconBg: .blue, title: "Manage My Landmarks", subtitle: "View the landmarks assigned to your account.")
                             }
+                            .buttonStyle(.plain)
+                            
                             Divider().padding(.leading, 68)
+                            
+                            NavigationLink { HistoryView().environmentObject(vm) } label: {
+                                settingsRow(icon: "clock.arrow.circlepath", iconBg: .blue, title: "Scan History", subtitle: "View your scanned landmarks.")
+                            }
+                            .buttonStyle(.plain)
+                            
+                            Divider().padding(.leading, 68)
+                            
+                            NavigationLink { BusinessAnalyticsView().environmentObject(vm) } label: {
+                                settingsRow(icon: "chart.bar.fill", iconBg: .indigo, title: "Analytics", subtitle: "Track daily views and engagement.")
+                            }
+                            .buttonStyle(.plain)
+                            
+                            Divider().padding(.leading, 68)
+                            
                             Button {
                                 presenter.subscriptionStartingTab = 1
                                 presenter.showSubscriptionFlow = true
                             } label: {
                                 settingsRow(icon: "circle.hexagongrid.fill", iconBg: .orange, title: "Tokens (\(vm.tokenBalance))", subtitle: "Buy tokens to update your inventory.", showDivider: false)
                             }
+                            .buttonStyle(.plain)
                         }
                         .background(Color(uiColor: .secondarySystemGroupedBackground)).clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                         .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2).padding(.horizontal)
@@ -171,6 +193,7 @@ struct Settings: View {
                             } label: {
                                 settingsRow(icon: "lock.fill", iconBg: .gray, title: "Business Tools Locked", subtitle: "Subscribe to a plan to unlock landmarks and tokens.", showDivider: false)
                             }
+                            .buttonStyle(.plain)
                         }
                         .background(Color(uiColor: .secondarySystemGroupedBackground)).clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                         .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2).padding(.horizontal)
@@ -191,6 +214,7 @@ struct Settings: View {
                                         settingsRow(icon: "storefront.fill", iconBg: .blue, title: "Business Profile", subtitle: LocalizedStringKey(vm.storeName))
                                     }
                                 }
+                                .buttonStyle(.plain)
                             } else {
                                 Button {
                                     presenter.subscriptionStartingTab = 0
@@ -198,12 +222,14 @@ struct Settings: View {
                                 } label: {
                                     settingsRow(icon: "lock.fill", iconBg: .gray, title: "Business Profile Locked", subtitle: "Subscribe to edit your public store info.", showDivider: false)
                                 }
+                                .buttonStyle(.plain)
                             }
                             
                             Divider().padding(.leading, 68)
                             NavigationLink { AccountSecurityView().environmentObject(vm) } label: {
                                 settingsRow(icon: "person.badge.key.fill", iconBg: .gray, title: "Account & Security", subtitle: "Change your email or password.", showDivider: false)
                             }
+                            .buttonStyle(.plain)
                         }
                         .background(Color(uiColor: .secondarySystemGroupedBackground))
                         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
@@ -244,7 +270,7 @@ struct Settings: View {
                                     presenter.showSubscriptionFlow = true
                                 } label: {
                                     if !vm.hasActiveSubscription {
-                                        Text("sign Up").font(.system(size: 15, weight: .bold, design: .rounded)).frame(maxWidth: .infinity).padding(.vertical, 12).background(primaryColor.opacity(0.1)).foregroundStyle(primaryColor).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                        Text("Sign Up").font(.system(size: 15, weight: .bold, design: .rounded)).frame(maxWidth: .infinity).padding(.vertical, 12).background(primaryColor.opacity(0.1)).foregroundStyle(primaryColor).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                                     } else {
                                         Text("Manage Plan").font(.system(size: 15, weight: .bold, design: .rounded)).frame(maxWidth: .infinity).padding(.vertical, 12).background(primaryColor.opacity(0.1)).foregroundStyle(primaryColor).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                                     }
@@ -260,37 +286,62 @@ struct Settings: View {
                         }
                         .padding(20).background(Color(uiColor: .secondarySystemGroupedBackground)).clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                         .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2).padding(.horizontal)
-                        .alert("Cancel Subscription?", isPresented: $showCancelAlert) {
-                            Button("Keep Plan", role: .cancel) {}
-                            Button("Cancel Plan", role: .destructive) {
-                                isCancelling = true
-                                Task {
-                                    let _ = await vm.cancelSubscription()
-                                    await MainActor.run { isCancelling = false }
-                                }
-                            }
-                        } message: { Text("Your business features will be disabled immediately.") }
+
                     }
                 }
 
                 // 5. OTHER SETTINGS
                 VStack(spacing: 0) {
-                    ReportIssueButton()
-                    NavigationLink { Text("Help & Support Center") } label: { settingsRow(icon: "questionmark.circle.fill", iconBg: .orange, title: "Help & Support", showDivider: true) }
+                    
+                    Button {
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        showReportSheet = true
+                    } label: {
+                        settingsRow(icon: "ladybug.fill", iconBg: .blue, title: "Report a Bug", showDivider: true)
+                    }
+                    .buttonStyle(.plain)
+
+                    NavigationLink { Help() } label: { settingsRow(icon: "questionmark.circle.fill", iconBg: .orange, title: "Help & Support", showDivider: true) }
+                    .buttonStyle(.plain)
+                    
                     NavigationLink { PrivacyPolicyView() } label: { settingsRow(icon: "hand.raised.fill", iconBg: .purple, title: "Privacy Policy", showDivider: true) }
+                    .buttonStyle(.plain)
+                    
+                    if adConsentManager.isPrivacyOptionsRequired {
+                        adPrivacyOptionsRow
+                    }
+                    
                     NavigationLink { TermsOfServiceView() } label: { settingsRow(icon: "doc.text.fill", iconBg: .green, title: "Terms of Service", showDivider: true) }
+                    .buttonStyle(.plain)
+                    
                     NavigationLink { DeepSettingsView(isFullyLoggedIn: isFullyLoggedIn).environmentObject(vm) } label: { settingsRow(icon: "gearshape.fill", iconBg: .gray, title: "Settings & Preferences", showDivider: false) }
+                    .buttonStyle(.plain)
                 }
                 .background(Color(uiColor: .secondarySystemGroupedBackground)).clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                 .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2).padding(.horizontal)
                 
+                Text(verbatim: "Copyright © 1999-2026 Information Outpost, LLC.  All rights reserved.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 24)
+                    .padding(.top, 8)
+
                 Spacer(minLength: 40)
             }
             .padding(.top, 16)
         }
         .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
         .navigationTitle("Menu")
+        .alert("Privacy Options Unavailable", isPresented: $showPrivacyOptionsError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("We couldn't open your ad privacy options. Please check your connection and try again.")
+        }
         .onChange(of: authState.didSignOut) { _, didSignOut in if didSignOut { dismiss() } }
+        .sheet(isPresented: $showReportSheet) { ReportIssueView(initialScreenshot: nil) }
         .sheet(isPresented: $presenter.showSubscriptionFlow) { SubscriptionPlans(presenter: presenter) }
         .sheet(isPresented: $presenter.showUserProfileEditor) { UserProfileEditSheet().environmentObject(vm) }
         .sheet(isPresented: $presenter.showLoginSheet) {
@@ -299,11 +350,36 @@ struct Settings: View {
                     presenter.showLoginSheet = false; dismiss()
                 }, onGoToSignup: {
                     presenter.showLoginSheet = false
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { presenter.showSignUpSheet = true }
+                    presenter.signupStartsAsBusiness = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        presenter.showSignUpSheet = true
+                    }
                 }, onContinueAsGuest: { presenter.showLoginSheet = false })
             }
         }
-        .sheet(isPresented: $presenter.showSignUpSheet) { GuestSignUpView() }
+        .sheet(isPresented: $presenter.showSignUpSheet) {
+            GuestSignUpView(
+                initialBusinessAccount: presenter.signupStartsAsBusiness,
+                onSignupSuccess: { _, wantsBusiness in
+                    presenter.showSignUpSheet = false
+                    presenter.signupStartsAsBusiness = false
+
+                    if wantsBusiness && presenter.resumeCheckoutAction == nil {
+                        presenter.subscriptionStartingTab = 0
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+                            presenter.showSubscriptionFlow = true
+                        }
+                    }
+                },
+                onGoToLogin: {
+                    presenter.showSignUpSheet = false
+                    presenter.signupStartsAsBusiness = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        presenter.showLoginSheet = true
+                    }
+                }
+            )
+        }
         .onChange(of: isFullyLoggedIn) { _, loggedIn in
             if loggedIn && presenter.resumeCheckoutAction != nil {
                 presenter.showLoginSheet = false
@@ -313,30 +389,68 @@ struct Settings: View {
                 }
             }
         }
-        .overlay {
-            if isCancelling {
-                ZStack {
-                    Color.black.opacity(0.4).ignoresSafeArea()
-                    VStack(spacing: 16) {
-                        ProgressView().tint(.white).scaleEffect(1.5)
-                        Text("Canceling Plan...").font(.headline).foregroundStyle(.white)
-                    }.padding(32).background(.ultraThinMaterial).clipShape(RoundedRectangle(cornerRadius: 16))
-                }
-            }
+        .fullScreenCover(isPresented: $showCancelAlert) {
+            SubscriptionCancellationScreen().environmentObject(vm).environmentObject(authState)
         }
+        .onChange(of: vm.hasActiveSubscription) { _, _ in
+            syncVerifiedTier()
+        }
+        .onChange(of: vm.hasVerifiedSubscriptionStatus) { _, _ in
+            syncVerifiedTier()
+        }
+
     }
     
+    private func syncVerifiedTier() {
+        guard vm.hasVerifiedSubscriptionStatus else { return }
+        authState.tier = vm.currentTier
+        authState.didSignOut = false
+        authState.isReady = true
+    }
+
+    private var adPrivacyOptionsRow: some View {
+        Button {
+            guard !isOpeningPrivacyOptions else { return }
+            isOpeningPrivacyOptions = true
+            showPrivacyOptionsError = false
+
+            Task { @MainActor in
+                defer { isOpeningPrivacyOptions = false }
+                await adConsentManager.showPrivacyOptions()
+                if adConsentManager.lastError != nil {
+                    showPrivacyOptionsError = true
+                }
+            }
+        } label: {
+            settingsRow(
+                icon: "slider.horizontal.3",
+                iconBg: .indigo,
+                title: "Privacy Options",
+                subtitle: isOpeningPrivacyOptions
+                    ? "Opening privacy options…"
+                    : "Manage your ad privacy choices.",
+                showDivider: true
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(isOpeningPrivacyOptions)
+    }
+
     private func settingsRow(icon: String, iconBg: Color, title: LocalizedStringKey, subtitle: LocalizedStringKey? = nil, showDivider: Bool = false) -> some View {
         VStack(spacing: 0) {
             HStack(spacing: 16) {
                 Image(systemName: icon).font(.system(size: 18)).foregroundStyle(.white).frame(width: 36, height: 36).background(iconBg).clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.system(size: 16, weight: .semibold)).foregroundStyle(.primary)
-                    if let subtitle { Text(subtitle).font(.system(size: 13, weight: .regular)).foregroundStyle(.secondary) }
+                    Text(title).font(.system(size: 16, weight: .semibold)).foregroundStyle(.primary) // 🚀 White text
+                    if let subtitle {
+                        Text(subtitle).font(.system(size: 13, weight: .regular)).foregroundStyle(.secondary) // 🚀 Gray text
+                    }
                 }
                 Spacer()
-                Image(systemName: "chevron.right").font(.system(size: 14, weight: .bold)).foregroundStyle(Color(uiColor: .tertiaryLabel))
-            }.padding(16)
+                Image(systemName: "chevron.right").font(.system(size: 14, weight: .bold)).foregroundStyle(Color.gray.opacity(0.5))
+            }
+            .padding(16)
+            .contentShape(Rectangle())
             if showDivider { Divider().padding(.leading, 68) }
         }
     }
@@ -353,18 +467,46 @@ struct Settings: View {
                         Image(systemName: "crown.fill").foregroundStyle(.white).font(.system(size: 20))
                     }.frame(width: 48, height: 48).shadow(color: primaryColor.opacity(0.5), radius: 8, x: 0, y: 4)
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Join LookSee").font(.system(size: 18, weight: .bold, design: .rounded)).foregroundStyle(.white)
-                        Text("Upload landmarks and manage data. Free trail available.").font(.system(size: 14, weight: .medium)).foregroundStyle(.white.opacity(0.7))
+                        Text(isFullyLoggedIn ? "Upgrade to Business" : "Join LookSee")
+                            .font(.system(size: 18, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white)
+                        Text(
+                            isFullyLoggedIn
+                                ? "Unlock landmark management, uploads, promotions, and tokens."
+                                : "Create a free account to save your profile and future progress."
+                        )
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.7))
                     }
                 }
                 HStack(spacing: 12) {
-                    Button { presenter.showSubscriptionFlow = true } label: {
-                        Text("Sign up").font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(.white).frame(maxWidth: .infinity).padding(.vertical, 14).background(primaryColor).clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    Button {
+                        if isFullyLoggedIn {
+                            presenter.subscriptionStartingTab = 0
+                            presenter.showSubscriptionFlow = true
+                        } else {
+                            presenter.signupStartsAsBusiness = false
+                            presenter.showSignUpSheet = true
+                        }
+                    } label: {
+                        Text(isFullyLoggedIn ? "View Business Plans" : "Create Free Account")
+                            .font(.system(size: 15, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 64)
+                            .background(primaryColor)
+                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                     }.buttonStyle(.plain)
                     
                     if !isFullyLoggedIn {
                         Button { presenter.showLoginSheet = true } label: {
-                            Text("Log In").font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(.white).frame(maxWidth: .infinity).padding(.vertical, 14).background(Color.white.opacity(0.15)).clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            Text("Log In")
+                                .font(.system(size: 15, weight: .bold, design: .rounded))
+                                .foregroundStyle(.white)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 64)
+                                .background(Color.white.opacity(0.15))
+                                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                         }.buttonStyle(.plain)
                     }
                 }
@@ -388,6 +530,9 @@ struct DeepSettingsView: View {
     @State private var showAlertSignOut = false
     @State private var isReloading = false
     @State private var showReloadSuccess = false
+    
+    @State private var showGlobalNegativeCamera = false
+    @State private var isUploadingGlobalNegative = false
     
     private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00)
 
@@ -419,7 +564,6 @@ struct DeepSettingsView: View {
                     .padding(.horizontal)
                 }
 
-                // MARK: Temporary model-testing entry point
                 if ModelTestingConfiguration.isEnabled {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Testing")
@@ -449,6 +593,51 @@ struct DeepSettingsView: View {
                                         .lineLimit(1)
                                 }
 
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundStyle(.tertiary)
+                            }
+                            .padding(16)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color(uiColor: .secondarySystemGroupedBackground))
+                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2)
+                        }
+                        .padding(.horizontal)
+                    }
+                }
+                
+                let adminEmails = ["angelgabriel2828@icloud.com", "angelgabriel0846@gmail.com", "nisargdpatel04@gmail.com", "matt@informationoutpost.com"]
+                if adminEmails.contains(vm.userEmail.lowercased()) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Admin Tools")
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .foregroundStyle(.secondary)
+                            .textCase(.uppercase)
+                            .padding(.horizontal, 20)
+                        
+                        Button {
+                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                            showGlobalNegativeCamera = true
+                        } label: {
+                            HStack(spacing: 14) {
+                                Image(systemName: "camera.filters")
+                                    .font(.system(size: 17, weight: .semibold))
+                                    .foregroundStyle(.white)
+                                    .frame(width: 36, height: 36)
+                                    .background(Color.orange)
+                                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("Record Global Negatives")
+                                        .font(.system(size: 16, weight: .semibold))
+                                        .foregroundStyle(.primary)
+                                    Text("Capture empty spaces for the AI dataset")
+                                        .font(.system(size: 13))
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
                                 Spacer()
                                 Image(systemName: "chevron.right")
                                     .font(.system(size: 13, weight: .semibold))
@@ -527,6 +716,48 @@ struct DeepSettingsView: View {
         }
         .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
         .navigationTitle("Settings")
+        .fullScreenCover(isPresented: $showGlobalNegativeCamera) {
+            NegativeVideoCameraView(
+                uiTargetDuration: 10,
+                minTotalTimeLimit: 2,
+                maxTotalTimeLimit: 10
+            ) { video in
+                Task {
+                    isUploadingGlobalNegative = true
+                    do {
+                        guard let fileURL = video.fileURL as URL? else {
+                            isUploadingGlobalNegative = false
+                            showGlobalNegativeCamera = false
+                            return
+                        }
+                        try await BusinessLandmarkService.shared.uploadGlobalNegativeVideo(fileURL: fileURL)
+                    } catch {}
+                    
+                    isUploadingGlobalNegative = false
+                    video.deleteLocalFile()
+                    showGlobalNegativeCamera = false
+                }
+            }
+        }
+        .overlay {
+            if isUploadingGlobalNegative {
+                ZStack {
+                    Color.black.opacity(0.6).ignoresSafeArea()
+                    VStack(spacing: 16) {
+                        ProgressView().tint(.white).scaleEffect(1.5)
+                        Text("Uploading Global Negative...")
+                            .font(.headline)
+                            .foregroundStyle(.white)
+                        Text("Please keep app open")
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.7))
+                    }
+                    .padding(32)
+                    .background(.ultraThinMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                }
+            }
+        }
     }
 }
 
@@ -738,7 +969,7 @@ struct BusinessProfileEditSheet: View {
                                     .resizable()
                                     .scaledToFill()
                                     .clipShape(Circle())
-                            } else if let url = URL(string: draftLogoUrl), !draftLogoUrl.isEmpty {
+                            } else if let url = URL(string: draftLogoUrl.replacingOccurrences(of: "looksee-app-uploads.s3.us-east-1.amazonaws.com", with: "d1fjsmhmay9z6x.cloudfront.net").replacingOccurrences(of: "looksee-app-uploads.s3.amazonaws.com", with: "d1fjsmhmay9z6x.cloudfront.net")), !draftLogoUrl.isEmpty {
                                 AsyncImage(url: url) { phase in
                                     if let image = phase.image {
                                         image.resizable().scaledToFill().clipShape(Circle())
@@ -821,7 +1052,9 @@ struct BusinessProfileEditSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button {
                         isSaving = true
-                        Task {
+                        
+                        // 🚀 ADDED: @MainActor isolation to ensure dismiss works correctly!
+                        Task { @MainActor in
                             let base64String = logoUIImage?.jpegData(compressionQuality: 0.4)?.base64EncodedString()
                             
                             let success = await vm.updateBusinessProfile(
@@ -927,7 +1160,7 @@ struct UserProfileEditSheet: View {
                                             .scaledToFill()
                                             .frame(width: 108, height: 108)
                                             .clipShape(Circle())
-                                    } else if let url = URL(string: vm.profileImageUrl), !vm.profileImageUrl.isEmpty {
+                                    } else if let url = URL(string: vm.profileImageUrl.replacingOccurrences(of: "looksee-app-uploads.s3.us-east-1.amazonaws.com", with: "d1fjsmhmay9z6x.cloudfront.net").replacingOccurrences(of: "looksee-app-uploads.s3.amazonaws.com", with: "d1fjsmhmay9z6x.cloudfront.net")), !vm.profileImageUrl.isEmpty {
                                         AsyncImage(url: url) { phase in
                                             if let image = phase.image {
                                                 image.resizable().scaledToFill().frame(width: 108, height: 108).clipShape(Circle())
@@ -1029,14 +1262,15 @@ struct UserProfileEditSheet: View {
                             UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
                             isSaving = true
                             errorMessage = ""
-                            Task {
+                            
+                            // 🚀 ADDED: @MainActor isolation to ensure dismiss works correctly!
+                            Task { @MainActor in
                                 var base64String: String? = nil
                                 if let rawImage = logoUIImage {
                                     let compressedImage = resizeImageForUpload(image: rawImage)
                                     base64String = compressedImage.jpegData(compressionQuality: 0.6)?.base64EncodedString()
                                 }
                                 
-                                // 🚀 THE FIX IS RIGHT HERE 🚀
                                 let result = await vm.updateUserIdentity(newUsername: draftUsername, emailToSave: vm.userEmail, profileBase64: base64String)
                                 isSaving = false
                                 if result.success {
@@ -1210,6 +1444,116 @@ struct CameraPicker: UIViewControllerRepresentable {
 
         func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
             parent.dismiss()
+        }
+    }
+}
+
+
+// Full-screen confirmation keeps the account signed in throughout cancellation.
+private struct SubscriptionCancellationScreen: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var vm: AuthViewModel
+    @EnvironmentObject private var authState: AuthState
+    @State private var acknowledgement = ""
+    @State private var completed = false
+
+    private var canConfirm: Bool {
+        acknowledgement == "I understand" && !vm.isCancellingSubscription && vm.isSignedIn
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    Image(systemName: completed ? "checkmark.circle.fill" : "calendar.badge.exclamationmark")
+                        .font(.system(size: 44))
+                        .foregroundStyle(completed ? Color.green : Color.orange)
+                        .accessibilityHidden(true)
+                    Text(completed ? "Renewal update confirmed" : "Before you cancel")
+                        .font(.largeTitle.bold())
+                    if completed {
+                        Text(vm.cancellationMessage)
+                        Text("You remain signed in. Your account will use the verified-user layout when paid access ends.")
+                        if vm.subscriptionExpiresAt > 0 {
+                            dateRow("Access ends", timestamp: vm.subscriptionExpiresAt)
+                        }
+                        Button("Done") { dismiss() }
+                            .buttonStyle(.borderedProminent)
+                    } else {
+                        Text("Canceling stops automatic renewal. You keep your current access through its expiration date.")
+                        if vm.subscriptionExpiresAt > 0 {
+                            dateRow("Access ends", timestamp: vm.subscriptionExpiresAt)
+                            dateRow("Landmark exclusion begins", timestamp: vm.subscriptionExpiresAt + 15 * 86400)
+                            dateRow("Permanent deletion becomes eligible", timestamp: vm.subscriptionExpiresAt + 30 * 86400)
+                        } else {
+                            Text("The schedule below starts when your paid access expires, not when you press this button. Your expiration date will be shown when billing confirms it.")
+                                .foregroundStyle(.secondary)
+                        }
+                        consequence("Your account stays", "You stay signed in and can continue using the verified free account. Business features end when your paid access expires.")
+                        consequence("Tokens", "Unused subscription tokens expire with their allowance period and do not return after a gap in paid access. Separately purchased tokens do not expire; they stay on your account but require an active paid plan to use. Trial tokens follow their trial expiration.")
+                        consequence("First 14 days after expiry", "Your landmarks enter the subscription grace period, with expiration reminders.")
+                        consequence("15 days after expiry", "Your landmarks are scheduled for exclusion from the app and models.")
+                        consequence("30 days after expiry", "Your landmarks and uploaded media become eligible for permanent deletion. Do not rely on a delay in processing to recover them.")
+                        consequence("If you return later", "Resubscribing before permanent deletion can stop subscription-related cleanup. It does not undo a separate deletion request. Once landmarks are permanently deleted, they cannot be restored: you must upload and create them again using tokens.")
+                        Text("Type I understand to confirm")
+                            .font(.headline)
+                        TextField("I understand", text: $acknowledgement)
+                            .textFieldStyle(.roundedBorder)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .disabled(vm.isCancellingSubscription)
+                        if !vm.cancellationError.isEmpty {
+                            Text(vm.cancellationError).foregroundStyle(.red)
+                                .accessibilityLabel("Cancellation error: " + vm.cancellationError)
+                        }
+                        Button(role: .destructive) {
+                            Task { @MainActor in
+                                if await vm.cancelSubscription() {
+                                    if vm.hasVerifiedSubscriptionStatus {
+                                        authState.tier = vm.currentTier
+                                        authState.didSignOut = false
+                                        authState.isReady = true
+                                    }
+                                    completed = true
+                                }
+                            }
+                        } label: {
+                            HStack {
+                                if vm.isCancellingSubscription { ProgressView() }
+                                Text(vm.isCancellingSubscription ? "Confirming…" : "Confirm cancellation")
+                            }.frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(!canConfirm)
+                        Button("Keep my plan") { dismiss() }
+                            .frame(maxWidth: .infinity)
+                            .disabled(vm.isCancellingSubscription)
+                    }
+                }.padding(24)
+            }
+            .navigationTitle("Subscription")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }.disabled(vm.isCancellingSubscription)
+                }
+            }
+            .interactiveDismissDisabled(vm.isCancellingSubscription)
+            .task { await vm.fetchUserUsageStats() }
+        }
+    }
+
+    private func consequence(_ title: String, _ detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title).font(.headline)
+            Text(detail).foregroundStyle(.secondary)
+        }
+    }
+
+    private func dateRow(_ title: String, timestamp: TimeInterval) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.subheadline.bold())
+            Text(Date(timeIntervalSince1970: timestamp), format: .dateTime.month(.wide).day().year().hour().minute())
         }
     }
 }

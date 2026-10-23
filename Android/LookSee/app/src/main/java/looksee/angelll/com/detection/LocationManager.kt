@@ -5,15 +5,19 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.location.Location
-import android.location.LocationListener
-import android.location.LocationManager as AndroidLocationManager
-import android.os.Bundle
 import android.os.Looper
+import android.util.Log
 import androidx.core.content.ContextCompat
+import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationResult
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import com.google.android.gms.tasks.CancellationTokenSource
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import java.util.logging.Logger
 
 data class LookSeeLocationFix(
     val latitude: Double,
@@ -22,13 +26,7 @@ data class LookSeeLocationFix(
 ) {
     fun isUsable(): Boolean =
         latitude.isFinite() && latitude in -90.0..90.0 &&
-                longitude.isFinite() && longitude in -180.0..180.0 &&
-                accuracyMeters.isFinite() && accuracyMeters > 0f &&
-                accuracyMeters <= MAX_MODEL_LOCATION_ACCURACY_METERS
-
-    companion object {
-        const val MAX_MODEL_LOCATION_ACCURACY_METERS = 100f
-    }
+                longitude.isFinite() && longitude in -180.0..180.0
 }
 
 sealed interface LookSeeLocationState {
@@ -38,17 +36,12 @@ sealed interface LookSeeLocationState {
     data class Unavailable(val message: String) : LookSeeLocationState
 }
 
-/**
- * Small framework-location bridge used by model delivery and the detector.
- *
- * It deliberately avoids a Google Play Services dependency, works with the
- * Android emulator's injected GPS position, and ignores fixes rougher than
- * 100 meters before they can trigger a model refresh.
- */
 class LocationManager(context: Context) : AutoCloseable {
     private val applicationContext = context.applicationContext
-    private val platformManager =
-        applicationContext.getSystemService(Context.LOCATION_SERVICE) as AndroidLocationManager
+    private val fusedLocationClient: FusedLocationProviderClient =
+        LocationServices.getFusedLocationProviderClient(applicationContext)
+
+    private var cancellationTokenSource: CancellationTokenSource? = null
 
     private val _state = MutableStateFlow<LookSeeLocationState>(
         if (hasLocationPermission()) {
@@ -59,22 +52,9 @@ class LocationManager(context: Context) : AutoCloseable {
     )
     val state: StateFlow<LookSeeLocationState> = _state.asStateFlow()
 
-    private val listener = object : LocationListener {
-        override fun onLocationChanged(location: Location) {
-            publish(location)
-        }
-
-        @Deprecated("Deprecated by Android")
-        override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) = Unit
-
-        override fun onProviderEnabled(provider: String) = Unit
-
-        override fun onProviderDisabled(provider: String) {
-            if (enabledProviders().isEmpty()) {
-                _state.value = LookSeeLocationState.Unavailable(
-                    "Location is disabled on this device.",
-                )
-            }
+    private val locationCallback = object : LocationCallback() {
+        override fun onLocationResult(locationResult: LocationResult) {
+            locationResult.lastLocation?.let { publish(it) }
         }
     }
 
@@ -88,56 +68,84 @@ class LocationManager(context: Context) : AutoCloseable {
                     Manifest.permission.ACCESS_COARSE_LOCATION,
                 ) == PackageManager.PERMISSION_GRANTED
 
-    /** Call again after the runtime permission result changes. */
     @SuppressLint("MissingPermission")
     fun start() {
+        Log.d("LookSee_Debug_Location", "Starting LocationManager...")
         if (!hasLocationPermission()) {
+            Log.e("LookSee_Debug_Location", "No permission! Cannot start location tracking.")
             _state.value = LookSeeLocationState.PermissionRequired
             return
         }
 
-        stopUpdatesOnly()
-        _state.value = LookSeeLocationState.Searching
-
-        val providers = enabledProviders()
-        if (providers.isEmpty()) {
-            _state.value = LookSeeLocationState.Unavailable(
-                "Location is disabled. Enable it or set an emulator location.",
-            )
-            return
+        val androidLocationManager = applicationContext.getSystemService(Context.LOCATION_SERVICE) as? android.location.LocationManager
+        val isGpsEnabled = androidLocationManager?.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER) == true
+        val isNetworkEnabled = androidLocationManager?.isProviderEnabled(android.location.LocationManager.NETWORK_PROVIDER) == true
+        
+        Log.d("LookSee_Debug_Location", "Hardware Check - GPS Enabled: $isGpsEnabled, Network Enabled: $isNetworkEnabled")
+        
+        if (!isGpsEnabled && !isNetworkEnabled) {
+            Log.e("LookSee_Debug_Location", "Both GPS and Network location providers are DISABLED in system settings.")
+            _state.value = LookSeeLocationState.Unavailable("Location services are disabled in device settings.")
+            // We still proceed in case it gets enabled or cached location exists, but it's unlikely to work well.
         }
 
-        providers.forEach { provider ->
-            runCatching {
-                platformManager.getLastKnownLocation(provider)?.let(::publish)
-                platformManager.requestLocationUpdates(
-                    provider,
-                    MIN_UPDATE_INTERVAL_MILLIS,
-                    MIN_UPDATE_DISTANCE_METERS,
-                    listener,
-                    Looper.getMainLooper(),
-                )
-            }.onFailure { error ->
-                logger.warning("Unable to start $provider location updates: ${error.message}")
+        stopUpdatesOnly()
+        _state.value = LookSeeLocationState.Searching
+        cancellationTokenSource = CancellationTokenSource()
+
+        Log.d("LookSee_Debug_Location", "Requesting last known location (Cache)...")
+        fusedLocationClient.lastLocation.addOnSuccessListener { location: Location? ->
+            if (location != null) {
+                Log.d("LookSee_Debug_Location", "✅ Cached location found: lat=${location.latitude}, lon=${location.longitude}, acc=${location.accuracy}m")
+                publish(location)
+            } else {
+                Log.d("LookSee_Debug_Location", "❌ No cached location available.")
             }
+        }.addOnFailureListener { error ->
+            Log.e("LookSee_Debug_Location", "❌ Failed to get cached location", error)
+        }
+
+        Log.d("LookSee_Debug_Location", "Requesting current location (Fresh Fix)...")
+        fusedLocationClient.getCurrentLocation(
+            Priority.PRIORITY_HIGH_ACCURACY,
+            cancellationTokenSource!!.token
+        ).addOnSuccessListener { location: Location? ->
+            if (location != null) {
+                Log.d("LookSee_Debug_Location", "✅ Current fresh fix fetched: lat=${location.latitude}, lon=${location.longitude}, acc=${location.accuracy}m")
+                publish(location)
+            } else {
+                Log.d("LookSee_Debug_Location", "❌ Current fresh fix returned null. Device might be struggling to find satellites or network.")
+            }
+        }.addOnFailureListener { error ->
+            Log.e("LookSee_Debug_Location", "❌ Failed to get current fresh fix", error)
+        }
+
+        // Match iOS distance filter 15 meters
+        val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 2000L)
+            .setMinUpdateDistanceMeters(10f)
+            .build()
+
+        Log.d("LookSee_Debug_Location", "Requesting continuous location updates...")
+        fusedLocationClient.requestLocationUpdates(
+            locationRequest,
+            locationCallback,
+            Looper.getMainLooper()
+        ).addOnSuccessListener {
+            Log.d("LookSee_Debug_Location", "✅ Successfully subscribed to continuous location updates.")
+        }.addOnFailureListener { error ->
+            Log.e("LookSee_Debug_Location", "❌ Continuous update request failed", error)
+            _state.value = LookSeeLocationState.Unavailable(error.localizedMessage ?: "Unknown error")
         }
     }
 
     fun stop() {
+        Log.d("LookSee_Debug_Location", "Stopping LocationManager...")
         stopUpdatesOnly()
     }
 
     override fun close() {
         stop()
     }
-
-    private fun enabledProviders(): List<String> =
-        listOf(
-            AndroidLocationManager.GPS_PROVIDER,
-            AndroidLocationManager.NETWORK_PROVIDER,
-        ).filter { provider ->
-            runCatching { platformManager.isProviderEnabled(provider) }.getOrDefault(false)
-        }
 
     private fun publish(location: Location) {
         val fix = LookSeeLocationFix(
@@ -146,21 +154,25 @@ class LocationManager(context: Context) : AutoCloseable {
             accuracyMeters = location.accuracy,
         )
         if (!fix.isUsable()) {
-            logger.info(
-                "Ignoring rough/invalid location fix: accuracy=${location.accuracy}m.",
-            )
+            Log.w("LookSee_Debug_Location", "Location not usable (inf/nan)")
             return
         }
+
+        Log.d("LookSee_Debug_Location", "Publishing fix: lat=${fix.latitude}, lon=${fix.longitude}, acc=${fix.accuracyMeters}m")
+
+        // Android emulators are notoriously bad at location accuracy.
+        // We will push the state to the UI regardless so it doesn't say "Requesting...",
+        // but log a warning if it's over the 100m iOS limit.
+        if (fix.accuracyMeters > 100f) {
+            Log.w("LookSee_Debug_Location", "⚠️ Rough location fix! >100m accuracy. Map might be inaccurate.")
+        }
+
         _state.value = LookSeeLocationState.Ready(fix)
     }
 
     private fun stopUpdatesOnly() {
-        runCatching { platformManager.removeUpdates(listener) }
-    }
-
-    private companion object {
-        const val MIN_UPDATE_INTERVAL_MILLIS = 15_000L
-        const val MIN_UPDATE_DISTANCE_METERS = 15f
-        val logger: Logger = Logger.getLogger(LocationManager::class.java.name)
+        cancellationTokenSource?.cancel()
+        cancellationTokenSource = null
+        fusedLocationClient.removeLocationUpdates(locationCallback)
     }
 }

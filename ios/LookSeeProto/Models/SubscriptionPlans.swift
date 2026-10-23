@@ -11,6 +11,7 @@ import StripePaymentSheet
 struct SubscriptionPlans: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var vm: AuthViewModel
+    @EnvironmentObject var authState: AuthState
     @ObservedObject var presenter: SettingsPresenter
     
     @State private var selectedTab: Int
@@ -19,9 +20,13 @@ struct SubscriptionPlans: View {
     @State private var paymentSheet: PaymentSheet?
     @State private var showPaymentSheet = false
     @State private var paymentStatusMessage: String?
+    @State private var currentOrderId: String? = nil
+    @State private var wasPaymentSuccessful = false
     
+    @State private var checkoutOrderId: String?
+    @State private var checkoutRequestId: String?
     @State private var pendingTokenReward: Int = 0
-    @State private var pendingSubscriptionId: String? = nil
+    @State private var tokenBalanceBeforePurchase: Int = 0
     @State private var selectedAddOnIndex: Int = 0
     
     // Multi-Year Plan Tiers
@@ -133,6 +138,7 @@ struct SubscriptionPlans: View {
                 }
                 
                 if let action = presenter.resumeCheckoutAction {
+                    wasPaymentSuccessful = false
                     if action == "yearly" {
                         selectedAddOnIndex = presenter.savedAddOnIndex
                         selectedTab = 0
@@ -141,7 +147,6 @@ struct SubscriptionPlans: View {
                     } else if action == "trial" {
                         selectedTab = 2
                         isProcessing = true
-                        // 🚀 Reroute to Stripe instead of the old direct bypass
                         Task { await preparePaymentSheet(purchaseType: "yearly_subscription", isFreeTrial: true) }
                     } else if action == "tokens" {
                         selectedTab = 1
@@ -164,6 +169,25 @@ struct SubscriptionPlans: View {
                     if let ps = paymentSheet { Color.clear.paymentSheet(isPresented: $showPaymentSheet, paymentSheet: ps, onCompletion: onPaymentCompletion) }
                 }
             )
+            .onChange(of: showPaymentSheet) { _, isShowing in
+                if !isShowing && !wasPaymentSuccessful {
+                    if let orderToCancel = currentOrderId {
+                        // 🚀 Synchronous wipe prevents the double-firing race condition
+                        self.currentOrderId = nil
+                        print("🟡 Stripe sheet disappeared manually! Triggering cancellation.")
+                        Task {
+                            await cancelPendingOrder(orderId: orderToCancel)
+                            await MainActor.run {
+                                self.isProcessing = false
+                                self.presenter.resumeCheckoutAction = nil
+                            }
+                        }
+                    } else {
+                        self.isProcessing = false
+                        self.presenter.resumeCheckoutAction = nil
+                    }
+                }
+            }
         }
         .environment(\.colorScheme, .dark)
         .interactiveDismissDisabled(isProcessing)
@@ -258,10 +282,12 @@ struct SubscriptionPlans: View {
                 if !isFullyLoggedIn {
                     presenter.savedAddOnIndex = selectedAddOnIndex
                     presenter.resumeCheckoutAction = "yearly"
+                    presenter.signupStartsAsBusiness = true
                     dismiss()
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { presenter.showSignUpSheet = true }
                 } else {
                     isProcessing = true
+                    wasPaymentSuccessful = false
                     Task { await preparePaymentSheet(purchaseType: "yearly_subscription") }
                 }
             } label: {
@@ -291,6 +317,9 @@ struct SubscriptionPlans: View {
                 }
             }
             .disabled((vm.hasActiveSubscription && !isTrial && plans[selectedPlanIndex].priceCents <= activePlanCents) || isProcessing)
+            if let message = paymentStatusMessage {
+                Text(message).font(.caption).foregroundStyle(.red).padding(.top, 8)
+            }
         }
         .padding(.horizontal, 24).padding(.top, 36).padding(.bottom, 24)
         .background(Color.white.opacity(0.04).background(.ultraThinMaterial)).clipShape(RoundedRectangle(cornerRadius: 24))
@@ -314,14 +343,13 @@ struct SubscriptionPlans: View {
             
             VStack(alignment: .leading, spacing: 10) {
                 // 🚀 Changed token count and updated feature descriptions
-                featureRow("Includes exactly 2 Tokens")
+                featureRow("Includes 2 Tokens")
                 featureRow("Full access to business tools")
                 featureRow("Auto-renews to 1-Year Plan ($10)")
             }
             
             Spacer()
             
-            // 🚀 Clear payment disclaimer before they trigger Apple Pay
             Text("Payment information is required to start your trial. You will not be charged today. If you do not cancel before your 14 days are up, you will be billed $10 for the 1-Year Business Plan. Cancel anytime.")
                 .font(.system(size: 11))
                 .foregroundStyle(secondaryTextColor)
@@ -332,11 +360,12 @@ struct SubscriptionPlans: View {
                 
                 if !isFullyLoggedIn {
                     presenter.resumeCheckoutAction = "trial"
+                    presenter.signupStartsAsBusiness = true
                     dismiss()
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { presenter.showSignUpSheet = true }
                 } else {
                     isProcessing = true
-                    // 🚀 Requests payment sheet for the Trial via Stripe Subscription payload
+                    wasPaymentSuccessful = false
                     Task { await preparePaymentSheet(purchaseType: "yearly_subscription", isFreeTrial: true) }
                 }
             } label: {
@@ -440,10 +469,12 @@ struct SubscriptionPlans: View {
                 presenter.savedTokenCount = tokens
                 presenter.savedTokenCents = amountCents
                 presenter.resumeCheckoutAction = "tokens"
+                presenter.signupStartsAsBusiness = true
                 dismiss()
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { presenter.showSignUpSheet = true }
             } else {
                 isProcessing = true
+                wasPaymentSuccessful = false
                 Task { await preparePaymentSheet(purchaseType: "token_pack", amountCents: amountCents, tokenCount: tokens) }
             }
         } label: {
@@ -457,11 +488,13 @@ struct SubscriptionPlans: View {
         .disabled(isProcessing)
     }
 
-    // 🚀 THE FIX: preparePaymentSheet now handles isFreeTrial safely
     private func preparePaymentSheet(purchaseType: String, amountCents: Int = 0, tokenCount: Int = 0, isFreeTrial: Bool = false) async {
         await vm.fetchUserDetails()
+        tokenBalanceBeforePurchase = vm.tokenBalance
+        checkoutOrderId = nil
+        checkoutRequestId = UUID().uuidString
         
-        guard let url = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/checkout") else {
+        guard let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/checkout") else {
             isProcessing = false; paymentStatusMessage = String(localized: "Invalid API URL."); return
         }
         
@@ -471,7 +504,7 @@ struct SubscriptionPlans: View {
             pendingTokenReward = tokenCount
         } else if purchaseType == "yearly_subscription" {
             if isFreeTrial {
-                pendingTokenReward = 2 // 🚀 Local reference updated to 2
+                pendingTokenReward = 2
             } else {
                 pendingTokenReward = selectedPlan.baseTokens + addOns[selectedAddOnIndex].tokens
             }
@@ -480,8 +513,25 @@ struct SubscriptionPlans: View {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let idToken = await vm.fetchIdToken()
+        guard !idToken.isEmpty else {
+            isProcessing = false
+            paymentStatusMessage = String(localized: "Your session could not be verified. Please sign in again.")
+            return
+        }
+        request.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
         
-        var body: [String: Any] = ["purchaseType": purchaseType, "userId": vm.userId, "userEmail": vm.userEmail]
+        // 🚀 THE FIX: Force lowercase so DynamoDB matches the format saved by Python
+        let newOrderId = UUID().uuidString.lowercased()
+        self.currentOrderId = newOrderId
+        
+        var body: [String: Any] = [
+            "purchaseType": purchaseType,
+            "userId": vm.userId,
+            "userEmail": vm.userEmail,
+            "checkoutRequestId": newOrderId
+        ]
         
         if purchaseType == "token_pack" {
             body["amountCents"] = amountCents
@@ -501,20 +551,31 @@ struct SubscriptionPlans: View {
             }
         }
         
+        body["checkoutRequestId"] = checkoutRequestId
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        
+        await request.signWithAppAttest(idToken: idToken)
         
         do {
             let (data, _) = try await URLSession.shared.data(for: request)
             if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
                 if let errorMsg = json["error"] as? String {
-                    DispatchQueue.main.async { self.isProcessing = false; self.presenter.resumeCheckoutAction = nil; self.paymentStatusMessage = String(localized: "Stripe Error: \(errorMsg)") }
+                    DispatchQueue.main.async {
+                        self.isProcessing = false
+                        self.currentOrderId = nil
+                        self.presenter.resumeCheckoutAction = nil
+                        self.paymentStatusMessage = String(localized: "Stripe Error: \(errorMsg)")
+                    }
                     return
                 }
                 
-                if let subId = json["subscriptionId"] as? String {
-                    self.pendingSubscriptionId = subId
+                if let orderId = json["orderId"] as? String {
+                    checkoutOrderId = orderId
                 }
-                
+                if json["confirmed"] as? Bool == true {
+                    onPaymentCompletion(result: .completed)
+                    return
+                }
                 if let clientSecret = json["setupIntent"] as? String, let customerId = json["customer"] as? String, let ephemeralKeySecret = json["ephemeralKey"] as? String, let publishableKey = json["publishableKey"] as? String {
                     STPAPIClient.shared.publishableKey = publishableKey
                     var configuration = PaymentSheet.Configuration()
@@ -542,74 +603,87 @@ struct SubscriptionPlans: View {
         }
     }
     
-    private func confirmPurchaseOnBackend() async -> Bool {
-        guard let url = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/checkout") else { return false }
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        
-        var body: [String: Any] = [
-            "purchaseType": "confirm_success",
-            "userId": vm.userId,
-            "addTokens": pendingTokenReward,
-            "isBusiness": selectedTab != 1
-        ]
-        
-        if let subId = pendingSubscriptionId {
-            body["subscriptionId"] = subId
-        }
-        
-        if selectedTab == 0 {
-            let selectedPlan = plans[selectedPlanIndex]
-            body["planCents"] = selectedPlan.priceCents
-            body["planYears"] = selectedPlan.years
-        } else if selectedTab == 2 {
-            // 🚀 Ensure Tier 1 plan details are passed on free trial success
-            body["planCents"] = 1000
-            body["planYears"] = 1
-        }
-        
-        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        
-        do {
-            let (_, response) = try await URLSession.shared.data(for: request)
-            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
-                return true
-            }
-        } catch {
+    private func waitForWebhookConfirmation() async -> Bool {
+        guard let orderId = checkoutOrderId,
+              let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/checkout") else {
             return false
+        }
+        for attempt in 0..<10 {
+            let idToken = await vm.fetchIdToken()
+            guard !idToken.isEmpty else { return false }
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
+            request.httpBody = try? JSONSerialization.data(withJSONObject: [
+                "purchaseType": "check_order", "orderId": orderId
+            ])
+            await request.signWithAppAttest(idToken: idToken)
+            do {
+                let (data, response) = try await URLSession.shared.data(for: request)
+                if (response as? HTTPURLResponse)?.statusCode == 200,
+                   let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   json["confirmed"] as? Bool == true {
+                    await vm.fetchUserDetails()
+                    await vm.fetchUserUsageStats()
+                    await authState.resolveTier()
+                    await MainActor.run {
+                        if let cents = json["activePlanCents"] as? Int { vm.activePlanCents = cents }
+                        if let years = json["activePlanYears"] as? Int { vm.activePlanYears = years }
+                        if let trial = json["isFreeTrial"] as? Bool {
+                            UserDefaults.standard.set(trial, forKey: "isFreeTrial_\(vm.userEmail)")
+                        }
+                    }
+                    return true
+                }
+            } catch {
+                // A transient failure does not establish success for this order.
+            }
+            if attempt < 9 { try? await Task.sleep(nanoseconds: 1_000_000_000) }
         }
         return false
     }
-    
+
+    private func cancelPendingCheckout() async {
+        guard let orderId = checkoutOrderId,
+              let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/checkout") else { return }
+        let idToken = await vm.fetchIdToken()
+        guard !idToken.isEmpty else { return }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: [
+            "purchaseType": "cancel_pending_checkout", "orderId": orderId
+        ])
+        await request.signWithAppAttest(idToken: idToken)
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            if (response as? HTTPURLResponse)?.statusCode != 200 {
+                let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+                await MainActor.run {
+                    paymentStatusMessage = json?["error"] as? String ?? "Checkout cancellation is pending. Please retry the same selection."
+                }
+            }
+        } catch {
+            await MainActor.run {
+                paymentStatusMessage = "Checkout cancellation could not be confirmed. Please retry the same selection."
+            }
+        }
+    }
+
     private func onPaymentCompletion(result: PaymentSheetResult) {
         switch result {
         case .completed:
             UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+            wasPaymentSuccessful = true
             
             Task {
-                let dbSuccess = await confirmPurchaseOnBackend()
+                let backendConfirmed = await waitForWebhookConfirmation()
                 
                 await MainActor.run {
-                    if dbSuccess {
+                    if backendConfirmed {
                         presenter.justPurchased = true
-                        // Note: This updates the local UI immediately. The webhook will permanently secure this in DynamoDB.
-                        vm.tokenBalance += pendingTokenReward
-                        
-                        if selectedTab != 1 {
-                            vm.hasActiveSubscription = true
-                            
-                            if selectedTab == 0 {
-                                let selectedPlan = plans[selectedPlanIndex]
-                                vm.activePlanCents = selectedPlan.priceCents
-                                vm.activePlanYears = selectedPlan.years
-                                UserDefaults.standard.set(false, forKey: "isFreeTrial_\(vm.userEmail)")
-                            } else if selectedTab == 2 {
-                                vm.activePlanCents = 1000
-                                vm.activePlanYears = 1
-                                UserDefaults.standard.set(true, forKey: "isFreeTrial_\(vm.userEmail)")
-                            }
-                        }
                         
                         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                             presenter.resumeCheckoutAction = nil
@@ -619,17 +693,70 @@ struct SubscriptionPlans: View {
                         DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { presenter.justPurchased = false }
                         
                     } else {
+                        paymentStatusMessage = String(localized: "Checkout completed. LookSee is still confirming your purchase. Please check again shortly.")
                         isProcessing = false
                         presenter.resumeCheckoutAction = nil
                     }
                 }
             }
-            
-        case .canceled, .failed:
+             
+        case .canceled:
+            Task {
+                await cancelPendingCheckout()
+                await MainActor.run {
+                    self.isProcessing = false
+                    self.presenter.resumeCheckoutAction = nil
+                }
+            }
+        case .failed(let error):
             DispatchQueue.main.async {
+                self.paymentStatusMessage = error.localizedDescription
                 self.isProcessing = false
                 self.presenter.resumeCheckoutAction = nil
             }
+        }
+    }
+    
+    // 🚀 Pass the orderId directly in so we don't rely on the global variable that we just wiped
+    private func cancelPendingOrder(orderId: String) async {
+        guard let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/checkout") else {
+            print("🚨 CANCEL ERROR: Invalid URL")
+            return
+        }
+        
+        print("🟡 Attempting to cancel pending order: \(orderId)")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let idToken = await vm.fetchIdToken()
+        guard !idToken.isEmpty else {
+            print("🚨 CANCEL ERROR: Missing auth token")
+            return
+        }
+        request.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
+        
+        let body: [String: Any] = [
+            "purchaseType": "cancel_pending_checkout",
+            "userId": vm.userId,
+            "orderId": orderId
+        ]
+        
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        await request.signWithAppAttest(idToken: idToken)
+        
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse {
+                let responseBody = String(data: data, encoding: .utf8) ?? "Empty body"
+                if httpResponse.statusCode == 200 {
+                    print("✅ Successfully canceled pending order: \(orderId)")
+                } else {
+                    print("🚨 BACKEND REJECTED CANCELLATION (Code \(httpResponse.statusCode)): \(responseBody)")
+                }
+            }
+        } catch {
+            print("🚨 NETWORK ERROR DURING CANCELLATION: \(error)")
         }
     }
 }

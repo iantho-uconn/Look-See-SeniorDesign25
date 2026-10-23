@@ -4,10 +4,12 @@
 //
 import SwiftUI
 import Combine
+import Foundation
 import Amplify
 import AWSCognitoAuthPlugin
+import AWSPluginsCore
 
-enum UserTier {
+enum UserTier: Equatable {
     case guest, authenticated, business
 }
 
@@ -18,32 +20,66 @@ class AuthState: ObservableObject {
     @Published var didSignOut: Bool = false
 
     func resolveTier() async {
-        guard let session = try? await Amplify.Auth.fetchAuthSession() else {
-            tier = .guest
-            isReady = true
-            return
-        }
-        guard session.isSignedIn else {
-            tier = .guest
-            isReady = true
-            return
-        }
+        isReady = false
+
         do {
-            _ = try await Amplify.Auth.fetchAuthSession(options: .forceRefresh())
-            let attributes = try await Amplify.Auth.fetchUserAttributes()
-            print("🔍 All attributes: \(attributes)")
-            if let groupAttr = attributes.first(where: { $0.key.rawValue == "custom:group" }) {
-                print("🔍 Found group attribute: \(groupAttr.value)")
-                tier = groupAttr.value == "business-users" ? .business : .authenticated
+            let session = try await Amplify.Auth.fetchAuthSession(options: .forceRefresh())
+            guard session.isSignedIn else {
+                tier = .guest
+                isReady = true
+                return
+            }
+
+            guard let tokenProvider = session as? AuthCognitoTokensProvider else {
+                tier = .authenticated
+                isReady = true
+                return
+            }
+
+            let tokens = try tokenProvider.getCognitoTokens().get()
+            let groups = Self.cognitoGroups(from: tokens.idToken)
+
+            if groups.contains("business-users") || groups.contains("admins") {
+                tier = .business
             } else {
-                print("⚠️ No group attribute found")
                 tier = .authenticated
             }
+
+            didSignOut = false
         } catch {
             print("❌ resolveTier failed: \(error)")
-            tier = .authenticated
+            let session = try? await Amplify.Auth.fetchAuthSession()
+            tier = session?.isSignedIn == true ? .authenticated : .guest
         }
         isReady = true
+    }
+
+    private static func cognitoGroups(from idToken: String) -> Set<String> {
+        let tokenParts = idToken.split(separator: ".")
+        guard tokenParts.count > 1 else { return [] }
+
+        var payload = String(tokenParts[1])
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+
+        let padding = (4 - payload.count % 4) % 4
+        payload += String(repeating: "=", count: padding)
+
+        guard let data = Data(base64Encoded: payload),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else {
+            return []
+        }
+
+        if let groups = json["cognito:groups"] as? [String] {
+            return Set(groups)
+        }
+
+        if let group = json["cognito:groups"] as? String {
+            return [group]
+        }
+
+        return []
     }
 
     func signOut() async {

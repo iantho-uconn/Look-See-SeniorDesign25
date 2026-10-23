@@ -147,7 +147,7 @@ struct BusinessSetup: View {
         paymentStatusMessage = nil
         await vm.fetchUserDetails()
         
-        guard let url = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/checkout") else {
+        guard let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/checkout") else {
             isProcessing = false; paymentStatusMessage = "Invalid API URL."; return
         }
         
@@ -163,6 +163,10 @@ struct BusinessSetup: View {
             "stripeSubscriptionId": vm.stripeSubscriptionId
         ]
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        
+        // 🚀 ADDED: Automatically attaches App Attest and Cognito token headers
+        let idToken = await vm.fetchIdToken()
+        await request.signWithAppAttest(idToken: idToken)
         
         do {
             let (data, response) = try await URLSession.shared.data(for: request)

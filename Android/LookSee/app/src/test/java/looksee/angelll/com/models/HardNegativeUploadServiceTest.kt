@@ -104,7 +104,7 @@ class HardNegativeUploadServiceTest {
 
     private fun initResponseJson(uploadCount: Int): String {
         val uploads = if (uploadCount == 1) {
-            """[{"negativeId":"negative-1","uploadUrl":"https://s3.test/negative","sourceBucket":"source","sourceKey":"key","contentType":"video/mp4"}]"""
+            """[{"negativeId":"negative-1","uploadUrl":{"url":"https://s3.test/negative","fields":{}},"sourceBucket":"source","sourceKey":"key","contentType":"video/mp4"}]"""
         } else {
             "[]"
         }

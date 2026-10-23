@@ -1,7 +1,19 @@
+import java.io.FileInputStream
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
 }
+
+val localProperties = Properties().apply {
+    val localPropertiesFile = rootProject.file("local.properties")
+    if (localPropertiesFile.exists()) {
+        load(FileInputStream(localPropertiesFile))
+    }
+}
+val mapsApiKey: String = localProperties.getProperty("MAPS_API_KEY") ?: ""
+val sentryDsn: String = localProperties.getProperty("SENTRY_DSN") ?: ""
 
 android {
     namespace = "looksee.angelll.com"
@@ -15,11 +27,18 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Injects the keys into AndroidManifest.xml and BuildConfig
+        manifestPlaceholders["MAPS_API_KEY"] = mapsApiKey
+        buildConfigField("String", "MAPS_API_KEY", "\"$mapsApiKey\"")
+        buildConfigField("String", "SENTRY_DSN", "\"$sentryDsn\"")
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
     compileOptions {
@@ -34,7 +53,6 @@ android {
 }
 
 dependencies {
-    // 🚀 FIXED: Removed duplicate platform(libs.androidx.compose.bom) declarations
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material3)
@@ -57,7 +75,6 @@ dependencies {
     // Look-See Custom Packages
     // --------------------------------------------------------
 
-    // AWS Amplify (Using the newer 2.40.0)
     val amplifyVersion = "2.40.0"
     implementation("com.amplifyframework:aws-api:$amplifyVersion")
     implementation("com.amplifyframework:aws-datastore:$amplifyVersion")
@@ -65,10 +82,8 @@ dependencies {
     implementation("com.amplifyframework:aws-storage-s3:$amplifyVersion")
     implementation("com.amplifyframework:core-kotlin:$amplifyVersion")
 
-    // Material Icons
     implementation("androidx.compose.material:material-icons-extended")
 
-    // CameraX (Combined all modules)
     val cameraXVersion = "1.6.1"
     implementation("androidx.camera:camera-core:$cameraXVersion")
     implementation("androidx.camera:camera-camera2:$cameraXVersion")
@@ -76,15 +91,14 @@ dependencies {
     implementation("androidx.camera:camera-view:$cameraXVersion")
     implementation("androidx.camera:camera-video:$cameraXVersion")
 
-    // Google Maps & Location (Using newer 21.4.0)
     implementation("com.google.maps.android:maps-compose:8.4.0")
     implementation("com.google.maps.android:maps-compose-utils:8.4.0")
     implementation("com.google.android.gms:play-services-location:21.4.0")
+    implementation("com.google.android.ump:user-messaging-platform:2.2.0")
+    implementation("com.google.android.gms:play-services-ads:23.0.0")
 
-    // Permissions
     implementation("com.google.accompanist:accompanist-permissions:0.37.3")
 
-    // Video Playback & Processing (Media3 - unified to 1.11.0)
     val media3Version = "1.11.0"
     implementation("androidx.media3:media3-exoplayer:$media3Version")
     implementation("androidx.media3:media3-ui:$media3Version")
@@ -92,25 +106,27 @@ dependencies {
     implementation("androidx.media3:media3-effect:$media3Version")
     implementation("androidx.media3:media3-common:$media3Version")
 
-    // General Utilities (From teammate's branch)
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.10.2")
     implementation("com.google.code.gson:gson:2.14.0")
 
-    // Checkpoint 11: durable, network-constrained background uploads.
     implementation("androidx.work:work-runtime-ktx:2.11.2")
 
+    // ML Kit Text Recognition for Camera Scanner
+    implementation("com.google.android.gms:play-services-mlkit-text-recognition:19.0.1")
+
+    // Security
+    implementation("com.google.android.play:integrity:1.6.0")
+    implementation("androidx.security:security-crypto-ktx:1.1.0")
     implementation("androidx.localbroadcastmanager:localbroadcastmanager:1.1.0")
 
-    // Keep 2.1.5: LiteRT 2.1.6 has the duplicate-namespace packaging bug.
-    implementation("com.google.ai.edge.litert:litert:2.1.5")
+    // 🚀 FIXED: Both dependencies are perfectly synced to TensorFlow 2.16.1.
+    implementation("org.tensorflow:tensorflow-lite:2.16.1")
+    implementation("org.tensorflow:tensorflow-lite-gpu:2.16.1")
+    implementation("org.tensorflow:tensorflow-lite-gpu-api:2.16.1")
 
-    // Stripe for Payments
     implementation("com.stripe:stripe-android:23.17.0")
-
-    //coil
     implementation("io.coil-kt:coil-compose:2.5.0")
-
-    // Sentry for error tracking
     implementation("io.sentry:sentry-android:8.54.0")
 
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")

@@ -26,6 +26,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -51,12 +53,10 @@ fun PopUp() {
 
     var selectedPromotionImage by remember { mutableStateOf<String?>(null) }
 
-    // Colors matching SwiftUI PopUp.swift
     val purpleStart = Color(red = 0.25f, green = 0.10f, blue = 0.90f)
     val purpleEnd = Color(red = 0.50f, green = 0.15f, blue = 0.95f)
     val promotionOrange = Color(red = 1.00f, green = 0.58f, blue = 0.18f)
 
-    // Derived Display Values
     val displayName = infoView.landmarkName.trim().ifEmpty { "Unknown Landmark" }
     val displayDescription = infoView.landmarkDescription.trim().ifEmpty { "No description is available for this landmark." }
     val cleanedPromoDescription = infoView.promoDescription.trim()
@@ -65,7 +65,8 @@ fun PopUp() {
             cleanedPromoName != "No active promotion" &&
             cleanedPromoName != "Checking promotions..."
 
-    // URL Handling Helper
+    var showReportSheet by remember { mutableStateOf(false) }
+
     fun normalizedURL(rawValue: String): String? {
         val cleaned = rawValue.trim()
         if (cleaned.isEmpty()) return null
@@ -77,39 +78,45 @@ fun PopUp() {
     }
 
     BoxWithConstraints(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(Unit) { detectTapGestures { infoView.dismissLandmark() } },
         contentAlignment = Alignment.Center
     ) {
         val maxWidthPx = maxWidth.value
         val maxHeightPx = maxHeight.value
 
-        val popupWidth = minOf(maxOf(maxWidthPx - 56, 1f), 620f).dp
-        val maximumPopupHeight = minOf(maxOf(maxHeightPx - 32, 1f), 780f).dp
+        val popupWidth = minOf(maxOf(maxWidthPx - 56f, 1f), 620f).dp
+        val maximumPopupHeight = (maxHeightPx * 0.80f).dp
 
-        // Shell: Equivalent to popupShell in PopUp.swift
         Surface(
             modifier = Modifier
                 .width(popupWidth)
                 .heightIn(max = maximumPopupHeight)
+                .wrapContentHeight()
                 .shadow(
                     elevation = 30.dp,
                     shape = RoundedCornerShape(30.dp),
                     spotColor = Color.Black.copy(alpha = 0.30f)
-                ),
-            color = Color(0xFF1C1C1E).copy(alpha = 0.95f), // UltraThickMaterial-ish
+                )
+                .pointerInput(Unit) { detectTapGestures { } },
+            color = Color(0xFF1C1C1E).copy(alpha = 0.95f),
             shape = RoundedCornerShape(30.dp),
             border = BorderStroke(1.dp, Color.White.copy(alpha = 0.20f))
         ) {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                // Scrolling Content
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .wrapContentHeight()
+            ) {
                 Column(
                     modifier = Modifier
+                        .fillMaxWidth()
                         .weight(1f, fill = false)
                         .verticalScroll(rememberScrollState())
                         .padding(start = 20.dp, end = 20.dp, top = 26.dp, bottom = 22.dp),
                     verticalArrangement = Arrangement.spacedBy(18.dp)
                 ) {
-                    // Landmark Text
                     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                         Text(
                             text = displayName,
@@ -128,7 +135,6 @@ fun PopUp() {
                         )
                     }
 
-                    // Website Button
                     val websiteUrl = normalizedURL(infoView.landmarkWebsiteUrl)
                     if (websiteUrl != null) {
                         Row(
@@ -160,7 +166,6 @@ fun PopUp() {
                         }
                     }
 
-                    // Promotion Section
                     if (shouldShowPromotion) {
                         Column(
                             modifier = Modifier
@@ -174,7 +179,7 @@ fun PopUp() {
                             if (cleanedPromoDescription.isNotEmpty()) {
                                 Text(cleanedPromoDescription, fontSize = 14.sp, color = Color.White.copy(alpha = 0.7f))
                             }
-                            
+
                             val promoImg = normalizedURL(infoView.promoImageUrl)
                             if (promoImg != null) {
                                 Box(
@@ -207,8 +212,50 @@ fun PopUp() {
                         }
                     }
 
-                    // Merchant Card
+                    // 🚀 THE FIX: Restored the Merchant Card
                     MerchantCardView()
+
+                    if (infoView.isMapPin) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
+                            Button(
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    val lat = infoView.mapLatitude
+                                    val lon = infoView.mapLongitude
+                                    if (lat != null && lon != null) {
+                                        val uri = Uri.parse("google.navigation:q=$lat,$lon")
+                                        val intent = Intent(Intent.ACTION_VIEW, uri)
+                                        intent.setPackage("com.google.android.apps.maps")
+                                        if (intent.resolveActivity(context.packageManager) != null) {
+                                            context.startActivity(intent)
+                                        } else {
+                                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://maps.google.com/?q=$lat,$lon")))
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.weight(1f).height(56.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(0.1f), contentColor = AppleBlue),
+                                shape = RoundedCornerShape(16.dp)
+                            ) {
+                                Icon(Icons.Default.LocationOn, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("Directions", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                            }
+
+                            Button(
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    showReportSheet = true
+                                },
+                                modifier = Modifier.size(56.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(0.15f), contentColor = Color.Red),
+                                shape = RoundedCornerShape(16.dp),
+                                contentPadding = PaddingValues(0.dp)
+                            ) {
+                                Icon(Icons.Default.Flag, contentDescription = null, modifier = Modifier.size(24.dp))
+                            }
+                        }
+                    }
                 }
 
                 HorizontalDivider(color = Color.White.copy(alpha = 0.18f))
@@ -231,7 +278,6 @@ fun PopUp() {
         }
     }
 
-    // Fullscreen Image Preview
     if (selectedPromotionImage != null) {
         Dialog(
             onDismissRequest = { selectedPromotionImage = null },
@@ -257,13 +303,23 @@ fun PopUp() {
             }
         }
     }
+
+    if (showReportSheet) {
+        MapReportSheet(
+            landmarkId = infoView.landmarkId,
+            landmarkLabel = infoView.landmarkName,
+            reportedOwnerId = infoView.reportedOwnerId ?: "unknown",
+            userEmail = "unknown@user.com",
+            onDismiss = { showReportSheet = false }
+        )
+    }
 }
 
 @Composable
-private fun PromoImageLoader(url: String, contentScale: ContentScale = ContentScale.Fit) {
+fun PromoImageLoader(url: String, contentScale: ContentScale = ContentScale.Fit) {
     var bitmap by remember { mutableStateOf<Bitmap?>(null) }
     var isLoading by remember { mutableStateOf(true) }
-    
+
     LaunchedEffect(url) {
         withContext(Dispatchers.IO) {
             try {

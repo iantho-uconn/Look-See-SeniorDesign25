@@ -55,15 +55,15 @@ struct Detection: Identifiable, Equatable {
     }
 }
 
-// MARK: - 🚀 UPGRADED: Advanced Detection Tracker (EMA + Coasting)
+// MARK: - Advanced Detection Tracker (EMA + Coasting)
 
 class DetectionTracker {
     var lastDetection: Detection?
     private var framesSinceLastSeen = 0
     private let maxCoastFrames = 5       // Hold box for ~0.4s during motion blur/cutoffs
-    private let alpha: CGFloat = 0.65     // 0.1 = heavy lag/smooth, 0.9 = fast/jittery
 
-    func update(with newDetection: Detection?) -> Detection? {
+    // 🚀 Uses your dynamic alpha for Speed vs Smoothness
+    func update(with newDetection: Detection?, alpha: CGFloat) -> Detection? {
         if let newDet = newDetection {
             framesSinceLastSeen = 0
             if let last = lastDetection {
@@ -144,7 +144,7 @@ final class Detector: NSObject, ObservableObject {
     private let queue = DispatchQueue(label: "yolo.queue")
     private let ciContext = CIContext()
     
-    // 🚀 NEW: Tracks active detections across frames
+    // Tracks active detections across frames
     private var trackers: [String: DetectionTracker] = [:]
 
     private var isAttached = false
@@ -163,11 +163,15 @@ final class Detector: NSObject, ObservableObject {
     
     // Cooldown state for notification debouncing
     private var notificationCooldowns: [String: Date] = [:]
-    private let cooldownInterval: TimeInterval = 6.0
+    private let cooldownInterval: TimeInterval = 12.0 // 🚀 Extended to 12 seconds to stop popup spam
 
     private let inputSize = CGSize(width: 640, height: 640)
     @Published var confidenceThreshold: Float = 0.65
     @Published var ThresholdRangemultiplier: Float = 0.35
+    
+    // 🚀 Your adjustable slider!
+    @Published var trackingAlpha: CGFloat = 0.65
+    
     private let iouThreshold: Float = 0.45
 
     // MARK: Self-contained location tracking
@@ -192,13 +196,11 @@ final class Detector: NSObject, ObservableObject {
         }
     }
 
-    /// Loads the candidate completely before replacing the active inference
-    /// state. This prevents frames from being processed by the old model with
-    /// the new model's class count or labels during a hot swap.
     private func loadModel(for release: ActiveModelRelease) {
         queue.async {
             do {
                 let config = MLModelConfiguration()
+                // 🚀 Safely avoids the Apple GPU crash
                 config.computeUnits = .cpuAndNeuralEngine
 
                 let loaded = try MLModel(
@@ -213,8 +215,6 @@ final class Detector: NSObject, ObservableObject {
                 }
 
                 DispatchQueue.main.async {
-                    // A second selection may have happened while Core ML was
-                    // loading. Never install a stale result over that choice.
                     guard ModelSelector.shared.activeRelease?.id == release.id else {
                         return
                     }
@@ -232,17 +232,12 @@ final class Detector: NSObject, ObservableObject {
                         DispatchQueue.main.async {
                             self.classLabels = release.classLabels
                             self.resetEngine()
-                            print(
-                                "✅ Detector hot-swapped to \(release.displayName) " +
-                                "(\(inferredClassCount) classes, Metal bypassed)"
-                            )
+                            print("✅ Detector hot-swapped to \(release.displayName)")
                         }
                     }
                 }
             } catch {
-                print(
-                    "❌ Model load error for \(release.displayName): \(error)"
-                )
+                print("❌ Model load error for \(release.displayName): \(error)")
             }
         }
     }
@@ -283,9 +278,6 @@ final class Detector: NSObject, ObservableObject {
             if let channels = dimensions.first(where: {
                 $0 >= 5 && $0 <= 512
             }) {
-                // Raw YOLO tensors contain x, y, width, height, then classes.
-                // End-to-end tensors use six values but carry a class index;
-                // a large upper bound lets that validated model output pass.
                 return channels == 6 ? 10_000 : channels - 4
             }
         }
@@ -337,6 +329,8 @@ final class Detector: NSObject, ObservableObject {
         if let connection = output.connection(with: .video), connection.isVideoOrientationSupported {
             connection.videoOrientation = .portrait
         }
+        // 🚀 Ensures smooth camera feed without backing up the buffer
+        output.alwaysDiscardsLateVideoFrames = true
         output.setSampleBufferDelegate(self, queue: queue)
     }
 
@@ -362,7 +356,7 @@ final class Detector: NSObject, ObservableObject {
 
         let (inputBuffer, scale, padX, padY) = letterbox(pixelBuffer: pixelBuffer)
 
-        // 🚀 DYNAMIC INPUT MAPPER
+        // DYNAMIC INPUT MAPPER
         var inputDict: [String: Any] = ["image": MLFeatureValue(pixelBuffer: inputBuffer)]
         let inputDescriptions = model.modelDescription.inputDescriptionsByName
         
@@ -370,8 +364,6 @@ final class Detector: NSObject, ObservableObject {
             inputDict["iouThreshold"] = NSNumber(value: iouThreshold)
         }
         if inputDescriptions.keys.contains("confidenceThreshold") {
-            // We pass 0.05 to CoreML so it gives us weak detections,
-            // allowing our Tracker to handle holding them natively.
             inputDict["confidenceThreshold"] = NSNumber(value: 0.05)
         }
 
@@ -389,9 +381,9 @@ final class Detector: NSObject, ObservableObject {
             var diagConfShape: [Int] = []
             var diagCoordShape: [Int] = []
 
-            // 🚀 DYNAMIC OUTPUT PARSER
+            // DYNAMIC OUTPUT PARSER
             if outputKeys.contains("confidence") && outputKeys.contains("coordinates") {
-                // 🍎 OLD YOLO STYLE (Separate Arrays)
+                // OLD YOLO STYLE (Separate Arrays)
                 let conf = result.featureValue(for: "confidence")!.multiArrayValue!
                 let coord = result.featureValue(for: "coordinates")!.multiArrayValue!
                 
@@ -408,7 +400,7 @@ final class Detector: NSObject, ObservableObject {
                 )
                 
             } else if let firstKey = outputKeys.first, let combinedArray = result.featureValue(for: firstKey)?.multiArrayValue {
-                // 🚀 NEW YOLO26 E2E STYLE (Combined Array)
+                // NEW YOLO26 E2E STYLE (Combined Array)
                 diagConfShape = combinedArray.shape.map { $0.intValue }
                 
                 newDetections = parseEndToEndDetections(
@@ -454,13 +446,14 @@ final class Detector: NSObject, ObservableObject {
                 if let trigger = triggerNotification {
                     self.newlyDetectedLandmark = trigger
                 }
+                
+                // 🚀 SPEED FIX: We removed the .asyncAfter(0.03) delay here.
+                // The detector will now run as fast as the Neural Engine allows.
+                self.throttling = false
             }
         } catch {
             print("❌ Prediction error: \(error)")
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) {
-            self.throttling = false
+            DispatchQueue.main.async { self.throttling = false }
         }
     }
 
@@ -492,7 +485,7 @@ final class Detector: NSObject, ObservableObject {
         return (output!, scale, padX, padY)
     }
     
-    // 🚀 END-TO-END PARSER FOR YOLO26
+    // END-TO-END PARSER FOR YOLO26
     private func parseEndToEndDetections(
         combinedArray: MLMultiArray,
         scale: CGFloat,
@@ -505,7 +498,6 @@ final class Detector: NSObject, ObservableObject {
         expectedClassCount: Int,
         classLabels: [String]
     ) -> [Detection] {
-        let startTime = CACurrentMediaTime()
         let ptr = combinedArray.dataPointer.bindMemory(to: Float.self, capacity: combinedArray.count)
         let shape = combinedArray.shape.map { $0.intValue }
         
@@ -534,7 +526,7 @@ final class Detector: NSObject, ObservableObject {
 
             guard classIdx >= 0, classIdx < expectedClassCount else { continue }
             
-            // 🚀 HYSTERESIS: Lower threshold if object is already being tracked
+            // HYSTERESIS: Lower threshold if object is already being tracked
             let isTracked = trackers[String(classIdx)]?.lastDetection != nil
             let requiredScore = isTracked ? (confidenceThreshold * ThresholdRangemultiplier) : confidenceThreshold
             guard score >= requiredScore else { continue }
@@ -608,7 +600,7 @@ final class Detector: NSObject, ObservableObject {
             }
             guard bestClass >= 0, bestClass < expectedClassCount else { continue }
             
-            // 🚀 HYSTERESIS
+            // HYSTERESIS
             let isTracked = trackers[String(bestClass)]?.lastDetection != nil
             let requiredScore = isTracked ? (confidenceThreshold * ThresholdRangemultiplier) : confidenceThreshold
             guard bestScore >= requiredScore else { continue }
@@ -641,11 +633,11 @@ final class Detector: NSObject, ObservableObject {
         return finalizeTracking(rawDetections: rawDetections)
     }
 
-    // 🚀 NEW: Tracks and updates coasting frames universally
+    // Tracks and updates coasting frames universally
     private func finalizeTracking(rawDetections: [Detection]) -> [Detection] {
         let nearbyDetections = proximityFilter(rawDetections)
         
-        // 🚀 THE FIX: Filter out duplicate overlapping boxes before tracking!
+        // Filter out duplicate overlapping boxes before tracking!
         var strongestByLabel: [String: Detection] = [:]
         for det in nearbyDetections {
             let currentBest = strongestByLabel[det.label]?.confidence ?? -Float.infinity
@@ -660,7 +652,8 @@ final class Detector: NSObject, ObservableObject {
         // 1. Update trackers with active detections
         for (label, det) in strongestByLabel {
             if trackers[label] == nil { trackers[label] = DetectionTracker() }
-            if let smoothedDet = trackers[label]?.update(with: det) {
+            // 🚀 Plug UI trackingAlpha directly into the EMA calculation
+            if let smoothedDet = trackers[label]?.update(with: det, alpha: trackingAlpha) {
                 finalResults.append(smoothedDet)
             }
         }
@@ -668,7 +661,7 @@ final class Detector: NSObject, ObservableObject {
         // 2. Handle lost detections (coasting / persistence)
         let lostLabels = trackers.keys.filter { !currentLabels.contains($0) }
         for label in lostLabels {
-            if let coastedDet = trackers[label]?.update(with: nil) {
+            if let coastedDet = trackers[label]?.update(with: nil, alpha: trackingAlpha) {
                 // Object missed this frame, but tracker is coasting it
                 finalResults.append(coastedDet)
             } else {

@@ -9,10 +9,16 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -20,6 +26,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -27,48 +34,56 @@ import com.amplifyframework.kotlin.core.Amplify
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import looksee.angelll.com.services.AuthService
-import looksee.angelll.com.ui.theme.LookSeeCard
+import looksee.angelll.com.uifiles.LookSeeCard
 import looksee.angelll.com.viewmodels.AuthViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun Signup(
+fun SignupScreen(
     vm: AuthViewModel,
-    onSignupSuccess: () -> Unit,
-    onGoToLogin: () -> Unit
+    initialBusinessAccount: Boolean = false,
+    onSignupSuccess: (String, Boolean) -> Unit,
+    onNavigate: (String) -> Unit
 ) {
     var email by remember { mutableStateOf("") }
     var username by remember { mutableStateOf("") }
+    var isBusinessAccount by remember { mutableStateOf(initialBusinessAccount) }
     var password by remember { mutableStateOf("") }
+    var confirmPassword by remember { mutableStateOf("") }
+    var passwordVisible by remember { mutableStateOf(false) }
+    var confirmPasswordVisible by remember { mutableStateOf(false) }
     var verificationCode by remember { mutableStateOf("") }
-    var isBusinessAccount by remember { mutableStateOf(false) }
+
 
     var showVerification by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }
 
     val coroutineScope = rememberCoroutineScope()
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
 
     val isValidPassword = { pass: String ->
         val passwordRegex = "^(?=.*[A-Z])(?=.*[a-z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,}$".toRegex()
         passwordRegex.matches(pass)
     }
 
+    val sanitizedEmail = email.trim().lowercase()
+
     val signUp: () -> Unit = {
         isLoading = true
         message = ""
-        val group = if (isBusinessAccount) "business-users" else "authenticated-users"
+        val group = if (isBusinessAccount) "business" else "guest"
         coroutineScope.launch {
             try {
-                val result = AuthService.signUp(email, password, email, group)
-                if (result.isSignUpComplete) {
+                val result = AuthService.signUp(username, password, sanitizedEmail, group)
+                if (result.isSignUpComplete || result.nextStep.signUpStep == com.amplifyframework.auth.result.step.AuthSignUpStep.CONFIRM_SIGN_UP_STEP) {
                     vm.pendingUsernameToSave = username
-                    message = "Account created and verified! Routing to login..."
-                    delay(1200)
-                    onSignupSuccess()
-                } else {
                     showVerification = true
                     message = "Code sent! Please check your email."
+                } else {
+                    message = "Account created and verified! Routing to login..."
+                    delay(1200)
+                    onSignupSuccess(sanitizedEmail, isBusinessAccount)
                 }
             } catch (e: Exception) {
                 message = e.localizedMessage ?: "Signup failed."
@@ -83,12 +98,12 @@ fun Signup(
         message = ""
         coroutineScope.launch {
             try {
-                val result = Amplify.Auth.confirmSignUp(email, verificationCode)
+                val result = Amplify.Auth.confirmSignUp(username, verificationCode)
                 if (result.isSignUpComplete) {
                     vm.pendingUsernameToSave = username
                     message = "Verification successful! Routing to login..."
                     delay(1500)
-                    onSignupSuccess()
+                    onSignupSuccess(sanitizedEmail, isBusinessAccount)
                 } else {
                     message = "Verification incomplete. Please check the code."
                 }
@@ -100,10 +115,13 @@ fun Signup(
         }
     }
 
+    
+
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF0F0F1A)),
+            .background(Color(0xFF0F0F1A))
+            .pointerInput(Unit) { detectTapGestures(onTap = { focusManager.clearFocus() }) },
         contentAlignment = Alignment.TopCenter
     ) {
         // Glow effect
@@ -187,7 +205,13 @@ fun Signup(
                             onValueChange = { password = it },
                             placeholder = { Text("••••••••", color = Color.Gray) },
                             modifier = Modifier.fillMaxWidth(),
-                            visualTransformation = PasswordVisualTransformation(),
+                            visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                            trailingIcon = {
+                                val image = if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff
+                                IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                                    Icon(imageVector = image, contentDescription = if (passwordVisible) "Hide password" else "Show password", tint = Color.Gray)
+                                }
+                            },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                             singleLine = true,
                             shape = RoundedCornerShape(12.dp),
@@ -210,6 +234,41 @@ fun Signup(
                         }
                     }
 
+                    VStackLabel(label = "Confirm Password") {
+                        OutlinedTextField(
+                            value = confirmPassword,
+                            onValueChange = { confirmPassword = it },
+                            placeholder = { Text("••••••••", color = Color.Gray) },
+                            modifier = Modifier.fillMaxWidth(),
+                            visualTransformation = if (confirmPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                            trailingIcon = {
+                                val image = if (confirmPasswordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff
+                                IconButton(onClick = { confirmPasswordVisible = !confirmPasswordVisible }) {
+                                    Icon(imageVector = image, contentDescription = if (confirmPasswordVisible) "Hide password" else "Show password", tint = Color.Gray)
+                                }
+                            },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedContainerColor = Color(0xFF2D2D3D),
+                                unfocusedContainerColor = Color(0xFF2D2D3D),
+                                focusedBorderColor = Color(0xFF387DFF).copy(alpha = 0.3f),
+                                unfocusedBorderColor = Color(0xFF387DFF).copy(alpha = 0.3f)
+                            )
+                        )
+                        if (confirmPassword.isNotEmpty() && password != confirmPassword) {
+                            Text(
+                                "Passwords do not match.",
+                                color = Color.Red,
+                                fontSize = 11.sp,
+                                modifier = Modifier.padding(start = 4.dp, top = 4.dp)
+                            )
+                        }
+                    }
+
                     // Business Account Toggle
                     LookSeeCard {
                         Row(
@@ -218,7 +277,7 @@ fun Signup(
                         ) {
                             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                 Text("Business Account", color = Color.White, fontSize = 15.sp)
-                                Text("Enables promotion management and video uploads", color = Color.White.copy(alpha = 0.4f), fontSize = 12.sp)
+                                Text("Continue to business plans after verification", color = Color.White.copy(alpha = 0.4f), fontSize = 12.sp)
                             }
                             Switch(
                                 checked = isBusinessAccount,
@@ -263,7 +322,7 @@ fun Signup(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            val canSubmit = if (showVerification) verificationCode.length >= 6 else (email.isNotEmpty() && username.isNotEmpty() && isValidPassword(password))
+            val canSubmit = if (showVerification) verificationCode.length >= 6 else (email.isNotEmpty() && username.isNotEmpty() && isValidPassword(password) && confirmPassword.isNotEmpty() && password == confirmPassword)
 
             Button(
                 onClick = { if (showVerification) verifyCode() else signUp() },
@@ -283,7 +342,7 @@ fun Signup(
             }
 
             if (!showVerification) {
-                TextButton(onClick = onGoToLogin, modifier = Modifier.padding(top = 8.dp)) {
+                TextButton(onClick = { onNavigate("login") }, modifier = Modifier.padding(top = 8.dp)) {
                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text("Already have an account?", color = Color.White.copy(alpha = 0.4f), fontSize = 12.sp)
                         Text("Sign in", color = Color(0xFF007AFF), fontSize = 12.sp)

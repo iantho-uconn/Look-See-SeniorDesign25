@@ -221,6 +221,15 @@ class OfflineMediaManager internal constructor(
         }
     }
 
+    suspend fun prioritizeAndRetry(media: ArchivedMedia) {
+        mutationMutex.withLock {
+            val current = _archivedItems.value
+            val item = current.find { it.id == media.id } ?: return@withLock
+            _archivedItems.value = listOf(item) + current.filterNot { it.id == media.id }
+            saveArchive(_archivedItems.value)
+        }
+    }
+
     private suspend fun appendAndPersist(entry: ArchivedMedia) {
         mutationMutex.withLock {
             _archivedItems.value = _archivedItems.value + entry

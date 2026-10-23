@@ -10,6 +10,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -35,7 +36,7 @@ fun HelpScreen(onBack: () -> Unit) {
     val faqs = remember {
         listOf(
             FAQItem("How do I record a landmark?", "Tap the record button on the main screen. Hold your device steady and follow the on-screen instructions."),
-            FAQItem("How do I delete my data?", "You can delete individual landmarks from your archive or contact support to request a full account deletion."),
+            FAQItem("How do I delete my data?", "You can delete individual landmarks from your Manage My Landmarks Screen or contact support to request a full account deletion."),
             FAQItem("Is my location data shared?", "Your location is only used to place landmarks on the map and is never shared with third parties without your consent.")
         )
     }
@@ -47,7 +48,8 @@ fun HelpScreen(onBack: () -> Unit) {
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = backgroundColor),
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
+                        // 🚀 THE FIX: Uses the new AutoMirrored version of the back arrow
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
                     }
                 }
             )
@@ -78,11 +80,11 @@ fun HelpScreen(onBack: () -> Unit) {
             item {
                 SupportContactCard(
                     title = "Email Support",
-                    subtitle = "support@looksee.ai",
+                    subtitle = "",
                     icon = Icons.Default.Email,
                     onClick = {
                         val intent = Intent(Intent.ACTION_SENDTO).apply {
-                            data = Uri.parse("mailto:support@looksee.ai")
+                            data = Uri.parse("mailto:looksee.support@informationoutpost.com")
                         }
                         context.startActivity(Intent.createChooser(intent, "Send Email"))
                     }
@@ -92,10 +94,10 @@ fun HelpScreen(onBack: () -> Unit) {
             item {
                 SupportContactCard(
                     title = "Visit Website",
-                    subtitle = "www.looksee.ai/help",
+                    subtitle = "",
                     icon = Icons.Default.Language,
                     onClick = {
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.looksee.ai/help"))
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.informationoutpost.com"))
                         context.startActivity(intent)
                     }
                 )
@@ -109,7 +111,7 @@ fun HelpScreen(onBack: () -> Unit) {
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "Version 1.0.4 (Build 256)\n© 2026 LookSee AI",
+                        text = "Version 1.0.4 (Build 256)\n© 2026 Information Outpost",
                         fontSize = 12.sp,
                         color = Color.Gray,
                         textAlign = TextAlign.Center
@@ -196,7 +198,9 @@ fun SupportContactCard(
         }
         Column(modifier = Modifier.weight(1f)) {
             Text(title, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.White)
-            Text(subtitle, fontSize = 14.sp, color = Color.Gray)
+            if (subtitle.isNotEmpty()) {
+                Text(subtitle, fontSize = 14.sp, color = Color.Gray)
+            }
         }
         Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color.Gray)
     }

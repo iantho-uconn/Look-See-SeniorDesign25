@@ -48,6 +48,8 @@ class OfflineMediaManager: ObservableObject {
     // 🚀 THE FIX: Bumps an item to the absolute front of the queue by spoofing an old date
     func prioritizeAndRetry(media: ArchivedMedia) {
         if let index = archivedItems.firstIndex(where: { $0.id == media.id }) {
+            guard archivedItems[index].deletionBlocked != true else { return }
+            archivedItems[index].lastUploadError = nil
             // Date(timeIntervalSince1970: 0) makes it the oldest possible item, forcing it to the front!
             archivedItems[index].dateSaved = Date(timeIntervalSince1970: 0)
             archivedItems.sort { $0.dateSaved < $1.dateSaved }
@@ -55,6 +57,37 @@ class OfflineMediaManager: ObservableObject {
         }
     }
     
+    func recordUploadFailure(id: UUID, message: String, deletionBlocked: Bool) {
+        guard let index = archivedItems.firstIndex(where: { $0.id == id }) else { return }
+        archivedItems[index].lastUploadError = message
+        archivedItems[index].deletionBlocked = deletionBlocked
+        saveArchive()
+    }
+
+    func clearRetryableFailures() {
+        for index in archivedItems.indices where archivedItems[index].deletionBlocked != true {
+            archivedItems[index].lastUploadError = nil
+        }
+        saveArchive()
+    }
+
+    func prepareUploadID(for media: ArchivedMedia) -> String {
+        let landmarkID = media.landmarkId ?? media.queueLandmarkId
+            ?? "landmark_\(UUID().uuidString.prefix(8))"
+        if let index = archivedItems.firstIndex(where: { $0.id == media.id }) {
+            archivedItems[index].queueLandmarkId = landmarkID
+            saveArchive()
+        }
+        return landmarkID
+    }
+
+    func recordPositiveCompletion(id: UUID, landmarkID: String) {
+        guard let index = archivedItems.firstIndex(where: { $0.id == id }) else { return }
+        archivedItems[index].queueLandmarkId = landmarkID
+        archivedItems[index].positiveUploadCompleted = true
+        saveArchive()
+    }
+
     // MARK: - Archive Video (Queue) - Background Optimized
     func archiveVideo(
         tempURL: URL,

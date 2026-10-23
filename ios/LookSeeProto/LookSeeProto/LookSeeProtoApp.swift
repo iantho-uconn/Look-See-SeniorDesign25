@@ -9,25 +9,27 @@ import SwiftUI
 import Amplify
 import AWSCognitoAuthPlugin
 import AWSS3StoragePlugin
-import Sentry // 🚀 ADDED: Sentry SDK
+import Sentry
+import GoogleMobileAds
+import UserMessagingPlatform
 
 @main
 struct LookSeeProtoApp: App {
     @StateObject private var authState = AuthState()
     @StateObject private var authViewModel = AuthViewModel()
+    @StateObject private var adConsentManager = AdConsentManager()
     
-    // 🚀 THE FIX: In-app language selector storage
     @AppStorage("selectedLanguage") private var selectedLanguage: String = "en"
     
     init() {
         configureAmplify()
-        configureSentry() // 🚀 ADDED: Boot up Sentry
+        configureSentry()
     }
     
     func configureAmplify() {
         do {
             try Amplify.add(plugin: AWSCognitoAuthPlugin())
-            try Amplify.add(plugin: AWSS3StoragePlugin()) // 🚀 THE FIX: Initializes Storage
+            try Amplify.add(plugin: AWSS3StoragePlugin())
             try Amplify.configure()
             print("✅ Amplify configured")
         } catch {
@@ -35,11 +37,15 @@ struct LookSeeProtoApp: App {
         }
     }
     
-    // 🚀 ADDED: Sentry Configuration
     func configureSentry() {
         SentrySDK.start { options in
-            // Your Live Sentry DSN Key
-            options.dsn = "https://e9ee0e43b4735fe777a4d240a4423a56@o4512005291573248.ingest.us.sentry.io/4512005308743681"
+            // 🚀 THE FIX: Dynamically read the DSN from Info.plist
+            if let sentryDSNKey = Bundle.main.object(forInfoDictionaryKey: "SENTRY_DSN") as? String, !sentryDSNKey.isEmpty {
+                // Re-attach the https:// prefix that we stripped from the xcconfig file
+                options.dsn = "https://" + sentryDSNKey
+            } else {
+                print("⚠️ WARNING: SENTRY_DSN not found in Info.plist")
+            }
             
             // Enable performance monitoring
             options.tracesSampleRate = 1.0
@@ -57,8 +63,18 @@ struct LookSeeProtoApp: App {
             RootView()
                 .environmentObject(authState)
                 .environmentObject(authViewModel)
-                // 🚀 THE FIX: Forces the entire app to render in the user's chosen language
-                .environment(\.locale, Locale(identifier: selectedLanguage))
+                .environmentObject(adConsentManager)
+                .environment(
+                    \.locale,
+                    Locale(identifier: selectedLanguage)
+                )
+                .task {
+                    await adConsentManager.start()
+                    
+                    // 🚀 THE FIX: Attach the AuthViewModel to the queue globally!
+                    // Now background uploads start the moment the app opens, no matter what screen the user is on.
+                    AutoUploadManager.shared.attachAuthVM(authViewModel)
+                }
         }
     }
 }

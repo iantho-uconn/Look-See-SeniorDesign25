@@ -9,6 +9,7 @@ import Combine
 struct Buttons: View {
     @EnvironmentObject var vm: AuthViewModel
     @EnvironmentObject var authState: AuthState
+    @EnvironmentObject private var adConsentManager: AdConsentManager
     
     @Environment(\.scenePhase) var scenePhase
     
@@ -19,7 +20,10 @@ struct Buttons: View {
     @State private var showSignUpPrompt = false
     @State private var showSignUp = false
     @State private var showLogin = false // Merged from teammate
+    @State private var showBusinessPlans = false
     @State private var currentTab = 0
+
+    @StateObject private var signupPresenter = SettingsPresenter()
 
     @State private var pendingUploadLandmarkId: String?
     @State private var showRecordSheet = false
@@ -55,7 +59,7 @@ struct Buttons: View {
     @AppStorage("dismissedGlobalNotifs_v4") private var dismissedNotificationsString: String = ""
 
     private var isBusinessMode: Bool {
-        return vm.hasActiveSubscription
+        return vm.currentTier == .business
     }
 
     var tabCount: Int { return 2 }
@@ -73,6 +77,16 @@ struct Buttons: View {
     var isScanCameraActive: Bool {
         if showRecordSheet || isRecordSheetAnimating || showMyLandmarksFromAlert { return false }
         return true
+    }
+
+    private var shouldShowBanner: Bool {
+        isActive
+            && isScanTab
+            && isScanCameraActive
+            && !infoView.infoView
+            && !showSignUpPrompt
+            && vm.isEligibleForBannerAds
+            && adConsentManager.adsReady
     }
 
     var body: some View {
@@ -217,6 +231,14 @@ struct Buttons: View {
                     value: infoView.infoView
                 )
             }
+            .padding(.bottom, shouldShowBanner ? 62 : 0)
+            .overlay(alignment: .bottom) {
+                if shouldShowBanner {
+                    AdBannerView()
+                        .padding(.top, 12)
+                        .background(Color(uiColor: .systemBackground))
+                }
+            }
             .fullScreenCover(isPresented: $showMyLandmarksFromAlert) {
                 LazyView(
                     NavigationStack {
@@ -259,13 +281,26 @@ struct Buttons: View {
             .fullScreenCover(isPresented: $showSignUp) {
                 NavigationStack {
                     Signup(
-                        onSignupSuccess: { _ in showSignUp = false },
+                        initialBusinessAccount: true,
+                        onSignupSuccess: { _, wantsBusiness in
+                            showSignUp = false
+
+                            if wantsBusiness {
+                                signupPresenter.subscriptionStartingTab = 0
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+                                    showBusinessPlans = true
+                                }
+                            }
+                        },
                         onGoToLogin: {
                             showSignUp = false
                             DispatchQueue.main.async { showLogin = true }
                         }
                     )
                 }
+            }
+            .sheet(isPresented: $showBusinessPlans) {
+                SubscriptionPlans(presenter: signupPresenter)
             }
             .fullScreenCover(isPresented: $showLogin) {
                 NavigationStack {
@@ -475,27 +510,12 @@ struct Buttons: View {
 
             Spacer()
 
+            // 🚀 Removed all tap gestures, sheets, and alerts. This is now completely static.
             Text(topBarTitle)
                 .font(.system(size: 24, weight: .bold, design: .rounded))
                 .foregroundStyle(.white)
                 .shadow(color: .black.opacity(0.8), radius: 4, x: 0, y: 2)
-                .contentShape(Rectangle())
-                .highPriorityGesture(
-                    TapGesture().onEnded {
-                        if isBusinessMode { showPromotion = true }
-                        else { showBusinessAlert = true }
-                    }
-                )
-                .sheet(isPresented: $showPromotion) {
-                    NavigationStack {
-                        BusinessLandmarksView()
-                    }
-                }
-                .alert("Premium Account Required", isPresented: $showBusinessAlert) {
-                    Button("OK", role: .cancel) {}
-                } message: {
-                    Text("You need an active subscription to access the Promotion Editor.")
-                }
+
             Spacer()
 
             // 🚀 RESTORED NATIVE NAVIGATION!
@@ -639,10 +659,14 @@ struct Buttons: View {
                     Image(systemName: "arrow.up.circle.fill").font(.system(size: 32)).foregroundStyle(Color(red: 0.22, green: 0.49, blue: 1.00))
                 }
                 VStack(spacing: 8) {
-                    Text("Sign up to upload")
+                    Text(vm.isSignedIn ? "Upgrade to upload" : "Business account required")
                         .font(.system(size: 22, weight: .bold, design: .rounded))
                         .foregroundStyle(.primary)
-                    Text("Create an account to start contributing landmarks and help improve recognition.")
+                    Text(
+                        vm.isSignedIn
+                            ? "Choose a Business plan to upload and manage landmark media."
+                            : "Create an account and choose Business to continue to available plans."
+                    )
                         .font(.system(size: 15, weight: .medium))
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -651,10 +675,18 @@ struct Buttons: View {
                 VStack(spacing: 12) {
                     Button {
                         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                        showSignUpPrompt = false; showSignUp = true
+                        showSignUpPrompt = false
+
+                        if vm.isSignedIn {
+                            signupPresenter.subscriptionStartingTab = 0
+                            showBusinessPlans = true
+                        } else {
+                            showSignUp = true
+                        }
                     } label: {
                         HStack(spacing: 8) {
-                            Text("Create Account").font(.system(size: 17, weight: .bold, design: .rounded))
+                            Text(vm.isSignedIn ? "View Business Plans" : "Create Account")
+                                .font(.system(size: 17, weight: .bold, design: .rounded))
                             Image(systemName: "arrow.right").font(.system(size: 15, weight: .bold))
                         }
                         .foregroundStyle(.white)
@@ -732,7 +764,7 @@ struct Buttons: View {
     }
 
     private func checkForGlobalNotifications() {
-        guard vm.isSignedIn, !hasShownNotificationThisSession else { return }
+        guard isBusinessMode, !hasShownNotificationThisSession else { return }
         
         Task {
             let silentVM = BusinessLandmarksViewModel()

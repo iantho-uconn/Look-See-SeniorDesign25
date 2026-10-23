@@ -60,7 +60,7 @@ enum LiveLandmarkInfoServiceError: LocalizedError {
 }
 
 final class LiveLandmarkInfoService {
-    private let baseURL = URL(string: "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev")!
+    private let baseURL = URL(string: "https://d11vl3v9w133rh.cloudfront.net")!
 
     func fetchLiveInfo(
         landmarkId: String,

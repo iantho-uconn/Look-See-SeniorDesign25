@@ -8,7 +8,7 @@
 import SwiftUI
 import PhotosUI
 import UniformTypeIdentifiers
-import AVFoundation // 🚀 Boss's fix: Required to read video length
+import AVFoundation
 
 struct BusinessLandmarkDetailView: View {
     let landmark: BusinessLandmark
@@ -70,7 +70,7 @@ struct BusinessLandmarkDetailView: View {
     private let promotionService = BusinessPromotionService()
     private let maxSelectionCount = 10
     
-    // 🚀 Boss's fix: Max gallery video duration
+    //  Max gallery video duration
     private let maximumGalleryVideoDuration: TimeInterval = 90
     
     private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00)
@@ -104,6 +104,9 @@ struct BusinessLandmarkDetailView: View {
         ScrollView {
             VStack(spacing: 24) {
 
+                // 🚀 NEW: Dynamic Status Banner
+                statusBanner
+                
                 // MARK: - Header
                 VStack(alignment: .leading, spacing: 12) {
                     Text(landmark.label.isEmpty ? "Untitled Landmark" : landmark.label)
@@ -202,6 +205,47 @@ struct BusinessLandmarkDetailView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
                 .shadow(color: .black.opacity(0.03), radius: 10, x: 0, y: 4)
                 .padding(.horizontal)
+
+                // 🚀 NEW: Training Dataset Card
+                VStack(alignment: .leading, spacing: 8) {
+                    sectionTitle("Training Dataset")
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        let processed = landmark.cleanFrameCount ?? 0
+                        let required = landmark.requiredFrames ?? 2000
+                        
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Total Labeled Frames")
+                                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                                    .foregroundStyle(.secondary)
+                                    .textCase(.uppercase)
+                                
+                                Text("\(processed)")
+                                    .font(.system(size: 32, weight: .heavy, design: .rounded))
+                                    .foregroundStyle(processed >= required ? .green : (processed > 0 ? .orange : .red))
+                            }
+                            
+                            Spacer()
+                            
+                            Image(systemName: "photo.on.rectangle.angled")
+                                .font(.system(size: 32))
+                                .foregroundStyle(primaryColor.opacity(0.2))
+                        }
+                        
+                        if processed < required {
+                            Divider().padding(.vertical, 4)
+                            Text("We recommend reaching \(required) frames for optimal AI detection accuracy. You can upload more media below.")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(20)
+                    .background(Color(uiColor: .secondarySystemGroupedBackground))
+                    .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                    .shadow(color: .black.opacity(0.03), radius: 10, x: 0, y: 4)
+                    .padding(.horizontal)
+                }
 
                 // MARK: - Management
                 VStack(alignment: .leading, spacing: 8) {
@@ -602,6 +646,58 @@ struct BusinessLandmarkDetailView: View {
         }
     }
 
+    // 🚀 NEW: Dynamic Status Banner Refactored
+    @ViewBuilder
+    private var statusBanner: some View {
+        let config = bannerConfig
+        
+        HStack(alignment: .top, spacing: 14) {
+            Image(systemName: config.icon)
+                .font(.system(size: 24))
+                .foregroundColor(config.color)
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text(config.title)
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .textCase(.uppercase)
+                    .foregroundColor(config.color)
+                
+                Text(config.message)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(16)
+        .background(config.color.opacity(0.15))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .padding(.horizontal)
+    }
+
+    private var bannerConfig: (color: Color, icon: String, title: String, message: String) {
+        let status = landmark.status ?? ""
+        let isProcessing = landmark.isProcessing
+
+        if status == "NEEDS_MORE_MEDIA" {
+            return (.red, "exclamationmark.triangle.fill", landmark.displayStatus, "Not enough video data to train. Please record more media below.")
+        } else if isProcessing || ["PREPARING_DATA", "PENDING_TRAINING", "TRAINING_MODEL", "OPTIMIZING_MODEL"].contains(status) {
+            let bannerColor: Color
+            switch status {
+            case "PREPARING_DATA": bannerColor = .orange
+            case "PENDING_TRAINING": bannerColor = .purple
+            case "TRAINING_MODEL": bannerColor = .yellow
+            case "OPTIMIZING_MODEL": bannerColor = .blue
+            default: bannerColor = .orange
+            }
+            return (bannerColor, "hourglass.circle.fill", landmark.displayStatus, "Your landmark is currently in progress of being trained. Training is done overnight starting at 7 PM EST.")
+        } else if displayedIsActive {
+            return (.green, "checkmark.shield.fill", "ACTIVE", "Your landmark is trained and able to be detected by users.")
+        } else {
+            return (.secondary, "pause.circle.fill", "INACTIVE", "This landmark is currently disabled and cannot be detected.")
+        }
+    }
+
     private func sectionTitle(_ title: String) -> some View {
         Text(title)
             .font(.system(size: 13, weight: .bold, design: .rounded))
@@ -983,7 +1079,7 @@ struct BusinessLandmarkDetailView: View {
                         .foregroundStyle(.secondary)
                         .textCase(.uppercase)
                         .padding(.horizontal, 20)
-                    
+
                     TextEditor(text: $draftShortDescription)
                         .font(.system(size: 16, weight: .medium))
                         .frame(minHeight: 160)
@@ -992,7 +1088,7 @@ struct BusinessLandmarkDetailView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                         .padding(.horizontal)
                         .disabled(isSavingDescription)
-                    
+
                     Text("This description is shown to users when LookSee identifies this landmark.")
                         .font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary).padding(.horizontal, 20)
 
@@ -1281,7 +1377,23 @@ struct BusinessLandmarkDetailView: View {
         activeUploadRole = nil
         uploadProgressText = nil
         uploadStatusMessage = nil
-        uploadErrorMessage = error.localizedDescription
+        uploadErrorMessage = isDeletionBlockedUpload(error) ? deletionBlockedUploadMessage : error.localizedDescription
+    }
+
+    private var deletionBlockedUploadMessage: String {
+        "Upload blocked: deletion has been requested for this landmark. Additional media cannot be uploaded."
+    }
+
+    private func isDeletionBlockedUpload(_ error: Error) -> Bool {
+        guard let serviceError = error as? BusinessLandmarkServiceError,
+              case let .badStatus(statusCode, body) = serviceError,
+              statusCode == 409,
+              let data = body.data(using: .utf8),
+              let payload = try? JSONDecoder().decode([String: String].self, from: data) else {
+            return false
+        }
+        let reason = payload["error"] ?? payload["message"]
+        return reason == "Landmark deletion has been requested. Uploads are blocked."
     }
 
     private func loadRecordedVideoData(from url: URL) async throws -> Data {
@@ -1320,7 +1432,7 @@ struct BusinessLandmarkDetailView: View {
         }
     }
 
-    // 🚀 BOSS'S FIX: Integrated duration limit logic for Gallery items
+    // Integrated duration limit logic for Gallery items
     private func uploadSelectedMediaItems(items: [PhotosPickerItem], datasetRole: BusinessDatasetRole) async {
         guard !isUploadingMedia else { return }
         guard !items.isEmpty else { return }
@@ -1332,6 +1444,7 @@ struct BusinessLandmarkDetailView: View {
         var completedCount = 0
         var failedCount = 0
         var overLimitVideoCount = 0
+        var deletionBlocked = false
         var lastSubmissionId: String?
 
         for index in items.indices {
@@ -1367,6 +1480,12 @@ struct BusinessLandmarkDetailView: View {
                 }
             } catch {
                 failedCount += 1
+                print("[BusinessMediaUpload] Failed:", String(reflecting: error))
+                print("[BusinessMediaUpload] Details:", error.localizedDescription)
+                if isDeletionBlockedUpload(error) {
+                    deletionBlocked = true
+                    break
+                }
             }
         }
         
@@ -1378,8 +1497,12 @@ struct BusinessLandmarkDetailView: View {
                 switch datasetRole { case .positive: selectedPositiveMediaItems.removeAll(); case .hardNegative: selectedNegativeMediaItems.removeAll() }
             } else {
                 uploadStatusMessage = completedCount > 0 ? "\(completedCount) item\(completedCount == 1 ? "" : "s") uploaded successfully." : nil
-                let otherFailureCount = failedCount - overLimitVideoCount
+                let otherFailureCount = failedCount - overLimitVideoCount - (deletionBlocked ? 1 : 0)
                 var errorMessages: [String] = []
+
+                if deletionBlocked {
+                    errorMessages.append(deletionBlockedUploadMessage)
+                }
 
                 if overLimitVideoCount > 0 {
                     errorMessages.append(
@@ -1426,7 +1549,7 @@ struct BusinessLandmarkDetailView: View {
         return .photo
     }
 
-    // 🚀 BOSS'S FIX: New Content Type Helper
+    // New Content Type Helper
     private func preferredContentType(for item: PhotosPickerItem) -> UTType {
         if let videoType = item.supportedContentTypes.first(where: {
             $0.conforms(to: .movie) || $0.conforms(to: .video)
@@ -1443,7 +1566,7 @@ struct BusinessLandmarkDetailView: View {
         return item.supportedContentTypes.first ?? .data
     }
 
-    // 🚀 BOSS'S FIX: New Video Duration Checker
+    // New Video Duration Checker
     private func validateGalleryVideoDuration(
         data: Data,
         contentType: UTType
@@ -1610,7 +1733,7 @@ struct BusinessLandmarkDetailView: View {
     }
 }
 
-// 🚀 BOSS'S FIX: Expanded Error Enum for duration checks
+// Expanded Error Enum for duration checks
 private enum MediaSelectionError: LocalizedError {
     case couldNotLoadMedia
     case couldNotReadVideoDuration

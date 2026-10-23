@@ -4,49 +4,65 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.util.Log
 import androidx.compose.animation.*
 import androidx.compose.animation.core.spring
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asComposeRenderEffect
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.zIndex
+import androidx.core.app.ComponentActivity
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
-import looksee.angelll.com.detection.LocationManager
-import looksee.angelll.com.models.*
-import looksee.angelll.com.viewmodels.AuthViewModel
-import looksee.angelll.com.viewmodels.AuthState
-import looksee.angelll.com.ui.theme.AppleBlue
-import looksee.angelll.com.ui.theme.CardBackground
-import looksee.angelll.com.ui.theme.DarkBackground
-import looksee.angelll.com.ui.theme.LookSeeCard
+import com.google.accompanist.permissions.ExperimentalPermissionsApi
+import com.google.accompanist.permissions.isGranted
+import com.google.accompanist.permissions.rememberPermissionState
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import looksee.angelll.com.detection.LocationManager
+import looksee.angelll.com.models.*
+import looksee.angelll.com.models.ModelAutoRefreshService
+import looksee.angelll.com.ui.theme.AppleBlue
+import looksee.angelll.com.ui.theme.DarkBackground
+import looksee.angelll.com.viewmodels.AuthState
+import looksee.angelll.com.viewmodels.AuthViewModel
 
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalPermissionsApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun ButtonsScreen(
     vm: AuthViewModel,
@@ -90,19 +106,60 @@ fun ButtonsScreen(
     var isReticlePulsing by remember { mutableStateOf(false) }
     var hasPreloadedMap by remember { mutableStateOf(false) }
 
-    // Notifications
     var showGenericNotification by remember { mutableStateOf(false) }
     var hasShownNotificationThisSession by remember { mutableStateOf(false) }
-    var showMyLandmarksFromAlert by remember { mutableStateOf(false) }
 
     val isBusinessMode = vm.hasActiveSubscription
     val isScanTab = currentTab == 0
     val topBarTitle = if (isScanTab) "LookSee" else "Map"
 
-    // Restoration logic
     val isScanCameraActive by remember {
         derivedStateOf {
-            currentTab == 0 && !showRecordSheet && !showSignUpPrompt && !showTutorial && !showMyLandmarksFromAlert && !infoView.infoView
+            currentTab == 0 && !showRecordSheet && !showSignUpPrompt && !showTutorial
+        }
+    }
+
+    val shouldShowBanner by remember {
+        derivedStateOf {
+            isScanCameraActive && !infoView.infoView && !showSignUpPrompt && isScanTab
+        }
+    }
+
+    val view = LocalView.current
+    DisposableEffect(isScanCameraActive) {
+        if (isScanCameraActive) {
+            view.keepScreenOn = true
+        }
+        onDispose {
+            view.keepScreenOn = false
+        }
+    }
+
+    val locationPermissionState = rememberPermissionState(
+        android.Manifest.permission.ACCESS_FINE_LOCATION
+    )
+
+    LaunchedEffect(Unit) {
+        if (!locationPermissionState.status.isGranted) {
+            locationPermissionState.launchPermissionRequest()
+        }
+    }
+
+    LaunchedEffect(locationPermissionState.status) {
+        if (locationPermissionState.status.isGranted) {
+            locationManager.start()
+        }
+    }
+
+    val locationState by locationManager.state.collectAsState()
+    LaunchedEffect(locationState) {
+        if (locationState is looksee.angelll.com.detection.LookSeeLocationState.Ready) {
+            val fix = (locationState as looksee.angelll.com.detection.LookSeeLocationState.Ready).fix
+            ModelAutoRefreshService.shared(context).updateLocation(
+                latitude = fix.latitude,
+                longitude = fix.longitude
+            )
+            ModelAutoRefreshService.shared(context).start()
         }
     }
 
@@ -148,7 +205,6 @@ fun ButtonsScreen(
         }
     }
 
-    // Broadcast Receivers
     DisposableEffect(Unit) {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
@@ -159,14 +215,21 @@ fun ButtonsScreen(
                         }
                     }
                     "TriggerRedoRecord" -> {
+                        Log.d("LookSee_Debug_Nav", "BROADCAST RECEIVED! TriggerRedoRecord captured.")
                         redoLandmarkId = intent.getStringExtra("id")
                         redoLandmarkLabel = intent.getStringExtra("label")
                         redoLandmarkDesc = intent.getStringExtra("description")
                         redoSecondsNeeded = intent.getDoubleExtra("secondsNeeded", 30.0).takeIf { it > 0 }
 
                         coroutineScope.launch {
-                            delay(600)
+                            delay(400)
+                            Log.d("LookSee_Debug_Nav", "Opening LandmarkRecord Sheet for ID: $redoLandmarkId")
                             showRecordSheet = true
+                        }
+                    }
+                    "looksee.action.NAVIGATE" -> {
+                        intent.getStringExtra("DESTINATION")?.let {
+                            onNavigate(it)
                         }
                     }
                 }
@@ -175,6 +238,7 @@ fun ButtonsScreen(
         val filter = IntentFilter().apply {
             addAction("CheckGlobalNotifications")
             addAction("TriggerRedoRecord")
+            addAction("looksee.action.NAVIGATE")
         }
         LocalBroadcastManager.getInstance(context).registerReceiver(receiver, filter)
 
@@ -212,70 +276,106 @@ fun ButtonsScreen(
         revealChromeThenFade()
     }
 
-    Scaffold(
-        topBar = {
-            AnimatedVisibility(
-                visible = chromeVisible || !isScanTab,
-                enter = fadeIn() + slideInVertically(initialOffsetY = { -it }),
-                exit = fadeOut() + slideOutVertically(targetOffsetY = { -it })
+    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+
+        // BACKGROUND: The Pager (holds Camera or Map)
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxSize(),
+            userScrollEnabled = !infoView.infoView && pagerState.currentPage != 1
+        ) { page ->
+            if (page == 0) {
+                val blurModifier = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S && infoView.infoView) {
+                    Modifier.graphicsLayer {
+                        renderEffect = android.graphics.RenderEffect.createBlurEffect(
+                            20f, 20f, android.graphics.Shader.TileMode.CLAMP
+                        ).asComposeRenderEffect()
+                    }
+                } else Modifier
+
+                Box(modifier = blurModifier.fillMaxSize()) {
+                    LandmarkScan(
+                        vm = vm,
+                        onTap = { revealChromeThenFade() },
+                        isDetecting = isDetecting,
+                        onIsDetectingChange = { isDetecting = it },
+                        isNavVisible = chromeVisible,
+                        isActive = isScanCameraActive
+                    )
+                }
+            } else {
+                LandmarkMapScreen(
+                    vm = vm,
+                    nearbyService = nearbyService,
+                    locationManager = locationManager,
+                    onSwipeToScan = { coroutineScope.launch { pagerState.animateScrollToPage(0) } }
+                )
+            }
+        }
+
+        // FOREGROUND TOP: Status Bar & Title Buttons
+        AnimatedVisibility(
+            visible = chromeVisible || !isScanTab,
+            enter = fadeIn() + slideInVertically(initialOffsetY = { -it }),
+            exit = fadeOut() + slideOutVertically(targetOffsetY = { -it }),
+            modifier = Modifier.align(Alignment.TopCenter).zIndex(50f)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    // 🚀 THE FIX: Always transparent! The map draws fully behind the top row of buttons now.
+                    .background(Color.Transparent)
+                    .statusBarsPadding()
             ) {
-                Column(
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Color.Black)
-                        .statusBarsPadding()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier
-                                .width(60.dp)
-                                .clickable {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    showTutorial = true
-                                }
-                        ) {
-                            Icon(Icons.Default.Info, contentDescription = "Info", tint = Color.White, modifier = Modifier.size(24.dp))
-                            Text("Info", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        }
+                    NavButton(icon = Icons.Outlined.Info, label = "Info") {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        showTutorial = true
+                    }
 
+                    AnimatedContent(
+                        targetState = topBarTitle,
+                        transitionSpec = {
+                            fadeIn(animationSpec = tween(300)) togetherWith fadeOut(animationSpec = tween(300))
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                if (isBusinessMode) showPromotion = true else showBusinessAlert = true
+                            }
+                    ) { targetTitle ->
                         Text(
-                            text = topBarTitle,
+                            text = targetTitle,
                             color = Color.White,
                             fontSize = 22.sp,
                             fontWeight = FontWeight.Black,
                             letterSpacing = (-0.5).sp,
-                            modifier = Modifier
-                                .weight(1f)
-                                .clickable {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    if (isBusinessMode) showPromotion = true else showBusinessAlert = true
-                                },
-                            textAlign = TextAlign.Center
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth()
                         )
+                    }
 
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier
-                                .width(60.dp)
-                                .clickable {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    onNavigate("Settings")
-                                }
-                        ) {
-                            Icon(Icons.Default.Menu, contentDescription = "Menu", tint = Color.White, modifier = Modifier.size(24.dp))
-                            Text("Menu", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        }
+                    NavButton(icon = Icons.Default.Menu, label = "Menu") {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onNavigate("Settings")
                     }
                 }
             }
-        },
-        bottomBar = {
+        }
+
+        // FOREGROUND BOTTOM: Navigation Tabs
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .align(Alignment.BottomCenter)
+                .zIndex(50f)
+        ) {
             AnimatedVisibility(
                 visible = chromeVisible || !isScanTab,
                 enter = fadeIn() + slideInVertically(initialOffsetY = { it }),
@@ -284,8 +384,7 @@ fun ButtonsScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .navigationBarsPadding()
-                        .padding(bottom = 24.dp),
+                        .padding(bottom = if (shouldShowBanner) 12.dp else 24.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Row(
@@ -340,134 +439,147 @@ fun ButtonsScreen(
                     }
                 }
             }
-        },
-        containerColor = Color.Black
-    ) { paddingValues ->
-        Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
-            HorizontalPager(
-                state = pagerState,
-                modifier = Modifier.fillMaxSize(),
-                userScrollEnabled = !infoView.infoView
-            ) { page ->
-                if (page == 0) {
-                    LandmarkScan(
-                        onTap = { revealChromeThenFade() },
-                        isDetecting = isDetecting,
-                        onIsDetectingChange = { isDetecting = it },
-                        isNavVisible = chromeVisible,
-                        isActive = isScanCameraActive
-                    )
-                } else {
-                    Box(modifier = Modifier.padding(paddingValues)) {
-                        LandmarkMapScreen(vm = vm, nearbyService = nearbyService, locationManager = locationManager)
-                    }
-                }
-            }
 
-            // Notification Pill
-            AnimatedVisibility(
-                visible = showGenericNotification && isScanTab,
-                enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
-                exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut(),
-                modifier = Modifier.align(Alignment.TopCenter).padding(top = 70.dp).zIndex(100f)
-            ) {
-                Row(
+            if (shouldShowBanner) {
+                Box(
                     modifier = Modifier
-                        .padding(horizontal = 24.dp)
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(Color.Red)
-                        .clickable {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            showGenericNotification = false
-                            showMyLandmarksFromAlert = true
-                        }
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        .navigationBarsPadding(),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Icon(Icons.Default.Flag, contentDescription = null, tint = Color.White)
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Action Required", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                        Text("Attention is needed for landmarks.", fontSize = 12.sp, color = Color.White.copy(alpha = 0.9f))
+                    AdBannerView(looksee.angelll.com.services.AdConsentManager(context))
+                }
+            } else {
+                Spacer(Modifier.navigationBarsPadding())
+            }
+        }
+
+        // OVERLAYS (Notifications, Popups, Modals)
+        AnimatedVisibility(
+            visible = showGenericNotification && isScanTab,
+            enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
+            exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut(),
+            modifier = Modifier.align(Alignment.TopCenter).padding(top = 70.dp).zIndex(100f)
+        ) {
+            Row(
+                modifier = Modifier
+                    .padding(horizontal = 24.dp)
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Color.Red)
+                    .clickable {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        showGenericNotification = false
+                        onNavigate("BusinessLandmarksView")
                     }
-                    Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color.White.copy(alpha = 0.6f))
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Icon(Icons.Default.Flag, contentDescription = null, tint = Color.White)
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Action Required", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    Text("Attention is needed for landmarks.", fontSize = 12.sp, color = Color.White.copy(alpha = 0.9f))
                 }
+                Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color.White.copy(alpha = 0.6f))
             }
+        }
 
-            if (infoView.infoView) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.45f))
-                        .pointerInput(Unit) { detectTapGestures { infoView.dismissLandmark() } }
-                        .zIndex(200f),
-                    contentAlignment = Alignment.Center
-                ) {
-                    PopUp()
-                }
+        if (infoView.infoView) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.45f))
+                    .pointerInput(Unit) { detectTapGestures { infoView.dismissLandmark() } }
+                    .zIndex(200f),
+                contentAlignment = Alignment.Center
+            ) {
+                PopUp()
             }
+        }
 
-            // Modals
-            if (showSignUpPrompt) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.4f))
-                        .pointerInput(Unit) { detectTapGestures { showSignUpPrompt = false; coroutineScope.launch { pagerState.animateScrollToPage(0) } } },
-                    contentAlignment = Alignment.Center
+        if (showSignUpPrompt) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.4f))
+                    .pointerInput(Unit) { detectTapGestures { showSignUpPrompt = false; coroutineScope.launch { pagerState.animateScrollToPage(0) } } }
+                    .zIndex(200f),
+                contentAlignment = Alignment.Center
+            ) {
+                Surface(
+                    modifier = Modifier.padding(24.dp).fillMaxWidth(),
+                    color = Color(0xFF1C1C1E),
+                    shape = RoundedCornerShape(16.dp)
                 ) {
-                    LookSeeCard(modifier = Modifier.padding(24.dp)) {
-                        Column(
-                            modifier = Modifier.padding(14.dp), // Additional padding for inside the card
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(24.dp)
-                        ) {
-                            Box(modifier = Modifier.size(70.dp).background(AppleBlue.copy(alpha = 0.15f), CircleShape), contentAlignment = Alignment.Center) {
-                                Icon(Icons.Default.ArrowCircleUp, contentDescription = null, tint = AppleBlue, modifier = Modifier.size(32.dp))
-                            }
-                            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text("Sign up to upload", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                                Text("Create an account to start contributing landmarks and help improve recognition.", fontSize = 15.sp, color = Color.Gray, textAlign = TextAlign.Center)
-                            }
-                            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                Button(
-                                    onClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); showSignUpPrompt = false; onNavigate("guest_signup") },
-                                    modifier = Modifier.fillMaxWidth().height(56.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = AppleBlue),
-                                    shape = RoundedCornerShape(16.dp)
-                                ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        Text("Create Account", fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                                        Icon(Icons.Default.ArrowForward, contentDescription = null, modifier = Modifier.size(18.dp))
-                                    }
+                    Column(
+                        modifier = Modifier.padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(24.dp)
+                    ) {
+                        Box(modifier = Modifier.size(70.dp).background(AppleBlue.copy(alpha = 0.15f), CircleShape), contentAlignment = Alignment.Center) {
+                            Icon(Icons.Default.ArrowCircleUp, contentDescription = null, tint = AppleBlue, modifier = Modifier.size(32.dp))
+                        }
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Sign up to upload", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            Text("Create an account to start contributing landmarks and help improve recognition.", fontSize = 15.sp, color = Color.Gray, textAlign = TextAlign.Center)
+                        }
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Button(
+                                onClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); showSignUpPrompt = false; onNavigate("guest_signup") },
+                                modifier = Modifier.fillMaxWidth().height(56.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = AppleBlue),
+                                shape = RoundedCornerShape(16.dp)
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text("Create Account", fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                                    Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size(18.dp))
                                 }
-                                Button(
-                                    onClick = {
-                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        showSignUpPrompt = false
-                                        coroutineScope.launch { pagerState.animateScrollToPage(0) }
-                                    },
-                                    modifier = Modifier.fillMaxWidth().height(56.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.1f)),
-                                    shape = RoundedCornerShape(16.dp)
-                                ) { Text("Not now", color = Color.Gray, fontSize = 17.sp, fontWeight = FontWeight.Bold) }
                             }
+                            Button(
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    showSignUpPrompt = false
+                                    coroutineScope.launch { pagerState.animateScrollToPage(0) }
+                                },
+                                modifier = Modifier.fillMaxWidth().height(56.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.1f)),
+                                shape = RoundedCornerShape(16.dp)
+                            ) { Text("Not now", color = Color.Gray, fontSize = 17.sp, fontWeight = FontWeight.Bold) }
                         }
                     }
                 }
             }
+        }
 
-            if (showTutorial) {
-                Dialog(onDismissRequest = { showTutorial = false }) {
-                    LookSeeCard {
-                        Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(24.dp)) {
-                            if (currentTab == 0) {
-                                ViewfinderCircle(tint = AppleBlue, modifier = Modifier.size(70.dp))
+        if (showTutorial) {
+            ModalBottomSheet(
+                onDismissRequest = { showTutorial = false },
+                containerColor = Color.Transparent,
+                dragHandle = { BottomSheetDefaults.DragHandle() },
+                contentWindowInsets = { WindowInsets(0, 0, 0, 0) }
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFF1C1C1E).copy(alpha = 0.95f), RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+                        .padding(horizontal = 32.dp)
+                        .padding(top = 32.dp, bottom = 48.dp),
+                    contentAlignment = Alignment.TopCenter
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(24.dp)
+                    ) {
+                        if (currentTab == 0) {
+                            Icon(Icons.Default.CenterFocusStrong, contentDescription = null, tint = AppleBlue, modifier = Modifier.size(70.dp))
+                            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Text("How to Scan", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color.White)
                                 Text("Point your camera at a landmark. Keep the object well-lit and steady. LookSee will identify it automatically.", fontSize = 16.sp, color = Color.Gray, textAlign = TextAlign.Center)
-                            } else {
-                                Icon(Icons.Default.Map, contentDescription = null, tint = AppleBlue, modifier = Modifier.size(60.dp))
+                            }
+                        } else {
+                            Icon(Icons.Default.Map, contentDescription = null, tint = AppleBlue, modifier = Modifier.size(60.dp))
+                            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Text("Explore the Map", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color.White)
                                 Text("Find valid landmarks around you to scan. Use the search bar or filters to narrow down locations.", fontSize = 16.sp, color = Color.Gray, textAlign = TextAlign.Center)
                             }
@@ -494,12 +606,34 @@ fun ButtonsScreen(
         )
     }
 
-    if (showMyLandmarksFromAlert) {
-        BusinessLandmarksView(vm = vm) { route, _ ->
-            if (route == "Dismiss") showMyLandmarksFromAlert = false
-        }
-    }
 
+
+}
+
+@Composable
+fun NavButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    onClick: () -> Unit
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .width(60.dp)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null
+            ) { onClick() }
+    ) {
+        Box(
+            modifier = Modifier.size(42.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(icon, contentDescription = label, tint = Color.White, modifier = Modifier.size(24.dp))
+        }
+        Spacer(Modifier.height(2.dp))
+        Text(label, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+    }
 }
 
 @Composable

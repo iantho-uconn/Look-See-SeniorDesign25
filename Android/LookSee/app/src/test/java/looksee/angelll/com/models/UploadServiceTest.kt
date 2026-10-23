@@ -2,6 +2,8 @@ package looksee.angelll.com.models
 
 import java.io.File
 import kotlinx.coroutines.runBlocking
+import looksee.angelll.com.uifiles.MergedVideo
+import looksee.angelll.com.uifiles.PositiveVideoMerger
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -198,6 +200,7 @@ internal class RecordingUploadHttpClient(
         authorization: String,
         jsonBody: String,
         timeoutMillis: Int,
+        extraHeaders: Map<String, String>
     ): UploadHttpResponse {
         calls += RecordedUploadCall(
             method = "POST",
@@ -234,6 +237,23 @@ internal class RecordingUploadHttpClient(
         calls += RecordedUploadCall(
             method = "PUT_BYTES",
             url = url,
+            contentType = contentType,
+            body = bytes.size.toString(),
+            timeoutMillis = timeoutMillis,
+        )
+        return nextResponse()
+    }
+
+    override suspend fun postMultipartBytes(
+        presignedPost: S3PresignedPost,
+        contentType: String,
+        filename: String,
+        bytes: ByteArray,
+        timeoutMillis: Int,
+    ): UploadHttpResponse {
+        calls += RecordedUploadCall(
+            method = "POST_MULTIPART",
+            url = presignedPost.url,
             contentType = contentType,
             body = bytes.size.toString(),
             timeoutMillis = timeoutMillis,

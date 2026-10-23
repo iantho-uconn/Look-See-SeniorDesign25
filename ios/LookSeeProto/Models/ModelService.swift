@@ -397,6 +397,9 @@ class ModelService: ObservableObject {
             withJSONObject: body
         )
 
+        // 🚀 ADDED: Attaches App Attest and Cognito token headers automatically
+        await request.signWithAppAttest()
+
         let (data, response) = try await URLSession.shared.data(
             for: request
         )
@@ -702,8 +705,12 @@ class ModelService: ObservableObject {
             "cluster=\(clusterID), version=\(modelVersion)"
         )
 
+        var manifestRequest = URLRequest(url: manifestURL)
+        manifestRequest.httpMethod = "GET"
+        await manifestRequest.signWithAppAttest()
+
         let (manifestData, manifestResponse) =
-            try await URLSession.shared.data(from: manifestURL)
+            try await URLSession.shared.data(for: manifestRequest)
 
         if let http = manifestResponse as? HTTPURLResponse,
            !(200...299).contains(http.statusCode) {
@@ -742,8 +749,12 @@ class ModelService: ObservableObject {
             "cluster=\(clusterID), version=\(modelVersion)"
         )
 
+        var modelRequest = URLRequest(url: modelURL)
+        modelRequest.httpMethod = "GET"
+        await modelRequest.signWithAppAttest()
+
         let (temporaryZipURL, modelResponse) =
-            try await URLSession.shared.download(from: modelURL)
+            try await URLSession.shared.download(for: modelRequest)
 
         downloadedZipURL = temporaryZipURL
 

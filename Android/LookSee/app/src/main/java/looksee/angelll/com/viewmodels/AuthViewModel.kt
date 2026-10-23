@@ -1,4 +1,6 @@
 package looksee.angelll.com.viewmodels
+import looksee.angelll.com.models.UploadHelper
+
 
 import android.app.Application
 import android.content.Context
@@ -12,13 +14,18 @@ import com.amplifyframework.auth.AuthException
 import com.amplifyframework.auth.cognito.AWSCognitoAuthSession
 import com.amplifyframework.auth.result.step.AuthSignInStep
 import com.amplifyframework.kotlin.core.Amplify // 🚀 THE MAGIC FIX: Using the Kotlin Facade
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import org.json.JSONObject
+import com.google.gson.Gson
+import com.google.gson.annotations.SerializedName
+import com.google.gson.reflect.TypeToken
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import looksee.angelll.com.viewmodels.ScanHistoryItem
+import org.json.JSONObject
+
 
 class AuthViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -45,6 +52,9 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
 
     // Memory variable to carry the username from Signup to Login
     var pendingUsernameToSave by mutableStateOf("")
+
+    // Scan History
+    var scanHistory by mutableStateOf<List<ScanHistoryItem>>(emptyList())
 
     // Website and Address properties
     var storeName by mutableStateOf("")
@@ -121,7 +131,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                     isSignedIn = false
                 }
             } catch (error: AuthException) {
-                errorMessage = friendlyMessage(error)
+                errorMessage = friendlyMessage(error as? com.amplifyframework.auth.AuthException ?: com.amplifyframework.auth.AuthException("Unknown error", "Unknown error", error))
                 isSignedIn = false
             } catch (_: Exception) {
                 errorMessage = "Something went wrong. Please try again."
@@ -151,7 +161,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                     errorMessage = "Additional steps required to sign in."
                 }
             } catch (error: AuthException) {
-                errorMessage = friendlyMessage(error)
+                errorMessage = friendlyMessage(error as? com.amplifyframework.auth.AuthException ?: com.amplifyframework.auth.AuthException("Unknown error", "Unknown error", error))
             } catch (_: Exception) {
                 errorMessage = "Failed to update password. Please try again."
             }
@@ -245,7 +255,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     suspend fun fetchUserUsageStats() {
         if (userId.isEmpty()) return
 
-        val url = "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/LookSeeGetUserStats"
+        val url = "https://d11vl3v9w133rh.cloudfront.net/LookSeeGetUserStats"
         val body = JSONObject().apply { put("userId", userId) }
 
         val (code, data) = makePostRequest(url, body)
@@ -291,7 +301,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
 
     suspend fun cancelSubscription(): Boolean {
         if (userId.isEmpty()) return false
-        val url = "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/checkout"
+        val url = "https://d11vl3v9w133rh.cloudfront.net/checkout"
 
         val body = JSONObject().apply {
             put("purchaseType", "cancel_subscription")
@@ -317,9 +327,59 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private suspend fun uploadImageToS3(imageBytes: ByteArray, role: String): String? {
+        val url = "https://d11vl3v9w133rh.cloudfront.net/checkout"
+        val initPayload = JSONObject().apply {
+            put("purchaseType", "init_image_upload")
+            put("userId", userId)
+            put("role", role)
+            put("contentType", "image/jpeg")
+        }
+        val (code, data) = makePostRequest(url, initPayload)
+        if (code !in 200..299 || data == null) {
+            println("❌ API Gateway Initialization Failed")
+            return null
+        }
+        
+        try {
+            val json = JSONObject(data)
+            val uploadUrlDict = json.getJSONObject("uploadUrl")
+            val urlString = uploadUrlDict.getString("url")
+            val fields = uploadUrlDict.getJSONObject("fields")
+            val finalImageUrl = json.getString("finalImageUrl")
+            
+            val success = UploadHelper.uploadToS3(fields, urlString, imageBytes)
+            if (success) {
+                println("✅ S3 Image Upload Successful: $finalImageUrl")
+                return finalImageUrl
+            } else {
+                println("❌ S3 UPLOAD DIRECTLY FAILED!")
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            println("❌ NETWORK CRASH DURING LAMBDA SAVE: ${e.localizedMessage}")
+        }
+        return null
+    }
+
     suspend fun updateUserIdentity(newUsername: String, emailToSave: String, profileBase64: String? = null): Pair<Boolean, String?> {
         if (userId.isEmpty()) return Pair(false, "User not found")
-        val url = "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/checkout"
+        val url = "https://d11vl3v9w133rh.cloudfront.net/checkout"
+
+        var uploadedImageUrl: String? = null
+        if (profileBase64 != null) {
+            try {
+                val cleanBase64 = if (profileBase64.contains(",")) profileBase64.split(",")[1] else profileBase64
+                val imageBytes = android.util.Base64.decode(cleanBase64, android.util.Base64.DEFAULT)
+                uploadedImageUrl = uploadImageToS3(imageBytes, "user_profile")
+                if (uploadedImageUrl == null) {
+                    println("❌ S3 Method execution failed for profile image.")
+                    return Pair(false, "Failed to upload image securely.")
+                }
+            } catch (e: Exception) {
+                println("❌ ERROR: Could not decode Base64 string into Image Data. The string may be corrupted.")
+            }
+        }
 
         val body = JSONObject().apply {
             put("purchaseType", "update_user_identity")
@@ -327,20 +387,21 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
             put("userEmail", emailToSave) // 🚀 Forced parameter injection
             put("username", newUsername)
             put("currentUsername", username)
-            put("profileImageUrl", profileImageUrl)
-            profileBase64?.let { put("profileBase64", it) }
+            put("profileImageUrl", uploadedImageUrl ?: profileImageUrl)
         }
 
         val (code, data) = makePostRequest(url, body)
-        return if (code == 200 && data != null) {
+        return if (code in 200..299 && data != null) {
             val json = JSONObject(data)
             withContext(Dispatchers.Main) {
                 json.optString("username", "").takeIf { it.isNotEmpty() }?.let { username = it }
                 json.optString("profileImageUrl", "").takeIf { it.isNotEmpty() }?.let { profileImageUrl = it }
             }
+            println("✅ Lambda Successfully Saved Profile Data!")
             Pair(true, null)
         } else {
             val errStr = data ?: "Unknown Error"
+            println("❌ LAMBDA REJECTED SAVE ($code): $errStr")
             if (errStr.contains("ERR_USERNAME_TAKEN")) {
                 Pair(false, "That username is already taken.")
             } else {
@@ -359,7 +420,22 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         storeLogoBase64Input: String? = null
     ): Boolean {
         if (userId.isEmpty()) return false
-        val url = "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/checkout"
+        val url = "https://d11vl3v9w133rh.cloudfront.net/checkout"
+
+        var uploadedLogoUrl: String? = null
+        if (storeLogoBase64Input != null) {
+            try {
+                val cleanBase64 = if (storeLogoBase64Input.contains(",")) storeLogoBase64Input.split(",")[1] else storeLogoBase64Input
+                val imageBytes = android.util.Base64.decode(cleanBase64, android.util.Base64.DEFAULT)
+                uploadedLogoUrl = uploadImageToS3(imageBytes, "business_logo")
+                if (uploadedLogoUrl == null) {
+                    println("❌ S3 Method execution failed for business logo.")
+                    return false
+                }
+            } catch (e: Exception) {
+                println("❌ ERROR: Could not decode Business Logo Base64 string into Data.")
+            }
+        }
 
         val body = JSONObject().apply {
             put("purchaseType", "update_profile")
@@ -369,12 +445,11 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
             put("storeWebsite", storeWebsiteInput)
             put("storeAddress", storeAddressInput)
             put("storeBio", storeBioInput)
-            put("storeLogoUrl", storeLogoUrlInput)
-            storeLogoBase64Input?.let { put("storeLogoBase64", it) }
+            put("storeLogoUrl", uploadedLogoUrl ?: storeLogoUrlInput)
         }
 
         val (code, data) = makePostRequest(url, body)
-        return if (code == 200) {
+        return if (code in 200..299) {
             val json = data?.let { JSONObject(it) }
             val newLogoUrl = json?.optString("logoUrl", "")
 
@@ -386,9 +461,11 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                 storeBio = storeBioInput
                 storeLogoUrl = newLogoUrl?.takeIf { it.isNotEmpty() } ?: storeLogoUrlInput
             }
+            println("✅ Lambda Successfully Saved Business Profile Data!")
             true
         } else {
-            println("❌ Backend Rejected Upload ($code): $data")
+            val errStr = data ?: "Unknown Error"
+            println("❌ LAMBDA REJECTED SAVE ($code): $errStr")
             false
         }
     }
@@ -396,7 +473,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     // 🚀 NEW: Signature forces an email string to be passed in
     suspend fun initDatabaseRow(emailToSave: String) {
         if (userId.isEmpty()) return
-        val url = "https://7gmn5z3uf2.execute-api.us-east-1.amazonaws.com/dev/checkout"
+        val url = "https://d11vl3v9w133rh.cloudfront.net/checkout"
 
         val body = JSONObject().apply {
             put("purchaseType", "init_user")
@@ -404,6 +481,81 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
             put("userEmail", emailToSave) // 🚀 Forced parameter injection
         }
         makePostRequest(url, body)
+    }
+
+    // MARK: - Scan History APIs
+
+    suspend fun logScanHistory(
+        landmarkId: String,
+        label: String,
+        location: String,
+        latitude: Double,
+        longitude: Double,
+        imageUrl: String = ""
+    ) {
+        if (userId.isEmpty()) return
+        val url = "https://d11vl3v9w133rh.cloudfront.net/history"
+        val body = JSONObject().apply {
+            put("userId", userId)
+            put("landmarkId", landmarkId)
+            put("label", label)
+            put("location", location)
+            put("latitude", latitude)
+            put("longitude", longitude)
+            put("imageUrl", imageUrl)
+        }
+        makePostRequest(url, body)
+    }
+
+    suspend fun fetchScanHistory() {
+        if (userId.isEmpty()) return
+        val url = "https://d11vl3v9w133rh.cloudfront.net/history?userId=$userId"
+        val (code, data) = makeGetRequest(url)
+        if (code == 200 && data != null) {
+            try {
+                val listType = object : TypeToken<List<ScanHistoryItem>>() {}.type
+                val items: List<ScanHistoryItem> = Gson().fromJson(data, listType) ?: emptyList()
+                withContext(Dispatchers.Main) {
+                    scanHistory = items
+                }
+            } catch (e: Exception) {
+                println("❌ Failed to parse scan history: ${e.message}")
+            }
+        } else {
+            println("❌ Failed to fetch scan history ($code): $data")
+        }
+    }
+
+    suspend fun deleteScanHistory(scannedAt: String) {
+        if (userId.isEmpty()) return
+        withContext(Dispatchers.Main) {
+            scanHistory = scanHistory.filterNot { it.scannedAt == scannedAt }
+        }
+        val url = "https://d11vl3v9w133rh.cloudfront.net/history"
+        val body = JSONObject().apply {
+            put("userId", userId)
+            put("scannedAt", scannedAt)
+        }
+        makeHttpRequest("DELETE", url, body)
+    }
+
+    // MARK: - Force Train Landmark API
+
+    suspend fun forceTrainLandmark(landmarkId: String): Boolean {
+        if (userId.isEmpty()) return false
+        val token = fetchIdToken()
+        val url = "https://d11vl3v9w133rh.cloudfront.net/business/landmarks/$landmarkId"
+        val body = JSONObject().apply {
+            put("forceTrainEnabled", true)
+        }
+        val (code, data) = makeHttpRequest("PATCH", url, body, idToken = token)
+        return if (code == 200) {
+            println("✅ Force Train API Success!")
+            true
+        } else {
+            println("❌ Force Train Failed ($code): $data")
+            false
+        }
     }
 
     private fun friendlyMessage(error: AuthException): String {
@@ -418,15 +570,31 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // MARK: - Native Android Network Helper (No Retrofit Required)
-    private suspend fun makePostRequest(urlStr: String, body: JSONObject): Pair<Int, String?> = withContext(Dispatchers.IO) {
+    private suspend fun makePostRequest(urlStr: String, body: JSONObject): Pair<Int, String?> =
+        makeHttpRequest("POST", urlStr, body)
+
+    private suspend fun makeGetRequest(urlStr: String): Pair<Int, String?> =
+        makeHttpRequest("GET", urlStr, null)
+
+    private suspend fun makeHttpRequest(
+        method: String,
+        urlStr: String,
+        body: JSONObject? = null,
+        idToken: String? = null
+    ): Pair<Int, String?> = withContext(Dispatchers.IO) {
         try {
             val url = URL(urlStr)
             val conn = url.openConnection() as HttpURLConnection
-            conn.requestMethod = "POST"
+            conn.requestMethod = method
             conn.setRequestProperty("Content-Type", "application/json")
-            conn.doOutput = true
+            if (!idToken.isNullOrEmpty()) {
+                conn.setRequestProperty("Authorization", "Bearer $idToken")
+            }
 
-            OutputStreamWriter(conn.outputStream).use { it.write(body.toString()) }
+            if (body != null && (method == "POST" || method == "PATCH" || method == "PUT" || method == "DELETE")) {
+                conn.doOutput = true
+                OutputStreamWriter(conn.outputStream).use { it.write(body.toString()) }
+            }
 
             val responseCode = conn.responseCode
             val responseData = if (responseCode in 200..299) {
@@ -440,4 +608,25 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
             Pair(500, e.localizedMessage)
         }
     }
+}
+
+
+// --- Merged from ScanHistoryModels.kt ---
+data class ScanHistoryItem(
+    @SerializedName("scannedAt") val scannedAt: String = "",
+    @SerializedName("landmarkId") val landmarkId: String = "",
+    @SerializedName("landmarkLabel") val landmarkLabel: String = "",
+    @SerializedName("locationString") val locationString: String = "",
+    @SerializedName("latitude") val latitude: String? = null,
+    @SerializedName("longitude") val longitude: String? = null,
+    @SerializedName("imageUrl") val imageUrl: String? = null
+) {
+    val id: String
+        get() = scannedAt
+
+    val latAsDouble: Double?
+        get() = latitude?.toDoubleOrNull()
+
+    val lonAsDouble: Double?
+        get() = longitude?.toDoubleOrNull()
 }

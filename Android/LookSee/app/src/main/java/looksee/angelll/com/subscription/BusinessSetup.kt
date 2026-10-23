@@ -47,13 +47,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.stripe.android.paymentsheet.PaymentSheetResult
 import kotlinx.coroutines.launch
-import looksee.angelll.com.models.BusinessProfileInput
-import looksee.angelll.com.models.CheckoutConfirmRequest
-import looksee.angelll.com.models.CheckoutPreparation
-import looksee.angelll.com.models.CheckoutPrepareRequest
-import looksee.angelll.com.models.CheckoutService
-import looksee.angelll.com.models.SubscriptionAccountState
-import looksee.angelll.com.models.SubscriptionCatalog
+import looksee.angelll.com.subscription.BusinessProfileInput
+import looksee.angelll.com.subscription.CheckoutConfirmRequest
+import looksee.angelll.com.subscription.CheckoutPreparation
+import looksee.angelll.com.subscription.CheckoutPrepareRequest
+import looksee.angelll.com.subscription.CheckoutService
+import looksee.angelll.com.subscription.SubscriptionAccountState
+import looksee.angelll.com.subscription.SubscriptionCatalog
 
 /** Business-profile form and secure checkout handoff translated from BusinessSetup.swift. */
 @Composable

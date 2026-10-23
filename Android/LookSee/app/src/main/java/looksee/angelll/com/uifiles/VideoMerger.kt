@@ -35,7 +35,6 @@ object VideoMerger {
             throw VideoMergeError.NoClips
         }
 
-        // If there's only one clip, just validate its length and return it.
         if (clipUris.size == 1) {
             val uri = clipUris[0]
             val durationSeconds = getVideoDurationInSeconds(context, uri)
@@ -46,7 +45,6 @@ object VideoMerger {
             return uri
         }
 
-        // 🚀 Merge Multiple Clips using Media3 Transformer
         val outputFilename = "${UUID.randomUUID()}_merged.mp4"
         val outputFile = File(context.cacheDir, outputFilename)
         if (outputFile.exists()) outputFile.delete()
@@ -55,20 +53,19 @@ object VideoMerger {
             EditedMediaItem.Builder(MediaItem.fromUri(uri)).build()
         }
 
-        // 🚀 THE FIX: Media3 updated the syntax to create sequences.
-        // We use their new helper method to properly configure audio and video tracks!
-        val sequence = androidx.media3.transformer.EditedMediaItemSequence.withAudioAndVideoFrom(editedMediaItems)
+        // 🚀 THE FIX: Since the camera service records video WITHOUT an audio track,
+        // we use the newer 'withVideoFrom' syntax to prevent crashes/compiler errors!
+        val sequence = androidx.media3.transformer.EditedMediaItemSequence.withVideoFrom(editedMediaItems)
         val composition = Composition.Builder(listOf(sequence)).build()
 
         val transformer = Transformer.Builder(context)
             .setVideoMimeType(androidx.media3.common.MimeTypes.VIDEO_H264)
             .build()
 
-        // Wrap the asynchronous Transformer listener in a suspend coroutine
-        suspendCancellableCoroutine<Unit> { continuation ->
+        val outputUri = suspendCancellableCoroutine<Uri> { continuation ->
             transformer.addListener(object : Transformer.Listener {
                 override fun onCompleted(composition: Composition, exportResult: ExportResult) {
-                    continuation.resume(Unit)
+                    continuation.resume(Uri.fromFile(outputFile))
                 }
 
                 override fun onError(
@@ -84,18 +81,15 @@ object VideoMerger {
 
             transformer.start(composition, outputFile.absolutePath)
 
-            // Allow the coroutine to cancel the export if the parent scope dies
             continuation.invokeOnCancellation {
                 transformer.cancel()
             }
         }
 
-        // After successful export, validate the length
-        val outputUri = Uri.fromFile(outputFile)
         val totalSeconds = getVideoDurationInSeconds(context, outputUri)
 
         if (totalSeconds < minimumDuration) {
-            outputFile.delete() // Clean up the file since it failed validation
+            outputFile.delete()
             throw VideoMergeError.TooShort(totalSeconds, minimumDuration)
         }
 
