@@ -53,7 +53,8 @@ struct MerchantCardView: View {
                             .background(Color.white.opacity(0.10))
                             .clipShape(Circle())
                     } else {
-                        AsyncImage(url: URL(string: vm.merchantLogoUrl)) { phase in
+                        // 🚀 THE FIX: Swap the popup's Merchant Logo S3 URL
+                        AsyncImage(url: URL(string: vm.merchantLogoUrl.replacingOccurrences(of: "looksee-app-uploads.s3.us-east-1.amazonaws.com", with: "d1fjsmhmay9z6x.cloudfront.net").replacingOccurrences(of: "looksee-app-uploads.s3.amazonaws.com", with: "d1fjsmhmay9z6x.cloudfront.net"))) { phase in
                             switch phase {
                             case .empty:
                                 ProgressView()
@@ -159,6 +160,7 @@ struct MerchantCardView: View {
                             .buttonStyle(.plain)
                         }
                     }
+                    .padding(.top, 4)
                 }
             }
             .padding(14)
@@ -194,7 +196,8 @@ struct MerchantCard: View {
                         .background(Color.gray.opacity(0.3))
                         .clipShape(Circle())
                 } else {
-                    AsyncImage(url: URL(string: logoUrl)) { phase in
+                    // 🚀 THE FIX: Swap the Settings Menu Merchant Logo S3 URL
+                    AsyncImage(url: URL(string: logoUrl.replacingOccurrences(of: "looksee-app-uploads.s3.us-east-1.amazonaws.com", with: "d1fjsmhmay9z6x.cloudfront.net").replacingOccurrences(of: "looksee-app-uploads.s3.amazonaws.com", with: "d1fjsmhmay9z6x.cloudfront.net"))) { phase in
                         switch phase {
                         case .empty:
                             ProgressView()

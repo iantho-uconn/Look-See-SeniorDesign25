@@ -208,7 +208,7 @@ struct LandmarkMapView: View {
                         Text("Visibility").font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.gray).textCase(.uppercase)
                         Toggle("My Uploads Only", isOn: $myUploadsOnly).tint(primaryColor).foregroundStyle(.primary).font(.system(size: 16, weight: .semibold))
                         Divider()
-                        Toggle("Promoted Only", isOn: $promotedOnly).tint(promoColor).foregroundStyle(.primary).font(.system(size: 16, weight: .semibold))
+                        Toggle("Promotions Only", isOn: $promotedOnly).tint(promoColor).foregroundStyle(.primary).font(.system(size: 16, weight: .semibold))
                     }.padding(20).background(Color(uiColor: .secondarySystemGroupedBackground)).clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
                     
                     if !availableClusters.isEmpty {

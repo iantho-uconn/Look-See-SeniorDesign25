@@ -8,6 +8,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -16,6 +18,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.amplifyframework.kotlin.core.Amplify
@@ -32,6 +35,8 @@ fun ForgotPasswordView(
     var confirmationCode by remember { mutableStateOf("") }
     var newPassword by remember { mutableStateOf("") }
     var confirmedPassword by remember { mutableStateOf("") }
+    var newPasswordVisible by remember { mutableStateOf(false) }
+    var confirmedPasswordVisible by remember { mutableStateOf(false) }
 
     var awaitingCode by remember { mutableStateOf(false) }
     var resetCompleted by remember { mutableStateOf(false) }
@@ -205,7 +210,13 @@ fun ForgotPasswordView(
                                     value = newPassword,
                                     onValueChange = { newPassword = it },
                                     placeholder = { Text("New password", color = Color.Gray) },
-                                    visualTransformation = PasswordVisualTransformation(),
+                                    visualTransformation = if (newPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                                    trailingIcon = {
+                                        val image = if (newPasswordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff
+                                        IconButton(onClick = { newPasswordVisible = !newPasswordVisible }) {
+                                            Icon(imageVector = image, contentDescription = if (newPasswordVisible) "Hide password" else "Show password", tint = Color.Gray)
+                                        }
+                                    },
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                                     modifier = Modifier.fillMaxWidth(),
                                     shape = RoundedCornerShape(12.dp),
@@ -223,7 +234,13 @@ fun ForgotPasswordView(
                                     value = confirmedPassword,
                                     onValueChange = { confirmedPassword = it },
                                     placeholder = { Text("Confirm new password", color = Color.Gray) },
-                                    visualTransformation = PasswordVisualTransformation(),
+                                    visualTransformation = if (confirmedPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                                    trailingIcon = {
+                                        val image = if (confirmedPasswordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff
+                                        IconButton(onClick = { confirmedPasswordVisible = !confirmedPasswordVisible }) {
+                                            Icon(imageVector = image, contentDescription = if (confirmedPasswordVisible) "Hide password" else "Show password", tint = Color.Gray)
+                                        }
+                                    },
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                                     modifier = Modifier.fillMaxWidth(),
                                     shape = RoundedCornerShape(12.dp),

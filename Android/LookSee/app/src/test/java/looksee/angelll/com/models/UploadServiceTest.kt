@@ -200,6 +200,7 @@ internal class RecordingUploadHttpClient(
         authorization: String,
         jsonBody: String,
         timeoutMillis: Int,
+        extraHeaders: Map<String, String>
     ): UploadHttpResponse {
         calls += RecordedUploadCall(
             method = "POST",

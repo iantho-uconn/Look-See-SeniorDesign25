@@ -6,13 +6,25 @@
 	<string>ca-app-pub-5429140774219116~2396588229</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
-		<key>Pinned Domains</key>
+		<key>NSPinnedDomains</key>
 		<dict>
+			<key>cognito-idp.us-east-1.amazonaws.com</key>
+			<dict>
+				<key>NSIncludesSubdomains</key>
+				<true/>
+				<key>NSPinnedLeafIdentities</key>
+				<array>
+					<dict>
+						<key>SPKI-SHA256-BASE64</key>
+						<string>EENriSJY4yExiEFqKb9kg7HPqcuBkNxG8uM6yTBu4SY=</string>
+					</dict>
+				</array>
+			</dict>
 			<key>d11vl3v9w133rh.cloudfront.net</key>
 			<dict>
 				<key>NSIncludesSubdomains</key>
 				<true/>
-				<key>Pinned Leaf Identities</key>
+				<key>NSPinnedLeafIdentities</key>
 				<array>
 					<dict>
 						<key>SPKI-SHA256-BASE64</key>
@@ -26,6 +38,8 @@
 			</dict>
 		</dict>
 	</dict>
+	<key>SENTRY_DSN</key>
+	<string>$(SENTRY_DSN)</string>
 	<key>SKAdNetworkItems</key>
 	<array>
 		<dict>

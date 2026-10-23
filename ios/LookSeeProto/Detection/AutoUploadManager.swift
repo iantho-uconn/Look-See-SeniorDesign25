@@ -160,7 +160,7 @@ class AutoUploadManager: ObservableObject {
                 if media.positiveUploadCompleted != true {
                     let fileURL = manager.getFileURL(for: media)
                     let result = try await uploadService.upload(
-                        userEmail: authVM.userEmail, idToken: idToken,
+                        idToken: idToken,
                         label: label, landmarkId: landmarkID, landmarkLabel: label,
                         shortDescription: media.savedDescription,
                         userDescription: media.savedUserDescription,

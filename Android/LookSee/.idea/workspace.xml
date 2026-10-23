@@ -17,7 +17,6 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="07f21855-e7c7-4afa-a99c-977bf161748a" name="Changes" comment="">
-<<<<<<< HEAD
       <change beforePath="$PROJECT_DIR$/.idea/deploymentTargetSelector.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/deploymentTargetSelector.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/MainActivity.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/MainActivity.kt" afterDir="false" />
@@ -27,13 +26,15 @@
       <change beforePath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/BusinessLandmarksView.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/BusinessLandmarksView.kt" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/LandmarkRecord.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/LandmarkRecord.kt" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/ModelLoadingScreen.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/ModelLoadingScreen.kt" afterDir="false" />
-=======
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/LookSeeProto.xcodeproj/xcshareddata/xcschemes/LookSeeProto 1.xcscheme" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/LookSeeProto.xcodeproj/xcshareddata/xcschemes/LookSeeProto 1.xcscheme" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/LookSeeProto.xcodeproj/xcshareddata/xcschemes/LookSeeProto 2.xcscheme" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/LookSeeProto.xcodeproj/xcshareddata/xcschemes/LookSeeProto 2.xcscheme" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/LookSeeProto.xcodeproj/xcshareddata/xcschemes/LookSeeProtoTests 1.xcscheme" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/LookSeeProto.xcodeproj/xcshareddata/xcschemes/LookSeeProtoTests 1.xcscheme" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/LookSeeProto.xcodeproj/xcshareddata/xcschemes/LookSeeProtoTests.xcscheme" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/LookSeeProto.xcodeproj/xcshareddata/xcschemes/LookSeeProtoTests.xcscheme" afterDir="false" />
->>>>>>> 9dd0c88 (subscription plan update)
+      <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/LookSeeProto/Localizable.xcstrings" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/LookSeeProto/Localizable.xcstrings" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/UI Files/Historyview.swift" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/UI Files/Historyview.swift" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/UI Files/MerchantCard.swift" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/UI Files/MerchantCard.swift" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/UI Files/PopUp.swift" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/UI Files/PopUp.swift" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/UI Files/Settings.swift" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/UI Files/Settings.swift" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -115,6 +116,9 @@
   <component name="PropertiesComponent">{
   &quot;keyToString&quot;: {
     &quot;Android App.app.executor&quot;: &quot;Run&quot;,
+    &quot;Gradle.Load Gradle Dependencies.executor&quot;: &quot;Run&quot;,
+    &quot;Gradle.LookSee [assembleDebug].executor&quot;: &quot;Run&quot;,
+    &quot;Gradle.LookSee [gradle assembleDebug].executor&quot;: &quot;Run&quot;,
     &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
     &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
     &quot;RunOnceActivity.cidr.known.project.marker&quot;: &quot;true&quot;,
@@ -139,7 +143,13 @@
       <recent name="looksee.angelll.com.uifiles" />
     </key>
   </component>
-  <component name="RunManager">
+  <component name="RunAnythingCache">
+    <option name="myCommands">
+      <command value="gradle gradle assembleDebug -x test" />
+      <command value="gradle assembleDebug -x test" />
+    </option>
+  </component>
+  <component name="RunManager" selected="Android App.app">
     <configuration name="app" type="AndroidRunConfigurationType" factoryName="Android App" activateToolWindowBeforeRun="false">
       <module name="LookSee.app" />
       <option name="ANDROID_RUN_CONFIGURATION_SCHEMA_VERSION" value="1" />
@@ -206,6 +216,63 @@
         <option name="Android.Gradle.BeforeRunTask" enabled="true" />
       </method>
     </configuration>
+    <configuration name="LookSee [assembleDebug]" type="GradleRunConfiguration" factoryName="Gradle" temporary="true">
+      <ExternalSystemSettings>
+        <option name="executionName" />
+        <option name="externalProjectPath" value="$PROJECT_DIR$" />
+        <option name="externalSystemIdString" value="GRADLE" />
+        <option name="scriptParameters" value="-x test" />
+        <option name="taskDescriptions">
+          <list />
+        </option>
+        <option name="taskNames">
+          <list>
+            <option value="assembleDebug" />
+          </list>
+        </option>
+        <option name="vmOptions" />
+      </ExternalSystemSettings>
+      <ExternalSystemDebugServerProcess>true</ExternalSystemDebugServerProcess>
+      <ExternalSystemReattachDebugProcess>true</ExternalSystemReattachDebugProcess>
+      <ExternalSystemDebugDisabled>false</ExternalSystemDebugDisabled>
+      <DebugAllEnabled>false</DebugAllEnabled>
+      <RunAsTest>false</RunAsTest>
+      <GradleProfilingDisabled>false</GradleProfilingDisabled>
+      <GradleCoverageDisabled>false</GradleCoverageDisabled>
+      <method v="2" />
+    </configuration>
+    <configuration name="LookSee [gradle assembleDebug]" type="GradleRunConfiguration" factoryName="Gradle" temporary="true">
+      <ExternalSystemSettings>
+        <option name="executionName" />
+        <option name="externalProjectPath" value="$PROJECT_DIR$" />
+        <option name="externalSystemIdString" value="GRADLE" />
+        <option name="scriptParameters" value="-x test" />
+        <option name="taskDescriptions">
+          <list />
+        </option>
+        <option name="taskNames">
+          <list>
+            <option value="gradle" />
+            <option value="assembleDebug" />
+          </list>
+        </option>
+        <option name="vmOptions" />
+      </ExternalSystemSettings>
+      <ExternalSystemDebugServerProcess>true</ExternalSystemDebugServerProcess>
+      <ExternalSystemReattachDebugProcess>true</ExternalSystemReattachDebugProcess>
+      <ExternalSystemDebugDisabled>false</ExternalSystemDebugDisabled>
+      <DebugAllEnabled>false</DebugAllEnabled>
+      <RunAsTest>false</RunAsTest>
+      <GradleProfilingDisabled>false</GradleProfilingDisabled>
+      <GradleCoverageDisabled>false</GradleCoverageDisabled>
+      <method v="2" />
+    </configuration>
+    <recent_temporary>
+      <list>
+        <item itemvalue="Gradle.LookSee [assembleDebug]" />
+        <item itemvalue="Gradle.LookSee [gradle assembleDebug]" />
+      </list>
+    </recent_temporary>
   </component>
   <component name="TaskManager">
     <task active="true" id="Default" summary="Default task">
@@ -222,12 +289,12 @@
       <map>
         <entry key="looksee.angelll.com">
           <value>
-            <CheckInfo lastCheckTimestamp="1790688432142" />
+            <CheckInfo lastCheckTimestamp="1792054192945" />
           </value>
         </entry>
         <entry key="looksee.angelll.com.test">
           <value>
-            <CheckInfo lastCheckTimestamp="1790688432142" />
+            <CheckInfo lastCheckTimestamp="1792054192956" />
           </value>
         </entry>
       </map>

@@ -1,14 +1,24 @@
 package looksee.angelll.com.uifiles
 
+import android.annotation.SuppressLint
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.camera.core.*
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
 import androidx.compose.animation.*
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -22,30 +32,351 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.zIndex
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.Text
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.Locale
 import java.util.UUID
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.ceil
 import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.pow
+import kotlin.math.sqrt
 import looksee.angelll.com.detection.*
 import looksee.angelll.com.models.*
 import looksee.angelll.com.ui.theme.*
 import looksee.angelll.com.viewmodels.*
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun TextScannerSheet(
+    onTextScanned: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = Color(0xFF1C1C1E),
+        dragHandle = null,
+        contentWindowInsets = { WindowInsets(0.dp) },
+        modifier = Modifier.fillMaxSize()
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "Point at text and tap to copy",
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+                IconButton(onClick = onDismiss) {
+                    Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+                }
+            }
+
+            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                TextScannerCameraView { scannedText ->
+                    onTextScanned(scannedText)
+                    onDismiss()
+                }
+            }
+        }
+    }
+}
+
+private data class TargetTextChunk(
+    val text: String,
+    val bounds: Rect
+)
+
+@SuppressLint("UnsafeOptInUsageError")
+@Composable
+private fun TextScannerCameraView(onTextTapped: (String) -> Unit) {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val haptic = LocalHapticFeedback.current
+
+    val previewView = remember { PreviewView(context).apply { scaleType = PreviewView.ScaleType.FILL_CENTER } }
+
+    var rawTextBlocks by remember { mutableStateOf<List<Text.TextBlock>>(emptyList()) }
+    var imageWidth by remember { mutableIntStateOf(1) }
+    var imageHeight by remember { mutableIntStateOf(1) }
+
+    var camera by remember { mutableStateOf<Camera?>(null) }
+    var currentZoom by remember { mutableFloatStateOf(1f) }
+    var maxZoomRatio by remember { mutableFloatStateOf(5f) }
+
+    val isAnalyzing = remember { AtomicBoolean(false) }
+
+    DisposableEffect(Unit) {
+        val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
+        val executor = Executors.newSingleThreadExecutor()
+        val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+        var cameraProvider: ProcessCameraProvider? = null
+
+        cameraProviderFuture.addListener({
+            cameraProvider = cameraProviderFuture.get()
+
+            val preview = Preview.Builder().build().also {
+                it.surfaceProvider = previewView.surfaceProvider
+            }
+
+            val imageAnalyzer = ImageAnalysis.Builder()
+                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                .build()
+                .also { analysis ->
+                    analysis.setAnalyzer(executor) { imageProxy ->
+                        if (isAnalyzing.get()) {
+                            imageProxy.close()
+                            return@setAnalyzer
+                        }
+
+                        val mediaImage = imageProxy.image
+                        if (mediaImage != null) {
+                            isAnalyzing.set(true)
+                            val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
+
+                            val isPortrait = imageProxy.imageInfo.rotationDegrees == 90 || imageProxy.imageInfo.rotationDegrees == 270
+                            val newWidth = if (isPortrait) imageProxy.height else imageProxy.width
+                            val newHeight = if (isPortrait) imageProxy.width else imageProxy.height
+
+                            recognizer.process(image)
+                                .addOnSuccessListener { visionText ->
+                                    imageWidth = newWidth
+                                    imageHeight = newHeight
+                                    rawTextBlocks = visionText.textBlocks
+                                }
+                                .addOnCompleteListener {
+                                    imageProxy.close()
+                                    isAnalyzing.set(false)
+                                }
+                        } else {
+                            imageProxy.close()
+                        }
+                    }
+                }
+
+            val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+
+            try {
+                cameraProvider?.unbindAll()
+                val boundCamera = cameraProvider?.bindToLifecycle(lifecycleOwner, cameraSelector, preview, imageAnalyzer)
+                camera = boundCamera
+                boundCamera?.cameraInfo?.zoomState?.observe(lifecycleOwner) { state ->
+                    currentZoom = state.zoomRatio
+                    maxZoomRatio = state.maxZoomRatio.coerceAtMost(5f)
+                }
+            } catch (e: Exception) {
+                Log.e("LookSeeScanner", "Binding failed", e)
+            }
+        }, ContextCompat.getMainExecutor(context))
+
+        onDispose {
+            cameraProvider?.unbindAll()
+            recognizer.close()
+            executor.shutdown()
+        }
+    }
+
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(camera) {
+                detectTransformGestures { _, _, zoom, _ ->
+                    camera?.let { cam ->
+                        val zoomState = cam.cameraInfo.zoomState.value ?: return@detectTransformGestures
+                        val newZoom = (zoomState.zoomRatio * zoom).coerceIn(
+                            zoomState.minZoomRatio,
+                            maxZoomRatio
+                        )
+                        cam.cameraControl.setZoomRatio(newZoom)
+                    }
+                }
+            }
+    ) {
+        val containerWidth = constraints.maxWidth.toFloat()
+        val containerHeight = constraints.maxHeight.toFloat()
+        val screenCenterX = containerWidth / 2f
+        val screenCenterY = containerHeight / 2f
+
+        AndroidView(
+            factory = { previewView },
+            modifier = Modifier.fillMaxSize()
+        )
+
+        // 1. Convert ML Kit blocks to Screen Coordinates & prune offscreen artifacts
+        val visibleChunks = remember(rawTextBlocks, imageWidth, imageHeight, containerWidth, containerHeight) {
+            val scaleX = containerWidth / imageWidth.toFloat()
+            val scaleY = containerHeight / imageHeight.toFloat()
+            val scale = maxOf(scaleX, scaleY)
+
+            val scaledWidth = imageWidth * scale
+            val scaledHeight = imageHeight * scale
+
+            val offsetX = (containerWidth - scaledWidth) / 2f
+            val offsetY = (containerHeight - scaledHeight) / 2f
+
+            rawTextBlocks.mapNotNull { block ->
+                val box = block.boundingBox ?: return@mapNotNull null
+
+                val left = box.left * scale + offsetX
+                val top = box.top * scale + offsetY
+                val right = box.right * scale + offsetX
+                val bottom = box.bottom * scale + offsetY
+
+                // Strict Viewport Culling: drop items outside view bounds
+                if (right > 20f && left < containerWidth - 20f && bottom > 20f && top < containerHeight - 20f) {
+                    val clampedBounds = Rect(
+                        left = max(10f, left),
+                        top = max(10f, top),
+                        right = min(containerWidth - 10f, right),
+                        bottom = min(containerHeight - 10f, bottom)
+                    )
+                    TargetTextChunk(block.text.trim(), clampedBounds)
+                } else null
+            }
+        }
+
+        // 2. Select the single focused chunk closest to screen center (iOS Style)
+        val targetChunk = remember(visibleChunks, screenCenterX, screenCenterY) {
+            visibleChunks.minByOrNull { chunk ->
+                val chunkCenterX = (chunk.bounds.left + chunk.bounds.right) / 2f
+                val chunkCenterY = (chunk.bounds.top + chunk.bounds.bottom) / 2f
+                val dx = chunkCenterX - screenCenterX
+                val dy = chunkCenterY - screenCenterY
+                sqrt(dx * dx + dy * dy)
+            }
+        }
+
+        // 3. Hardware-smoothed corner box animation to eliminate 30Hz jitter
+        val targetLeft = targetChunk?.bounds?.left ?: screenCenterX
+        val targetTop = targetChunk?.bounds?.top ?: screenCenterY
+        val targetRight = targetChunk?.bounds?.right ?: screenCenterX
+        val targetBottom = targetChunk?.bounds?.bottom ?: screenCenterY
+
+        val animSpec = spring<Float>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow)
+        val smoothLeft by animateFloatAsState(targetValue = targetLeft, animationSpec = animSpec, label = "boxLeft")
+        val smoothTop by animateFloatAsState(targetValue = targetTop, animationSpec = animSpec, label = "boxTop")
+        val smoothRight by animateFloatAsState(targetValue = targetRight, animationSpec = animSpec, label = "boxRight")
+        val smoothBottom by animateFloatAsState(targetValue = targetBottom, animationSpec = animSpec, label = "boxBottom")
+
+        // 4. Draw iOS-Style Corner Brackets and Tap Overlay
+        if (targetChunk != null && smoothRight > smoothLeft + 20f && smoothBottom > smoothTop + 14f) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val pad = 12f
+                val left = smoothLeft - pad
+                val top = smoothTop - pad
+                val right = smoothRight + pad
+                val bottom = smoothBottom + pad
+
+                val bracketLen = min(28f, min(right - left, bottom - top) / 3f)
+                val strokeW = 3.5.dp.toPx()
+                val bracketColor = Color(0xFFFFD60A)
+
+                // Soft background tint inside the target
+                drawRoundRect(
+                    color = Color(0xFFFFCC00).copy(alpha = 0.16f),
+                    topLeft = Offset(left, top),
+                    size = Size(right - left, bottom - top),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(10f, 10f)
+                )
+
+                // Top-Left Corner
+                drawLine(bracketColor, Offset(left, top + bracketLen), Offset(left, top), strokeW)
+                drawLine(bracketColor, Offset(left, top), Offset(left + bracketLen, top), strokeW)
+
+                // Top-Right Corner
+                drawLine(bracketColor, Offset(right - bracketLen, top), Offset(right, top), strokeW)
+                drawLine(bracketColor, Offset(right, top), Offset(right, top + bracketLen), strokeW)
+
+                // Bottom-Left Corner
+                drawLine(bracketColor, Offset(left, bottom - bracketLen), Offset(left, bottom), strokeW)
+                drawLine(bracketColor, Offset(left, bottom), Offset(left + bracketLen, bottom), strokeW)
+
+                // Bottom-Right Corner
+                drawLine(bracketColor, Offset(right - bracketLen, bottom), Offset(right, bottom), strokeW)
+                drawLine(bracketColor, Offset(right, bottom), Offset(right, bottom - bracketLen), strokeW)
+            }
+
+            // Tap anywhere on screen to copy the focused block
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clickable {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        val cleanLines = targetChunk.text
+                            .lines()
+                            .map { it.trim() }
+                            .filter { it.isNotBlank() }
+                            .joinToString("\n")
+                        onTextTapped(cleanLines)
+                    }
+            )
+        }
+
+        // 5. Floating Zoom Control Pill (Pinch or Tap)
+        Row(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 28.dp)
+                .clip(CircleShape)
+                .background(Color.Black.copy(alpha = 0.70f))
+                .border(1.dp, Color.White.copy(alpha = 0.20f), CircleShape)
+                .padding(horizontal = 14.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            listOf(1f, 2f, 3f).forEach { zoomLevel ->
+                val isSelected = (currentZoom in (zoomLevel - 0.4f)..(zoomLevel + 0.4f))
+                Text(
+                    text = "${zoomLevel.toInt()}x",
+                    color = if (isSelected) AppleBlue else Color.White,
+                    fontSize = 14.sp,
+                    fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Medium,
+                    modifier = Modifier.clickable {
+                        camera?.cameraControl?.setZoomRatio(zoomLevel)
+                    }
+                )
+            }
+        }
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -74,7 +405,6 @@ fun LandmarkRecordScreen(
     val locationManager = remember { LocationManager(context) }
     val locationState by locationManager.state.collectAsState()
 
-    // Flag to determine if this is an "Add Additional Media" flow
     val isAdditionalMedia = existingLandmarkId != null
 
     DisposableEffect(Unit) {
@@ -92,6 +422,7 @@ fun LandmarkRecordScreen(
     var pickedImageUri by remember { mutableStateOf<Uri?>(null) }
     var clipDurations by remember { mutableStateOf<Map<Uri, Double>>(emptyMap()) }
     var capturedNegativeVideo by remember { mutableStateOf<CapturedNegativeVideo?>(null) }
+    var showTextScanner by remember { mutableStateOf(false) }
 
     var showNegativeCamera by remember { mutableStateOf(false) }
     var isFormVisible by remember { mutableStateOf(archivedMedia != null) }
@@ -171,7 +502,7 @@ fun LandmarkRecordScreen(
         clipDurations = emptyMap()
         pickedImageUri = null
 
-        capturedNegativeVideo?.file?.let { try { it.delete() } catch(e:Exception){} }
+        capturedNegativeVideo?.file?.let { try { it.delete() } catch(e:Exception){ Log.e("Cleanup", "Failed to delete temp file", e) } }
 
         capturedNegativeVideo = null
         if (existingLandmarkId == null) { businessLandmarkId = null; labelText = ""; shortDescription = "" }
@@ -236,6 +567,7 @@ fun LandmarkRecordScreen(
                             val stitchedUri = VideoMerger.mergeAndValidate(context, uris, 1.0)
                             pickedVideoUris = listOf(stitchedUri)
                         } catch (e: Exception) {
+                            Log.e("LookSee", "Merge failed", e)
                             pickedVideoUris = listOf(uris.first())
                         } finally {
                             isStitchingVideos = false
@@ -265,7 +597,7 @@ fun LandmarkRecordScreen(
                     Column(modifier = Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Icon(if (hasMinimumClipDuration) Icons.Default.CheckCircle else Icons.Default.Schedule, contentDescription = null, tint = if (hasMinimumClipDuration) Color.Green else Color(0xFFFFA500), modifier = Modifier.size(16.dp))
-                            Text("${String.format(java.util.Locale.US, "%.1f", totalClipDuration)}s total — ready to upload", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = if (hasMinimumClipDuration) Color.Green else Color(0xFFFFA500))
+                            Text("${String.format(Locale.US, "%.1f", totalClipDuration)}s total — ready to upload", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = if (hasMinimumClipDuration) Color.Green else Color(0xFFFFA500))
                         }
 
                         pickedVideoUris.forEach { uri ->
@@ -286,12 +618,12 @@ fun LandmarkRecordScreen(
                         Icon(Icons.Default.NearMe, contentDescription = null, tint = AppleBlue)
                         Column {
                             if (extractedLatitude != null && extractedLongitude != null) {
-                                Text(String.format(java.util.Locale.US, "%.6f, %.6f", extractedLatitude, extractedLongitude), fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, color = Color.White)
+                                Text(String.format(Locale.US, "%.6f, %.6f", extractedLatitude, extractedLongitude), fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, color = Color.White)
                                 Text("Location Locked", fontSize = 13.sp, color = Color.Gray)
                             } else {
                                 val fix = (locationState as? LookSeeLocationState.Ready)?.fix
                                 if (fix != null) {
-                                    Text(String.format(java.util.Locale.US, "%.6f, %.6f", fix.latitude, fix.longitude), fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, color = Color.White)
+                                    Text(String.format(Locale.US, "%.6f, %.6f", fix.latitude, fix.longitude), fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, color = Color.White)
                                     Text("Accuracy: ±${fix.accuracyMeters.toInt()}m", fontSize = 13.sp, color = Color.Gray)
                                 } else {
                                     Text("Requesting location...", fontSize = 15.sp, color = Color.Gray)
@@ -325,7 +657,7 @@ fun LandmarkRecordScreen(
                     }
 
                     if (businessLandmarkId != null) {
-                        Text("ID: ${businessLandmarkId}", fontSize = 12.sp, color = Color.Gray, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+                        Text("ID: $businessLandmarkId", fontSize = 12.sp, color = Color.Gray, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
                     }
 
                     Spacer(Modifier.height(10.dp))
@@ -343,18 +675,21 @@ fun LandmarkRecordScreen(
                                 OutlinedTextField(
                                     value = shortDescription, onValueChange = { shortDescription = it },
                                     placeholder = { Text("e.g., Front entrance", color = Color.Gray) },
-                                    modifier = Modifier.fillMaxSize(),
+                                    modifier = Modifier.fillMaxWidth(),
+                                    minLines = 4,
                                     colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Color.Transparent, unfocusedBorderColor = Color.Transparent, focusedTextColor = Color.White, unfocusedTextColor = Color.White),
                                     enabled = !arePositiveDetailsLocked
                                 )
-                                Box(modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp).size(36.dp).background(AppleBlue, CircleShape).clickable { }, contentAlignment = Alignment.Center) {
+                                Box(modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp).size(36.dp).background(AppleBlue, CircleShape).clickable {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    showTextScanner = true
+                                }, contentAlignment = Alignment.Center) {
                                     Icon(Icons.Default.CenterFocusStrong, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
                                 }
                             }
                         }
                     }
 
-                    // 🚀 THE FIX: Only show Negative Background requirement for brand new landmarks
                     if (!isAdditionalMedia) {
                         Spacer(Modifier.height(20.dp))
                         Surface(modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth(), color = Color(0xFF1C1C1E), shape = RoundedCornerShape(16.dp)) {
@@ -406,7 +741,7 @@ fun LandmarkRecordScreen(
                                 text = if (archivedMedia != null) "Upload Draft" else (if (isAdditionalMedia) "Upload Additional Media" else "Upload Landmark"),
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color.White
+                                color = if (canUpload) Color.White else Color.Gray
                             )
                         }
 
@@ -415,7 +750,8 @@ fun LandmarkRecordScreen(
                                 onClick = { showDiscardAlert = true },
                                 modifier = Modifier.size(60.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(alpha = 0.15f)),
-                                shape = RoundedCornerShape(16.dp)
+                                shape = RoundedCornerShape(16.dp),
+                                contentPadding = PaddingValues(0.dp)
                             ) {
                                 Icon(Icons.Default.Delete, contentDescription = null, tint = Color.Red)
                             }
@@ -454,6 +790,15 @@ fun LandmarkRecordScreen(
                     }
                 )
             }
+        }
+
+        if (showTextScanner) {
+            TextScannerSheet(
+                onTextScanned = { newText: String ->
+                    shortDescription = newText
+                },
+                onDismiss = { showTextScanner = false }
+            )
         }
     }
 

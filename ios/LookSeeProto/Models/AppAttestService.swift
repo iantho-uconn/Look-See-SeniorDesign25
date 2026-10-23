@@ -15,55 +15,66 @@ enum AppAttestError: Error {
     case attestationFailed
     case assertionFailed
     case bypassModeActive
+    case missingKeyId
 }
 
 final class AppAttestService {
     static let shared = AppAttestService()
     private let service = DCAppAttestService.shared
     
-    // 🚀 THE FIX: A memory flag to prevent repetitive hardware timeouts
+    // 🚀 THE FIX: Memory flag to prevent repetitive hardware timeouts
     private var isBypassed = false
     
-    /// Generates a unique, cryptographically signed assertion string for the given payload
-    func generateAssertion(for payload: Data) async throws -> String {
-        
-        // If we already know the capability is missing, fail instantly to prevent lag.
-        if isBypassed {
-            throw AppAttestError.bypassModeActive
-        }
-        
-        // App Attest is strictly bound to iOS hardware capabilities.
+    // 🚀 THE FIX: Expose the KeyId so UploadService can send it to the backend
+    var currentKeyId: String? {
+        UserDefaults.standard.string(forKey: "LookSeeAppAttestKeyId")
+    }
+    
+    /// PHASE 1: Generate a key and ask Apple to certify it.
+    /// You will call this ONCE when the user logs in, and send the result to your AWS backend.
+    func attestDevice(challenge: String) async throws -> (keyId: String, attestationString: String) {
+        if isBypassed { throw AppAttestError.bypassModeActive }
         guard service.isSupported else {
             isBypassed = true
             throw AppAttestError.notSupported
         }
         
         do {
-            let keyId = try await getOrCreateKeyId()
-            let clientDataHash = Data(SHA256.hash(data: payload))
+            let keyId = try await service.generateKey()
+            let clientDataHash = Data(SHA256.hash(data: Data(challenge.utf8)))
             
-            // This prompts the Secure Enclave to sign the hash using the hardware key
-            let assertion = try await service.generateAssertion(keyId, clientDataHash: clientDataHash)
+            // Ask Apple's servers to cryptographically verify this iPhone
+            let attestation = try await service.attestKey(keyId, clientDataHash: clientDataHash)
             
-            // Return the Base64 representation to be attached as an HTTP header
-            return assertion.base64EncodedString()
+            // Save the Key ID locally ONLY after Apple approves it
+            UserDefaults.standard.set(keyId, forKey: "LookSeeAppAttestKeyId")
+            
+            return (keyId, attestation.base64EncodedString())
             
         } catch {
-            // 🚀 Fail fast on the first error so it doesn't lag out every network request!
             isBypassed = true
-            throw error
+            throw AppAttestError.attestationFailed
         }
     }
     
-    private func getOrCreateKeyId() async throws -> String {
-        // In a production environment, you would store the KeyId in the Secure Keychain.
-        // For simplicity, we are relying on UserDefaults.
-        if let existingKeyId = UserDefaults.standard.string(forKey: "LookSeeAppAttestKeyId") {
-            return existingKeyId
+    /// PHASE 2: Generates a unique, cryptographically signed assertion for video uploads
+    func generateAssertion(for payload: Data) async throws -> String {
+        if isBypassed { throw AppAttestError.bypassModeActive }
+        guard service.isSupported else {
+            isBypassed = true
+            throw AppAttestError.notSupported
         }
         
-        let newKeyId = try await service.generateKey()
-        UserDefaults.standard.set(newKeyId, forKey: "LookSeeAppAttestKeyId")
-        return newKeyId
+        guard let keyId = currentKeyId else {
+            throw AppAttestError.missingKeyId // Cannot sign if we never attested!
+        }
+        
+        do {
+            let clientDataHash = Data(SHA256.hash(data: payload))
+            let assertion = try await service.generateAssertion(keyId, clientDataHash: clientDataHash)
+            return assertion.base64EncodedString()
+        } catch {
+            throw AppAttestError.assertionFailed
+        }
     }
 }

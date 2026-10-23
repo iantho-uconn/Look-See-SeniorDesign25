@@ -9,7 +9,7 @@ import SwiftUI
 import Amplify
 import AWSCognitoAuthPlugin
 import AWSS3StoragePlugin
-import Sentry // 🚀 ADDED: Sentry SDK
+import Sentry
 import GoogleMobileAds
 import UserMessagingPlatform
 
@@ -19,18 +19,17 @@ struct LookSeeProtoApp: App {
     @StateObject private var authViewModel = AuthViewModel()
     @StateObject private var adConsentManager = AdConsentManager()
     
-    // 🚀 THE FIX: In-app language selector storage
     @AppStorage("selectedLanguage") private var selectedLanguage: String = "en"
     
     init() {
         configureAmplify()
-        configureSentry() // 🚀 ADDED: Boot up Sentry
+        configureSentry()
     }
     
     func configureAmplify() {
         do {
             try Amplify.add(plugin: AWSCognitoAuthPlugin())
-            try Amplify.add(plugin: AWSS3StoragePlugin()) // 🚀 THE FIX: Initializes Storage
+            try Amplify.add(plugin: AWSS3StoragePlugin())
             try Amplify.configure()
             print("✅ Amplify configured")
         } catch {
@@ -38,11 +37,15 @@ struct LookSeeProtoApp: App {
         }
     }
     
-    // 🚀 ADDED: Sentry Configuration
     func configureSentry() {
         SentrySDK.start { options in
-            // Your Live Sentry DSN Key
-            options.dsn = "https://624e9e0d4b4c1bb5a0de8ceeebb7dcc9@o4512107452301312.ingest.us.sentry.io/4512107464097792"
+            // 🚀 THE FIX: Dynamically read the DSN from Info.plist
+            if let sentryDSNKey = Bundle.main.object(forInfoDictionaryKey: "SENTRY_DSN") as? String, !sentryDSNKey.isEmpty {
+                // Re-attach the https:// prefix that we stripped from the xcconfig file
+                options.dsn = "https://" + sentryDSNKey
+            } else {
+                print("⚠️ WARNING: SENTRY_DSN not found in Info.plist")
+            }
             
             // Enable performance monitoring
             options.tracesSampleRate = 1.0
@@ -67,6 +70,10 @@ struct LookSeeProtoApp: App {
                 )
                 .task {
                     await adConsentManager.start()
+                    
+                    // 🚀 THE FIX: Attach the AuthViewModel to the queue globally!
+                    // Now background uploads start the moment the app opens, no matter what screen the user is on.
+                    AutoUploadManager.shared.attachAuthVM(authViewModel)
                 }
         }
     }

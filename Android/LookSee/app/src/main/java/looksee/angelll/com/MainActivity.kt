@@ -4,6 +4,7 @@ import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge // 🚀 Added Edge-to-Edge import
 import androidx.activity.viewModels
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -36,6 +37,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // 🚀 THE FIX: Tell Android to stop blocking the status bars
+        enableEdgeToEdge()
+
+        androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
         configureAmplify()
         configureSentry()
 
@@ -67,7 +73,7 @@ class MainActivity : ComponentActivity() {
     private fun configureSentry() {
         try {
             SentryAndroid.init(this) { options ->
-                options.dsn = "https://e9ee0e43b4735fe777a4d240a4423a56@o4512005291573248.ingest.us.sentry.io/4512005296816128"
+                options.dsn = BuildConfig.SENTRY_DSN
                 options.tracesSampleRate = 1.0
                 options.profilesSampleRate = 1.0
             }
@@ -98,7 +104,8 @@ enum class AppState {
     BusinessProfile,
     GuestSignUp,
     ScanHistory,
-    BusinessAnalytics
+    BusinessAnalytics,
+    BusinessMediaHistory
 }
 
 @Composable
@@ -203,8 +210,23 @@ fun RootView(vm: AuthViewModel, authState: AuthState) {
                 BusinessLandmarkDetailView(
                     vm = vm,
                     initialLandmark = landmark,
-                    onNavigate = { _, _ -> },
+                    onNavigate = { route, _ ->
+                        if (route == "BusinessMediaHistoryView") {
+                            appState = AppState.BusinessMediaHistory
+                        }
+                    },
+                    onLandmarkDeleted = { appState = AppState.BusinessLandmarks },
                     onDismiss = { appState = AppState.BusinessLandmarks }
+                )
+            }
+        }
+
+        AppState.BusinessMediaHistory -> {
+            selectedLandmark?.let { landmark ->
+                BusinessMediaHistoryView(
+                    landmarkId = landmark.landmarkId,
+                    landmarkLabel = landmark.label,
+                    onBack = { appState = AppState.BusinessLandmarkDetail }
                 )
             }
         }

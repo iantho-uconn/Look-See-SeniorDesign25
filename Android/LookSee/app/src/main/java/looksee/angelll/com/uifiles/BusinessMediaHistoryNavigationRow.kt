@@ -41,6 +41,7 @@ fun BusinessMediaHistoryNavigationRow(
             text = "Media Upload History",
             fontSize = 16.sp,
             fontWeight = FontWeight.Bold,
+            color = Color.White,
             modifier = Modifier.padding(start = 12.dp)
         )
 

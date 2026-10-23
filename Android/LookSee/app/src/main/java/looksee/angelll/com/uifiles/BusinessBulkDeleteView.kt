@@ -93,11 +93,16 @@ fun BusinessBulkDeleteView(
     }
 
     Scaffold(
+        containerColor = Color(0xFF000000),
         topBar = {
             TopAppBar(
-                title = { Text("Delete Landmarks") },
+                title = { Text("Delete Landmarks", color = Color.White) },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color(0xFF000000),
+                    titleContentColor = Color.White
+                ),
                 navigationIcon = {
-                    IconButton(onClick = onDismiss, enabled = !isDeleting) {
+                    TextButton(onClick = onDismiss, enabled = !isDeleting) {
                         Text(if (completedResult == null) "Cancel" else "Close", color = Color(0xFF007AFF), modifier = Modifier.padding(horizontal = 8.dp))
                     }
                 },
@@ -109,8 +114,7 @@ fun BusinessBulkDeleteView(
                     }
                 }
             )
-        },
-        containerColor = Color(0xFFF2F2F7) // iOS light gray background
+        }
     ) { paddingValues ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(paddingValues).padding(16.dp),
@@ -144,13 +148,15 @@ fun BusinessBulkDeleteView(
                         OutlinedTextField(
                             value = confirmationText,
                             onValueChange = { confirmationText = it },
-                            placeholder = { Text(requiredConfirmationText, color = Color.LightGray) },
+                            placeholder = { Text(requiredConfirmationText, color = Color.Gray) },
                             enabled = !isDeleting,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, autoCorrectEnabled = false),
                             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = Color.Transparent,
-                                unfocusedBorderColor = Color.Transparent
+                                unfocusedBorderColor = Color.Transparent,
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White
                             )
                         )
                     }

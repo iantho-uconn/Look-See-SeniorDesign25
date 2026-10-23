@@ -78,6 +78,10 @@ private struct LookSeePrivacyWebView: UIViewRepresentable {
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
+        
+        // 🚀 THE FIX: Disable JS to clear the MobSF Warning
+        configuration.defaultWebpagePreferences.allowsContentJavaScript = false
+        
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
         webView.allowsBackForwardNavigationGestures = true
