@@ -27,11 +27,8 @@ class AuthService {
 
         let options = AuthSignUpRequest.Options(
             userAttributes: [
-                AuthUserAttribute(.email, value: normalizedEmail),
-                AuthUserAttribute(
-                    AuthUserAttributeKey(rawValue: "custom:group"),
-                    value: "authenticated-users"
-                )
+                // Group membership is assigned by the backend, not by signup.
+                AuthUserAttribute(.email, value: normalizedEmail)
             ]
         )
         return try await Amplify.Auth.signUp(

@@ -17,6 +17,19 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="07f21855-e7c7-4afa-a99c-977bf161748a" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/.idea/deploymentTargetSelector.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/deploymentTargetSelector.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/MainActivity.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/MainActivity.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/detection/LocationManager.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/detection/LocationManager.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/models/BusinessLandmarkService.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/models/BusinessLandmarkService.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/BusinessLandmarkDetailView.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/BusinessLandmarkDetailView.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/BusinessLandmarksView.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/BusinessLandmarksView.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/LandmarkRecord.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/LandmarkRecord.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/ModelLoadingScreen.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/looksee/angelll/com/uifiles/ModelLoadingScreen.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/LookSeeProto.xcodeproj/xcshareddata/xcschemes/LookSeeProto 1.xcscheme" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/LookSeeProto.xcodeproj/xcshareddata/xcschemes/LookSeeProto 1.xcscheme" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/LookSeeProto.xcodeproj/xcshareddata/xcschemes/LookSeeProto 2.xcscheme" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/LookSeeProto.xcodeproj/xcshareddata/xcschemes/LookSeeProto 2.xcscheme" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/LookSeeProto.xcodeproj/xcshareddata/xcschemes/LookSeeProtoTests 1.xcscheme" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/LookSeeProto.xcodeproj/xcshareddata/xcschemes/LookSeeProtoTests 1.xcscheme" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/LookSeeProto.xcodeproj/xcshareddata/xcschemes/LookSeeProtoTests.xcscheme" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/LookSeeProto.xcodeproj/xcshareddata/xcschemes/LookSeeProtoTests.xcscheme" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/LookSeeProto/Localizable.xcstrings" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/LookSeeProto/Localizable.xcstrings" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/UI Files/Historyview.swift" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/UI Files/Historyview.swift" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/../../ios/LookSeeProto/UI Files/MerchantCard.swift" beforeDir="false" afterPath="$PROJECT_DIR$/../../ios/LookSeeProto/UI Files/MerchantCard.swift" afterDir="false" />
@@ -31,7 +44,7 @@
   <component name="ClangdSettings">
     <option name="formatViaClangd" value="false" />
   </component>
-  <component name="ExecutionTargetManager" SELECTED_TARGET="device_and_snapshot_combo_box_target[LocalEmulator::path=/Users/angelslookseemac/.android/avd/Pixel_8.avd]" />
+  <component name="ExecutionTargetManager" SELECTED_TARGET="device_and_snapshot_combo_box_target[LocalEmulator::path=/Users/ian/.android/avd/Pixel_8.avd]" />
   <component name="ExternalProjectsData">
     <projectState path="$PROJECT_DIR$">
       <ProjectState />
