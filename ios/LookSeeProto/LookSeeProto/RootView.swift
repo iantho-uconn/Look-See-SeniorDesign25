@@ -5,6 +5,7 @@
 import SwiftUI
 
 struct RootView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject var vm: AuthViewModel
     @EnvironmentObject var authState: AuthState
     @State private var appState: AppState = .checkingSession
@@ -81,7 +82,12 @@ struct RootView: View {
                 print("[RootView] checkSession complete — isSignedIn: \(vm.isSignedIn)")
                 if vm.isSignedIn {
                     await authState.resolveTier()
+                    // Stats determine paid access; Cognito groups may lag expiration.
+                    syncVerifiedTier()
                     print(" [RootView] resolveTier complete — tier: \(authState.tier)")
+                } else {
+                    authState.tier = .guest
+                    authState.isReady = true
                 }
                 isAuthResolutionDone = true
                 advanceIfReady()
@@ -101,9 +107,42 @@ struct RootView: View {
                 }
             }
         }
+        .onChange(of: vm.currentTier) { _, _ in syncVerifiedTier() }
+        .onChange(of: vm.hasVerifiedSubscriptionStatus) { _, _ in syncVerifiedTier() }
+        .onChange(of: authState.tier) { _, _ in syncVerifiedTier() }
+        .task(id: shouldRefreshSubscription) {
+            guard shouldRefreshSubscription else { return }
+            // Refresh on foreground entry and every minute while Main is active.
+            // Do not run checkSession here: a transient network error must not sign out.
+            while !Task.isCancelled {
+                if vm.isSignedIn {
+                    await vm.fetchUserUsageStats()
+                    guard !Task.isCancelled else { return }
+                    syncVerifiedTier()
+                }
+                do {
+                    try await Task.sleep(nanoseconds: 60_000_000_000)
+                } catch {
+                    return
+                }
+            }
+        }
         .sheet(isPresented: $showBusinessPlans) {
             SubscriptionPlans(presenter: signupPresenter)
         }
+    }
+
+    private var shouldRefreshSubscription: Bool {
+        scenePhase == .active && appState == .main
+    }
+
+    private func syncVerifiedTier() {
+        // Missing/failed stats must not be interpreted as expiration or logout.
+        guard vm.hasVerifiedSubscriptionStatus else { return }
+        if authState.tier != vm.currentTier {
+            authState.tier = vm.currentTier
+        }
+        authState.isReady = true
     }
 
     // Only leave the loading screen once BOTH the model and the auth check

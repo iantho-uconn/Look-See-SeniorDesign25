@@ -33,7 +33,6 @@ struct Settings: View {
 
     @StateObject private var presenter = SettingsPresenter()
     @State private var showCancelAlert = false
-    @State private var isCancelling = false
     @State private var isOpeningPrivacyOptions = false
     @State private var showPrivacyOptionsError = false
     
@@ -287,16 +286,7 @@ struct Settings: View {
                         }
                         .padding(20).background(Color(uiColor: .secondarySystemGroupedBackground)).clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                         .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2).padding(.horizontal)
-                        .alert("Cancel Subscription?", isPresented: $showCancelAlert) {
-                            Button("Keep Plan", role: .cancel) {}
-                            Button("Cancel Plan", role: .destructive) {
-                                isCancelling = true
-                                Task {
-                                    let _ = await vm.cancelSubscription()
-                                    await MainActor.run { isCancelling = false }
-                                }
-                            }
-                        } message: { Text("Your business features will be disabled immediately.") }
+
                     }
                 }
 
@@ -399,19 +389,25 @@ struct Settings: View {
                 }
             }
         }
-        .overlay {
-            if isCancelling {
-                ZStack {
-                    Color.black.opacity(0.4).ignoresSafeArea()
-                    VStack(spacing: 16) {
-                        ProgressView().tint(.white).scaleEffect(1.5)
-                        Text("Canceling Plan...").font(.headline).foregroundStyle(.white)
-                    }.padding(32).background(.ultraThinMaterial).clipShape(RoundedRectangle(cornerRadius: 16))
-                }
-            }
+        .fullScreenCover(isPresented: $showCancelAlert) {
+            SubscriptionCancellationScreen().environmentObject(vm).environmentObject(authState)
         }
+        .onChange(of: vm.hasActiveSubscription) { _, _ in
+            syncVerifiedTier()
+        }
+        .onChange(of: vm.hasVerifiedSubscriptionStatus) { _, _ in
+            syncVerifiedTier()
+        }
+
     }
     
+    private func syncVerifiedTier() {
+        guard vm.hasVerifiedSubscriptionStatus else { return }
+        authState.tier = vm.currentTier
+        authState.didSignOut = false
+        authState.isReady = true
+    }
+
     private var adPrivacyOptionsRow: some View {
         Button {
             guard !isOpeningPrivacyOptions else { return }
@@ -1448,6 +1444,116 @@ struct CameraPicker: UIViewControllerRepresentable {
 
         func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
             parent.dismiss()
+        }
+    }
+}
+
+
+// Full-screen confirmation keeps the account signed in throughout cancellation.
+private struct SubscriptionCancellationScreen: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var vm: AuthViewModel
+    @EnvironmentObject private var authState: AuthState
+    @State private var acknowledgement = ""
+    @State private var completed = false
+
+    private var canConfirm: Bool {
+        acknowledgement == "I understand" && !vm.isCancellingSubscription && vm.isSignedIn
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    Image(systemName: completed ? "checkmark.circle.fill" : "calendar.badge.exclamationmark")
+                        .font(.system(size: 44))
+                        .foregroundStyle(completed ? Color.green : Color.orange)
+                        .accessibilityHidden(true)
+                    Text(completed ? "Renewal update confirmed" : "Before you cancel")
+                        .font(.largeTitle.bold())
+                    if completed {
+                        Text(vm.cancellationMessage)
+                        Text("You remain signed in. Your account will use the verified-user layout when paid access ends.")
+                        if vm.subscriptionExpiresAt > 0 {
+                            dateRow("Access ends", timestamp: vm.subscriptionExpiresAt)
+                        }
+                        Button("Done") { dismiss() }
+                            .buttonStyle(.borderedProminent)
+                    } else {
+                        Text("Canceling stops automatic renewal. You keep your current access through its expiration date.")
+                        if vm.subscriptionExpiresAt > 0 {
+                            dateRow("Access ends", timestamp: vm.subscriptionExpiresAt)
+                            dateRow("Landmark exclusion begins", timestamp: vm.subscriptionExpiresAt + 15 * 86400)
+                            dateRow("Permanent deletion becomes eligible", timestamp: vm.subscriptionExpiresAt + 30 * 86400)
+                        } else {
+                            Text("The schedule below starts when your paid access expires, not when you press this button. Your expiration date will be shown when billing confirms it.")
+                                .foregroundStyle(.secondary)
+                        }
+                        consequence("Your account stays", "You stay signed in and can continue using the verified free account. Business features end when your paid access expires.")
+                        consequence("Tokens", "Unused subscription tokens expire with their allowance period and do not return after a gap in paid access. Separately purchased tokens do not expire; they stay on your account but require an active paid plan to use. Trial tokens follow their trial expiration.")
+                        consequence("First 14 days after expiry", "Your landmarks enter the subscription grace period, with expiration reminders.")
+                        consequence("15 days after expiry", "Your landmarks are scheduled for exclusion from the app and models.")
+                        consequence("30 days after expiry", "Your landmarks and uploaded media become eligible for permanent deletion. Do not rely on a delay in processing to recover them.")
+                        consequence("If you return later", "Resubscribing before permanent deletion can stop subscription-related cleanup. It does not undo a separate deletion request. Once landmarks are permanently deleted, they cannot be restored: you must upload and create them again using tokens.")
+                        Text("Type I understand to confirm")
+                            .font(.headline)
+                        TextField("I understand", text: $acknowledgement)
+                            .textFieldStyle(.roundedBorder)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .disabled(vm.isCancellingSubscription)
+                        if !vm.cancellationError.isEmpty {
+                            Text(vm.cancellationError).foregroundStyle(.red)
+                                .accessibilityLabel("Cancellation error: " + vm.cancellationError)
+                        }
+                        Button(role: .destructive) {
+                            Task { @MainActor in
+                                if await vm.cancelSubscription() {
+                                    if vm.hasVerifiedSubscriptionStatus {
+                                        authState.tier = vm.currentTier
+                                        authState.didSignOut = false
+                                        authState.isReady = true
+                                    }
+                                    completed = true
+                                }
+                            }
+                        } label: {
+                            HStack {
+                                if vm.isCancellingSubscription { ProgressView() }
+                                Text(vm.isCancellingSubscription ? "Confirming…" : "Confirm cancellation")
+                            }.frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(!canConfirm)
+                        Button("Keep my plan") { dismiss() }
+                            .frame(maxWidth: .infinity)
+                            .disabled(vm.isCancellingSubscription)
+                    }
+                }.padding(24)
+            }
+            .navigationTitle("Subscription")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }.disabled(vm.isCancellingSubscription)
+                }
+            }
+            .interactiveDismissDisabled(vm.isCancellingSubscription)
+            .task { await vm.fetchUserUsageStats() }
+        }
+    }
+
+    private func consequence(_ title: String, _ detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title).font(.headline)
+            Text(detail).foregroundStyle(.secondary)
+        }
+    }
+
+    private func dateRow(_ title: String, timestamp: TimeInterval) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.subheadline.bold())
+            Text(Date(timeIntervalSince1970: timestamp), format: .dateTime.month(.wide).day().year().hour().minute())
         }
     }
 }

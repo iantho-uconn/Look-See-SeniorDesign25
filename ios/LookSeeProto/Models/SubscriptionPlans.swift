@@ -321,7 +321,7 @@ struct SubscriptionPlans: View {
             
             VStack(alignment: .leading, spacing: 10) {
                 // 🚀 Changed token count and updated feature descriptions
-                featureRow("Includes exactly 2 Tokens")
+                featureRow("Includes 2 Tokens")
                 featureRow("Full access to business tools")
                 featureRow("Auto-renews to 1-Year Plan ($10)")
             }

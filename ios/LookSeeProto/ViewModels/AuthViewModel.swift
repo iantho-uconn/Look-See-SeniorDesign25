@@ -14,14 +14,14 @@ class AuthViewModel: ObservableObject {
 
     @Published var isSignedIn = false {
         didSet {
-            if !isSignedIn { subscriptionStatusUserId = nil }
+            if !isSignedIn { subscriptionStatusUserId = nil; resetCancellationState() }
         }
     }
     @Published var errorMessage = ""
     @Published var userEmail = ""
     @Published var userId = "" {
         didSet {
-            if userId != oldValue { subscriptionStatusUserId = nil }
+            if userId != oldValue { subscriptionStatusUserId = nil; resetCancellationState() }
         }
     }
 
@@ -44,6 +44,23 @@ class AuthViewModel: ObservableObject {
     @Published var activeLandmarksCount: Int = 0
     @Published var hasActiveSubscription: Bool = false
     @Published var stripeSubscriptionId: String = ""
+    @Published private(set) var subscriptionExpiresAt: TimeInterval = 0
+    @Published private(set) var cancellationMessage = ""
+    @Published private(set) var cancellationError = ""
+    @Published private(set) var isCancellingSubscription = false
+    @Published private(set) var renewalCancellationConfirmed = false
+
+    var hasVerifiedSubscriptionStatus: Bool {
+        isSignedIn && !userId.isEmpty && subscriptionStatusUserId == userId
+    }
+
+    private func resetCancellationState() {
+        subscriptionExpiresAt = 0
+        cancellationMessage = ""
+        cancellationError = ""
+        renewalCancellationConfirmed = false
+    }
+
     
     @Published var activePlanCents: Int = 0
     @Published var activePlanYears: Int = 0
@@ -272,6 +289,7 @@ class AuthViewModel: ObservableObject {
         }
         
         let idToken = await fetchIdToken()
+        request.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
         await request.signWithAppAttest(idToken: idToken)
 
         return request
@@ -289,10 +307,32 @@ class AuthViewModel: ObservableObject {
         
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
+            if let http = response as? HTTPURLResponse {
+                print("[UserStats] HTTP \(http.statusCode)")
+                if http.statusCode != 200,
+                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    print("[UserStats] Error: \(json["error"] ?? json["message"] ?? "Unspecified")")
+                }
+            }
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                let userMatches = (json["userId"] as? String) == requestedUserId
+                let activeDescription = (json["hasActiveSubscription"] as? Bool).map { String($0) } ?? "missing"
+                let balanceDescription = (json["tokenBalance"] as? Int).map { String($0) } ?? "missing"
+                print("[UserStats] User matches: \(userMatches)")
+                print("[UserStats] Active subscription: \(activeDescription)")
+                print("[UserStats] Tokens: \(balanceDescription)")
+            } else {
+                print("[UserStats] Response is not a JSON object")
+            }
             if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
                 if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
                     await MainActor.run {
-                        guard self.isSignedIn, self.userId == requestedUserId else { return }
+                        guard self.isSignedIn, self.userId == requestedUserId,
+                              (json["userId"] as? String) == requestedUserId else {
+                            print("[UserStats] Skipped applying response: session or user changed")
+                            return
+                        }
+                        print("[UserStats] Applying response")
                         let fetchedBalance = json["tokenBalance"] as? Int ?? 0
                         let fetchedLandmarks = json["activeLandmarksCount"] as? Int ?? 0
                         let fetchedSub = json["hasActiveSubscription"] as? Bool
@@ -302,7 +342,7 @@ class AuthViewModel: ObservableObject {
                         let fetchedPlanCents = json["activePlanCents"] as? Int ?? 0
                         let fetchedPlanYears = json["activePlanYears"] as? Int ?? 0
                         
-                        self.tokenBalance = max(self.tokenBalance, fetchedBalance)
+                        self.tokenBalance = fetchedBalance
                         self.activeLandmarksCount = fetchedLandmarks
                         self.tier = fetchedTier
                         
@@ -314,6 +354,12 @@ class AuthViewModel: ObservableObject {
                             self.subscriptionStatusUserId = nil
                         }
                         
+                        if let expiry = json["subscriptionExpiresAt"] as? NSNumber {
+                            self.subscriptionExpiresAt = expiry.doubleValue
+                        }
+                        if let trial = json["isFreeTrial"] as? Bool {
+                            UserDefaults.standard.set(trial, forKey: "isFreeTrial_\(self.userEmail)")
+                        }
                         self.activePlanCents = fetchedPlanCents
                         self.activePlanYears = fetchedPlanYears
                         
@@ -336,7 +382,7 @@ class AuthViewModel: ObservableObject {
                 }
             }
         } catch {
-            print("❌ Failed to fetch stats: \(error.localizedDescription)")
+            print("[UserStats] Failed to fetch stats: \(error.localizedDescription)")
         }
     }
 
@@ -401,33 +447,57 @@ class AuthViewModel: ObservableObject {
     }
 
     func cancelSubscription() async -> Bool {
-        guard !userId.isEmpty else { return false }
-        guard let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/checkout") else { return false }
-        
-        let bodyPayload: [String: Any] = [
-            "purchaseType": "cancel_subscription",
-            "userId": userId,
-            "subscriptionId": stripeSubscriptionId
-        ]
-        guard let bodyData = try? JSONSerialization.data(withJSONObject: bodyPayload) else { return false }
-        let request = await authorizedJSONRequest(url: url, body: bodyData)
-        
-        do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
-                await MainActor.run {
-                    self.hasActiveSubscription = false
-                    self.stripeSubscriptionId = ""
-                    self.activePlanCents = 0
-                    self.activePlanYears = 0
-                    UserDefaults.standard.set(false, forKey: "isFreeTrial_\(self.userEmail)")
-                }
-                return true
-            }
-        } catch {
-            print("❌ Failed to cancel subscription: \(error)")
+        guard !isCancellingSubscription else { return false }
+        cancellationError = ""
+        cancellationMessage = ""
+        guard isSignedIn, !userId.isEmpty else {
+            cancellationError = "Please sign in again before canceling renewal."
+            return false
         }
-        return false
+        let requestedUserId = userId
+        isCancellingSubscription = true
+        defer { isCancellingSubscription = false }
+        guard let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/checkout") else {
+            cancellationError = "The billing address is unavailable."
+            return false
+        }
+        // The server finds subscriptions owned by the JWT subject. Do not send a stale cached ID.
+        let bodyPayload = ["purchaseType": "cancel_subscription", "userId": requestedUserId]
+        do {
+            let bodyData = try JSONSerialization.data(withJSONObject: bodyPayload)
+            var request = await authorizedJSONRequest(url: url, body: bodyData)
+            request.timeoutInterval = 45
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard isSignedIn, userId == requestedUserId else { return false }
+            let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            guard let http = response as? HTTPURLResponse else {
+                cancellationError = "We couldn't confirm cancellation. Please try again."
+                return false
+            }
+            guard http.statusCode == 200 else {
+                let detail = json?["error"] as? String ?? json?["message"] as? String
+                cancellationError = detail ?? "Cancellation was not confirmed (HTTP \(http.statusCode)). Please try again."
+                return false
+            }
+            guard json?["success"] as? Bool == true,
+                  let cancelAtPeriodEnd = json?["cancelAtPeriodEnd"] as? Bool,
+                  let expiry = json?["subscriptionExpiresAt"] as? NSNumber,
+                  let message = json?["message"] as? String, !message.isEmpty else {
+                cancellationError = "The server did not confirm the cancellation result. Please refresh and try again."
+                return false
+            }
+            subscriptionExpiresAt = expiry.doubleValue
+            renewalCancellationConfirmed = cancelAtPeriodEnd
+            cancellationMessage = message
+            // Cancellation stops renewal; it does not revoke paid access or erase tokens.
+            await fetchUserUsageStats()
+            guard isSignedIn, userId == requestedUserId else { return false }
+            return true
+        } catch {
+            guard isSignedIn, userId == requestedUserId else { return false }
+            cancellationError = "We couldn't confirm cancellation. Check your connection and retry; the first request may already have reached billing."
+            return false
+        }
     }
 
     private func uploadImageToS3(imageData: Data, role: String) async throws -> String {
