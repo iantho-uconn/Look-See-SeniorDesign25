@@ -7,9 +7,11 @@ from decimal import Decimal, InvalidOperation
 from typing import Dict, List, Optional, Tuple
 from collections import defaultdict
 
+from deletion_guard import DeletionGuard, DeletionBlocked
 import boto3
 from boto3.dynamodb.conditions import Key
 
+guard = DeletionGuard()
 s3 = boto3.client("s3")
 dynamodb = boto3.resource("dynamodb")
 
@@ -79,6 +81,7 @@ def delete_prefix(bucket: str, prefix: str):
         s3.delete_objects(Bucket=bucket, Delete={"Objects": [{"Key": k} for k in chunk]})
 
 def copy_object(bucket: str, src_key: str, dest_key: str, content_type: str = None):
+    guard.check_all(force=False)
     extra = {}
     if content_type:
         extra["ContentType"] = content_type
@@ -90,6 +93,7 @@ def read_text(bucket: str, key: str) -> str:
     return obj["Body"].read().decode("utf-8")
 
 def write_text(bucket: str, key: str, text: str, content_type: str = "text/plain"):
+    guard.check_all(force=False)
     s3.put_object(Bucket=bucket, Key=key, Body=text.encode("utf-8"), ContentType=content_type)
 
 # ---------------------------------------------------------------------------
@@ -158,7 +162,7 @@ def load_cluster_metadata() -> Tuple[Dict[str, int], Dict[str, dict], dict]:
     # 🚀 NEW: Pulling forceTrainEnabled from DynamoDB
     landmark_items = scan_all(landmarks_table, {
         "ProjectionExpression": "landmarkId, #lbl, shortDescription, latitude, longitude, isActive, createdAt, updatedAt, #st, forceTrainEnabled",
-        "ExpressionAttributeNames": {"#lbl": "label", "#st": "status"}
+        "ExpressionAttributeNames": {"#lbl": "label", "#st": "status"}, "ConsistentRead": True
     })
 
     landmark_id_to_metadata: Dict[str, dict] = {}
@@ -186,6 +190,16 @@ def load_cluster_metadata() -> Tuple[Dict[str, int], Dict[str, dict], dict]:
 
     for folder, raw_candidates in mapped_candidates_by_folder.items():
         candidates = list({(c["metadata"]["landmarkId"], c["clusterId"]): c for c in raw_candidates}.values())
+        if len(candidates) != 1:
+            raise ValueError(f'Ambiguous dataset folder {folder}; refusing mixed landmark media')
+        owners = [m for m in landmark_id_to_metadata.values() if m['folderName'] == folder]
+        if len(owners) != 1:
+            raise ValueError(f'Shared dataset folder {folder}; cannot safely attribute media')
+        try:
+            guard.check(candidates[0]['metadata']['landmarkId'])
+        except DeletionBlocked as exc:
+            print(f'[Packager] EXCLUDED {exc}')
+            continue
         chosen = candidates[0]
         chosen_metadata = chosen["metadata"]
         latitude, longitude = validate_required_coordinates(chosen_metadata)
@@ -370,7 +384,11 @@ def main():
     src_prefix = normalize_prefix(SRC_PREFIX)
     dest_prefix = normalize_prefix(DEST_PREFIX)
     run_dest_root = f"{dest_prefix.rstrip('/')}/{TRAINING_RUN_ID}/" if TRAINING_RUN_ID else dest_prefix
-    if CLEAR_DEST: delete_prefix(BUCKET, run_dest_root)
+    if not TRAINING_RUN_ID or '/' in TRAINING_RUN_ID or '..' in TRAINING_RUN_ID:
+        raise ValueError('A unique TRAINING_RUN_ID without path separators is required')
+    guard.ids.clear()
+    if list_objects(BUCKET, run_dest_root):
+        raise ValueError('Run output prefix already exists. Start a fresh execution; do not reuse partial output.')
 
     folder_to_cluster, folder_to_landmark, snapshot_metadata = load_cluster_metadata()
     source_mapping_revision = str(snapshot_metadata["sourceRevision"])
@@ -407,6 +425,7 @@ def main():
                 print(f"  [{folder}] ⏩ Skipping because DB status is {status}")
                 continue
                 
+            guard.check(landmark_id)
             keys = image_keys_for_class(BUCKET, src_prefix, folder)
             target_count = len(keys)
             discovered_positive_counts[folder] = target_count
@@ -418,19 +437,10 @@ def main():
                 print(f"  [{folder}] ❌ SHORTFALL: {target_count}/{MIN_IMAGES_PER_CLASS} clean frames. Skipping.")
                 
                 if landmark_id:
-                    try:
-                        db_table.update_item(
-                            Key={'landmarkId': landmark_id},
-                            UpdateExpression="SET #st = :s, cleanFrameCount = :c, requiredFrames = :r, secondsNeeded = :sec",
-                            ExpressionAttributeNames={'#st': 'status'},
-                            ExpressionAttributeValues={
-                                ':s': 'NEEDS_MORE_MEDIA',
-                                ':c': target_count,
-                                ':r': MIN_IMAGES_PER_CLASS,
-                                ':sec': seconds_needed
-                            }
-                        )
-                    except Exception: pass
+                    guard.update(landmark_id,
+                        'SET #st = :s, cleanFrameCount = :c, requiredFrames = :r, secondsNeeded = :sec',
+                        {'#st': 'status'}, {':s': 'NEEDS_MORE_MEDIA', ':c': target_count,
+                        ':r': MIN_IMAGES_PER_CLASS, ':sec': seconds_needed})
                 continue
                 
             if force_train:
@@ -442,18 +452,10 @@ def main():
             class_to_keys[folder] = keys
             
             if landmark_id:
-                try:
-                    db_table.update_item(
-                        Key={'landmarkId': landmark_id},
-                        UpdateExpression="SET #st = :s, cleanFrameCount = :c, requiredFrames = :r",
-                        ExpressionAttributeNames={'#st': 'status'},
-                        ExpressionAttributeValues={
-                            ':s': 'TRAINING',
-                            ':c': target_count,
-                            ':r': MIN_IMAGES_PER_CLASS
-                        }
-                    )
-                except Exception: pass
+                guard.update(landmark_id,
+                    'SET #st = :s, cleanFrameCount = :c, requiredFrames = :r',
+                    {'#st': 'status'}, {':s': 'TRAINING', ':c': target_count, ':r': MIN_IMAGES_PER_CLASS})
+                guard.ids.add(landmark_id)
 
         # 🚀 Reassign folders to ONLY the valid ones!
         folders = valid_folders
@@ -490,8 +492,10 @@ def main():
             total_pos += processed_count
             total_missing_labels += missing_label_count
 
+        guard.check_all()
         global_negative_count = process_global_negatives(BUCKET, cluster_dest, total_pos, cluster_id)
         hard_negative_count, per_landmark_hard_negative_counts = process_hard_negatives_for_cluster(BUCKET, cluster_dest, cluster_id, folders, per_class_positive_counts)
+        guard.check_all()
         write_data_yaml(BUCKET, cluster_dest, folders)
 
         landmark_manifest_key = write_landmark_manifest(
@@ -513,6 +517,7 @@ def main():
             "capPerClass": cap, "globalNegPrefix": normalize_prefix(GLOBAL_NEG_PREFIX), "hardNegRoot": normalize_prefix(HARD_NEG_ROOT)
         })
 
+    guard.check_all()
     write_manifest(BUCKET, run_dest_root, TRAINING_RUN_ID, MAPPING_VERSION, source_mapping_revision, published_mapping_count, cluster_summaries, skipped_clusters)
 
 if __name__ == "__main__":

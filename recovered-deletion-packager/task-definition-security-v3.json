@@ -1,0 +1,137 @@
+{
+  "containerDefinitions": [
+    {
+      "name": "dataset-packager-HN",
+      "image": "637404140724.dkr.ecr.us-east-1.amazonaws.com/looksee-dataset-packager@sha256:6a6ea9c4ca0888f805027053fd7ebd504b0e734709da2ec8c494b2d5eb658f66",
+      "cpu": 0,
+      "portMappings": [
+        {
+          "containerPort": 80,
+          "hostPort": 80,
+          "protocol": "tcp",
+          "name": "dataset-packager-hn-80-tcp",
+          "appProtocol": "http"
+        }
+      ],
+      "essential": true,
+      "environment": [
+        {
+          "name": "MAX_IMAGES_PER_CLASS",
+          "value": "1500"
+        },
+        {
+          "name": "CLEAR_DEST",
+          "value": "true"
+        },
+        {
+          "name": "TRAIN_SPLIT",
+          "value": "0.8"
+        },
+        {
+          "name": "BUCKET",
+          "value": "looksee-models"
+        },
+        {
+          "name": "TRAINING_RUN_ID",
+          "value": "manifest-v2-latlong-smoke-001"
+        },
+        {
+          "name": "INCLUDE_NEGATIVES",
+          "value": "true"
+        },
+        {
+          "name": "LANDMARKS_TABLE",
+          "value": "LookSeeLandmarks"
+        },
+        {
+          "name": "HARD_NEG_MAX_PER_LANDMARK",
+          "value": "25"
+        },
+        {
+          "name": "NEG_MAX",
+          "value": "1000"
+        },
+        {
+          "name": "SRC_PREFIX",
+          "value": "neg-dataset/"
+        },
+        {
+          "name": "HARD_NEG_ROOT",
+          "value": "neg-dataset/negatives/by-landmark/"
+        },
+        {
+          "name": "GLOBAL_NEG_PREFIX",
+          "value": "neg-dataset/negatives/global/"
+        },
+        {
+          "name": "HARD_NEG_RATIO",
+          "value": "0.25"
+        },
+        {
+          "name": "NEG_RATIO",
+          "value": "1.0"
+        },
+        {
+          "name": "DELETIONS_TABLE",
+          "value": "LookSeeLandmarkDeletions"
+        },
+        {
+          "name": "BALANCE_STRATEGY",
+          "value": "none"
+        },
+        {
+          "name": "INCLUDE_HARD_NEGATIVES",
+          "value": "true"
+        },
+        {
+          "name": "CLUSTER_MAPPINGS_TABLE",
+          "value": "LookSeeClusterMappings"
+        },
+        {
+          "name": "DEST_PREFIX",
+          "value": "dataset-yolo-negtest/"
+        },
+        {
+          "name": "NEG_PREFIX",
+          "value": "neg-dataset/negatives/"
+        },
+        {
+          "name": "ALLOW_LEGACY_NEGATIVE_FALLBACK",
+          "value": "true"
+        }
+      ],
+      "environmentFiles": [],
+      "mountPoints": [],
+      "volumesFrom": [],
+      "ulimits": [],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/Looksee-dataset-packager-hard-negatives",
+          "awslogs-create-group": "true",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "ecs"
+        },
+        "secretOptions": []
+      },
+      "systemControls": []
+    }
+  ],
+  "family": "Looksee-dataset-packager-hard-negatives",
+  "taskRoleArn": "arn:aws:iam::637404140724:role/LookSeeDatasetPackager",
+  "executionRoleArn": "arn:aws:iam::637404140724:role/LookSeeDatasetPackagerExecutionRole",
+  "networkMode": "awsvpc",
+  "volumes": [],
+  "placementConstraints": [],
+  "runtimePlatform": {
+    "cpuArchitecture": "X86_64",
+    "operatingSystemFamily": "LINUX"
+  },
+  "requiresCompatibilities": [
+    "EC2",
+    "FARGATE"
+  ],
+  "cpu": "32768",
+  "memory": "122880",
+  "enableFaultInjection": false
+}
