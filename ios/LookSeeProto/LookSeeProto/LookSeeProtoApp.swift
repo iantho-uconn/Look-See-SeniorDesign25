@@ -15,6 +15,9 @@ import UserMessagingPlatform
 
 @main
 struct LookSeeProtoApp: App {
+    // 🚀 NEW: This injects the AppDelegate into your SwiftUI lifecycle so it can catch the APNs token!
+    @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    
     @StateObject private var authState = AuthState()
     @StateObject private var authViewModel = AuthViewModel()
     @StateObject private var adConsentManager = AdConsentManager()

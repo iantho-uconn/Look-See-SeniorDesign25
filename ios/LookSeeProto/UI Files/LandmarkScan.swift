@@ -203,6 +203,16 @@ struct LandmarkScan: View {
             return
         }
 
+        let landmarkId = entry.landmarkId.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // 🚀 NEW: Block the popup if the landmark was explicitly marked inactive!
+        if let currentInfo = VariableContainer.shared.allLandmarks.first(where: { $0.id == landmarkId }) {
+            if currentInfo.isActive == false {
+                print("🚫 Blocked popup for inactive landmark: \(landmarkId)")
+                return
+            }
+        }
+
         infoView.presentLandmark(
             entry,
             clusterId: Int(detection.clusterID) ?? 0,
@@ -301,10 +311,9 @@ struct LandmarkScan: View {
 
         infoView.landmarkWebsiteUrl = liveWebsiteUrl
 
+        // 🚀 If the backend confirms it is inactive, immediately close the popup
         if liveInfo.isActive == false {
-            infoView.promoName = "No active promotion"
-            infoView.promoDescription = ""
-            infoView.promoImageUrl = ""
+            infoView.infoView = false
             return
         }
 

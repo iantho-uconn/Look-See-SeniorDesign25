@@ -25,6 +25,7 @@ struct InitSubmissionRequest: Codable {
     let mediaKind: MediaKind
     let filename: String
     let contentType: String
+    let nonce: String // 🚀 FIX: Injects a unique ID so retries never trigger a 403 Replay Attack
 }
 
 struct InitSubmissionResponse: Codable {
@@ -49,6 +50,7 @@ struct CompleteSubmissionRequest: Codable {
     let latitude: Double?
     let longitude: Double?
     let horizontalAccuracy: Double?
+    let nonce: String // 🚀 FIX: Injects a unique ID so retries never trigger a 403 Replay Attack
 }
 
 // Returned locally after the positive submission has completed.
