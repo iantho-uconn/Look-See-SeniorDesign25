@@ -243,11 +243,12 @@ struct LandmarkScan: View {
                 )
             }
         }
-
+        /*
+        
         let landmarkId = entry.landmarkId.trimmingCharacters(
             in: .whitespacesAndNewlines
         )
-
+*/
         if landmarkId.isEmpty {
             infoView.landmarkWebsiteUrl = ""
             infoView.promoName = "No active promotion"
