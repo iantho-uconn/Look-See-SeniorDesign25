@@ -1,9 +1,21 @@
-FROM python:3.12-slim
+FROM python:3.12-slim-trixie
 
 WORKDIR /app
 
-COPY build_yolo_dataset_s3_v8_cluster.py /app/build_yolo_dataset_s3_v8_cluster.py
 
-RUN pip install --no-cache-dir boto3
+# Install available Debian security updates.
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN python -m pip install --no-cache-dir --upgrade pip
+
+# Resolve compatible AWS SDK dependencies alongside patched urllib3.
+RUN python -m pip install --no-cache-dir --upgrade \
+        boto3 "urllib3>=2.8.0,<3" \
+    && python -m pip check
+
+COPY build_yolo_dataset_s3_v8_cluster.py /app/
+COPY deletion_guard.py /app/
 
 CMD ["python", "build_yolo_dataset_s3_v8_cluster.py"]

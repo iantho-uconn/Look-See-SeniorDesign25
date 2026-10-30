@@ -8,6 +8,7 @@
 
 import SwiftUI
 import Amplify
+import AWSCognitoAuthPlugin
 
 struct Signup: View {
     @Environment(\.dismiss) private var dismiss
@@ -300,8 +301,23 @@ struct Signup: View {
                 } else {
                     message = "Verification incomplete. Please check the code."
                 }
+            } catch let error as AuthError {
+                if let cognitoError = error.underlyingError as? AWSCognitoAuthError {
+                    switch cognitoError {
+                    case .codeMismatch:
+                        message = "That verification code is incorrect. Please try again."
+
+                    case .codeExpired:
+                        message = "Your verification code has expired. Please request a new code."
+
+                    default:
+                        message = "Unable to verify your account right now. Please try again."
+                    }
+                } else {
+                    message = "Unable to verify your account. Check your connection and try again."
+                }
             } catch {
-                message = error.localizedDescription
+                message = "Unable to verify your account. Please try again."
             }
             isLoading = false
         }
