@@ -16,7 +16,7 @@ import Combine
 /// location-based model selection. The rest of the production model flow does
 /// not depend on this testing feature.
 enum ModelTestingConfiguration {
-    static let isEnabled = true
+    static let isEnabled = false
 
     /// Xcode compiles every `.mlmodel` / `.mlpackage` in the app target into a
     /// `.mlmodelc` resource. Discovering those resources here keeps the testing

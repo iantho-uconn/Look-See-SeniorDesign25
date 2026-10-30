@@ -145,7 +145,7 @@ final class UploadService: ObservableObject {
                 let filename = "photo.jpg"
                 let contentType = "image/jpeg"
 
-                let initRequest = InitSubmissionRequest(label: trimmedLabel, landmarkId: landmarkId, mediaKind: mediaKind, filename: filename, contentType: contentType)
+                let initRequest = InitSubmissionRequest(label: trimmedLabel, landmarkId: landmarkId, mediaKind: mediaKind, filename: filename, contentType: contentType, nonce: UUID().uuidString)
 
                 updateStage(
                     .preparingUpload,
@@ -172,7 +172,7 @@ final class UploadService: ObservableObject {
                     detail: String(localized: "Your media is uploaded. We’re attaching its information and location.")
                 )
 
-                let completeRequest = CompleteSubmissionRequest(submissionId: initResponse.submissionId, s3Key: initResponse.s3Key, label: trimmedLabel, landmarkId: landmarkId, landmarkLabel: landmarkLabel, mediaKind: mediaKind, shortDescription: normalizedShortDescription, userDescription: normalizedUserDescription, latitude: latitude, longitude: longitude, horizontalAccuracy: horizontalAccuracy)
+                let completeRequest = CompleteSubmissionRequest(submissionId: initResponse.submissionId, s3Key: initResponse.s3Key, label: trimmedLabel, landmarkId: landmarkId, landmarkLabel: landmarkLabel, mediaKind: mediaKind, shortDescription: normalizedShortDescription, userDescription: normalizedUserDescription, latitude: latitude, longitude: longitude, horizontalAccuracy: horizontalAccuracy, nonce: UUID().uuidString)
 
                 try await completeSubmission(completeRequest, token: idToken)
 
@@ -201,7 +201,7 @@ final class UploadService: ObservableObject {
             let filename = "\(label).mov"
             let contentType = "video/quicktime"
 
-            let initRequest = InitSubmissionRequest(label: trimmedLabel, landmarkId: landmarkId, mediaKind: mediaKind, filename: filename, contentType: contentType)
+            let initRequest = InitSubmissionRequest(label: trimmedLabel, landmarkId: landmarkId, mediaKind: mediaKind, filename: filename, contentType: contentType, nonce: UUID().uuidString)
 
             updateStage(
                 .preparingUpload,
@@ -228,7 +228,7 @@ final class UploadService: ObservableObject {
                 detail: String(localized: "Your media is uploaded. We’re attaching its information and location.")
             )
 
-            let completeRequest = CompleteSubmissionRequest(submissionId: initResponse.submissionId, s3Key: initResponse.s3Key, label: trimmedLabel, landmarkId: landmarkId, landmarkLabel: landmarkLabel, mediaKind: mediaKind, shortDescription: normalizedShortDescription, userDescription: normalizedUserDescription, latitude: latitude, longitude: longitude, horizontalAccuracy: horizontalAccuracy)
+            let completeRequest = CompleteSubmissionRequest(submissionId: initResponse.submissionId, s3Key: initResponse.s3Key, label: trimmedLabel, landmarkId: landmarkId, landmarkLabel: landmarkLabel, mediaKind: mediaKind, shortDescription: normalizedShortDescription, userDescription: normalizedUserDescription, latitude: latitude, longitude: longitude, horizontalAccuracy: horizontalAccuracy, nonce: UUID().uuidString)
 
             try await completeSubmission(completeRequest, token: idToken)
 
@@ -296,7 +296,7 @@ final class UploadService: ObservableObject {
         request.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
     }
 
-    private func initSubmission(_ requestBody: InitSubmissionRequest, token: String) async throws -> InitSubmissionResponse {
+    private func initSubmission(_ requestBody: InitSubmissionRequest, token: String, retryCount: Int = 0) async throws -> InitSubmissionResponse {
         let url = baseURL.appendingPathComponent("submissions").appendingPathComponent("init")
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -334,6 +334,18 @@ final class UploadService: ObservableObject {
         }
 
         let (data, response) = try await URLSession.shared.data(for: request)
+        
+        // 🛡️ FIX: Auto-retry if the counter drifted due to background syncs
+        if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 403 {
+            let bodyString = String(data: data, encoding: .utf8) ?? ""
+            if bodyString.contains("Invalid hardware counter") && retryCount < 2 {
+                print("⚠️ Hardware counter out of sync. Retrying Init request...")
+                // The previous attempt bumped the Secure Enclave counter forward,
+                // so the next generation will naturally align with the AWS backend.
+                return try await initSubmission(requestBody, token: token, retryCount: retryCount + 1)
+            }
+        }
+        
         try validateAPIResponse(response, data: data)
 
         do {

@@ -11,32 +11,46 @@ import CoreLocation
 
 struct LandmarkMapView: View {
     @EnvironmentObject var vm: AuthViewModel
-    
+
     @StateObject private var nearbyService = NearbyLandmarkService()
     @StateObject private var locationManager = LocationManager()
-    
+    @ObservedObject private var container = VariableContainer.shared
+
+    @AppStorage("lastKnownUserEmail") private var lastKnownEmail: String = ""
+
     @State private var selectedLandmark: NearbyLandmark?
     @State private var cameraPosition: MapCameraPosition = .userLocation(fallback: .automatic)
     @State private var showFilterSheet = false
-    
+
     @State private var searchText: String = ""
     @State private var isGlobalSearch: Bool = false
     @State private var searchRadiusMiles: Double = 10.0
     @State private var myUploadsOnly = false
     @State private var promotedOnly = false
     @State private var selectedClusters: Set<String> = []
-    
+
     @State private var filteredLandmarks: [NearbyLandmark] = []
-    
+
     @FocusState private var IsKeyboard: Bool
-    
+
     private let topChromeReservedHeight: CGFloat = 80
     private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00)
     private let promoColor = Color.orange
     private let mapBottomReservedHeight: CGFloat = 50
 
+    private let untrainedStatuses: Set<String> = [
+        "NEEDS_MORE_MEDIA",
+        "PREPARING_DATA",
+        "PENDING_TRAINING",
+        "TRAINING_MODEL",
+        "OPTIMIZING_MODEL"
+    ]
+
     private var availableClusters: [String] {
-        let clusters = nearbyService.items.compactMap { $0.clusterId }
+        let clusters = nearbyService.items.compactMap { item -> String? in
+            guard let c = item.clusterId?.trimmingCharacters(in: .whitespacesAndNewlines), !c.isEmpty else { return nil }
+            return c
+        }
         let unique = Array(Set(clusters))
 
         return unique.sorted { lhs, rhs in
@@ -52,12 +66,9 @@ struct LandmarkMapView: View {
             ZStack(alignment: .top) {
                 Map(position: $cameraPosition) {
                     UserAnnotation()
-                    
+
                     ForEach(filteredLandmarks) { landmark in
                         Annotation(landmark.label, coordinate: CLLocationCoordinate2D(latitude: landmark.latitude, longitude: landmark.longitude)) {
-                            
-                            // 🚀 THE FIX: We use a passive VStack with onTapGesture instead of a Button.
-                            // A Button actively eats gesture inputs, blocking your pinch/zooms!
                             VStack(spacing: 0) {
                                 if landmark.promotionEnabled {
                                     Image(systemName: "crown.fill").font(.title3).foregroundStyle(.white).padding(8).background(Circle().fill(promoColor)).shadow(color: promoColor.opacity(0.8), radius: 6, x: 0, y: 2)
@@ -72,8 +83,7 @@ struct LandmarkMapView: View {
                                 withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
                                     selectedLandmark = landmark
                                 }
-                                
-                                // 🚀 Removed DispatchQueue wrapper so it opens INSTANTLY
+
                                 VariableContainer.shared.presentMapLandmark(
                                     id: landmark.id,
                                     name: landmark.label,
@@ -105,7 +115,7 @@ struct LandmarkMapView: View {
                         Image(systemName: "magnifyingglass")
                             .font(.system(size: 18, weight: .bold))
                             .foregroundStyle(primaryColor)
-                        
+
                         TextField("", text: $searchText, prompt: Text("Search landmarks...").foregroundStyle(.secondary))
                             .font(.system(size: 16, weight: .medium, design: .rounded))
                             .foregroundStyle(.primary)
@@ -118,7 +128,7 @@ struct LandmarkMapView: View {
                                     }
                                 }
                             }
-                        
+
                         if !searchText.isEmpty {
                             Button {
                                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -133,7 +143,7 @@ struct LandmarkMapView: View {
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
                     .shadow(color: .black.opacity(0.15), radius: 15, x: 0, y: 5)
                     .padding(.horizontal, 20)
-                    
+
                     Button {
                         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                         showFilterSheet = true
@@ -145,7 +155,7 @@ struct LandmarkMapView: View {
                                 .frame(width: 50, height: 50)
                                 .background(.regularMaterial, in: Circle())
                                 .shadow(color: .black.opacity(0.15), radius: 10, x: 0, y: 5)
-                                
+
                             if myUploadsOnly || promotedOnly || !selectedClusters.isEmpty {
                                 Circle().fill(promoColor).frame(width: 14, height: 14).overlay(Circle().stroke(Color(uiColor: .systemBackground), lineWidth: 2)).offset(x: -2, y: 2)
                             }
@@ -162,11 +172,14 @@ struct LandmarkMapView: View {
             await vm.fetchUserEmail()
             await fetchMapData()
         }
+        .onAppear {
+            applyFilters()
+        }
         .sheet(isPresented: $showFilterSheet, onDismiss: { Task { await fetchMapData() } }) {
             filterMenuSheet
                 .presentationDetents([.fraction(0.85)])
         }
-        .onChange(of: VariableContainer.shared.infoView) { _, isPopUpOpen in
+        .onChange(of: container.infoView) { _, isPopUpOpen in
             if !isPopUpOpen {
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
                     selectedLandmark = nil
@@ -174,12 +187,13 @@ struct LandmarkMapView: View {
             }
         }
         .onChange(of: nearbyService.items) { _, _ in applyFilters() }
+        .onChange(of: container.inactiveLandmarkIds) { _, _ in applyFilters() }
         .onChange(of: searchText) { _, _ in applyFilters() }
         .onChange(of: selectedClusters) { _, _ in applyFilters() }
         .onChange(of: myUploadsOnly) { _, _ in applyFilters() }
         .onChange(of: promotedOnly) { _, _ in applyFilters() }
     }
-    
+
     private var filterMenuSheet: some View {
         NavigationStack {
             ScrollView {
@@ -195,7 +209,7 @@ struct LandmarkMapView: View {
                                     .keyboardType(.decimalPad).textFieldStyle(.roundedBorder).frame(width: 80).multilineTextAlignment(.trailing); Text("mi").font(.system(size: 16, weight: .bold)).foregroundStyle(.gray) }
                             Slider(value: $searchRadiusMiles, in: 1...100, step: 1).tint(primaryColor)
                         }
-                        
+
                     }
                     .contentShape(Rectangle())
                     .simultaneousGesture(
@@ -203,14 +217,14 @@ struct LandmarkMapView: View {
                             IsKeyboard = false
                         }
                     ).padding(20).background(Color(uiColor: .secondarySystemGroupedBackground)).clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-                    
+
                     VStack(alignment: .leading, spacing: 16) {
                         Text("Visibility").font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.gray).textCase(.uppercase)
                         Toggle("My Uploads Only", isOn: $myUploadsOnly).tint(primaryColor).foregroundStyle(.primary).font(.system(size: 16, weight: .semibold))
                         Divider()
                         Toggle("Promotions Only", isOn: $promotedOnly).tint(promoColor).foregroundStyle(.primary).font(.system(size: 16, weight: .semibold))
                     }.padding(20).background(Color(uiColor: .secondarySystemGroupedBackground)).clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-                    
+
                     if !availableClusters.isEmpty {
                         VStack(alignment: .leading, spacing: 16) {
                             HStack { Text("Filter by Cluster").font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.gray).textCase(.uppercase); Spacer(); if !selectedClusters.isEmpty { Button("Clear") { UIImpactFeedbackGenerator(style: .light).impactOccurred(); selectedClusters.removeAll() }.font(.caption.bold()).foregroundStyle(promoColor) } }
@@ -244,17 +258,48 @@ struct LandmarkMapView: View {
         guard locationManager.isAuthorized, let lat = locationManager.latitude, let lon = locationManager.longitude else { return }
         let meters = (isGlobalSearch ? 50000.0 : searchRadiusMiles) * 1609.34
         await nearbyService.fetchNearby(latitude: lat, longitude: lon, radiusMeters: meters)
+        applyFilters()
     }
-    
+
     private func applyFilters() {
-        let currentEmail = vm.userEmail
+        if !vm.userEmail.isEmpty {
+            lastKnownEmail = vm.userEmail
+        }
+        let currentEmail = !vm.userEmail.isEmpty ? vm.userEmail : lastKnownEmail
+
         filteredLandmarks = nearbyService.items.filter { landmark in
+            // 1. Exclude untrained landmarks: must have a valid trained clusterId and not be in a training status
+            guard let cluster = landmark.clusterId?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !cluster.isEmpty else {
+                return false
+            }
+            if let status = landmark.status?.uppercased(), untrainedStatuses.contains(status) {
+                return false
+            }
+
+            // 2. Exclude inactive landmarks for everyone (including owner) so toggling Active/Inactive removes/restores only that pin
+            let isLocallyInactive = container.inactiveLandmarkIds.contains(landmark.landmarkId) || VariableContainer.isLandmarkInactive(landmark.landmarkId)
+            let isActive: Bool
+            if container.isLocallyModified(landmark.landmarkId) {
+                isActive = !isLocallyInactive
+            } else {
+                isActive = (landmark.isActive ?? true) && !isLocallyInactive
+            }
+            guard isActive else { return false }
+
+            // 3. Apply user search & filter selections
             let matchesUser = myUploadsOnly ? (landmark.createdBy == currentEmail) : true
             let matchesPromo = promotedOnly ? landmark.promotionEnabled : true
-            let matchesCluster = selectedClusters.isEmpty ? true : (landmark.clusterId != nil && selectedClusters.contains(landmark.clusterId!))
+            let matchesCluster = selectedClusters.isEmpty ? true : selectedClusters.contains(cluster)
             let matchesSearch = searchText.isEmpty ? true : landmark.label.localizedCaseInsensitiveContains(searchText)
 
             return matchesUser && matchesPromo && matchesCluster && matchesSearch
+        }
+
+        // If the currently selected map pin was just deactivated, close its popup
+        if let selected = selectedLandmark, !filteredLandmarks.contains(where: { $0.id == selected.id }) {
+            selectedLandmark = nil
+            container.dismissLandmark()
         }
     }
 }

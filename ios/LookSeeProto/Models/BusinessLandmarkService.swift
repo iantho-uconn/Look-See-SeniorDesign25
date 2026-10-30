@@ -39,6 +39,7 @@ struct BusinessLandmark: Codable, Identifiable, Hashable {
     let promotion: String?
     let promotionEnabled: Bool?
     let isActive: Bool?
+    let isVisibleOnMap: Bool?
     let userEmail: String?
     let ownerUserId: String?
     let createdByUserId: String?
@@ -115,8 +116,6 @@ enum BusinessMediaKind: String {
     case video = "video"
 }
 
-// Business routes may return a signed PUT URL or a signed POST form.
-// Keep the transport matched to the format issued by the server.
 enum BusinessMediaUploadTarget: Decodable {
     case put(String)
     case post(S3PresignedPost)
@@ -133,7 +132,6 @@ enum BusinessMediaUploadTarget: Decodable {
 
 struct BusinessMediaUploadInitResponse: Decodable {
     let submissionId: String
-    //let uploadUrl: S3PresignedPost
     let uploadUrl: BusinessMediaUploadTarget
     let s3Key: String
     let bucket: String?
@@ -166,7 +164,6 @@ struct BusinessHardNegativeInitResponse: Decodable {
 
 struct BusinessHardNegativeUploadTarget: Decodable {
     let negativeId: String
-    //let uploadUrl: BusinessMediaUploadTarget
     let uploadUrl: S3PresignedPost
     let sourceBucket: String?
     let sourceKey: String
@@ -194,17 +191,20 @@ private struct PositiveUploadInitBody: Encodable {
     let datasetRole: String
     let filename: String
     let contentType: String
+    let nonce: String // 🚀 FIX: App Attest Nonce
 }
 
 private struct PositiveUploadCompleteBody: Encodable {
     let submissionId: String
     let s3Key: String
+    let nonce: String // 🚀 FIX: App Attest Nonce
 }
 
 private struct BusinessLandmarkPatchBody: Encodable {
     let shortDescription: String?
     let websiteUrl: String?
     let isActive: Bool?
+    let isVisibleOnMap: Bool?
     let promotionEnabled: Bool?
 }
 
@@ -219,12 +219,14 @@ private struct BusinessHardNegativeFileBody: Encodable {
 
 private struct BusinessHardNegativeInitBody: Encodable {
     let files: [BusinessHardNegativeFileBody]
+    let nonce: String // 🚀 FIX: App Attest Nonce
 }
 
 private struct BusinessHardNegativeCompleteBody: Encodable {
     let batchId: String
     let negativeIds: [String]
     let forceRetry: Bool?
+    let nonce: String // 🚀 FIX: App Attest Nonce
 }
 
 // MARK: - Errors
@@ -273,7 +275,6 @@ final class BusinessLandmarkService {
         return tokens.idToken
     }
 
-    // 🚀 NEW: Centralized Request Builder for App Attest Support
     private func authorizedRequest(url: URL, method: String, body: Data? = nil) async throws -> URLRequest {
         var request = URLRequest(url: url)
         request.httpMethod = method
@@ -330,6 +331,7 @@ final class BusinessLandmarkService {
                 shortDescription: shortDescription,
                 websiteUrl: nil,
                 isActive: nil,
+                isVisibleOnMap: nil,
                 promotionEnabled: nil
             )
         )
@@ -338,6 +340,7 @@ final class BusinessLandmarkService {
     func updateLandmarkSettings(
         landmarkId: String,
         isActive: Bool? = nil,
+        isVisibleOnMap: Bool? = nil,
         promotionEnabled: Bool? = nil
     ) async throws -> BusinessLandmark {
         return try await patchBusinessLandmark(
@@ -346,6 +349,7 @@ final class BusinessLandmarkService {
                 shortDescription: nil,
                 websiteUrl: nil,
                 isActive: isActive,
+                isVisibleOnMap: isVisibleOnMap,
                 promotionEnabled: promotionEnabled
             )
         )
@@ -361,6 +365,7 @@ final class BusinessLandmarkService {
                 shortDescription: nil,
                 websiteUrl: websiteUrl,
                 isActive: nil,
+                isVisibleOnMap: nil,
                 promotionEnabled: nil
             )
         )
@@ -503,7 +508,8 @@ final class BusinessLandmarkService {
             mediaKind: mediaKind.rawValue,
             datasetRole: datasetRole.rawValue,
             filename: filename,
-            contentType: contentType
+            contentType: contentType,
+            nonce: UUID().uuidString // 🚀 FIX
         )
 
         let requestBody = try JSONEncoder().encode(body)
@@ -535,7 +541,8 @@ final class BusinessLandmarkService {
 
         let body = PositiveUploadCompleteBody(
             submissionId: submissionId,
-            s3Key: s3Key
+            s3Key: s3Key,
+            nonce: UUID().uuidString // 🚀 FIX
         )
 
         let requestBody = try JSONEncoder().encode(body)
@@ -567,7 +574,8 @@ final class BusinessLandmarkService {
             "mediaKind": "video",
             "contentType": "video/quicktime",
             "datasetRole": "global_negative",
-            "label": "Global Negative Admin"
+            "label": "Global Negative Admin",
+            "nonce": UUID().uuidString // 🚀 FIX
         ]
         
         let requestBody = try JSONSerialization.data(withJSONObject: initPayload)
@@ -611,7 +619,8 @@ final class BusinessLandmarkService {
         let completePayload: [String: Any] = [
             "submissionId": submissionId,
             "s3Key": s3Key,
-            "datasetRole": "global_negative"
+            "datasetRole": "global_negative",
+            "nonce": UUID().uuidString // 🚀 FIX
         ]
         
         let completeReqBody = try JSONSerialization.data(withJSONObject: completePayload)
@@ -686,7 +695,8 @@ final class BusinessLandmarkService {
                     filename: filename,
                     contentType: contentType
                 )
-            ]
+            ],
+            nonce: UUID().uuidString // 🚀 FIX
         )
 
         let requestBody = try JSONEncoder().encode(body)
@@ -739,7 +749,8 @@ final class BusinessLandmarkService {
         let body = BusinessHardNegativeCompleteBody(
             batchId: batchId,
             negativeIds: negativeIds,
-            forceRetry: forceRetry ? true : nil
+            forceRetry: forceRetry ? true : nil,
+            nonce: UUID().uuidString // 🚀 FIX
         )
 
         let requestBody = try JSONEncoder().encode(body)

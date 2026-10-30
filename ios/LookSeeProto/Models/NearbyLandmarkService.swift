@@ -16,19 +16,16 @@ final class NearbyLandmarkService: ObservableObject {
 
     private let baseURL = URL(string: "https://d11vl3v9w133rh.cloudfront.net")!
 
-    // NEW: Added `limit` with a default of 100
     func fetchNearby(latitude: Double, longitude: Double, radiusMeters: Double = 100, limit: Int = 100) async {
         isLoading = true
         errorMessage = nil
 
         do {
-            // FIXED: Now points to the new enterprise Map Lambda route!
             let url = baseURL.appendingPathComponent("landmarks/map")
             var req = URLRequest(url: url)
             req.httpMethod = "POST"
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-            // NEW: Passing the limit into the request body
             let body = NearbyLandmarksRequest(
                 latitude: latitude,
                 longitude: longitude,
@@ -36,9 +33,6 @@ final class NearbyLandmarkService: ObservableObject {
                 limit: limit
             )
             req.httpBody = try JSONEncoder().encode(body)
-
-            // 🚀 ADDED: Attaches App Attest signature headers automatically
-            await req.signWithAppAttest()
 
             let (data, resp) = try await URLSession.shared.data(for: req)
             guard let http = resp as? HTTPURLResponse else {
@@ -56,8 +50,10 @@ final class NearbyLandmarkService: ObservableObject {
 
             let decoded = try JSONDecoder().decode(NearbyLandmarksResponse.self, from: data)
             items = decoded.items
+            VariableContainer.shared.allLandmarks = decoded.items
+
         } catch {
-            items = []
+            // Keep existing landmarks in memory on transient network/403 errors so pins don't vanish
             errorMessage = error.localizedDescription
             print("🚨 BACKEND ERROR: \(error)")
         }

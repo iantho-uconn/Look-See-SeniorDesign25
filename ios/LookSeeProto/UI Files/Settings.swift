@@ -881,7 +881,7 @@ struct BusinessProfileView: View {
                         .foregroundStyle(.secondary)
                         .textCase(.uppercase)
                     
-                    Text("This is exactly how your business will appear to users at the bottom of your AR Landmarks.")
+                    Text("This is how your business will appear to users at the bottom of your landmark popups.")
                         .font(.system(size: 14))
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -1019,7 +1019,7 @@ struct BusinessProfileEditSheet: View {
                 }
                 
                 Section(header: Text("Contact Info")) {
-                    TextField("Phone Number", text: $draftPhone)
+                    TextField("Phone Number (Optional)", text: $draftPhone)
                         .focused($IsKeyboard)
                         .keyboardType(.phonePad)
                         .onChange(of: draftPhone) { _, newValue in

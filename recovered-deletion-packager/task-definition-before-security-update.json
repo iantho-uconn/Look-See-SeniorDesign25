@@ -1,0 +1,185 @@
+{
+    "taskDefinition": {
+        "taskDefinitionArn": "arn:aws:ecs:us-east-1:637404140724:task-definition/Looksee-dataset-packager-hard-negatives:8",
+        "containerDefinitions": [
+            {
+                "name": "dataset-packager-HN",
+                "image": "637404140724.dkr.ecr.us-east-1.amazonaws.com/looksee-dataset-packager@sha256:eb1e30955ee422c221c13dc0f34e04c0b8ad198307f7db7c84d1115d3903144b",
+                "cpu": 0,
+                "portMappings": [
+                    {
+                        "containerPort": 80,
+                        "hostPort": 80,
+                        "protocol": "tcp",
+                        "name": "dataset-packager-hn-80-tcp",
+                        "appProtocol": "http"
+                    }
+                ],
+                "essential": true,
+                "environment": [
+                    {
+                        "name": "MAX_IMAGES_PER_CLASS",
+                        "value": "1500"
+                    },
+                    {
+                        "name": "CLEAR_DEST",
+                        "value": "true"
+                    },
+                    {
+                        "name": "TRAIN_SPLIT",
+                        "value": "0.8"
+                    },
+                    {
+                        "name": "BUCKET",
+                        "value": "looksee-models"
+                    },
+                    {
+                        "name": "TRAINING_RUN_ID",
+                        "value": "manifest-v2-latlong-smoke-001"
+                    },
+                    {
+                        "name": "INCLUDE_NEGATIVES",
+                        "value": "true"
+                    },
+                    {
+                        "name": "LANDMARKS_TABLE",
+                        "value": "LookSeeLandmarks"
+                    },
+                    {
+                        "name": "HARD_NEG_MAX_PER_LANDMARK",
+                        "value": "25"
+                    },
+                    {
+                        "name": "NEG_MAX",
+                        "value": "1000"
+                    },
+                    {
+                        "name": "SRC_PREFIX",
+                        "value": "neg-dataset/"
+                    },
+                    {
+                        "name": "HARD_NEG_ROOT",
+                        "value": "neg-dataset/negatives/by-landmark/"
+                    },
+                    {
+                        "name": "GLOBAL_NEG_PREFIX",
+                        "value": "neg-dataset/negatives/global/"
+                    },
+                    {
+                        "name": "HARD_NEG_RATIO",
+                        "value": "0.25"
+                    },
+                    {
+                        "name": "NEG_RATIO",
+                        "value": "1.0"
+                    },
+                    {
+                        "name": "DELETIONS_TABLE",
+                        "value": "LookSeeLandmarkDeletions"
+                    },
+                    {
+                        "name": "BALANCE_STRATEGY",
+                        "value": "none"
+                    },
+                    {
+                        "name": "INCLUDE_HARD_NEGATIVES",
+                        "value": "true"
+                    },
+                    {
+                        "name": "CLUSTER_MAPPINGS_TABLE",
+                        "value": "LookSeeClusterMappings"
+                    },
+                    {
+                        "name": "DEST_PREFIX",
+                        "value": "dataset-yolo-negtest/"
+                    },
+                    {
+                        "name": "NEG_PREFIX",
+                        "value": "neg-dataset/negatives/"
+                    },
+                    {
+                        "name": "ALLOW_LEGACY_NEGATIVE_FALLBACK",
+                        "value": "true"
+                    }
+                ],
+                "environmentFiles": [],
+                "mountPoints": [],
+                "volumesFrom": [],
+                "ulimits": [],
+                "logConfiguration": {
+                    "logDriver": "awslogs",
+                    "options": {
+                        "awslogs-group": "/ecs/Looksee-dataset-packager-hard-negatives",
+                        "awslogs-create-group": "true",
+                        "awslogs-region": "us-east-1",
+                        "awslogs-stream-prefix": "ecs"
+                    },
+                    "secretOptions": []
+                },
+                "systemControls": []
+            }
+        ],
+        "family": "Looksee-dataset-packager-hard-negatives",
+        "taskRoleArn": "arn:aws:iam::637404140724:role/LookSeeDatasetPackager",
+        "executionRoleArn": "arn:aws:iam::637404140724:role/LookSeeDatasetPackagerExecutionRole",
+        "networkMode": "awsvpc",
+        "revision": 8,
+        "volumes": [],
+        "status": "ACTIVE",
+        "requiresAttributes": [
+            {
+                "name": "com.amazonaws.ecs.capability.logging-driver.awslogs"
+            },
+            {
+                "name": "ecs.capability.execution-role-awslogs"
+            },
+            {
+                "name": "com.amazonaws.ecs.capability.ecr-auth"
+            },
+            {
+                "name": "com.amazonaws.ecs.capability.docker-remote-api.1.19"
+            },
+            {
+                "name": "com.amazonaws.ecs.capability.docker-remote-api.1.21"
+            },
+            {
+                "name": "ecs.capability.increased-task-cpu-limit"
+            },
+            {
+                "name": "com.amazonaws.ecs.capability.task-iam-role"
+            },
+            {
+                "name": "ecs.capability.execution-role-ecr-pull"
+            },
+            {
+                "name": "com.amazonaws.ecs.capability.docker-remote-api.1.18"
+            },
+            {
+                "name": "ecs.capability.task-eni"
+            },
+            {
+                "name": "com.amazonaws.ecs.capability.docker-remote-api.1.29"
+            }
+        ],
+        "placementConstraints": [],
+        "compatibilities": [
+            "EC2",
+            "MANAGED_INSTANCES",
+            "FARGATE"
+        ],
+        "runtimePlatform": {
+            "cpuArchitecture": "X86_64",
+            "operatingSystemFamily": "LINUX"
+        },
+        "requiresCompatibilities": [
+            "EC2",
+            "FARGATE"
+        ],
+        "cpu": "32768",
+        "memory": "122880",
+        "registeredAt": "2026-10-01T11:18:28.844000-04:00",
+        "registeredBy": "arn:aws:iam::637404140724:user/Ian_T",
+        "enableFaultInjection": false
+    },
+    "tags": []
+}

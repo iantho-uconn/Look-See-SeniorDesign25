@@ -12,21 +12,27 @@ struct LandmarkScan: View {
 
     @Binding var isDetecting: Bool
     @Binding var isNavVisible: Bool
-    
+
     var isActive: Bool = true
-    
-    @StateObject private var detector = Detector()
+
+    // Use the lowest values previously available in the sliders.
+    @StateObject private var detector: Detector = {
+        let detector = Detector()
+        detector.confidenceThreshold = 0.1
+        detector.ThresholdRangemultiplier = 0.1
+        return detector
+    }()
+
     @ObservedObject private var infoView = VariableContainer.shared
     @EnvironmentObject var vm: AuthViewModel
-    
+
     @State private var zoomLevel: CGFloat = 1.0
     @State private var zoomIndicatorVisible = false
     @State private var zoomFadeTask: Task<Void, Never>?
     @State private var liveInfoFetchTask: Task<Void, Never>?
 
     @State private var isCameraPaused = false
-    @State private var showThresholdControls = false
-    @State private var isWarmingUp = true // 🚀 NEW: Masks the camera snap
+    @State private var isWarmingUp = true
 
     var body: some View {
         GeometryReader { geo in
@@ -72,87 +78,13 @@ struct LandmarkScan: View {
                         .ignoresSafeArea()
                         .zIndex(2)
                 }
-                
-                // 🚀 NEW: Solid black overlay that hides the physical lens snapping
+
+                // Hide the physical lens snapping during camera warmup.
                 if isWarmingUp {
                     Color.black
                         .ignoresSafeArea()
                         .zIndex(8)
                         .transition(.opacity)
-                }
-                
-                // --- Confidence Slider ---
-                if isActive && !infoView.infoView {
-                    VStack {
-                        Spacer()
-                        HStack {
-                            Spacer()
-                            Button {
-                                withAnimation(.easeInOut(duration: 0.25)) {
-                                    showThresholdControls.toggle()
-                                }
-                            } label: {
-                                Image(systemName: showThresholdControls ? "xmark.circle.fill" : "slider.horizontal.3")
-                                    .font(.system(size: 22))
-                                    .foregroundStyle(.white)
-                                    .padding(10)
-                                    .background(Color.black.opacity(0.6), in: Circle())
-                            }
-                            .padding(.trailing, 16)
-                            .padding(.bottom, 16)
-                        }
-                    }
-                    .zIndex(7)
-                }
-                
-                if isActive && !infoView.infoView && showThresholdControls {
-                    HStack {
-                        Spacer()
-                        VStack(spacing: 16) {
-                            HStack {
-                                Spacer()
-                                Button {
-                                    withAnimation(.easeInOut(duration: 0.25)) {
-                                        showThresholdControls = false
-                                    }
-                                } label: {
-                                    Image(systemName: "xmark.circle.fill")
-                                        .foregroundStyle(.white.opacity(0.7))
-                                }
-                            }
-
-                            Text("\(Int(detector.confidenceThreshold * 100))% - \(Int(detector.confidenceThreshold * detector.ThresholdRangemultiplier * 100))%")
-                                .font(.caption2.monospacedDigit())
-                                .fontWeight(.bold)
-                                .foregroundStyle(.white)
-
-                            Slider(value: $detector.confidenceThreshold, in: 0.1...0.95, step: 0.05)
-                                .tint(.green)
-                                .frame(width: 120, height: 20)
-                                .rotationEffect(.degrees(-90))
-                                .frame(width: 20, height: 120)
-
-                            Text("detector threshold (0.1-0.95) \(Int(detector.confidenceThreshold * 100))%")
-                                .font(.system(size: 10))
-
-                            Slider(value: $detector.ThresholdRangemultiplier, in: 0.1...1.0, step: 0.05)
-                                .tint(.green)
-                                .frame(width: 120, height: 20)
-                                .rotationEffect(.degrees(-90))
-                                .frame(width: 20, height: 120)
-
-                            Text("detector range multiplier (0.1-1.0) \((detector.ThresholdRangemultiplier))")
-                                .font(.system(size: 10))
-                        }
-                        .padding(.vertical, 16)
-                        .padding(.horizontal, 12)
-                        .background(Color.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 12))
-                        .padding(.trailing, 16)
-                        .padding(.bottom, 120)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-                    .zIndex(6)
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
                 }
 
                 if isActive,
@@ -186,7 +118,7 @@ struct LandmarkScan: View {
                 detector.hideBoundingBoxes = false
                 updatePauseState()
 
-                // 🚀 Mask the camera snapping effect during initialization
+                // Mask the camera snapping effect during initialization.
                 isWarmingUp = true
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.65) {
                     withAnimation(.easeOut(duration: 0.3)) {
@@ -199,6 +131,7 @@ struct LandmarkScan: View {
             }
             .onChange(of: isActive) { _, active in
                 updatePauseState()
+
                 if active {
                     isWarmingUp = true
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.65) {
@@ -220,24 +153,38 @@ struct LandmarkScan: View {
         }
     }
 
-    private func getCityName(latitude: Double, longitude: Double) async -> String? {
-        let location = CLLocation(latitude: latitude, longitude: longitude)
+    private func getCityName(
+        latitude: Double,
+        longitude: Double
+    ) async -> String? {
+        let location = CLLocation(
+            latitude: latitude,
+            longitude: longitude
+        )
         let geocoder = CLGeocoder()
+
         do {
             let placemarks = try await geocoder.reverseGeocodeLocation(location)
+
             if let place = placemarks.first {
                 let city = place.locality ?? ""
                 let state = place.administrativeArea ?? ""
-                if !city.isEmpty && !state.isEmpty { return "\(city), \(state)" }
+
+                if !city.isEmpty && !state.isEmpty {
+                    return "\(city), \(state)"
+                }
+
                 return city.isEmpty ? state : city
             }
         } catch {
             print("Geocoding error: \(error)")
         }
+
         return nil
     }
 
     // MARK: - Internal Methods
+
     private func openPopup(for detection: Detection) {
         liveInfoFetchTask?.cancel()
 
@@ -256,6 +203,16 @@ struct LandmarkScan: View {
             return
         }
 
+        let landmarkId = entry.landmarkId.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // 🚀 NEW: Block the popup if the landmark was explicitly marked inactive!
+        if let currentInfo = VariableContainer.shared.allLandmarks.first(where: { $0.id == landmarkId }) {
+            if currentInfo.isActive == false {
+                print("🚫 Blocked popup for inactive landmark: \(landmarkId)")
+                return
+            }
+        }
+
         infoView.presentLandmark(
             entry,
             clusterId: Int(detection.clusterID) ?? 0,
@@ -271,12 +228,25 @@ struct LandmarkScan: View {
             let cachedImg = infoView.merchantLogoUrl
 
             Task {
-                let cityString = await getCityName(latitude: lat, longitude: lon) ?? "Unknown Location"
-                await vm.logScanHistory(landmarkId: lId, label: displayLabel, location: cityString, latitude: lat, longitude: lon, imageUrl: cachedImg)
+                let cityString = await getCityName(
+                    latitude: lat,
+                    longitude: lon
+                ) ?? "Unknown Location"
+
+                await vm.logScanHistory(
+                    landmarkId: lId,
+                    label: displayLabel,
+                    location: cityString,
+                    latitude: lat,
+                    longitude: lon,
+                    imageUrl: cachedImg
+                )
             }
         }
 
-        let landmarkId = entry.landmarkId.trimmingCharacters(in: .whitespacesAndNewlines)
+        let landmarkId = entry.landmarkId.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
 
         if landmarkId.isEmpty {
             infoView.landmarkWebsiteUrl = ""
@@ -317,26 +287,46 @@ struct LandmarkScan: View {
     }
 
     @MainActor
-    private func applyLiveInfo(_ liveInfo: LiveLandmarkInfoResponse, landmarkId: String) {
-        let liveLabel = liveInfo.label.trimmingCharacters(in: .whitespacesAndNewlines)
-        let liveDescription = liveInfo.shortDescription.trimmingCharacters(in: .whitespacesAndNewlines)
-        let liveWebsiteUrl = liveInfo.websiteUrl?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    private func applyLiveInfo(
+        _ liveInfo: LiveLandmarkInfoResponse,
+        landmarkId: String
+    ) {
+        let liveLabel = liveInfo.label.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+        let liveDescription = liveInfo.shortDescription.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+        let liveWebsiteUrl = liveInfo.websiteUrl?.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        ) ?? ""
 
-        if !liveLabel.isEmpty { infoView.landmarkName = liveLabel }
-        if !liveDescription.isEmpty { infoView.landmarkDescription = liveDescription }
+        if !liveLabel.isEmpty {
+            infoView.landmarkName = liveLabel
+        }
+
+        if !liveDescription.isEmpty {
+            infoView.landmarkDescription = liveDescription
+        }
+
         infoView.landmarkWebsiteUrl = liveWebsiteUrl
 
+        // 🚀 If the backend confirms it is inactive, immediately close the popup
         if liveInfo.isActive == false {
-            infoView.promoName = "No active promotion"
-            infoView.promoDescription = ""
-            infoView.promoImageUrl = ""
+            infoView.infoView = false
             return
         }
 
         if let promotion = liveInfo.activePromotion {
-            let promoName = promotion.name.trimmingCharacters(in: .whitespacesAndNewlines)
-            let promoDescription = promotion.description.trimmingCharacters(in: .whitespacesAndNewlines)
-            let promoImageUrl = promotion.imageUrl?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let promoName = promotion.name.trimmingCharacters(
+                in: .whitespacesAndNewlines
+            )
+            let promoDescription = promotion.description.trimmingCharacters(
+                in: .whitespacesAndNewlines
+            )
+            let promoImageUrl = promotion.imageUrl?.trimmingCharacters(
+                in: .whitespacesAndNewlines
+            ) ?? ""
 
             if !promoName.isEmpty {
                 infoView.promoName = promoName
@@ -356,7 +346,10 @@ struct LandmarkScan: View {
 
     private func updatePauseState() {
         isCameraPaused = !isActive
-        if !isActive { isDetecting = false }
+
+        if !isActive {
+            isDetecting = false
+        }
     }
 
     private func showZoomIndicatorThenFade() {

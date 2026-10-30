@@ -18,6 +18,7 @@ class DecimalEncoder(json.JSONEncoder):
 s3_client = boto3.client("s3")
 dynamodb = boto3.resource("dynamodb")
 sqs_client = boto3.client("sqs")
+sns_client = boto3.client("sns", region_name=os.environ.get("AWS_REGION", "us-east-1"))
 bedrock_client = boto3.client("bedrock-runtime", region_name=os.environ.get("AWS_REGION", "us-east-1"))
 
 QUEUE_URL = os.environ.get('QUEUE_URL')
@@ -29,9 +30,54 @@ from botocore.exceptions import ClientError
 DELETIONS_TABLE = os.environ.get("DELETIONS_TABLE", "LookSeeLandmarkDeletions")
 LANDMARKS_TABLE = os.environ.get("LANDMARKS_TABLE", "LookSeeLandmarks")
 SUBMISSIONS_TABLE = os.environ.get("TABLE_NAME", "LookSeeSubmissions")
+USERS_TABLE = os.environ.get("USERS_TABLE", "LookSeeUsers")
 OUTPUT_BUCKET = os.environ.get("OUTPUT_BUCKET", "looksee-models")
 ddb_client = boto3.client("dynamodb")
 _serializer = TypeSerializer()
+
+
+def send_push_notification(user_id, title, body, custom_data=None):
+    """Looks up the user's pushEndpointArn in LookSeeUsers and fires an APNs notification via SNS."""
+    if not user_id:
+        print("⚠️ Cannot send push notification: user_id is missing.")
+        return
+    try:
+        user_item = dynamodb.Table(USERS_TABLE).get_item(Key={"user_id": str(user_id)}).get("Item")
+        if not user_item:
+            print(f"⚠️ No user record found in {USERS_TABLE} for user_id={user_id}")
+            return
+            
+        endpoint_arn = user_item.get("pushEndpointArn")
+        if not endpoint_arn:
+            print(f"ℹ️ User {user_id} does not have a registered pushEndpointArn yet.")
+            return
+
+        apns_payload = {
+            "aps": {
+                "alert": {
+                    "title": title,
+                    "body": body
+                },
+                "sound": "default"
+            }
+        }
+        if custom_data:
+            apns_payload.update(custom_data)
+
+        apns_json = json.dumps(apns_payload)
+        sns_client.publish(
+            TargetArn=endpoint_arn,
+            MessageStructure="json",
+            Message=json.dumps({
+                "default": body,
+                "APNS": apns_json,
+                "APNS_SANDBOX": apns_json
+            })
+        )
+        print(f"📲 Sent push notification to user {user_id}: {title}")
+    except Exception as e:
+        print(f"⚠️ Failed to send push notification to {user_id}: {e}")
+
 
 class ProcessingStopped(Exception):
     pass
@@ -52,6 +98,7 @@ class ProcessingGuard:
         if self.item.get(self.bucket_field) != bucket or self.item.get("s3Key") != key:
             raise ProcessingStopped("source_binding_mismatch")
         self.binding_field = "boundLandmarkId" if self.item.get("boundLandmarkId") else "landmarkId"
+        self.landmark_item = None
         self.check()
 
     def check(self):
@@ -65,6 +112,7 @@ class ProcessingGuard:
             raise ProcessingStopped("landmark_missing")
         if "deletionStatus" in landmark or landmark.get("status") in ("DELETING", "DELETED"):
             raise ProcessingStopped("deletion_requested")
+        self.landmark_item = landmark
         current = dynamodb.Table(SUBMISSIONS_TABLE).get_item(
             Key={"submissionId": self.submission_id}, ConsistentRead=True).get("Item")
         if not current:
@@ -336,7 +384,13 @@ def process_object(input_bucket, video_key):
 
         required_frames = int(item.get('minRequiredFrames', int(os.environ.get('MIN_IMAGES_PER_CLASS', 2000))))
         
-        if total_saved_frames < required_frames:
+        landmark_record = guard.landmark_item or {}
+        current_landmark_status = str(landmark_record.get("status", "")).upper()
+        already_trained = bool(landmark_record.get("isTrained")) or current_landmark_status in {
+            "ACTIVE", "TRAINING_MODEL", "OPTIMIZING_MODEL"
+        }
+
+        if total_saved_frames < required_frames and not already_trained:
             missing_frames = required_frames - total_saved_frames
             seconds_needed = math.ceil(missing_frames / 30.0)
             status = 'NEEDS_MORE_MEDIA'
@@ -350,8 +404,17 @@ def process_object(input_bucket, video_key):
                 ':r': required_frames,
                 ':sec': seconds_needed
             }
+        elif already_trained and total_saved_frames < required_frames:
+            # 🛡️ GUARDRAIL: Never downgrade an already-trained landmark back to NEEDS_MORE_MEDIA
+            status = current_landmark_status if current_landmark_status else 'ACTIVE'
+            print(f"🛡️ GUARDRAIL: Landmark {landmark_id} is already trained ({status}). Preserving status despite {total_saved_frames}/{required_frames} frames.")
+            update_expr = "SET cleanFrameCount = :c, requiredFrames = :r"
+            expr_vals = {
+                ':c': total_saved_frames,
+                ':r': required_frames
+            }
         else:
-            # 🚀 THE FIX: Assign the correct pipeline status 
+            # 🚀 Assign the correct pipeline status 
             status = 'PREPARING_DATA'
             print(f"✅ MEDIA THRESHOLD MET: {total_saved_frames}/{required_frames} clean frames. Sending to data prep!")
             
@@ -363,7 +426,25 @@ def process_object(input_bucket, video_key):
             }
 
         # Update both records atomically with the deletion marker check.
-        guard.update(update_expr, expr_vals, {'#st': 'status'})
+        expr_names = {'#st': 'status'} if '#st' in update_expr else None
+        guard.update(update_expr, expr_vals, expr_names)
+
+        # 📲 Send Push Notification if the upload resulted in NEEDS_MORE_MEDIA
+        if status == 'NEEDS_MORE_MEDIA':
+            owner_id = (
+                landmark_record.get("userId")
+                or landmark_record.get("user_id")
+                or item.get("userId")
+                or item.get("user_id")
+            )
+            display_label = landmark_record.get("label") or raw_label or "your landmark"
+            send_push_notification(
+                user_id=owner_id,
+                title="More Frames Needed",
+                body=f"'{display_label}' needs about {seconds_needed} more seconds of video ({total_saved_frames}/{required_frames} clean frames) before training can start.",
+                custom_data={"notificationType": "NEEDS_MORE_MEDIA", "landmarkId": landmark_id}
+            )
+
         if status == 'PREPARING_DATA' and QUEUE_URL:
             guard.check()
             sqs_client.send_message(

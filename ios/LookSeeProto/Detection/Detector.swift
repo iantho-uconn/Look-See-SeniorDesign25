@@ -60,7 +60,7 @@ struct Detection: Identifiable, Equatable {
 class DetectionTracker {
     var lastDetection: Detection?
     private var framesSinceLastSeen = 0
-    private let maxCoastFrames = 5       // Hold box for ~0.4s during motion blur/cutoffs
+    private let maxCoastFrames = 5      // Hold box for ~0.4s during motion blur/cutoffs
 
     // 🚀 Uses your dynamic alpha for Speed vs Smoothness
     func update(with newDetection: Detection?, alpha: CGFloat) -> Detection? {
@@ -447,8 +447,6 @@ final class Detector: NSObject, ObservableObject {
                     self.newlyDetectedLandmark = trigger
                 }
                 
-                // 🚀 SPEED FIX: We removed the .asyncAfter(0.03) delay here.
-                // The detector will now run as fast as the Neural Engine allows.
                 self.throttling = false
             }
         } catch {
@@ -652,7 +650,6 @@ final class Detector: NSObject, ObservableObject {
         // 1. Update trackers with active detections
         for (label, det) in strongestByLabel {
             if trackers[label] == nil { trackers[label] = DetectionTracker() }
-            // 🚀 Plug UI trackingAlpha directly into the EMA calculation
             if let smoothedDet = trackers[label]?.update(with: det, alpha: trackingAlpha) {
                 finalResults.append(smoothedDet)
             }
@@ -661,11 +658,17 @@ final class Detector: NSObject, ObservableObject {
         // 2. Handle lost detections (coasting / persistence)
         let lostLabels = trackers.keys.filter { !currentLabels.contains($0) }
         for label in lostLabels {
+            // 🚀 If a coasting detection was just toggled to Inactive, drop its tracker immediately
+            if let lastDet = trackers[label]?.lastDetection,
+               let landmarkId = manifest?.landmark(for: lastDet.classIndex)?.landmarkId ?? lastDet.landmarkEntry?.landmarkId,
+               VariableContainer.isLandmarkInactive(landmarkId) {
+                trackers.removeValue(forKey: label)
+                continue
+            }
+
             if let coastedDet = trackers[label]?.update(with: nil, alpha: trackingAlpha) {
-                // Object missed this frame, but tracker is coasting it
                 finalResults.append(coastedDet)
             } else {
-                // Coasting expired. Remove tracker.
                 trackers.removeValue(forKey: label)
             }
         }
@@ -674,10 +677,20 @@ final class Detector: NSObject, ObservableObject {
     }
 
     private func proximityFilter(_ detections: [Detection]) -> [Detection] {
-        guard let manifest = manifest, let userLocation = userLocation else { return detections }
-
         return detections.filter { detection in
-            guard let object = manifest.landmark(for: detection.classIndex) else { return true }
+            let manifestObj = manifest?.landmark(for: detection.classIndex)
+            let entryObj = detection.landmarkEntry
+            let landmarkId = manifestObj?.landmarkId ?? entryObj?.landmarkId
+            let label = manifestObj?.label ?? entryObj?.label ?? detection.displayLabel
+
+            // 🚀 1. Individual Inactive Suppression (runs even before GPS lock; does NOT suppress Hidden-from-Map items!)
+            if let landmarkId, VariableContainer.isLandmarkInactive(landmarkId) {
+                print("🚫 \(label) (\(landmarkId)) suppressed because landmark is INACTIVE")
+                return false
+            }
+
+            // 2. Proximity / Radius Suppression
+            guard let object = manifestObj, let userLocation = userLocation else { return true }
             let objectLocation = CLLocation(latitude: object.latitude, longitude: object.longitude)
             let distanceMeters = userLocation.distance(from: objectLocation)
             let isNearby = distanceMeters <= proximityThresholdMeters
