@@ -10,9 +10,10 @@ struct BusinessLandmarksView: View {
     @ObservedObject private var offlineManager = OfflineMediaManager.shared
     @ObservedObject private var uploadManager = AutoUploadManager.shared
     @ObservedObject private var networkMonitor = NetworkMonitor.shared
-    
+    @ObservedObject private var container = VariableContainer.shared
+
     @EnvironmentObject var vm: AuthViewModel
-    
+
     @State private var draftToEdit: ArchivedMedia?
     @State private var searchText = ""
     @State private var promotionTitlesByLandmarkId: [String: [String]] = [:]
@@ -22,9 +23,9 @@ struct BusinessLandmarksView: View {
     @State private var selectedLandmarkIds: Set<String> = []
     @State private var bulkPromotionSelection: BulkLandmarkSelection?
     @State private var bulkDeleteSelection: BulkLandmarkSelection?
-    
+
     @State private var landmarkNeedingMedia: BusinessLandmark?
-    
+
     @State private var hasLoadedOnce = false
     @State private var autoRefreshTask: Task<Void, Never>?
 
@@ -35,7 +36,7 @@ struct BusinessLandmarksView: View {
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 24) {
-                
+
                 if !offlineManager.archivedItems.isEmpty {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Pending Uploads")
@@ -43,7 +44,7 @@ struct BusinessLandmarksView: View {
                             .foregroundStyle(.secondary)
                             .textCase(.uppercase)
                             .padding(.horizontal, 20)
-                        
+
                         LazyVStack(spacing: 0) {
                             syncBannerRow
                             Divider()
@@ -70,14 +71,14 @@ struct BusinessLandmarksView: View {
                             .foregroundStyle(.red)
                             .textCase(.uppercase)
                             .padding(.horizontal, 20)
-                        
+
                         ForEach(actionNeededLandmarks) { landmark in
                             landmarkRowLink(for: landmark)
                                 .padding(.horizontal)
                         }
                     }
                 }
-                
+
                 if !preparingDataLandmarks.isEmpty {
                     LazyVStack(alignment: .leading, spacing: 12) {
                         Text("Preparing Data")
@@ -85,14 +86,14 @@ struct BusinessLandmarksView: View {
                             .foregroundStyle(.orange)
                             .textCase(.uppercase)
                             .padding(.horizontal, 20)
-                        
+
                         ForEach(preparingDataLandmarks) { landmark in
                             landmarkRowLink(for: landmark)
                                 .padding(.horizontal)
                         }
                     }
                 }
-                
+
                 if !pendingTrainingLandmarks.isEmpty {
                     LazyVStack(alignment: .leading, spacing: 12) {
                         Text("Waiting for Training")
@@ -100,14 +101,14 @@ struct BusinessLandmarksView: View {
                             .foregroundStyle(.purple)
                             .textCase(.uppercase)
                             .padding(.horizontal, 20)
-                        
+
                         ForEach(pendingTrainingLandmarks) { landmark in
                             landmarkRowLink(for: landmark)
                                 .padding(.horizontal)
                         }
                     }
                 }
-                
+
                 if !trainingModelLandmarks.isEmpty {
                     LazyVStack(alignment: .leading, spacing: 12) {
                         Text("In Training")
@@ -115,14 +116,14 @@ struct BusinessLandmarksView: View {
                             .foregroundStyle(.yellow)
                             .textCase(.uppercase)
                             .padding(.horizontal, 20)
-                        
+
                         ForEach(trainingModelLandmarks) { landmark in
                             landmarkRowLink(for: landmark)
                                 .padding(.horizontal)
                         }
                     }
                 }
-                
+
                 if !optimizingModelLandmarks.isEmpty {
                     LazyVStack(alignment: .leading, spacing: 12) {
                         Text("Optimizing for iOS")
@@ -130,7 +131,7 @@ struct BusinessLandmarksView: View {
                             .foregroundStyle(.blue)
                             .textCase(.uppercase)
                             .padding(.horizontal, 20)
-                        
+
                         ForEach(optimizingModelLandmarks) { landmark in
                             landmarkRowLink(for: landmark)
                                 .padding(.horizontal)
@@ -211,15 +212,11 @@ struct BusinessLandmarksView: View {
             if !hasLoadedOnce {
                 hasLoadedOnce = true
                 await viewModel.loadLandmarks()
-                await loadPromotionSearchIndex()
                 NotificationCenter.default.post(name: Notification.Name("CheckGlobalNotifications"), object: nil)
             }
         }
         .onAppear {
             startAutoRefresh()
-
-            guard hasLoadedOnce else { return }
-            Task { await refreshLandmarksAndSearchIndex() }
         }
         .onDisappear {
             stopAutoRefresh()
@@ -273,7 +270,7 @@ struct BusinessLandmarksView: View {
                                 "id": landmark.landmarkId,
                                 "label": landmark.label,
                                 "description": landmark.shortDescription ?? "",
-                                "secondsNeeded": Double(landmark.secondsNeeded ?? 30)
+                                "secondsNeeded": 1.0
                             ]
                         )
                     }
@@ -293,16 +290,25 @@ struct BusinessLandmarksView: View {
 
     @ViewBuilder
     private func landmarkRowLink(for landmark: BusinessLandmark) -> some View {
+        let isLocallyInactive = container.inactiveLandmarkIds.contains(landmark.landmarkId) || VariableContainer.isLandmarkInactive(landmark.landmarkId)
+        let effectiveIsActive: Bool = {
+            if container.isLocallyModified(landmark.landmarkId) {
+                return !isLocallyInactive
+            }
+            return (landmark.isActive ?? true) && !isLocallyInactive
+        }()
+
         if isSelectionMode {
             let isSelected = selectedLandmarkIds.contains(landmark.landmarkId)
             let accessibilityText = isSelected ? "Deselect \(landmark.label)" : "Select \(landmark.label)"
-            
+
             Button {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 toggleSelection(for: landmark)
             } label: {
                 BusinessLandmarkRow(
                     landmark: landmark,
+                    effectiveIsActive: effectiveIsActive,
                     matchedPromotionTitle: matchedPromotionTitle(for: landmark),
                     isSelectionMode: true,
                     isSelected: isSelected,
@@ -332,6 +338,7 @@ struct BusinessLandmarksView: View {
             } label: {
                 BusinessLandmarkRow(
                     landmark: landmark,
+                    effectiveIsActive: effectiveIsActive,
                     matchedPromotionTitle: matchedPromotionTitle(for: landmark),
                     isSelectionMode: false,
                     isSelected: false,
@@ -343,50 +350,49 @@ struct BusinessLandmarksView: View {
             .buttonStyle(.plain)
         }
     }
-    
-    // 🚀 NEW: Distinct Chronological Filters with Strict Boundaries
+
     private var actionNeededLandmarks: [BusinessLandmark] {
         displayedLandmarks.filter { landmark in
             landmark.status == "NEEDS_MORE_MEDIA"
         }
     }
-    
+
     private var preparingDataLandmarks: [BusinessLandmark] {
         displayedLandmarks.filter { $0.status == "PREPARING_DATA" }
     }
-    
+
     private var pendingTrainingLandmarks: [BusinessLandmark] {
         displayedLandmarks.filter { $0.status == "PENDING_TRAINING" }
     }
-    
+
     private var trainingModelLandmarks: [BusinessLandmark] {
         displayedLandmarks.filter { $0.status == "TRAINING_MODEL" }
     }
-    
+
     private var optimizingModelLandmarks: [BusinessLandmark] {
         displayedLandmarks.filter { $0.status == "OPTIMIZING_MODEL" }
     }
-    
+
     private var activeLandmarks: [BusinessLandmark] {
         let pipelineStates = ["NEEDS_MORE_MEDIA", "PREPARING_DATA", "PENDING_TRAINING", "TRAINING_MODEL", "OPTIMIZING_MODEL"]
-        
+
         return displayedLandmarks.filter { landmark in
             !pipelineStates.contains(landmark.status ?? "") &&
             !landmark.isProcessing
         }
     }
-    
+
     private var cleanedSearchText: String { searchText.trimmingCharacters(in: .whitespacesAndNewlines) }
-    
+
     private func activeLandmarkCountText(activeCount: Int) -> String {
         guard !cleanedSearchText.isEmpty else { return "(\(activeCount))" }
-        
+
         let pipelineStates = ["NEEDS_MORE_MEDIA", "PREPARING_DATA", "PENDING_TRAINING", "TRAINING_MODEL", "OPTIMIZING_MODEL"]
         let totalActive = viewModel.landmarks.filter { landmark in
             !pipelineStates.contains(landmark.status ?? "") &&
             !landmark.isProcessing
         }.count
-        
+
         return "(\(activeCount) of \(totalActive))"
     }
 
@@ -453,7 +459,7 @@ struct BusinessLandmarksView: View {
         }
         .frame(maxWidth: .infinity).padding(.vertical, 40)
     }
-    
+
     private func toggleSelection(for landmark: BusinessLandmark) {
         if selectedLandmarkIds.contains(landmark.landmarkId) { selectedLandmarkIds.remove(landmark.landmarkId) } else { selectedLandmarkIds.insert(landmark.landmarkId) }
     }
@@ -482,7 +488,7 @@ struct BusinessLandmarksView: View {
         selectedLandmarkIds = failedIds
         if failedIds.isEmpty { isSelectionMode = false }
     }
-    
+
     private func startAutoRefresh() {
         autoRefreshTask?.cancel()
 
@@ -508,40 +514,12 @@ struct BusinessLandmarksView: View {
     private func autoRefreshLandmarks() async {
         guard !viewModel.isLoading else { return }
         await viewModel.refresh()
-        await loadPromotionSearchIndex(forceReload: false)
         NotificationCenter.default.post(name: Notification.Name("CheckGlobalNotifications"), object: nil)
     }
 
     @MainActor private func refreshLandmarksAndSearchIndex() async {
         await viewModel.refresh()
-        await loadPromotionSearchIndex(forceReload: true)
         NotificationCenter.default.post(name: Notification.Name("CheckGlobalNotifications"), object: nil)
-    }
-    
-    @MainActor private func loadPromotionSearchIndex(forceReload: Bool = false) async {
-        let currentLandmarks = viewModel.landmarks
-        let validLandmarkIds = Set(currentLandmarks.map(\.landmarkId))
-        promotionTitlesByLandmarkId = promotionTitlesByLandmarkId.filter { validLandmarkIds.contains($0.key) }
-        guard !currentLandmarks.isEmpty else { isIndexingPromotionTitles = false; return }
-        let landmarksToLoad = forceReload ? currentLandmarks : currentLandmarks.filter { promotionTitlesByLandmarkId[$0.landmarkId] == nil }
-        guard !landmarksToLoad.isEmpty else { isIndexingPromotionTitles = false; return }
-
-        isIndexingPromotionTitles = true
-        defer { isIndexingPromotionTitles = false }
-
-        for landmark in landmarksToLoad {
-            guard !Task.isCancelled else { return }
-            do {
-                let response = try await promotionService.fetchPromotions(landmarkId: landmark.landmarkId)
-                let titles = response.items.map { $0.name.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
-                promotionTitlesByLandmarkId[landmark.landmarkId] = titles
-            } catch {
-                if promotionTitlesByLandmarkId[landmark.landmarkId] == nil {
-                    let legacyPromotion = landmark.promotion?.trimmingCharacters(in: .whitespacesAndNewlines)
-                    promotionTitlesByLandmarkId[landmark.landmarkId] = legacyPromotion.map { $0.isEmpty ? [] : [$0] } ?? []
-                }
-            }
-        }
     }
 
     private func searchablePromotionTitles(for landmark: BusinessLandmark) -> [String] {
@@ -557,7 +535,7 @@ struct BusinessLandmarksView: View {
         guard !query.isEmpty, !landmark.label.localizedCaseInsensitiveContains(query) else { return nil }
         return searchablePromotionTitles(for: landmark).first { $0.localizedCaseInsensitiveContains(query) }
     }
-    
+
     private var visibleLandmarkIds: Set<String> { Set(displayedLandmarks.map(\.landmarkId)) }
     private var selectedLandmarks: [BusinessLandmark] { viewModel.landmarks.filter { selectedLandmarkIds.contains($0.landmarkId) } }
     private var visibleSelectedCount: Int { selectedLandmarkIds.intersection(visibleLandmarkIds).count }
@@ -668,7 +646,7 @@ struct BusinessLandmarksView: View {
             .padding(.horizontal, 20).padding(.vertical, 12)
         }
     }
-    
+
     private var selectionSummaryCard: some View { HStack(spacing: 12) { Image(systemName: selectedLandmarkIds.isEmpty ? "checkmark.circle" : "checkmark.circle.fill").font(.system(size: 22, weight: .semibold)).foregroundStyle(primaryColor); VStack(alignment: .leading, spacing: 3) { Text(selectionCountText).font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(.primary); if hiddenSelectedCount > 0 { Text("\(hiddenSelectedCount) selected landmark\(hiddenSelectedCount == 1 ? "" : "s") hidden by the current search").font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary) } else if !cleanedSearchText.isEmpty { Text("\(visibleSelectedCount) selected in these search results").font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary) } else { Text("Search for more landmarks without losing this selection.").font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary) } }; Spacer() }.padding(14).background(primaryColor.opacity(0.10)).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous)).overlay { RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(primaryColor.opacity(0.20), lineWidth: 1) }.padding(.horizontal) }
     private var selectionActionsMenu: some View { Menu { Button { UIImpactFeedbackGenerator(style: .light).impactOccurred(); selectVisibleLandmarks() } label: { Label("Select Visible (\(displayedLandmarks.count))", systemImage: "checkmark.circle") }.disabled(displayedLandmarks.isEmpty); Button { UIImpactFeedbackGenerator(style: .light).impactOccurred(); deselectVisibleLandmarks() } label: { Label("Deselect Visible (\(visibleSelectedCount))", systemImage: "circle") }.disabled(visibleSelectedCount == 0); Divider(); Button(role: .destructive) { UIImpactFeedbackGenerator(style: .light).impactOccurred(); selectedLandmarkIds.removeAll() } label: { Label("Clear All Selection", systemImage: "xmark.circle") }.disabled(selectedLandmarkIds.isEmpty) } label: { Image(systemName: "ellipsis") .font(.system(size: 18, weight: .bold)) }.accessibilityLabel("Selection actions") }
     private var selectionBottomBar: some View { VStack(spacing: 10) { HStack(spacing: 12) { VStack(alignment: .leading, spacing: 2) { Text(selectionCountText).font(.system(size: 15, weight: .bold, design: .rounded)); if hiddenSelectedCount > 0 { Text("\(hiddenSelectedCount) hidden by search").font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary) } else { Text("Selection stays active while searching").font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary) } }; Spacer(); Button("Clear") { UIImpactFeedbackGenerator(style: .light).impactOccurred(); selectedLandmarkIds.removeAll() }.font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.red).disabled(selectedLandmarkIds.isEmpty) }; HStack(spacing: 12) { Button { UIImpactFeedbackGenerator(style: .medium).impactOccurred(); beginBulkPromotion() } label: { Label("Add Promotion", systemImage: "tag.fill").font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white).frame(maxWidth: .infinity).padding(.vertical, 12).background(primaryColor).clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous)) }.buttonStyle(.plain).disabled(selectedLandmarkIds.isEmpty).opacity(selectedLandmarkIds.isEmpty ? 0.45 : 1); Button(role: .destructive) { UIImpactFeedbackGenerator(style: .heavy).impactOccurred(); beginBulkDelete() } label: { Label("Delete", systemImage: "trash.fill").font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.red).frame(maxWidth: .infinity).padding(.vertical, 12).background(Color.red.opacity(0.12)).clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous)) }.buttonStyle(.plain).disabled(selectedLandmarkIds.isEmpty).opacity(selectedLandmarkIds.isEmpty ? 0.45 : 1) } }.padding(.horizontal, 20).padding(.top, 12).padding(.bottom, 10).background(.ultraThinMaterial).overlay(alignment: .top) { Divider() } }
@@ -676,13 +654,14 @@ struct BusinessLandmarksView: View {
 
 private struct BusinessLandmarkRow: View {
     let landmark: BusinessLandmark
+    let effectiveIsActive: Bool
     let matchedPromotionTitle: String?
     let isSelectionMode: Bool
     let isSelected: Bool
     let onNeedsMediaTapped: () -> Void
 
     private let selectionColor = Color(red: 0.22, green: 0.49, blue: 1.00)
-    
+
     private var badgeColor: Color {
         switch landmark.status {
         case "NEEDS_MORE_MEDIA": return .red
@@ -690,7 +669,17 @@ private struct BusinessLandmarkRow: View {
         case "PENDING_TRAINING": return .purple
         case "TRAINING_MODEL": return .yellow
         case "OPTIMIZING_MODEL": return .blue
-        default: return landmark.isActive == false ? .secondary : .green
+        default: return effectiveIsActive ? .green : .secondary
+        }
+    }
+
+    private var badgeText: String {
+        switch landmark.status {
+        case "NEEDS_MORE_MEDIA": return "NEEDS MEDIA"
+        case "PREPARING_DATA", "PENDING_TRAINING", "TRAINING_MODEL", "OPTIMIZING_MODEL":
+            return landmark.displayStatus
+        default:
+            return effectiveIsActive ? "ACTIVE" : "INACTIVE"
         }
     }
 
@@ -715,7 +704,7 @@ private struct BusinessLandmarkRow: View {
 
                         Spacer()
 
-                        Text(needsMoreMedia ? "NEEDS MEDIA" : landmark.displayStatus)
+                        Text(badgeText)
                             .font(.system(size: 11, weight: .bold, design: .rounded))
                             .textCase(.uppercase)
                             .lineLimit(nil)
@@ -763,7 +752,7 @@ private struct BusinessLandmarkRow: View {
                 }
             }
             .padding(20)
-            
+
             if needsMoreMedia {
                 Button {
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
@@ -805,15 +794,15 @@ private struct BusinessLandmarkRow: View {
 struct NeedsMoreMediaSheet: View {
     @Environment(\.dismiss) var dismiss
     let landmark: BusinessLandmark
-    
+
     var onAddMedia: () -> Void
     var onForceTrain: () async -> Void
-    
+
     @State private var isForcingTrain = false
     @State private var showingForceTrainAlert = false
-    
+
     private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00)
-    
+
     var body: some View {
         VStack(spacing: 0) {
             ScrollView {
@@ -825,11 +814,11 @@ struct NeedsMoreMediaSheet: View {
                             .foregroundStyle(.red)
                     }
                     .padding(.top, 32)
-                    
+
                     VStack(spacing: 8) {
                         Text("More Media Required")
                             .font(.system(size: 24, weight: .bold, design: .rounded))
-                        
+
                         Text("We couldn't extract enough unique frames of \(landmark.label) to train a reliable model.")
                             .font(.system(size: 15))
                             .multilineTextAlignment(.center)
@@ -838,12 +827,12 @@ struct NeedsMoreMediaSheet: View {
                             .lineLimit(nil)
                             .padding(.horizontal, 24)
                     }
-                    
+
                     VStack(spacing: 16) {
                         let processed = landmark.cleanFrameCount ?? 0
                         let required = landmark.requiredFrames ?? 2000
-                        let seconds = landmark.secondsNeeded ?? 30
-                        
+                        let recommendedSeconds = landmark.secondsNeeded ?? 30
+
                         HStack {
                             VStack(alignment: .leading) {
                                 Text("Frames Extracted").font(.caption).foregroundStyle(.secondary)
@@ -855,18 +844,18 @@ struct NeedsMoreMediaSheet: View {
                             }
                             Spacer(minLength: 8)
                             VStack(alignment: .trailing) {
-                                Text("Target Video").font(.caption).foregroundStyle(.secondary)
-                                Text("~\(seconds) Secs")
+                                Text("AI Target Video").font(.caption).foregroundStyle(.secondary)
+                                Text("~\(recommendedSeconds) Secs")
                                     .font(.system(size: 18, weight: .bold, design: .rounded))
                                     .foregroundStyle(.red)
                                     .minimumScaleFactor(0.5)
                                     .lineLimit(1)
                             }
                         }
-                        
+
                         Divider()
-                        
-                        Text("Capture about **\(seconds) more seconds** of video capturing your landmark. Once uploaded, training will resume automatically. This will not cost a token. Alternatively, if this is a small or flat object where taking more video is impossible, you can force the AI to train anyway.")
+
+                        Text("We recommend capturing about **\(recommendedSeconds) more seconds** of video, but any additional footage helps! Record between 1 and 90 seconds. Once uploaded, training will resume automatically.")
                             .font(.system(size: 14))
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -876,11 +865,11 @@ struct NeedsMoreMediaSheet: View {
                     .background(Color(uiColor: .secondarySystemGroupedBackground))
                     .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                     .padding(.horizontal, 20)
-                    
+
                     Spacer(minLength: 20)
                 }
             }
-            
+
             VStack(spacing: 12) {
                 Button {
                     UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
@@ -896,7 +885,7 @@ struct NeedsMoreMediaSheet: View {
                         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }
                 .disabled(isForcingTrain)
-                
+
                 Button {
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                     showingForceTrainAlert = true

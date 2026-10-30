@@ -1,4 +1,5 @@
 // AutoUploadManager.swift
+
 import Foundation
 import SwiftUI
 import Combine
@@ -18,6 +19,11 @@ class AutoUploadManager: ObservableObject {
     private var isPaused = false
     private let uploadService = UploadService()
     private let hardNegativeUploadService = HardNegativeUploadService()
+    
+    // 🚀 Single fixed ID prevents duplicate/spam notifications for stuck queue items
+    private let stuckQueueNotificationID = "com.informationoutpost.LookSeeProto.stuckQueueReminder"
+    // Remind the user 2 hours (7200 seconds) after an upload gets left behind
+    private let stuckQueueReminderDelay: TimeInterval = 7200
 
     private init() {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
@@ -38,13 +44,23 @@ class AutoUploadManager: ObservableObject {
             }.store(in: &cancellables)
         OfflineMediaManager.shared.$archivedItems
             .map { $0.map(\.id) }.removeDuplicates().receive(on: RunLoop.main)
-            .sink { [weak self] _ in Task { await self?.autoStartIfPossible() } }
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.updateStuckQueueReminder()
+                Task { await self.autoStartIfPossible() }
+            }
             .store(in: &cancellables)
     }
 
     func attachAuthVM(_ vm: AuthViewModel) {
         globalAuthVM = vm
-        Task { await autoStartIfPossible() }
+        Task {
+            let token = await vm.fetchIdToken()
+            if !token.isEmpty {
+                await AppDelegate.syncStoredTokenIfNeeded(idToken: token)
+            }
+            await autoStartIfPossible()
+        }
     }
 
     func forceRetry() {
@@ -57,6 +73,7 @@ class AutoUploadManager: ObservableObject {
     func stopProcessing() {
         isPaused = true
         queueMessage = isUploading ? "Pausing after the current request." : "Uploads paused. Tap Retry uploads to resume."
+        updateStuckQueueReminder()
         // Keep ownership of the active async operation until its defer runs.
     }
 
@@ -74,6 +91,7 @@ class AutoUploadManager: ObservableObject {
         guard NetworkMonitor.shared.isConnected else {
             queueMessage = "Waiting for an internet connection."
             print("[UploadQueue] Waiting: offline")
+            updateStuckQueueReminder()
             return
         }
         guard let authVM = globalAuthVM else {
@@ -109,6 +127,7 @@ class AutoUploadManager: ObservableObject {
         guard nextQueuedMedia() != nil else {
             queueMessage = OfflineMediaManager.shared.archivedItems.isEmpty
                 ? "No uploads waiting." : "Some uploads need attention. See the messages below."
+            updateStuckQueueReminder()
             return
         }
         // Lock before the first await, including account refresh and token lookup.
@@ -119,6 +138,7 @@ class AutoUploadManager: ObservableObject {
             currentlyUploadingId = nil
             currentUploadProgress = 0
             endBackgroundTask()
+            updateStuckQueueReminder()
         }
         queueMessage = "Checking your account…"
         print("[UploadQueue] Checking account before upload")
@@ -211,6 +231,34 @@ class AutoUploadManager: ObservableObject {
             currentlyUploadingId = nil
         }
         queueMessage = managerSummary()
+    }
+
+    // MARK: - Non-Spammy Stuck Queue Reminder
+    private func updateStuckQueueReminder() {
+        let center = UNUserNotificationCenter.current()
+        let activeQueueItems = OfflineMediaManager.shared.archivedItems.filter { $0.deletionBlocked != true }
+        
+        // If all uploads are done, immediately cancel any pending reminder
+        guard !activeQueueItems.isEmpty else {
+            center.removePendingNotificationRequests(withIdentifiers: [stuckQueueNotificationID])
+            return
+        }
+        
+        // Schedule (or overwrite) a single reminder for 2 hours from now
+        let count = activeQueueItems.count
+        let content = UNMutableNotificationContent()
+        content.title = "Pending Landmark Upload\(count == 1 ? "" : "s")"
+        content.body = "You have \(count) landmark video\(count == 1 ? "" : "s") waiting in your upload queue. Open LookSee to finish syncing."
+        content.sound = .default
+        
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: stuckQueueReminderDelay, repeats: false)
+        let request = UNNotificationRequest(identifier: stuckQueueNotificationID, content: content, trigger: trigger)
+        
+        center.add(request) { error in
+            if let error = error {
+                print("⚠️ Could not schedule queue reminder: \(error.localizedDescription)")
+            }
+        }
     }
 
     private func managerSummary() -> String {

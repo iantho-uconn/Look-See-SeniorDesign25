@@ -29,6 +29,9 @@ class AuthViewModel: ObservableObject {
     @Published private var sessionChecksInProgress = 0
     @Published private var hasCheckedSession = false
     private var isAttesting = false
+    
+    // 🚀 NEW: Hard cooldown lock to prevent CloudFront 403 WAF Bans
+    private var lastStatsFetchTime: Date = .distantPast
 
     var isEligibleForBannerAds: Bool {
         guard hasCheckedSession, sessionChecksInProgress == 0 else { return false }
@@ -165,7 +168,8 @@ class AuthViewModel: ObservableObject {
             }
 
             await fetchUserDetails()
-            await fetchUserUsageStats()
+            // 🚀 Bypass cooldown lock on manual login
+            await fetchUserUsageStats(force: true)
             return true
         } catch let error as AuthError {
             errorMessage = friendlyMessage(for: error)
@@ -194,7 +198,8 @@ class AuthViewModel: ObservableObject {
                     await performAppAttest()
                     await initDatabaseRow(emailToSave: self.userEmail)
                     await fetchUserDetails()
-                    await fetchUserUsageStats()
+                    // 🚀 Bypass cooldown lock on manual login
+                    await fetchUserUsageStats(force: true)
                 } else {
                     errorMessage = String(localized: "Additional steps required to sign in.")
                 }
@@ -299,8 +304,19 @@ class AuthViewModel: ObservableObject {
         return request
     }
 
-    func fetchUserUsageStats() async {
+    // 🚀 NEW: Added an optional force parameter and a 30-second cooldown lock
+    func fetchUserUsageStats(force: Bool = false) async {
         guard !userId.isEmpty else { return }
+        
+        // 🚀 Hard cooldown lock: Swallow requests if they are firing faster than 30 seconds
+        if !force {
+            let now = Date()
+            guard now.timeIntervalSince(lastStatsFetchTime) > 30 else { return }
+            lastStatsFetchTime = now
+        } else {
+            lastStatsFetchTime = Date()
+        }
+
         guard let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/LookSeeGetUserStats") else { return }
         
         let requestedUserId = userId
@@ -493,8 +509,9 @@ class AuthViewModel: ObservableObject {
             subscriptionExpiresAt = expiry.doubleValue
             renewalCancellationConfirmed = cancelAtPeriodEnd
             cancellationMessage = message
-            // Cancellation stops renewal; it does not revoke paid access or erase tokens.
-            await fetchUserUsageStats()
+            
+            // 🚀 Bypass cooldown lock on cancellation
+            await fetchUserUsageStats(force: true)
             guard isSignedIn, userId == requestedUserId else { return false }
             return true
         } catch {
@@ -762,7 +779,7 @@ class AuthViewModel: ObservableObject {
     // MARK: - App Attest Registration
     private func performAppAttest() async {
         guard !isAttesting else { return }
-        let syncKey = "AppAttestSyncedV6_\(self.userId)" 
+        let syncKey = "AppAttestSyncedV6_\(self.userId)"
         
         if AppAttestService.shared.currentKeyId == nil || !UserDefaults.standard.bool(forKey: syncKey) {
             isAttesting = true
