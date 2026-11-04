@@ -8,7 +8,19 @@ import MapKit
 import Sentry
 
 struct PopUp: View {
-    @ObservedObject private var infoView = VariableContainer.shared
+    @ObservedObject private var infoView: VariableContainer
+    private let isOwnerPreview: Bool
+    private let onClose: (() -> Void)?
+
+    init(
+        infoView: VariableContainer = .shared,
+        isOwnerPreview: Bool = false,
+        onClose: (() -> Void)? = nil
+    ) {
+        _infoView = ObservedObject(wrappedValue: infoView)
+        self.isOwnerPreview = isOwnerPreview
+        self.onClose = onClose
+    }
 
     @State private var selectedPromotionImage: PromotionImagePreviewItem?
     @State private var showReportSheet = false
@@ -32,6 +44,7 @@ struct PopUp: View {
         .environment(\.colorScheme, .dark)
         // 🚀 NEW: Silent Analytics Ping
         .onAppear {
+            guard !isOwnerPreview else { return }
             let currentLandmarkId = infoView.landmarkId
             let currentOwnerId = infoView.reportedOwnerId ?? "unknown"
             
@@ -118,7 +131,7 @@ struct PopUp: View {
                 promotionSection
             }
 
-            MerchantCardView()
+            MerchantCardView(vm: infoView)
             
             // 🚀 NEW: Appends the Map Actions right below the Merchant Card
             if infoView.isMapPin {
@@ -349,7 +362,11 @@ struct PopUp: View {
     private var closeButton: some View {
         Button {
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            infoView.dismissLandmark()
+            if let onClose {
+                onClose()
+            } else {
+                infoView.dismissLandmark()
+            }
         } label: {
             Text("Close")
                 .font(.system(size: 16, weight: .bold, design: .rounded))
@@ -425,6 +442,119 @@ struct PopUp: View {
             return directURL
         }
         return URL(string: "https://\(cleaned)")
+    }
+}
+
+/// Owner-only presentation of the existing visitor popup using isolated state.
+@MainActor
+struct BusinessLandmarkPopupPreview: View {
+    let landmark: BusinessLandmark
+
+    @Environment(\.dismiss) private var dismiss
+    @StateObject private var previewInfo = VariableContainer.makePopupPreview()
+    @State private var isLoading = true
+    @State private var loadFailed = false
+    @State private var isInactive = false
+    @State private var retryCount = 0
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                if isLoading {
+                    Spacer()
+                    ProgressView("Loading popup...")
+                    Spacer()
+                } else if loadFailed {
+                    Spacer()
+                    VStack(spacing: 16) {
+                        Image(systemName: "wifi.exclamationmark")
+                            .font(.largeTitle)
+                        Text("Could not load this popup")
+                            .font(.headline)
+                        Text("Check your connection and try again.")
+                            .foregroundStyle(.secondary)
+                        Button("Try Again") {
+                            isLoading = true
+                            retryCount += 1
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                    .padding()
+                    Spacer()
+                } else {
+                    Text(isInactive
+                         ? "This landmark is inactive. This preview shows its saved popup details."
+                         : "Preview of your saved information and currently active promotion.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal)
+                        .padding(.top, 12)
+
+                    PopUp(infoView: previewInfo, isOwnerPreview: true) {
+                        dismiss()
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
+            .navigationTitle("Popup Preview")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+            .task(id: retryCount) {
+                await loadPreview()
+            }
+        }
+        .preferredColorScheme(.dark)
+    }
+
+    private func loadPreview() async {
+        isLoading = true
+        loadFailed = false
+        do {
+            let live = try await LiveLandmarkInfoService().fetchLiveInfo(
+                landmarkId: landmark.landmarkId,
+                timeoutSeconds: 10,
+                updateSharedMerchant: false
+            )
+            guard !Task.isCancelled else { return }
+            guard live.ok != false, live.landmarkId == landmark.landmarkId else {
+                loadFailed = true
+                isLoading = false
+                return
+            }
+
+            previewInfo.resetLandmarkDisplay()
+            previewInfo.landmarkId = live.landmarkId
+            previewInfo.landmarkName = live.label
+            previewInfo.landmarkDescription = live.shortDescription
+            previewInfo.landmarkWebsiteUrl = live.websiteUrl ?? ""
+            previewInfo.merchantName = live.merchantName ?? ""
+            previewInfo.merchantBio = live.merchantBio ?? ""
+            previewInfo.merchantPhone = live.merchantPhone ?? ""
+            previewInfo.merchantWebsite = live.merchantWebsite ?? ""
+            previewInfo.merchantAddress = live.merchantAddress ?? ""
+            previewInfo.merchantLogoUrl = live.merchantLogoUrl ?? ""
+
+            if live.promotionEnabled,
+               let promotion = live.activePromotion ?? live.activePromotions?.first(where: { $0.enabled }),
+               promotion.enabled {
+                previewInfo.promoName = promotion.name
+                previewInfo.promoDescription = promotion.description
+                previewInfo.promoImageUrl = promotion.imageUrl ?? ""
+            }
+
+            isInactive = !live.isActive
+            isLoading = false
+        } catch {
+            guard !Task.isCancelled else { return }
+            loadFailed = true
+            isLoading = false
+        }
     }
 }
 

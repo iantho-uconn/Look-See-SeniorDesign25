@@ -21,6 +21,7 @@ struct BusinessLandmarkDetailView: View {
     @State private var displayedShortDescription: String
     @State private var draftShortDescription: String
     @State private var isEditingDescription = false
+    @State private var isShowingPopupPreview = false
     @State private var isSavingDescription = false
     @State private var saveErrorMessage: String?
 
@@ -578,6 +579,19 @@ struct BusinessLandmarkDetailView: View {
         }
         .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
         .navigationTitle("Landmark Details")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    isShowingPopupPreview = true
+                } label: {
+                    Label("Preview Popup", systemImage: "eye")
+                }
+                .disabled(isSavingDescription || isSavingWebsiteUrl || isSavingManagement || !savingPromotionIds.isEmpty)
+            }
+        }
+        .sheet(isPresented: $isShowingPopupPreview) {
+            BusinessLandmarkPopupPreview(landmark: landmark)
+        }
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $isEditingDescription) {
             editDescriptionSheet

@@ -150,6 +150,11 @@ final class VariableContainer: ObservableObject {
         resetLandmarkDisplay()
     }
 
+    /// An independent display model. Owner previews never change the scan popup.
+    static func makePopupPreview() -> VariableContainer {
+        VariableContainer()
+    }
+
     private func persistSuppressionSets() {
         SuppressionCache.shared.update(
             inactive: inactiveLandmarkIds,

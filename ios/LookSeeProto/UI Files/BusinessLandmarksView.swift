@@ -25,6 +25,8 @@ struct BusinessLandmarksView: View {
     @State private var bulkDeleteSelection: BulkLandmarkSelection?
 
     @State private var landmarkNeedingMedia: BusinessLandmark?
+    @State private var landmarkToPreview: BusinessLandmark?
+    @State private var landmarkToOpen: BusinessLandmark?
 
     @State private var hasLoadedOnce = false
     @State private var autoRefreshTask: Task<Void, Never>?
@@ -247,6 +249,25 @@ struct BusinessLandmarksView: View {
         .fullScreenCover(item: $draftToEdit) { draft in
             LandmarkRecord(archivedMedia: draft)
         }
+        .navigationDestination(item: $landmarkToOpen) { landmark in
+            BusinessLandmarkDetailView(
+                landmark: landmark,
+                onLandmarkUpdated: { updatedLandmark in
+                    viewModel.replaceLandmark(updatedLandmark)
+                },
+                onLandmarkDeleted: { landmarkId in
+                    viewModel.removeLandmark(landmarkId: landmarkId)
+                    promotionTitlesByLandmarkId.removeValue(forKey: landmarkId)
+                    selectedLandmarkIds.remove(landmarkId)
+                },
+                onPromotionTitlesChanged: { landmarkId, titles in
+                    promotionTitlesByLandmarkId[landmarkId] = titles
+                }
+            )
+        }
+        .sheet(item: $landmarkToPreview) { landmark in
+            BusinessLandmarkPopupPreview(landmark: landmark)
+        }
         .sheet(item: $bulkPromotionSelection) { selection in
             BusinessBulkPromotionEditor(landmarks: selection.landmarks) { result in
                 handleBulkPromotionResult(result)
@@ -320,34 +341,23 @@ struct BusinessLandmarksView: View {
             .buttonStyle(.plain)
             .accessibilityLabel(accessibilityText)
         } else {
-            NavigationLink {
-                BusinessLandmarkDetailView(
-                    landmark: landmark,
-                    onLandmarkUpdated: { updatedLandmark in
-                        viewModel.replaceLandmark(updatedLandmark)
-                    },
-                    onLandmarkDeleted: { landmarkId in
-                        viewModel.removeLandmark(landmarkId: landmarkId)
-                        promotionTitlesByLandmarkId.removeValue(forKey: landmarkId)
-                        selectedLandmarkIds.remove(landmarkId)
-                    },
-                    onPromotionTitlesChanged: { landmarkId, titles in
-                        promotionTitlesByLandmarkId[landmarkId] = titles
-                    }
-                )
-            } label: {
-                BusinessLandmarkRow(
-                    landmark: landmark,
-                    effectiveIsActive: effectiveIsActive,
-                    matchedPromotionTitle: matchedPromotionTitle(for: landmark),
-                    isSelectionMode: false,
-                    isSelected: false,
-                    onNeedsMediaTapped: {
-                        landmarkNeedingMedia = landmark
-                    }
-                )
-            }
-            .buttonStyle(.plain)
+            BusinessLandmarkRow(
+                landmark: landmark,
+                effectiveIsActive: effectiveIsActive,
+                matchedPromotionTitle: matchedPromotionTitle(for: landmark),
+                isSelectionMode: false,
+                isSelected: false,
+                onNeedsMediaTapped: {
+                    landmarkNeedingMedia = landmark
+                },
+                onOpen: {
+                    landmarkToOpen = landmark
+                },
+                onPreview: {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    landmarkToPreview = landmark
+                }
+            )
         }
     }
 
@@ -659,6 +669,8 @@ private struct BusinessLandmarkRow: View {
     let isSelectionMode: Bool
     let isSelected: Bool
     let onNeedsMediaTapped: () -> Void
+    var onOpen: (() -> Void)? = nil
+    var onPreview: (() -> Void)? = nil
 
     private let selectionColor = Color(red: 0.22, green: 0.49, blue: 1.00)
 
@@ -683,6 +695,49 @@ private struct BusinessLandmarkRow: View {
         }
     }
 
+    private var landmarkInfoContent: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(landmark.label.isEmpty ? "Untitled Landmark" : landmark.label)
+                .font(.system(size: 18, weight: .bold, design: .rounded))
+                .foregroundColor(.primary)
+
+            Text(landmark.displayDescription)
+                .font(.system(size: 14, weight: .regular))
+                .foregroundColor(.secondary)
+                .lineLimit(2)
+
+            if let matchedPromotionTitle {
+                HStack(spacing: 6) {
+                    Image(systemName: "tag.fill")
+                    Text("Matched promotion: \(matchedPromotionTitle)").lineLimit(1)
+                }
+                .font(.system(size: 12, weight: .bold, design: .rounded))
+                .foregroundStyle(.orange)
+            }
+
+            HStack(spacing: 12) {
+                if landmark.promotionEnabled == true {
+                    HStack(spacing: 4) {
+                        Image(systemName: "tag.fill")
+                        Text("Promotions On")
+                    }
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    .background(Color.orange.opacity(0.15)).foregroundStyle(.orange).clipShape(Capsule())
+                }
+
+                if let latitude = landmark.latitude, let longitude = landmark.longitude {
+                    HStack(spacing: 4) {
+                        Image(systemName: "location.fill")
+                        Text(String(format: "%.4f, %.4f", latitude, longitude))
+                    }
+                    .font(.system(size: 12, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+                }
+            }
+        }
+    }
+
     var body: some View {
         let needsMoreMedia = landmark.status == "NEEDS_MORE_MEDIA"
 
@@ -696,58 +751,42 @@ private struct BusinessLandmarkRow: View {
                         .transition(.scale.combined(with: .opacity))
                 }
 
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack(alignment: .top) {
-                        Text(landmark.label.isEmpty ? "Untitled Landmark" : landmark.label)
-                            .font(.system(size: 18, weight: .bold, design: .rounded))
-                            .foregroundColor(.primary)
-
-                        Spacer()
-
-                        Text(badgeText)
-                            .font(.system(size: 11, weight: .bold, design: .rounded))
-                            .textCase(.uppercase)
-                            .lineLimit(nil)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .padding(.horizontal, 10).padding(.vertical, 6)
-                            .background(needsMoreMedia ? Color.red.opacity(0.15) : badgeColor.opacity(0.15))
-                            .foregroundColor(needsMoreMedia ? .red : badgeColor)
-                            .clipShape(Capsule())
+                if let onOpen, !isSelectionMode {
+                    Button(action: onOpen) {
+                        landmarkInfoContent
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Opens landmark details")
+                } else {
+                    landmarkInfoContent
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
 
-                    Text(landmark.displayDescription)
-                        .font(.system(size: 14, weight: .regular))
-                        .foregroundColor(.secondary)
-                        .lineLimit(2)
+                VStack(alignment: .trailing, spacing: 6) {
+                    Text(badgeText)
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .textCase(.uppercase)
+                        .lineLimit(nil)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 10).padding(.vertical, 6)
+                        .background(needsMoreMedia ? Color.red.opacity(0.15) : badgeColor.opacity(0.15))
+                        .foregroundColor(needsMoreMedia ? .red : badgeColor)
+                        .clipShape(Capsule())
 
-                    if let matchedPromotionTitle {
-                        HStack(spacing: 6) {
-                            Image(systemName: "tag.fill")
-                            Text("Matched promotion: \(matchedPromotionTitle)").lineLimit(1)
+                    if !isSelectionMode, let onPreview {
+                        Button(action: onPreview) {
+                            Label("Preview", systemImage: "eye")
+                                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                .foregroundStyle(selectionColor)
+                                .padding(.horizontal, 10)
+                                .frame(minHeight: 44)
+                                .background(selectionColor.opacity(0.10), in: Capsule())
                         }
-                        .font(.system(size: 12, weight: .bold, design: .rounded))
-                        .foregroundStyle(.orange)
-                    }
-
-                    HStack(spacing: 12) {
-                        if landmark.promotionEnabled == true {
-                            HStack(spacing: 4) {
-                                Image(systemName: "tag.fill")
-                                Text("Promotions On")
-                            }
-                            .font(.system(size: 11, weight: .bold, design: .rounded))
-                            .padding(.horizontal, 8).padding(.vertical, 4)
-                            .background(Color.orange.opacity(0.15)).foregroundStyle(.orange).clipShape(Capsule())
-                        }
-
-                        if let latitude = landmark.latitude, let longitude = landmark.longitude {
-                            HStack(spacing: 4) {
-                                Image(systemName: "location.fill")
-                                Text(String(format: "%.4f, %.4f", latitude, longitude))
-                            }
-                            .font(.system(size: 12, weight: .bold, design: .monospaced))
-                            .foregroundStyle(.tertiary)
-                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Preview popup for \(landmark.label)")
+                        .accessibilityHint("Shows the landmark details, active promotion, and business card")
                     }
                 }
             }
