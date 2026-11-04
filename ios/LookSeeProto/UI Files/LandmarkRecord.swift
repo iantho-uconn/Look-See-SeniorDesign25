@@ -24,6 +24,10 @@ struct LandmarkRecord: View {
     var existingDescription: String?
     var existingSecondsNeeded: Double?
 
+    // 🚀 NEW: Hardcoded dynamic limits for initial upload UI flow
+    private let maxPositiveVideoDuration: Int = 120
+    private let maxNegativeVideoDuration: Int = 45
+
     init(
         isNavVisible: Binding<Bool> = .constant(true),
         isActive: Bool = true,
@@ -132,7 +136,8 @@ struct LandmarkRecord: View {
                 PositiveVideoCameraView(
                     isActive: isActive,
                     isNavVisible: $isNavVisible,
-                    uiTargetDuration: 90,
+                    // 🚀 UPDATED: Max duration passed down dynamically
+                    uiTargetDuration: maxPositiveVideoDuration,
                     minTotalTimeLimit: uiTargetDuration
                 ) { urls in
                     pendingArchiveURLs = urls
@@ -240,8 +245,10 @@ struct LandmarkRecord: View {
         .sheet(isPresented: $showTextScanner) { ScannerSheet(scannedText: $shortDescription) }
         .fullScreenCover(isPresented: $showNegativeCamera) {
             NegativeVideoCameraView(
-                uiTargetDuration: 30,
-                minTotalTimeLimit: negativeTargetDuration
+                // 🚀 UPDATED: Max duration passed down dynamically
+                uiTargetDuration: maxNegativeVideoDuration,
+                minTotalTimeLimit: negativeTargetDuration,
+                maxTotalTimeLimit: maxNegativeVideoDuration
             ) { video in
                 capturedNegativeVideo = video
                 if !hardNegativeUploadService.isUploading { hardNegativeUploadService.reset() }
@@ -575,7 +582,7 @@ struct LandmarkRecord: View {
                     Button {
                         UIImpactFeedbackGenerator(style: .light).impactOccurred()
                         
-                        // 🚀 THE FIX: Only delete it if it is a fresh camera recording, not a saved draft.
+                        // Only delete the negative video if it's a temporary camera file!
                         if archivedMedia == nil {
                             video.deleteLocalFile()
                         }
@@ -825,12 +832,10 @@ struct LandmarkRecord: View {
 
     private func discardPendingMedia() { deleteAllTemporaryVideos(pendingArchiveURLs); pendingArchiveURLs = [] }
 
-    // 🚀 THE FIX: Safely handles Draft vs Temp files during cleanup
     private func clearScreen() {
         deleteAllTemporaryVideos(pickedVideoURLs)
         
         // Only delete the negative video if it's a temporary camera file!
-        // This prevents the draft from deleting its own permanent negative video from the hard drive.
         deleteTemporaryVideoIfNeeded(capturedNegativeVideo?.fileURL)
         
         pickedVideoURLs = []

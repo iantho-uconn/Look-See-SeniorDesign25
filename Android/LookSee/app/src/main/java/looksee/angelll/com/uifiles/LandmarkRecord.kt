@@ -559,7 +559,7 @@ fun LandmarkRecordScreen(
                 isActive = isActive,
                 isNavVisible = navState,
                 uiTargetDuration = uiTargetDuration,
-                minTotalTimeLimit = uiTargetDuration,
+                minTotalTimeLimit = 1,
                 onDone = { uris ->
                     isStitchingVideos = true
                     coroutineScope.launch {
@@ -779,7 +779,7 @@ fun LandmarkRecordScreen(
             Box(modifier = Modifier.fillMaxSize().zIndex(200f)) {
                 NegativeVideoCameraView(
                     uiTargetDuration = negativeTargetDuration,
-                    minTotalTimeLimit = negativeTargetDuration,
+                    minTotalTimeLimit = 1,
                     maxTotalTimeLimit = 30,
                     onDone = { video ->
                         capturedNegativeVideo = video

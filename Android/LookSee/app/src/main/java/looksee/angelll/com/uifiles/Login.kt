@@ -55,10 +55,10 @@ fun LoginScreen(
     var isLoggingIn by remember { mutableStateOf(false) }
     
     val focusManager = LocalFocusManager.current
-
-    LaunchedEffect(vm.isSignedIn) {
-        if (vm.isSignedIn) {
-            onNavigate("main")
+    
+    LaunchedEffect(vm.errorMessage) {
+        if (vm.errorMessage.contains("already signed in", ignoreCase = true)) {
+            vm.signOut() // Clear ghost session
         }
     }
 
@@ -261,16 +261,30 @@ fun LoginScreen(
             Button(
                 onClick = {
                     focusManager.clearFocus()
-                    vm.signIn(email.trim(), password)
+                    isLoggingIn = true
+                    coroutineScope.launch {
+                        try { Amplify.Auth.signOut() } catch (_: Exception) {}
+                        
+                        val success = vm.signInSync(email.trim(), password)
+                        if (success) {
+                            onNavigate("main")
+                        } else {
+                            isLoggingIn = false
+                        }
+                    }
                 },
                 modifier = Modifier.fillMaxWidth().height(56.dp),
                 shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF387DFF)),
-                enabled = email.isNotEmpty() && password.isNotEmpty()
+                enabled = email.isNotEmpty() && password.isNotEmpty() && !isLoggingIn
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Sign In", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                    Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size(14.dp))
+                if (isLoggingIn) {
+                    CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
+                } else {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Sign In", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                        Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size(14.dp))
+                    }
                 }
             }
 

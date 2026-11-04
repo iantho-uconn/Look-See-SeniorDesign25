@@ -20,7 +20,10 @@ data class NearbyLandmark(
     val merchantBio: String? = null,
     val merchantPhone: String? = null,
     val merchantAddress: String? = null,
-    val merchantLogoUrl: String? = null
+    val merchantLogoUrl: String? = null,
+    val isActive: Boolean? = true,
+    val isVisibleOnMap: Boolean? = true,
+    val status: String? = null
 ) {
     val id: String
         get() = landmarkId

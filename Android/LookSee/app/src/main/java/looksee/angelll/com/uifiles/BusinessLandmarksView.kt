@@ -718,7 +718,7 @@ private fun NeedsMoreMediaSheet(
                             )
                         }
                         Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text("Target Video", fontSize = 12.sp, color = Color.Gray)
+                            Text("AI Target Video", fontSize = 12.sp, color = Color.Gray)
                             Text("~$seconds Secs", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.Red)
                         }
                     }
@@ -726,7 +726,7 @@ private fun NeedsMoreMediaSheet(
                     HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
 
                     Text(
-                        "Capture about $seconds more seconds of video. Once uploaded, training will resume automatically. Alternatively, if this is a small or flat object, you can force the AI to train anyway.",
+                        "We recommend capturing about $seconds more seconds of video, but any additional footage helps! Record between 1 and 90 seconds. Once uploaded, training will resume automatically.",
                         fontSize = 13.sp,
                         color = Color.Gray,
                         lineHeight = 18.sp

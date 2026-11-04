@@ -521,19 +521,27 @@ fun ButtonsScreen(
                             Icon(Icons.Default.ArrowCircleUp, contentDescription = null, tint = AppleBlue, modifier = Modifier.size(32.dp))
                         }
                         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("Sign up to upload", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                            Text("Create an account to start contributing landmarks and help improve recognition.", fontSize = 15.sp, color = Color.Gray, textAlign = TextAlign.Center)
+                            Text(if (vm.isSignedIn) "Upgrade to upload" else "Sign up to upload", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            Text(if (vm.isSignedIn) "Business account required" else "Create an account to start contributing landmarks and help improve recognition.", fontSize = 15.sp, color = Color.Gray, textAlign = TextAlign.Center)
                         }
                         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             Button(
-                                onClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); showSignUpPrompt = false; onNavigate("guest_signup") },
+                                onClick = { 
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    showSignUpPrompt = false
+                                    if (vm.isSignedIn) {
+                                        onNavigate("Settings")
+                                    } else {
+                                        onNavigate("guest_signup")
+                                    }
+                                },
                                 modifier = Modifier.fillMaxWidth().height(56.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = AppleBlue),
                                 shape = RoundedCornerShape(16.dp)
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Text("Create Account", fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                                    Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Text(if (vm.isSignedIn) "View Business Plans" else "Create Account", fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                                    if (!vm.isSignedIn) Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size(18.dp))
                                 }
                             }
                             Button(
