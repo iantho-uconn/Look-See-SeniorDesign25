@@ -219,7 +219,7 @@ struct NegativeVideoCameraView: View {
                 
                 if flowState == .instruction {
                     instructionTopPrompt
-                        .padding(.top, 16)
+                        .padding(.top, 8)
                 }
                 
                 Spacer()
@@ -227,7 +227,7 @@ struct NegativeVideoCameraView: View {
                 switch flowState {
                 case .instruction:
                     instructionBottomCard
-                        .padding(.bottom, 100)
+                        .padding(.bottom, 8)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 case .recording:
                     recordingControls
@@ -389,42 +389,20 @@ struct NegativeVideoCameraView: View {
     }
     
     private var instructionTopPrompt: some View {
-        HStack(alignment: .top, spacing: 16) {
-            Image(systemName: "video.slash.fill")
-                .font(.system(size: 24, weight: .light))
-                .foregroundStyle(Color(red: 0.22, green: 0.49, blue: 1.00))
-                .padding(.top, 4)
-            
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Capture Negative Media")
-                    .font(.system(size: 17, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
-                Text("Pan the area and background environment. Do not include the main landmark in this video.")
-                    .font(.system(size: 14, weight: .regular))
-                    .foregroundStyle(.white.opacity(0.8))
-                    .lineSpacing(2)
-            }
-            Spacer()
-        }
-        .padding(20)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.white.opacity(0.2), lineWidth: 0.5))
-        .padding(.horizontal, 20)
-        .transition(.move(edge: .top).combined(with: .opacity))
+        Text("Pan slowly. Keep the landmark out of frame.")
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.white)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(.black.opacity(0.72), in: RoundedRectangle(cornerRadius: 12))
+            .padding(.horizontal, 16)
+            .transition(.move(edge: .top).combined(with: .opacity))
     }
-    
+
     private var instructionBottomCard: some View {
-        VStack(spacing: 16) {
-            Text(currentPhase.title)
-                .font(.system(size: 20, weight: .bold, design: .rounded))
-                .foregroundStyle(Color(.white))
-            
-            Text(currentPhase.instruction)
-                .font(.system(size: 15, weight: .medium, design: .rounded))
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.white.opacity(0.9))
-                .padding(.horizontal, 10)
-            
+        VStack(spacing: 4) {
             Button {
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
@@ -434,15 +412,15 @@ struct NegativeVideoCameraView: View {
                 startTimer()
             } label: {
                 Text("Start Recording")
-                    .font(.system(size: 17, weight: .bold, design: .rounded))
+                    .font(.headline)
                     .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 8)
+                    .frame(maxWidth: .infinity, minHeight: 44)
                     .background(Color(red: 0.22, green: 0.49, blue: 1.00))
                     .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                     .shadow(color: Color(red: 0.22, green: 0.49, blue: 1.00).opacity(0.3), radius: 8, x: 0, y: 4)
             }
-            .padding(.top, 12)
             
             if !recordedClips.isEmpty {
                 Button {
@@ -450,22 +428,23 @@ struct NegativeVideoCameraView: View {
                     gallerySelection = recordedClips.last?.id ?? ""
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { flowState = .gallery }
                 } label: {
-                    Text("Cancel & View Captured Clips")
-                        .font(.system(size: 17, weight: .semibold, design: .rounded))
+                    Text("View Clips")
+                        .font(.headline)
                         .foregroundStyle(.primary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 8)
+                        .frame(maxWidth: .infinity, minHeight: 44)
                         .background(Color(.systemBackground))
                         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }
-                .padding(.top, 4)
             }
         }
-        .padding(24)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 32, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 32, style: .continuous).stroke(Color.white.opacity(0.2), lineWidth: 0.5))
+        .padding(6)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.white.opacity(0.2), lineWidth: 0.5))
         .shadow(color: .black.opacity(0.15), radius: 20, x: 0, y: 10)
-        .padding(.horizontal, 20)
+        .frame(maxWidth: 320)
+        .padding(.horizontal, 16)
     }
     
     private var recordingControls: some View {
