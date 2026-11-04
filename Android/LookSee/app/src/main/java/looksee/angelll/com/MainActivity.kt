@@ -256,7 +256,7 @@ fun RootView(vm: AuthViewModel, authState: AuthState) {
                 onGoToLogin = {
                     appState = AppState.Login
                 },
-                onDismiss = { appState = AppState.Settings }
+                onDismiss = { appState = AppState.Main }
             )
         }
 

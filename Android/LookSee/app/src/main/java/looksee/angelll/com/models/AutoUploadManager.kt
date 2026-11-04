@@ -199,7 +199,7 @@ private data class AutoUploadDependencies(
             val notifier = AndroidAutoUploadNotifier(appContext)
             val pauseStore = SharedPreferencesAutoUploadPauseStore(appContext)
             val archiveManager = OfflineMediaManager.shared(appContext)
-            val workerEvents = WorkManagerAutoUploadEvents(notifier, progressWriter)
+            val workerEvents = WorkManagerAutoUploadEvents(appContext, notifier, progressWriter)
             return AutoUploadDependencies(
                 engine = AutoUploadQueueEngine(
                     archive = OfflineMediaAutoUploadArchive(archiveManager),
@@ -345,6 +345,7 @@ private class HardNegativeServiceAutoUploader(
 }
 
 private class WorkManagerAutoUploadEvents(
+    val context: Context,
     private val notifier: AndroidAutoUploadNotifier,
     private val progressWriter: suspend (Data) -> Unit,
 ) : AutoUploadEvents {
@@ -566,11 +567,17 @@ private class AndroidAutoUploadNotifier(private val context: Context) {
         )
     }
 
-    private companion object {
+    companion object {
         const val UPLOAD_CHANNEL_ID = "looksee_auto_upload_progress"
         const val RESULTS_CHANNEL_ID = "looksee_auto_upload_results"
         const val FOREGROUND_NOTIFICATION_ID = 41_101
         const val LIMIT_NOTIFICATION_ID = 41_102
+        const val PREFS_NAME = "LookSeePrefs"
+        
+        fun clearStuckReminder(context: Context) {
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .edit().remove("lastStuckNotificationTime").apply()
+        }
     }
 }
 
@@ -743,6 +750,10 @@ internal class AutoUploadQueueEngine(
 
                 report(media, label, uploadedCount, pending.size, 1.0)
                 archive.delete(media)
+                // Clear the stuck notification timer using the application context
+                val appContext = (events as? WorkManagerAutoUploadEvents)?.context 
+                    ?: error("Invalid context")
+                AndroidAutoUploadNotifier.clearStuckReminder(appContext)
                 uploadedCount += 1
                 remainingTokens -= 1
                 events.onUploadSucceeded(label)

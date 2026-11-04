@@ -75,14 +75,43 @@ fun LandmarkMapScreen(
 
     val filterSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    val activeLandmarks = remember(rawLandmarks, searchText, myUploadsOnly, promotedOnly, selectedClusters.toList()) {
+    val untrainedStatuses = setOf("NEEDS_MORE_MEDIA", "PREPARING_DATA", "PENDING_TRAINING", "TRAINING_MODEL", "OPTIMIZING_MODEL")
+
+    val activeLandmarks = remember(rawLandmarks, searchText, myUploadsOnly, promotedOnly, selectedClusters.toList(), infoView.inactiveLandmarkIds, infoView.hiddenMapLandmarkIds) {
+        infoView.allLandmarks = rawLandmarks // sync
+        val prefs = context.getSharedPreferences("LookSeePrefs", android.content.Context.MODE_PRIVATE)
+        if (vm.userEmail.isNotEmpty()) {
+            prefs.edit().putString("lastKnownEmail", vm.userEmail).apply()
+        }
+        val currentEmail = vm.userEmail.takeIf { it.isNotEmpty() } ?: prefs.getString("lastKnownEmail", "") ?: ""
+        
         rawLandmarks.filter { landmark ->
-            val matchesUser = if (myUploadsOnly) landmark.createdBy == vm.userEmail else true
+            val cluster = landmark.clusterId?.trim() ?: ""
+            if (cluster.isEmpty()) return@filter false
+            
+            val status = landmark.status?.uppercase()
+            if (status != null && untrainedStatuses.contains(status)) return@filter false
+
+            val isLocallyInactive = infoView.inactiveLandmarkIds.contains(landmark.landmarkId) || VariableContainer.isLandmarkInactive(landmark.landmarkId)
+            val isActive = if (infoView.isLocallyModified(landmark.landmarkId)) {
+                !isLocallyInactive
+            } else {
+                (landmark.isActive ?: true) && !isLocallyInactive
+            }
+            if (!isActive) return@filter false
+
+            val matchesUser = if (myUploadsOnly) landmark.createdBy == currentEmail else true
             val matchesPromo = if (promotedOnly) landmark.promotionEnabled else true
-            val matchesCluster = if (selectedClusters.isEmpty()) true else landmark.clusterId in selectedClusters
+            val matchesCluster = if (selectedClusters.isEmpty()) true else cluster in selectedClusters
             val matchesSearch = if (searchText.isEmpty()) true else landmark.label.contains(searchText, ignoreCase = true)
 
             matchesUser && matchesPromo && matchesCluster && matchesSearch
+        }
+    }
+
+    LaunchedEffect(activeLandmarks) {
+        if (infoView.infoView && !activeLandmarks.any { it.landmarkId == infoView.landmarkId }) {
+            infoView.dismissLandmark()
         }
     }
 
@@ -97,6 +126,10 @@ fun LandmarkMapScreen(
     var hasSetInitialCameraPosition by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
+        val prefs = context.getSharedPreferences("LookSeePrefs", android.content.Context.MODE_PRIVATE)
+        if (vm.userEmail.isNotEmpty()) {
+            prefs.edit().putString("lastKnownEmail", vm.userEmail).apply()
+        }
         vm.fetchUserEmail()
         if (locationManager.hasLocationPermission()) {
             locationManager.start()
