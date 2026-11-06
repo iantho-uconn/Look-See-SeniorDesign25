@@ -1146,7 +1146,7 @@
 				CODE_SIGN_ENTITLEMENTS = LookSeeProto/LookSeeProto.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = MLBT5UQ68X;
 				ENABLE_PREVIEWS = YES;
@@ -1191,7 +1191,7 @@
 				CODE_SIGN_ENTITLEMENTS = LookSeeProto/LookSeeProto.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = MLBT5UQ68X;
 				ENABLE_PREVIEWS = YES;
