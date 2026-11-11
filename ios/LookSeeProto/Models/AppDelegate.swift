@@ -74,7 +74,9 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
             let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/users/push-token")!
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
-            request.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
+            
+            let cleanToken = idToken.hasPrefix("Bearer ") ? String(idToken.dropFirst(7)) : idToken
+            request.setValue("Bearer \(cleanToken)", forHTTPHeaderField: "Authorization")
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.setValue("application/json", forHTTPHeaderField: "Accept")
             
@@ -89,8 +91,11 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
             ))
             request.httpBody = payload
             
-            // 🛡️ RESTORED: We MUST send the App Attest signature here so the backend
-            // can register the new device key in the freshly cleared DynamoDB table!
+            if AppAttestService.shared.currentKeyId == nil {
+                print("⚠️ No App Attest Key found locally. Attesting device before syncing token...")
+                await AppAttestService.shared.reauthenticateAndRegisterDevice(idToken: cleanToken)
+            }
+            
             do {
                 let assertion = try await AppAttestService.shared.generateAssertion(for: payload)
                 if let keyId = AppAttestService.shared.currentKeyId {

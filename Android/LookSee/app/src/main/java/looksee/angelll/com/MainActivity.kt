@@ -36,6 +36,10 @@ class MainActivity : ComponentActivity() {
     private val authState: AuthState by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // 🚀 THE FIX: Forces Android Emulator networking to skip IPv6 lookups,
+        // instantly eliminating the 5-second timeout delay on AWS and Stripe requests.
+        System.setProperty("java.net.preferIPv4Stack", "true")
+        
         super.onCreate(savedInstanceState)
 
         // 🚀 THE FIX: Tell Android to stop blocking the status bars
@@ -134,6 +138,8 @@ fun RootView(vm: AuthViewModel, authState: AuthState) {
         }
     }
 
+    var settingsStartWithSubscriptions by remember { mutableStateOf(false) }
+
     when (appState) {
         AppState.LoadingModel -> {
             LaunchedEffect(Unit) {
@@ -155,9 +161,17 @@ fun RootView(vm: AuthViewModel, authState: AuthState) {
         AppState.Main -> {
             ButtonsScreen(
                 vm = vm,
+                authState = authState,
                 onNavigate = { route ->
                     when (route) {
-                        "Settings" -> appState = AppState.Settings
+                        "Settings" -> {
+                            settingsStartWithSubscriptions = false
+                            appState = AppState.Settings
+                        }
+                        "BusinessPlans" -> {
+                            settingsStartWithSubscriptions = true
+                            appState = AppState.Settings
+                        }
                         "login" -> appState = AppState.Login
                         "guest_signup" -> appState = AppState.GuestSignUp
                         "BusinessLandmarksView" -> appState = AppState.BusinessLandmarks
@@ -169,6 +183,7 @@ fun RootView(vm: AuthViewModel, authState: AuthState) {
         AppState.Settings -> {
             SettingsScreen(
                 vm = vm,
+                startWithSubscriptions = settingsStartWithSubscriptions,
                 onDismiss = { appState = AppState.Main },
                 onNavigate = { route ->
                     when (route) {
@@ -308,9 +323,13 @@ fun RootView(vm: AuthViewModel, authState: AuthState) {
         AppState.Login -> {
             LoginScreen(
                 vm = vm,
+                authState = authState,
                 onNavigate = { route ->
                     when (route) {
-                        "main" -> appState = AppState.Main
+                        "main" -> {
+                            authState.resolveTier()
+                            appState = AppState.Main
+                        }
                         "signup" -> appState = AppState.Signup
                         "forgot_password" -> appState = AppState.ForgotPassword
                     }

@@ -100,7 +100,19 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                 try {
                     val user = Amplify.Auth.getCurrentUser()
                     withContext(Dispatchers.Main) { userId = user.userId }
-                } catch (_: Exception) { }
+                } catch (_: Exception) { 
+                    try {
+                        val session = Amplify.Auth.fetchAuthSession() as? AWSCognitoAuthSession
+                        val idToken = session?.userPoolTokensResult?.value?.idToken
+                        if (idToken != null) {
+                            val payload = String(android.util.Base64.decode(idToken.split(".")[1], android.util.Base64.DEFAULT))
+                            val sub = org.json.JSONObject(payload).optString("sub")
+                            if (sub.isNotEmpty()) {
+                                withContext(Dispatchers.Main) { userId = sub }
+                            }
+                        }
+                    } catch (_: Exception) {}
+                }
 
                 initDatabaseRow(emailToSave = usernameInput)
 
@@ -215,13 +227,27 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
 
     suspend fun fetchUserDetails() {
         try {
-            val user = Amplify.Auth.getCurrentUser()
-            userId = user.userId
+            try {
+                val user = Amplify.Auth.getCurrentUser()
+                withContext(Dispatchers.Main) { userId = user.userId }
+            } catch (e: Exception) {
+                // Ignore, try attributes fallback
+            }
 
             val attributes = Amplify.Auth.fetchUserAttributes()
-            val emailAttr = attributes.find { it.key.keyString == "email" }
-            if (emailAttr != null) {
-                userEmail = emailAttr.value
+            
+            withContext(Dispatchers.Main) {
+                val emailAttr = attributes.find { it.key.keyString == "email" }
+                if (emailAttr != null) {
+                    userEmail = emailAttr.value
+                }
+                
+                if (userId.isEmpty()) {
+                    val subAttr = attributes.find { it.key.keyString == "sub" }
+                    if (subAttr != null) {
+                        userId = subAttr.value
+                    }
+                }
             }
         } catch (error: Exception) {
             println("❌ Failed to fetch user details: $error")
@@ -559,7 +585,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
             put("userId", userId)
             put("scannedAt", scannedAt)
         }
-        makeHttpRequest("DELETE", url, body)
+        makeHttpRequest("DELETE", url, body, fetchIdToken())
     }
 
     // MARK: - Force Train Landmark API
@@ -594,10 +620,10 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
 
     // MARK: - Native Android Network Helper (No Retrofit Required)
     private suspend fun makePostRequest(urlStr: String, body: JSONObject): Pair<Int, String?> =
-        makeHttpRequest("POST", urlStr, body)
+        makeHttpRequest("POST", urlStr, body, fetchIdToken())
 
     private suspend fun makeGetRequest(urlStr: String): Pair<Int, String?> =
-        makeHttpRequest("GET", urlStr, null)
+        makeHttpRequest("GET", urlStr, null, fetchIdToken())
 
     private suspend fun makeHttpRequest(
         method: String,

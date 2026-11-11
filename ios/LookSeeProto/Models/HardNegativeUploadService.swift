@@ -7,6 +7,9 @@
 
 import Foundation
 import Combine
+import CryptoKit
+import Amplify
+import AWSPluginsCore
 
 @MainActor
 final class HardNegativeUploadService: ObservableObject {
@@ -15,6 +18,7 @@ final class HardNegativeUploadService: ObservableObject {
     @Published private(set) var isUploading = false
 
     private let baseURL = URL(string: "https://d11vl3v9w133rh.cloudfront.net")!
+    private let counterFastForwardSteps = [5, 15, 35, 75, 150, 300]
 
     enum UploadError: LocalizedError {
         case noVideo
@@ -41,7 +45,6 @@ final class HardNegativeUploadService: ObservableObject {
     // MARK: - Public upload flow
 
     func upload(landmarkId: String, idToken: String, video: CapturedNegativeVideo) async throws -> HardNegativeCompleteResponse {
-        
         isUploading = true
         progress = 0
         status = String(localized: "Preparing negative video…")
@@ -96,26 +99,104 @@ final class HardNegativeUploadService: ObservableObject {
 
     // MARK: - Init
 
-    private func initializeUpload(landmarkId: String, token: String, video: CapturedNegativeVideo) async throws -> HardNegativeInitResponse {
+    private func initializeUpload(
+        landmarkId: String,
+        token: String,
+        video: CapturedNegativeVideo,
+        counterRetryCount: Int = 0,
+        hasReattested: Bool = false
+    ) async throws -> HardNegativeInitResponse {
+        await AppAttestGlobalLock.shared.acquire()
+
+        if AppAttestService.shared.currentKeyId == nil && !hasReattested {
+            await AppAttestService.shared.reauthenticateAndRegisterDevice(idToken: token)
+        }
+
         let url = baseURL.appendingPathComponent("landmarks").appendingPathComponent(landmarkId).appendingPathComponent("hard-negatives").appendingPathComponent("init")
-        let body = HardNegativeInitRequest(files: [HardNegativeFileRequest(filename: video.filename, contentType: "video/quicktime")])
+        
+        let body = HardNegativeInitRequest(
+            files: [HardNegativeFileRequest(filename: video.filename, contentType: "video/quicktime")],
+            nonce: UUID().uuidString
+        )
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(token, forHTTPHeaderField: "Authorization")
-        request.httpBody = try JSONEncoder().encode(body)
+        
+        let cleanToken = token.hasPrefix("Bearer ") ? String(token.dropFirst(7)) : token
+        request.setValue("Bearer \(cleanToken)", forHTTPHeaderField: "Authorization")
+        
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        let payload = try encoder.encode(body)
+        request.httpBody = payload
 
-        // 🚀 ADDED: Attaches App Attest and Cognito token headers automatically
-        await request.signWithAppAttest(idToken: token)
+        do {
+            let assertion = try await AppAttestService.shared.generateAssertion(for: payload)
+            if let keyId = AppAttestService.shared.currentKeyId {
+                print("✅ [Upload Init Negative] Hardware signature generated! Attaching headers.")
+                request.setValue(keyId, forHTTPHeaderField: "X-LookSee-App-Attest-KeyId")
+                request.setValue(assertion, forHTTPHeaderField: "X-LookSee-App-Attest")
+                
+                let hashString = Data(SHA256.hash(data: payload)).base64EncodedString()
+                request.setValue(hashString, forHTTPHeaderField: "X-LookSee-App-Attest-Payload-Hash")
+            } else {
+                print("❌ [Upload Init Negative] Hardware signature generated, but currentKeyId is missing from memory.")
+            }
+        } catch {
+            print("❌ [Upload Init Negative] FAILED to generate hardware signature: \(error.localizedDescription)")
+        }
 
         let (data, response) = try await URLSession.shared.data(for: request)
+        
+        // 🛡️ TWO-PATH SELF-HEALING LOGIC
+        if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 403 {
+            let bodyString = String(data: data, encoding: .utf8) ?? ""
+            
+            let isKeyError = bodyString.contains("Key ID mismatch")
+                || bodyString.contains("Device not registered")
+                || bodyString.contains("signature missing")
+                || bodyString.contains("Unrecognized device")
+            
+            if isKeyError && !hasReattested {
+                print("⚠️ [Upload Init Negative] Key ID Mismatch / Unregistered Device. Re-attesting device...")
+                await AppAttestService.shared.reauthenticateAndRegisterDevice(idToken: token)
+                await AppAttestGlobalLock.shared.release()
+                try await Task.sleep(nanoseconds: 250_000_000)
+                return try await initializeUpload(
+                    landmarkId: landmarkId,
+                    token: token,
+                    video: video,
+                    counterRetryCount: 0,
+                    hasReattested: true
+                )
+            }
+            
+            let isCounterError = bodyString.contains("Invalid hardware counter")
+                || bodyString.contains("Replay attack detected")
+            
+            if isCounterError && counterRetryCount < counterFastForwardSteps.count {
+                let steps = counterFastForwardSteps[counterRetryCount]
+                print("⚠️ [Upload Init Negative] Hardware counter behind backend. Fast-forwarding by \(steps)...")
+                await AppAttestService.shared.fastForwardCounter(steps: steps)
+                await AppAttestGlobalLock.shared.release()
+                return try await initializeUpload(
+                    landmarkId: landmarkId,
+                    token: token,
+                    video: video,
+                    counterRetryCount: counterRetryCount + 1,
+                    hasReattested: hasReattested
+                )
+            }
+        }
+        
+        await AppAttestGlobalLock.shared.release()
         try validateAPIResponse(response, data: data)
 
         return try JSONDecoder().decode(HardNegativeInitResponse.self, from: data)
     }
 
-    // MARK: - Presigned S3 uploads (🚀 CHANGED to POST)
+    // MARK: - Presigned S3 uploads
 
     private func uploadVideo(_ video: CapturedNegativeVideo, to target: HardNegativeUploadTarget) async throws {
         guard FileManager.default.fileExists(atPath: video.fileURL.path) else {
@@ -155,27 +236,98 @@ final class HardNegativeUploadService: ObservableObject {
 
         guard (200...299).contains(httpResponse.statusCode) else {
             let errorString = String(data: responseData, encoding: .utf8) ?? ""
-            print("❌ S3 PUT failed for \(video.filename). Msg: \(errorString)")
+            print("❌ S3 POST failed for \(video.filename). Msg: \(errorString)")
             throw UploadError.badStatus(httpResponse.statusCode, "S3 Upload failed")
         }
     }
 
     // MARK: - Complete
 
-    private func completeUpload(landmarkId: String, batchId: String, negativeIds: [String], token: String) async throws -> HardNegativeCompleteResponse {
+    private func completeUpload(
+        landmarkId: String,
+        batchId: String,
+        negativeIds: [String],
+        token: String,
+        counterRetryCount: Int = 0,
+        hasReattested: Bool = false
+    ) async throws -> HardNegativeCompleteResponse {
+        await AppAttestGlobalLock.shared.acquire()
+        
         let url = baseURL.appendingPathComponent("landmarks").appendingPathComponent(landmarkId).appendingPathComponent("hard-negatives").appendingPathComponent("complete")
-        let body = HardNegativeCompleteRequest(batchId: batchId, negativeIds: negativeIds)
+        
+        let body = HardNegativeCompleteRequest(batchId: batchId, negativeIds: negativeIds, nonce: UUID().uuidString)
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(token, forHTTPHeaderField: "Authorization")
-        request.httpBody = try JSONEncoder().encode(body)
+        
+        let cleanToken = token.hasPrefix("Bearer ") ? String(token.dropFirst(7)) : token
+        request.setValue("Bearer \(cleanToken)", forHTTPHeaderField: "Authorization")
+        
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        let payload = try encoder.encode(body)
+        request.httpBody = payload
 
-        // 🚀 ADDED: Attaches App Attest and Cognito token headers automatically
-        await request.signWithAppAttest(idToken: token)
+        do {
+            let assertion = try await AppAttestService.shared.generateAssertion(for: payload)
+            if let keyId = AppAttestService.shared.currentKeyId {
+                print("✅ [Upload Complete Negative] Hardware signature generated! Attaching headers.")
+                request.setValue(keyId, forHTTPHeaderField: "X-LookSee-App-Attest-KeyId")
+                request.setValue(assertion, forHTTPHeaderField: "X-LookSee-App-Attest")
+                let hashString = Data(SHA256.hash(data: payload)).base64EncodedString()
+                request.setValue(hashString, forHTTPHeaderField: "X-LookSee-App-Attest-Payload-Hash")
+            }
+        } catch {
+            print("❌ [Upload Complete Negative] FAILED to generate hardware signature: \(error.localizedDescription)")
+        }
 
         let (data, response) = try await URLSession.shared.data(for: request)
+        
+        // 🛡️ TWO-PATH SELF-HEALING LOGIC
+        if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 403 {
+            let bodyString = String(data: data, encoding: .utf8) ?? ""
+            
+            let isKeyError = bodyString.contains("Key ID mismatch")
+                || bodyString.contains("Device not registered")
+                || bodyString.contains("signature missing")
+                || bodyString.contains("Unrecognized device")
+            
+            if isKeyError && !hasReattested {
+                print("⚠️ [Upload Complete Negative] Key ID Mismatch / Unregistered Device. Re-attesting device...")
+                await AppAttestService.shared.reauthenticateAndRegisterDevice(idToken: token)
+                await AppAttestGlobalLock.shared.release()
+                try await Task.sleep(nanoseconds: 250_000_000)
+                return try await completeUpload(
+                    landmarkId: landmarkId,
+                    batchId: batchId,
+                    negativeIds: negativeIds,
+                    token: token,
+                    counterRetryCount: 0,
+                    hasReattested: true
+                )
+            }
+            
+            let isCounterError = bodyString.contains("Invalid hardware counter")
+                || bodyString.contains("Replay attack detected")
+            
+            if isCounterError && counterRetryCount < counterFastForwardSteps.count {
+                let steps = counterFastForwardSteps[counterRetryCount]
+                print("⚠️ [Upload Complete Negative] Hardware counter behind backend. Fast-forwarding by \(steps)...")
+                await AppAttestService.shared.fastForwardCounter(steps: steps)
+                await AppAttestGlobalLock.shared.release()
+                return try await completeUpload(
+                    landmarkId: landmarkId,
+                    batchId: batchId,
+                    negativeIds: negativeIds,
+                    token: token,
+                    counterRetryCount: counterRetryCount + 1,
+                    hasReattested: hasReattested
+                )
+            }
+        }
+        
+        await AppAttestGlobalLock.shared.release()
         try validateAPIResponse(response, data: data)
 
         return try JSONDecoder().decode(HardNegativeCompleteResponse.self, from: data)
@@ -194,6 +346,7 @@ final class HardNegativeUploadService: ObservableObject {
 
 private struct HardNegativeInitRequest: Encodable {
     let files: [HardNegativeFileRequest]
+    let nonce: String
 }
 
 private struct HardNegativeFileRequest: Encodable {
@@ -205,16 +358,16 @@ private struct HardNegativeInitResponse: Decodable {
     let message: String
     let batchId: String
     let landmarkId: String
-    let landmarkLabel: String
-    let landmarkFolder: String
-    let expiresInSeconds: Int
+    let landmarkLabel: String?
+    let landmarkFolder: String?
+    let expiresInSeconds: Int?
     let uploads: [HardNegativeUploadTarget]
 }
 
 private struct HardNegativeUploadTarget: Decodable {
     let negativeId: String
-    let uploadUrl: S3PresignedPost // 🚀 CHANGED
-    let sourceBucket: String
+    let uploadUrl: S3PresignedPost
+    let sourceBucket: String?
     let sourceKey: String
     let contentType: String
 }
@@ -224,27 +377,19 @@ private struct HardNegativeUploadTarget: Decodable {
 private struct HardNegativeCompleteRequest: Encodable {
     let batchId: String
     let negativeIds: [String]
+    let nonce: String
 }
 
 struct HardNegativeCompleteResponse: Decodable {
-    let message: String
+    let message: String?
     let landmarkId: String
     let batchId: String
     let processedCount: Int
     let failedCount: Int
-    let dirtyMarked: Bool
     let processed: [HardNegativeProcessedItem]?
-    let failed: [HardNegativeFailedItem]?
 }
 
 struct HardNegativeProcessedItem: Decodable {
     let negativeId: String
     let status: String
-    let datasetImageKey: String?
-    let datasetLabelKey: String?
-}
-
-struct HardNegativeFailedItem: Decodable {
-    let negativeId: String
-    let reason: String
 }

@@ -8,6 +8,14 @@
 import SwiftUI
 import Combine
 
+struct PendingMediaProcessingState: Codable, Equatable, Sendable {
+    let landmarkId: String
+    let baselineFrameCount: Int?
+    let baselineSecondsNeeded: Int?
+    let startedAt: TimeInterval
+    var uploadCompletedAt: TimeInterval?
+}
+
 final class SuppressionCache: @unchecked Sendable {
     static let shared = SuppressionCache()
 
@@ -15,10 +23,12 @@ final class SuppressionCache: @unchecked Sendable {
     private let inactiveDefaultsKey = "looksee_inactive_landmark_ids"
     private let hiddenMapDefaultsKey = "looksee_hidden_map_landmark_ids"
     private let modifiedDefaultsKey = "looksee_locally_modified_landmark_ids"
+    private let processingDefaultsKey = "looksee_processing_new_data_landmarks"
 
     private var inactiveIds: Set<String>
     private var hiddenMapIds: Set<String>
     private var locallyModifiedIds: Set<String>
+    private var processingStates: [String: PendingMediaProcessingState]
 
     private init() {
         let savedInactive = UserDefaults.standard.stringArray(forKey: inactiveDefaultsKey) ?? []
@@ -27,6 +37,13 @@ final class SuppressionCache: @unchecked Sendable {
         self.inactiveIds = Set(savedInactive)
         self.hiddenMapIds = Set(savedHidden)
         self.locallyModifiedIds = Set(savedModified)
+
+        if let data = UserDefaults.standard.data(forKey: processingDefaultsKey),
+           let decoded = try? JSONDecoder().decode([String: PendingMediaProcessingState].self, from: data) {
+            self.processingStates = decoded
+        } else {
+            self.processingStates = [:]
+        }
     }
 
     func isInactive(_ id: String) -> Bool {
@@ -67,6 +84,18 @@ final class SuppressionCache: @unchecked Sendable {
         }
     }
 
+    func updateProcessingStates(_ states: [String: PendingMediaProcessingState]) {
+        lock.lock()
+        self.processingStates = states
+        lock.unlock()
+
+        DispatchQueue.global(qos: .background).async {
+            if let encoded = try? JSONEncoder().encode(states) {
+                UserDefaults.standard.set(encoded, forKey: self.processingDefaultsKey)
+            }
+        }
+    }
+
     func getInitialInactive() -> Set<String> {
         lock.lock()
         defer { lock.unlock() }
@@ -83,6 +112,12 @@ final class SuppressionCache: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return locallyModifiedIds
+    }
+
+    func getInitialProcessingStates() -> [String: PendingMediaProcessingState] {
+        lock.lock()
+        defer { lock.unlock() }
+        return processingStates
     }
 }
 
@@ -141,12 +176,18 @@ final class VariableContainer: ObservableObject {
     }
     @Published var inactiveLandmarkIds: Set<String> = []
     @Published var hiddenMapLandmarkIds: Set<String> = []
+    @Published var processingNewDataById: [String: PendingMediaProcessingState] = [:]
     private var locallyModifiedIds: Set<String> = []
+
+    // Timeout after upload completion if the backend frame count doesn't change (e.g. 0 new frames extracted)
+    private let postUploadProcessingTimeout: TimeInterval = 240
+    private let maxOverallProcessingTimeout: TimeInterval = 900
 
     private init() {
         self.inactiveLandmarkIds = SuppressionCache.shared.getInitialInactive()
         self.hiddenMapLandmarkIds = SuppressionCache.shared.getInitialHidden()
         self.locallyModifiedIds = SuppressionCache.shared.getInitialModified()
+        self.processingNewDataById = SuppressionCache.shared.getInitialProcessingStates()
         resetLandmarkDisplay()
     }
 
@@ -163,6 +204,182 @@ final class VariableContainer: ObservableObject {
         )
     }
 
+    private func persistProcessingStates() {
+        SuppressionCache.shared.updateProcessingStates(processingNewDataById)
+    }
+
+    // MARK: - Optimistic "Processing New Data" Management
+
+    func markLandmarkProcessingNewData(
+        landmarkId: String,
+        baselineFrameCount: Int? = nil,
+        baselineSecondsNeeded: Int? = nil,
+        isUploadAlreadyComplete: Bool = false
+    ) {
+        let id = landmarkId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !id.isEmpty else { return }
+
+        let cachedLandmark = Self.lookupCachedBusinessLandmark(id: id)
+        let resolvedFrames = baselineFrameCount ?? cachedLandmark?.cleanFrameCount
+        let resolvedSeconds = baselineSecondsNeeded ?? cachedLandmark?.secondsNeeded
+        let now = Date().timeIntervalSince1970
+
+        processingNewDataById[id] = PendingMediaProcessingState(
+            landmarkId: id,
+            baselineFrameCount: resolvedFrames,
+            baselineSecondsNeeded: resolvedSeconds,
+            startedAt: now,
+            uploadCompletedAt: isUploadAlreadyComplete ? now : nil
+        )
+        persistProcessingStates()
+    }
+
+    func markLandmarkUploadCompleted(landmarkId: String) {
+        let id = landmarkId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !id.isEmpty else { return }
+        let now = Date().timeIntervalSince1970
+
+        if var existing = processingNewDataById[id] {
+            existing.uploadCompletedAt = now
+            processingNewDataById[id] = existing
+        } else {
+            let cachedLandmark = Self.lookupCachedBusinessLandmark(id: id)
+            processingNewDataById[id] = PendingMediaProcessingState(
+                landmarkId: id,
+                baselineFrameCount: cachedLandmark?.cleanFrameCount,
+                baselineSecondsNeeded: cachedLandmark?.secondsNeeded,
+                startedAt: now,
+                uploadCompletedAt: now
+            )
+        }
+        persistProcessingStates()
+    }
+
+    func clearLandmarkProcessingNewData(landmarkId: String) {
+        let id = landmarkId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !id.isEmpty else { return }
+        if processingNewDataById.removeValue(forKey: id) != nil {
+            persistProcessingStates()
+        }
+    }
+
+    func isLandmarkProcessingNewData(_ landmark: BusinessLandmark) -> Bool {
+        let id = landmark.landmarkId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !id.isEmpty else { return false }
+
+        // If the backend has already moved it into a training pipeline stage, let that stage take over
+        if landmark.isProcessing {
+            return false
+        }
+
+        // 1. Check if there is an active (unfailed) upload in the local queue for this landmark
+        let hasActiveQueuedUpload = OfflineMediaManager.shared.archivedItems.contains { item in
+            let matchesId = (item.landmarkId == id || item.queueLandmarkId == id)
+            let isHealthy = (item.lastUploadError == nil && item.deletionBlocked != true)
+            return matchesId && isHealthy
+        }
+        if hasActiveQueuedUpload {
+            return true
+        }
+
+        // 2. Check if we are waiting for the Lambda to finish calculating the new frame count
+        guard let state = processingNewDataById[id] else {
+            return false
+        }
+
+        let now = Date().timeIntervalSince1970
+        if let completedAt = state.uploadCompletedAt, now - completedAt > postUploadProcessingTimeout {
+            return false
+        }
+        if now - state.startedAt > maxOverallProcessingTimeout {
+            return false
+        }
+
+        // If the backend frame count or secondsNeeded changed since the upload started, Lambda is done!
+        if let baseFrames = state.baselineFrameCount,
+           let currentFrames = landmark.cleanFrameCount,
+           currentFrames != baseFrames {
+            return false
+        }
+        if let baseSeconds = state.baselineSecondsNeeded,
+           let currentSeconds = landmark.secondsNeeded,
+           currentSeconds != baseSeconds {
+            return false
+        }
+
+        return true
+    }
+
+    func reconcileProcessingNewData(with landmarks: [BusinessLandmark]) {
+        guard !processingNewDataById.isEmpty else { return }
+        let now = Date().timeIntervalSince1970
+        let queuedIds = Set(
+            OfflineMediaManager.shared.archivedItems.compactMap { item -> String? in
+                guard item.lastUploadError == nil && item.deletionBlocked != true else { return nil }
+                return item.landmarkId ?? item.queueLandmarkId
+            }
+        )
+
+        var updated = processingNewDataById
+        var didChange = false
+
+        for (id, state) in updated {
+            // Never clear while still actively sitting in the upload queue
+            if queuedIds.contains(id) { continue }
+
+            if let completedAt = state.uploadCompletedAt, now - completedAt > postUploadProcessingTimeout {
+                updated.removeValue(forKey: id)
+                didChange = true
+                continue
+            }
+            if now - state.startedAt > maxOverallProcessingTimeout {
+                updated.removeValue(forKey: id)
+                didChange = true
+                continue
+            }
+
+            if let landmark = landmarks.first(where: { $0.landmarkId == id }) {
+                let status = landmark.status ?? ""
+                // Lambda moved it out of NEEDS_MORE_MEDIA (e.g. into PREPARING_DATA or ACTIVE)
+                if status != "NEEDS_MORE_MEDIA" {
+                    updated.removeValue(forKey: id)
+                    didChange = true
+                    continue
+                }
+                // Lambda finished extracting frames and updated the count/seconds, even if still NEEDS_MORE_MEDIA
+                if let baseFrames = state.baselineFrameCount,
+                   let currentFrames = landmark.cleanFrameCount,
+                   currentFrames != baseFrames {
+                    updated.removeValue(forKey: id)
+                    didChange = true
+                    continue
+                }
+                if let baseSeconds = state.baselineSecondsNeeded,
+                   let currentSeconds = landmark.secondsNeeded,
+                   currentSeconds != baseSeconds {
+                    updated.removeValue(forKey: id)
+                    didChange = true
+                    continue
+                }
+            }
+        }
+
+        if didChange {
+            processingNewDataById = updated
+            persistProcessingStates()
+        }
+    }
+
+    private static func lookupCachedBusinessLandmark(id: String) -> BusinessLandmark? {
+        guard let data = UserDefaults.standard.data(forKey: "BusinessLandmarksCache"),
+              let cached = try? JSONDecoder().decode([BusinessLandmark].self, from: data) else {
+            return nil
+        }
+        return cached.first(where: { $0.landmarkId == id })
+    }
+
+    // MARK: - Map & Scanner Suppression
+
     private func syncSuppressionSetsFromNearby() {
         var updatedInactive = inactiveLandmarkIds
         var updatedHidden = hiddenMapLandmarkIds
@@ -172,7 +389,6 @@ final class VariableContainer: ObservableObject {
             let id = item.landmarkId.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !id.isEmpty else { continue }
 
-            // If the user toggled this landmark locally, only clear the local override once the server catches up
             if updatedModified.contains(id) {
                 let localIsActive = !updatedInactive.contains(id)
                 if item.isActive == localIsActive {

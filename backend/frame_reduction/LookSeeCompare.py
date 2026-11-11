@@ -23,7 +23,6 @@ bedrock_client = boto3.client("bedrock-runtime", region_name=os.environ.get("AWS
 
 QUEUE_URL = os.environ.get('QUEUE_URL')
 
-
 from boto3.dynamodb.types import TypeSerializer
 from botocore.exceptions import ClientError
 
@@ -382,7 +381,7 @@ def process_object(input_bucket, video_key):
 
         print(f"✅ Absolute Total Frames in S3 for {folder_name}: {total_saved_frames}")
 
-        required_frames = int(item.get('minRequiredFrames', int(os.environ.get('MIN_IMAGES_PER_CLASS', 2000))))
+        required_frames = int(item.get('minRequiredFrames', int(os.environ.get('MIN_IMAGES_PER_CLASS', 1500))))
         
         landmark_record = guard.landmark_item or {}
         current_landmark_status = str(landmark_record.get("status", "")).upper()
@@ -431,9 +430,12 @@ def process_object(input_bucket, video_key):
 
         # 📲 Send Push Notification if the upload resulted in NEEDS_MORE_MEDIA
         if status == 'NEEDS_MORE_MEDIA':
+            # 🚀 FIX: Correctly check "ownerUserId" in DynamoDB
             owner_id = (
-                landmark_record.get("userId")
+                landmark_record.get("ownerUserId")
+                or landmark_record.get("userId")
                 or landmark_record.get("user_id")
+                or item.get("ownerUserId")
                 or item.get("userId")
                 or item.get("user_id")
             )

@@ -161,9 +161,9 @@ class AutoUploadQueueEngineTest {
             savedLabel: String? = "Library",
             isVideo: Boolean = false,
             hasNegative: Boolean = false,
-            dateSaved: Date = Date(1_786_000_000_000L),
+            dateSaved: Long = 1_786_000_000_000L,
         ): ArchivedMedia {
-            val id = UUID.randomUUID()
+            val id = UUID.randomUUID().toString()
             return ArchivedMedia(
                 id = id,
                 title = title,
@@ -187,7 +187,7 @@ private class FakeArchive(
     private val items: MutableList<ArchivedMedia>,
     private val order: MutableList<String>,
 ) : AutoUploadArchive {
-    val deleted = mutableListOf<UUID>()
+    val deleted = mutableListOf<String>()
     private val root = Files.createTempDirectory("auto-upload-test").toFile()
 
     init {
@@ -227,7 +227,7 @@ private class FakeSessionProvider(
 }
 
 private data class PositiveCall(
-    val mediaId: UUID,
+    val mediaId: String,
     val label: String,
     val landmarkId: String,
 )

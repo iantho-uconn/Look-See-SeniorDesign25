@@ -91,13 +91,9 @@ fun LandmarkScan(
     var zoomFadeJob by remember { mutableStateOf<Job?>(null) }
 
     var isCameraPaused by remember { mutableStateOf(false) }
-    var showThresholdControls by remember { mutableStateOf(false) }
     var isWarmingUp by remember { mutableStateOf(true) } // 🚀 NEW: Masks the camera snap
 
     var liveInfoFetchJob by remember { mutableStateOf<Job?>(null) }
-
-    var confidenceThreshold by remember { mutableStateOf(detector.confidenceThreshold) }
-    var thresholdMultiplier by remember { mutableStateOf(detector.trackingThresholdMultiplier) }
 
     fun updatePauseState() {
         isCameraPaused = !isActive
@@ -265,63 +261,6 @@ fun LandmarkScan(
                 Box(modifier = Modifier.fillMaxSize().background(Color.Black).zIndex(3f))
             }
 
-            if (isActive && !isPopupOpen) {
-                Box(modifier = Modifier.fillMaxSize().padding(bottom = 120.dp, end = 16.dp), contentAlignment = Alignment.BottomEnd) {
-                    IconButton(
-                        onClick = { showThresholdControls = !showThresholdControls },
-                        modifier = Modifier.background(Color.Black.copy(0.6f), CircleShape)
-                    ) {
-                        Icon(
-                            imageVector = if (showThresholdControls) Icons.Default.Close else Icons.Default.Tune,
-                            contentDescription = null,
-                            tint = Color.White
-                        )
-                    }
-                }
-            }
-
-            AnimatedVisibility(
-                visible = isActive && !isPopupOpen && showThresholdControls,
-                enter = slideInHorizontally { it } + fadeIn(),
-                exit = slideOutHorizontally { it } + fadeOut()
-            ) {
-                Box(modifier = Modifier.fillMaxSize().padding(bottom = 180.dp, end = 16.dp), contentAlignment = Alignment.BottomEnd) {
-                    Surface(
-                        color = Color.Black.copy(0.7f),
-                        shape = RoundedCornerShape(16.dp),
-                        modifier = Modifier.width(200.dp)
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Text(
-                                text = "${(confidenceThreshold * 100).toInt()}% - ${(confidenceThreshold * thresholdMultiplier * 100).toInt()}%",
-                                color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold
-                            )
-
-                            Text("Detector Threshold", color = Color.White, fontSize = 10.sp)
-                            Slider(
-                                value = confidenceThreshold,
-                                onValueChange = {
-                                    confidenceThreshold = it
-                                    detector.confidenceThreshold = it
-                                },
-                                valueRange = 0.10f..0.95f,
-                                colors = SliderDefaults.colors(thumbColor = Color.Green, activeTrackColor = Color.Green)
-                            )
-
-                            Text("Range Multiplier", color = Color.White, fontSize = 10.sp)
-                            Slider(
-                                value = thresholdMultiplier,
-                                onValueChange = {
-                                    thresholdMultiplier = it
-                                    detector.trackingThresholdMultiplier = it
-                                },
-                                valueRange = 0.10f..1.0f,
-                                colors = SliderDefaults.colors(thumbColor = Color.Green, activeTrackColor = Color.Green)
-                            )
-                        }
-                    }
-                }
-            }
 
             if (isActive && !isPopupOpen && zoomIndicatorVisible) {
                 Box(modifier = Modifier.fillMaxSize().padding(bottom = 110.dp), contentAlignment = Alignment.BottomCenter) {

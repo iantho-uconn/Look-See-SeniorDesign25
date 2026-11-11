@@ -59,6 +59,7 @@ final class UploadService: ObservableObject {
     private let mediaUploadTimeout: TimeInterval = 900
     
     private let minimumCombinedVideoDuration: Double = 1.0
+    private let counterFastForwardSteps = [5, 15, 35, 75, 150, 300]
 
     // MARK: Errors
     enum UploadError: LocalizedError {
@@ -296,7 +297,19 @@ final class UploadService: ObservableObject {
         request.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
     }
 
-    private func initSubmission(_ requestBody: InitSubmissionRequest, token: String, retryCount: Int = 0) async throws -> InitSubmissionResponse {
+    private func initSubmission(
+        _ requestBody: InitSubmissionRequest,
+        token: String,
+        counterRetryCount: Int = 0,
+        hasReattested: Bool = false
+    ) async throws -> InitSubmissionResponse {
+        await AppAttestGlobalLock.shared.acquire()
+        
+        // Ensure a local key exists before attempting to sign
+        if AppAttestService.shared.currentKeyId == nil && !hasReattested {
+            await AppAttestService.shared.reauthenticateAndRegisterDevice(idToken: token)
+        }
+        
         let url = baseURL.appendingPathComponent("submissions").appendingPathComponent("init")
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -312,9 +325,21 @@ final class UploadService: ObservableObject {
         try await addAuthorizationHeader(to: &request)
         request.setValue(token, forHTTPHeaderField: "Authorization")
         
+        var activeRequest = requestBody
+        if counterRetryCount > 0 || hasReattested {
+            activeRequest = InitSubmissionRequest(
+                label: requestBody.label,
+                landmarkId: requestBody.landmarkId,
+                mediaKind: requestBody.mediaKind,
+                filename: requestBody.filename,
+                contentType: requestBody.contentType,
+                nonce: UUID().uuidString
+            )
+        }
+        
         let encoder = JSONEncoder()
         encoder.outputFormatting = .sortedKeys
-        let payload = try encoder.encode(requestBody)
+        let payload = try encoder.encode(activeRequest)
         request.httpBody = payload
         
         do {
@@ -335,17 +360,48 @@ final class UploadService: ObservableObject {
 
         let (data, response) = try await URLSession.shared.data(for: request)
         
-        // 🛡️ FIX: Auto-retry if the counter drifted due to background syncs
+        // 🛡️ TWO-PATH SELF-HEALING LOGIC
         if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 403 {
             let bodyString = String(data: data, encoding: .utf8) ?? ""
-            if bodyString.contains("Invalid hardware counter") && retryCount < 2 {
-                print("⚠️ Hardware counter out of sync. Retrying Init request...")
-                // The previous attempt bumped the Secure Enclave counter forward,
-                // so the next generation will naturally align with the AWS backend.
-                return try await initSubmission(requestBody, token: token, retryCount: retryCount + 1)
+            
+            // PATH 1: Key is missing or mismatched -> Generate & register a brand-new key ONCE
+            let isKeyError = bodyString.contains("Key ID mismatch")
+                || bodyString.contains("Device not registered")
+                || bodyString.contains("signature missing")
+                || bodyString.contains("Unrecognized device")
+            
+            if isKeyError && !hasReattested {
+                print("⚠️ [Upload Init] Key ID Mismatch / Unregistered Device. Re-attesting device...")
+                await AppAttestService.shared.reauthenticateAndRegisterDevice(idToken: token)
+                await AppAttestGlobalLock.shared.release()
+                try await Task.sleep(nanoseconds: 250_000_000)
+                return try await initSubmission(
+                    requestBody,
+                    token: token,
+                    counterRetryCount: 0,
+                    hasReattested: true
+                )
+            }
+            
+            // PATH 2: Counter is behind DynamoDB -> Keep the key & fast-forward the Secure Enclave counter!
+            let isCounterError = bodyString.contains("Invalid hardware counter")
+                || bodyString.contains("Replay attack detected")
+            
+            if isCounterError && counterRetryCount < counterFastForwardSteps.count {
+                let steps = counterFastForwardSteps[counterRetryCount]
+                print("⚠️ [Upload Init] Hardware counter behind backend (attempt \(counterRetryCount + 1)/\(counterFastForwardSteps.count)). Fast-forwarding by \(steps)...")
+                await AppAttestService.shared.fastForwardCounter(steps: steps)
+                await AppAttestGlobalLock.shared.release()
+                return try await initSubmission(
+                    requestBody,
+                    token: token,
+                    counterRetryCount: counterRetryCount + 1,
+                    hasReattested: hasReattested
+                )
             }
         }
         
+        await AppAttestGlobalLock.shared.release()
         try validateAPIResponse(response, data: data)
 
         do {
@@ -416,7 +472,14 @@ final class UploadService: ObservableObject {
         }
     }
 
-    private func completeSubmission(_ requestBody: CompleteSubmissionRequest, token: String) async throws {
+    private func completeSubmission(
+        _ requestBody: CompleteSubmissionRequest,
+        token: String,
+        counterRetryCount: Int = 0,
+        hasReattested: Bool = false
+    ) async throws {
+        await AppAttestGlobalLock.shared.acquire()
+        
         let url = baseURL.appendingPathComponent("submissions").appendingPathComponent("complete")
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -432,9 +495,27 @@ final class UploadService: ObservableObject {
         try await addAuthorizationHeader(to: &request)
         request.setValue(token, forHTTPHeaderField: "Authorization")
         
+        var activeRequest = requestBody
+        if counterRetryCount > 0 || hasReattested {
+            activeRequest = CompleteSubmissionRequest(
+                submissionId: requestBody.submissionId,
+                s3Key: requestBody.s3Key,
+                label: requestBody.label,
+                landmarkId: requestBody.landmarkId,
+                landmarkLabel: requestBody.landmarkLabel,
+                mediaKind: requestBody.mediaKind,
+                shortDescription: requestBody.shortDescription,
+                userDescription: requestBody.userDescription,
+                latitude: requestBody.latitude,
+                longitude: requestBody.longitude,
+                horizontalAccuracy: requestBody.horizontalAccuracy,
+                nonce: UUID().uuidString
+            )
+        }
+        
         let encoder = JSONEncoder()
         encoder.outputFormatting = .sortedKeys
-        let payload = try encoder.encode(requestBody)
+        let payload = try encoder.encode(activeRequest)
         request.httpBody = payload
         
         do {
@@ -454,6 +535,49 @@ final class UploadService: ObservableObject {
         }
 
         let (data, response) = try await URLSession.shared.data(for: request)
+        
+        // 🛡️ TWO-PATH SELF-HEALING LOGIC
+        if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 403 {
+            let bodyString = String(data: data, encoding: .utf8) ?? ""
+            
+            let isKeyError = bodyString.contains("Key ID mismatch")
+                || bodyString.contains("Device not registered")
+                || bodyString.contains("signature missing")
+                || bodyString.contains("Unrecognized device")
+            
+            if isKeyError && !hasReattested {
+                print("⚠️ [Upload Complete] Key ID Mismatch / Unregistered Device. Re-attesting device...")
+                await AppAttestService.shared.reauthenticateAndRegisterDevice(idToken: token)
+                await AppAttestGlobalLock.shared.release()
+                try await Task.sleep(nanoseconds: 250_000_000)
+                try await completeSubmission(
+                    requestBody,
+                    token: token,
+                    counterRetryCount: 0,
+                    hasReattested: true
+                )
+                return
+            }
+            
+            let isCounterError = bodyString.contains("Invalid hardware counter")
+                || bodyString.contains("Replay attack detected")
+            
+            if isCounterError && counterRetryCount < counterFastForwardSteps.count {
+                let steps = counterFastForwardSteps[counterRetryCount]
+                print("⚠️ [Upload Complete] Hardware counter behind backend. Fast-forwarding by \(steps)...")
+                await AppAttestService.shared.fastForwardCounter(steps: steps)
+                await AppAttestGlobalLock.shared.release()
+                try await completeSubmission(
+                    requestBody,
+                    token: token,
+                    counterRetryCount: counterRetryCount + 1,
+                    hasReattested: hasReattested
+                )
+                return
+            }
+        }
+        
+        await AppAttestGlobalLock.shared.release()
         try validateAPIResponse(response, data: data)
     }
 

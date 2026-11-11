@@ -17,6 +17,7 @@ struct BusinessLandmarkDetailView: View {
     let onPromotionTitlesChanged: (String, [String]) -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var container = VariableContainer.shared
 
     @State private var displayedShortDescription: String
     @State private var draftShortDescription: String
@@ -73,7 +74,8 @@ struct BusinessLandmarkDetailView: View {
     private let promotionService = BusinessPromotionService()
     private let maxSelectionCount = 10
 
-    private let maximumGalleryVideoDuration: TimeInterval = 90
+    private let maxPositiveVideoDuration: TimeInterval = 120
+    private let maxNegativeVideoDuration: TimeInterval = 45
 
     private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00)
 
@@ -112,7 +114,6 @@ struct BusinessLandmarkDetailView: View {
         _draftWebsiteUrl = State(initialValue: initialWebsiteUrl)
     }
 
-    // Helper to strip ugly CloudFront HTML blocks
     private func sanitizedErrorMessage(_ error: Error) -> String? {
         let raw = error.localizedDescription
         if raw.localizedCaseInsensitiveContains("<!DOCTYPE HTML") ||
@@ -235,7 +236,7 @@ struct BusinessLandmarkDetailView: View {
 
                     VStack(alignment: .leading, spacing: 12) {
                         let processed = displayedCleanFrameCount
-                        let required = landmark.requiredFrames ?? 2000
+                        let required = landmark.requiredFrames ?? 1500
 
                         HStack {
                             VStack(alignment: .leading, spacing: 4) {
@@ -270,7 +271,7 @@ struct BusinessLandmarkDetailView: View {
                     .padding(.horizontal)
                 }
 
-                // MARK: - Management (Visible on Map Toggle Removed)
+                // MARK: - Management
                 VStack(alignment: .leading, spacing: 8) {
                     sectionTitle("Management")
 
@@ -484,7 +485,7 @@ struct BusinessLandmarkDetailView: View {
                     .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2)
                     .padding(.horizontal)
 
-                    Text("Record new video with the camera or choose existing photos and videos from your library. Gallery videos must be 90 seconds or shorter.")
+                    Text("Record new video with the camera or choose existing photos and videos from your library. Gallery videos must be \(Int(maxPositiveVideoDuration)) seconds or shorter (\(Int(maxNegativeVideoDuration))s for negative examples).")
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 20)
@@ -616,10 +617,12 @@ struct BusinessLandmarkDetailView: View {
             PositiveVideoCameraView(
                 isActive: true,
                 isNavVisible: .constant(false),
-                uiTargetDuration: 90,
+                uiTargetDuration: Int(maxPositiveVideoDuration),
                 minTotalTimeLimit: 1,
+                maxTotalTimeLimit: Int(maxPositiveVideoDuration),
                 completionButtonTitle: "Use Recorded Videos",
                 onDone: { urls in
+                    showPositiveCamera = false
                     pendingPositiveVideoURLs = urls
                     Task {
                         await uploadPendingPositiveRecording()
@@ -632,10 +635,11 @@ struct BusinessLandmarkDetailView: View {
         }
         .fullScreenCover(isPresented: $showNegativeCamera) {
             NegativeVideoCameraView(
-                uiTargetDuration: 90,
+                uiTargetDuration: Int(maxNegativeVideoDuration),
                 minTotalTimeLimit: 1,
-                maxTotalTimeLimit: 90
+                maxTotalTimeLimit: Int(maxNegativeVideoDuration)
             ) { video in
+                showNegativeCamera = false
                 pendingNegativeVideo = video
                 Task {
                     await uploadPendingNegativeRecording()
@@ -694,7 +698,9 @@ struct BusinessLandmarkDetailView: View {
         let status = landmark.status ?? ""
         let isProcessing = landmark.isProcessing
 
-        if status == "NEEDS_MORE_MEDIA" {
+        if container.isLandmarkProcessingNewData(landmark) {
+            return (.cyan, "arrow.triangle.2.circlepath.circle.fill", "Processing New Data", "We are uploading and analyzing your new media to calculate your updated frame count.")
+        } else if status == "NEEDS_MORE_MEDIA" {
             return (.red, "exclamationmark.triangle.fill", landmark.displayStatus, "Not enough video data to train. Please record more media below.")
         } else if isProcessing || ["PREPARING_DATA", "PENDING_TRAINING", "TRAINING_MODEL", "OPTIMIZING_MODEL"].contains(status) {
             let bannerColor: Color
@@ -1259,7 +1265,6 @@ struct BusinessLandmarkDetailView: View {
     }
 
     private func scheduleManagementUpdate() {
-        // 1. Instantly update local suppression sets on the phone so Map & AR Scanner react immediately
         VariableContainer.shared.setLandmarkState(
             landmarkId: landmark.landmarkId,
             isActive: displayedIsActive,
@@ -1272,7 +1277,6 @@ struct BusinessLandmarkDetailView: View {
         let targetActive = displayedIsActive
         let targetPromo = displayedPromotionEnabled
 
-        // 2. Debounce network call by 0.6s so toggling doesn't trip CloudFront WAF
         managementUpdateTask = Task {
             do {
                 try await Task.sleep(nanoseconds: 600_000_000)
@@ -1325,14 +1329,39 @@ struct BusinessLandmarkDetailView: View {
 
     private func uploadPendingPositiveRecording() async {
         guard !isUploadingMedia else { return }
-        guard let uploadURL = pendingPositiveVideoURLs.first else { return }
+        guard !pendingPositiveVideoURLs.isEmpty else { return }
+
+        await MainActor.run {
+            VariableContainer.shared.markLandmarkProcessingNewData(
+                landmarkId: landmark.landmarkId,
+                baselineFrameCount: displayedCleanFrameCount,
+                baselineSecondsNeeded: landmark.secondsNeeded
+            )
+        }
 
         await beginRecordedVideoUpload(
             datasetRole: .positive,
             progressText: "Preparing recorded video..."
         )
 
+        var mergedTemporaryURL: URL? = nil
+
         do {
+            let uploadURL: URL
+            if pendingPositiveVideoURLs.count > 1 {
+                await MainActor.run {
+                    uploadProgressText = "Combining \(pendingPositiveVideoURLs.count) clips..."
+                }
+                let stitched = try await VideoMerger.mergeAndValidate(
+                    clipURLs: pendingPositiveVideoURLs,
+                    minimumDuration: 1.0
+                )
+                mergedTemporaryURL = stitched
+                uploadURL = stitched
+            } else {
+                uploadURL = pendingPositiveVideoURLs[0]
+            }
+
             await MainActor.run {
                 uploadProgressText = "Uploading positive recording..."
             }
@@ -1347,17 +1376,26 @@ struct BusinessLandmarkDetailView: View {
                 data: mediaData
             )
 
-            deleteLocalFiles([uploadURL])
+            deleteLocalFiles(pendingPositiveVideoURLs)
+            if let mergedTemporaryURL {
+                deleteLocalFiles([mergedTemporaryURL])
+            }
 
+            // 🚀 FIX 3: Removed `markLandmarkUploadCompleted` here so the state stays in
+            // "Processing New Data" until AWS successfully extracts frames and updates DynamoDB.
             await MainActor.run {
                 pendingPositiveVideoURLs.removeAll()
+                NotificationCenter.default.post(name: Notification.Name("RefreshBusinessLandmarks"), object: nil)
                 finishRecordedVideoUpload(
                     successMessage: "Positive recording uploaded successfully. Submission: \(response.submissionId)"
                 )
             }
         } catch {
-            deleteLocalFiles([uploadURL])
+            if let mergedTemporaryURL {
+                deleteLocalFiles([mergedTemporaryURL])
+            }
             await MainActor.run {
+                VariableContainer.shared.clearLandmarkProcessingNewData(landmarkId: landmark.landmarkId)
                 failRecordedVideoUpload(error)
             }
         }
@@ -1492,6 +1530,13 @@ struct BusinessLandmarkDetailView: View {
         await MainActor.run {
             isUploadingMedia = true; activeUploadRole = datasetRole; uploadStatusMessage = nil; uploadErrorMessage = nil
             uploadProgressText = "Preparing \(items.count) item\(items.count == 1 ? "" : "s")..."
+            if datasetRole == .positive {
+                VariableContainer.shared.markLandmarkProcessingNewData(
+                    landmarkId: landmark.landmarkId,
+                    baselineFrameCount: displayedCleanFrameCount,
+                    baselineSecondsNeeded: landmark.secondsNeeded
+                )
+            }
         }
 
         var completedCount = 0
@@ -1512,9 +1557,11 @@ struct BusinessLandmarkDetailView: View {
                     await MainActor.run {
                         uploadProgressText = "Checking video \(index + 1) of \(items.count)..."
                     }
+                    let maxDuration = datasetRole == .positive ? maxPositiveVideoDuration : maxNegativeVideoDuration
                     try await validateGalleryVideoDuration(
                         data: mediaData,
-                        contentType: contentType
+                        contentType: contentType,
+                        maxAllowedDuration: maxDuration
                     )
                 }
 
@@ -1544,6 +1591,14 @@ struct BusinessLandmarkDetailView: View {
 
         await MainActor.run {
             isUploadingMedia = false; activeUploadRole = nil; uploadProgressText = nil
+            if datasetRole == .positive {
+                if completedCount > 0 {
+                    // 🚀 FIX 3: Removed `markLandmarkUploadCompleted` here as well!
+                    NotificationCenter.default.post(name: Notification.Name("RefreshBusinessLandmarks"), object: nil)
+                } else {
+                    VariableContainer.shared.clearLandmarkProcessingNewData(landmarkId: landmark.landmarkId)
+                }
+            }
             if failedCount == 0 {
                 uploadStatusMessage = successSummaryMessage(datasetRole: datasetRole, completedCount: completedCount, lastSubmissionId: lastSubmissionId)
                 uploadErrorMessage = nil
@@ -1558,8 +1613,9 @@ struct BusinessLandmarkDetailView: View {
                 }
 
                 if overLimitVideoCount > 0 {
+                    let maxLimit = Int(datasetRole == .positive ? maxPositiveVideoDuration : maxNegativeVideoDuration)
                     errorMessages.append(
-                        "\(overLimitVideoCount) video\(overLimitVideoCount == 1 ? " was" : "s were") not uploaded. Gallery videos must be 90 seconds or shorter."
+                        "\(overLimitVideoCount) video\(overLimitVideoCount == 1 ? " was" : "s were") not uploaded. Gallery videos must be \(maxLimit) seconds or shorter."
                     )
                 }
 
@@ -1618,7 +1674,8 @@ struct BusinessLandmarkDetailView: View {
 
     private func validateGalleryVideoDuration(
         data: Data,
-        contentType: UTType
+        contentType: UTType,
+        maxAllowedDuration: TimeInterval
     ) async throws {
         let fileExtension = contentType.preferredFilenameExtension ?? "mov"
         let temporaryURL = FileManager.default.temporaryDirectory
@@ -1640,9 +1697,10 @@ struct BusinessLandmarkDetailView: View {
                 throw MediaSelectionError.couldNotReadVideoDuration
             }
 
-            guard durationSeconds <= maximumGalleryVideoDuration else {
+            guard durationSeconds <= maxAllowedDuration else {
                 throw MediaSelectionError.videoExceedsMaximumDuration(
-                    actualDuration: durationSeconds
+                    actualDuration: durationSeconds,
+                    allowedDuration: maxAllowedDuration
                 )
             }
         } catch let error as MediaSelectionError {
@@ -1785,7 +1843,7 @@ struct BusinessLandmarkDetailView: View {
 private enum MediaSelectionError: LocalizedError {
     case couldNotLoadMedia
     case couldNotReadVideoDuration
-    case videoExceedsMaximumDuration(actualDuration: TimeInterval)
+    case videoExceedsMaximumDuration(actualDuration: TimeInterval, allowedDuration: TimeInterval)
 
     var errorDescription: String? {
         switch self {
@@ -1793,8 +1851,8 @@ private enum MediaSelectionError: LocalizedError {
             return "Could not load the selected media."
         case .couldNotReadVideoDuration:
             return "Could not verify the selected video's duration."
-        case .videoExceedsMaximumDuration(let actualDuration):
-            return "Gallery videos must be 90 seconds or shorter. This video is approximately \(Int(ceil(actualDuration))) seconds."
+        case .videoExceedsMaximumDuration(let actualDuration, let allowedDuration):
+            return "Gallery videos must be \(Int(allowedDuration)) seconds or shorter. This video is approximately \(Int(ceil(actualDuration))) seconds."
         }
     }
 }

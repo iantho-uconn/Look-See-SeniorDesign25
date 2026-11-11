@@ -20,6 +20,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -44,6 +46,7 @@ import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
+import java.util.Locale
 import looksee.angelll.com.services.*
 
 sealed class CameraPhase {
@@ -73,6 +76,7 @@ fun PositiveVideoCameraView(
     isNavVisible: MutableState<Boolean>,
     uiTargetDuration: Int = 30,
     minTotalTimeLimit: Int? = null,
+    maxTotalTimeLimit: Int = 120,
     completionButtonTitle: String = "Finish Submission",
     onDone: (List<Uri>) -> Unit,
     onCancel: () -> Unit
@@ -83,19 +87,20 @@ fun PositiveVideoCameraView(
     val coroutineScope = rememberCoroutineScope()
 
     val cameraService = remember { NegativeVideoCameraService(context) }
-    var previewViewInstance by remember { mutableStateOf<PreviewView?>(null) }
+    val initialNullPreview: PreviewView? = null
+    var previewViewInstance by remember { mutableStateOf(initialNullPreview) }
 
     var currentPhase by remember { mutableStateOf<CameraPhase>(CameraPhase.Mandatory(1)) }
     var flowState by remember { mutableStateOf(CameraFlowState.INSTRUCTION) }
-    var reviewingUri by remember { mutableStateOf<Uri?>(null) }
-    var reviewingDuration by remember { mutableStateOf(0) }
+    val initialNullUri: Uri? = null
+    var reviewingUri by remember { mutableStateOf(initialNullUri) }
+    var reviewingDuration by remember { mutableIntStateOf(0) }
 
     val expectedAngles = 1
-    val maxTotalTimeLimit = 90
     val actualMinTotalTimeLimit = minTotalTimeLimit ?: uiTargetDuration
 
-    var timeElapsed by remember { mutableStateOf(0) }
-    var recordedClips by remember { mutableStateOf<List<RecordedClip>>(emptyList()) }
+    var timeElapsed by remember { mutableIntStateOf(0) }
+    var recordedClips by remember { mutableStateOf(emptyList<RecordedClip>()) }
     var gallerySelection by remember { mutableStateOf("") }
     var isCancelled by remember { mutableStateOf(false) }
 
@@ -107,11 +112,14 @@ fun PositiveVideoCameraView(
         onDispose { view.keepScreenOn = false }
     }
 
-    var zoomLevel by remember { mutableStateOf(1f) }
+    var zoomLevel by remember { mutableFloatStateOf(1f) }
+    var showZoomIndicator by remember { mutableStateOf(false) }
     var showZoomInstruction by remember { mutableStateOf(false) }
 
     val totalDurationElapsedInt = recordedClips.sumOf { it.duration }
-    val minPhaseTimeLimit = if (currentPhase.isMandatory) { if (actualMinTotalTimeLimit == 30) 4 else if (actualMinTotalTimeLimit == 1) 1 else actualMinTotalTimeLimit } else 0
+    val minPhaseTimeLimit = if (currentPhase.isMandatory) {
+        if (actualMinTotalTimeLimit == 30) 4 else if (actualMinTotalTimeLimit == 1) 1 else actualMinTotalTimeLimit
+    } else 0
     val maxPhaseTimeLimit = if (currentPhase.isMandatory) maxTotalTimeLimit / expectedAngles else maxTotalTimeLimit - totalDurationElapsedInt
     val isReviewingRecent = flowState == CameraFlowState.REVIEWING_RECENT
     val currentLiveDuration = when (flowState) { CameraFlowState.RECORDING -> timeElapsed; CameraFlowState.REVIEWING_RECENT -> reviewingDuration; else -> 0 }
@@ -124,22 +132,40 @@ fun PositiveVideoCameraView(
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_PAUSE) cameraService.handleInterruptionBegan()
-            else if (event == Lifecycle.Event.ON_RESUME) { cameraService.handleInterruptionEnded(); if (flowState == CameraFlowState.RECORDING) { timeElapsed = 0; flowState = CameraFlowState.INSTRUCTION } }
+            else if (event == Lifecycle.Event.ON_RESUME) {
+                cameraService.handleInterruptionEnded()
+                if (flowState == CameraFlowState.RECORDING) {
+                    timeElapsed = 0
+                    flowState = CameraFlowState.INSTRUCTION
+                }
+            }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     DisposableEffect(Unit) {
-        cameraService.onVideoRecorded = { uri -> reviewingUri = uri; reviewingDuration = timeElapsed; flowState = CameraFlowState.REVIEWING_RECENT }
+        cameraService.onVideoRecorded = { uri ->
+            if (isCancelled) {
+                try { uri.path?.let { File(it).delete() } } catch (e: Exception) {}
+            } else {
+                reviewingUri = uri
+                reviewingDuration = timeElapsed
+                flowState = CameraFlowState.REVIEWING_RECENT
+            }
+        }
         onDispose { cameraService.stop() }
     }
 
     LaunchedEffect(flowState, cameraService.isRecording) {
         if (flowState == CameraFlowState.RECORDING && cameraService.isRecording) {
-            timeElapsed = 0; showZoomInstruction = true
+            timeElapsed = 0
+            showZoomInstruction = true
             coroutineScope.launch { delay(4000); showZoomInstruction = false }
-            while (timeElapsed < maxPhaseTimeLimit) { delay(1000); timeElapsed++ }
+            while (timeElapsed < maxPhaseTimeLimit) {
+                delay(1000)
+                timeElapsed++
+            }
             cameraService.stopRecording()
         }
     }
@@ -149,7 +175,10 @@ fun PositiveVideoCameraView(
     fun deleteClip(clip: RecordedClip) {
         recordedClips = recordedClips.filter { it.id != clip.id }
         try { clip.uri.path?.let { File(it).delete() } } catch (e: Exception) {}
-        if (recordedClips.isEmpty()) { currentPhase = CameraPhase.Mandatory(1); flowState = CameraFlowState.INSTRUCTION }
+        if (recordedClips.isEmpty()) {
+            currentPhase = CameraPhase.Mandatory(1)
+            flowState = CameraFlowState.INSTRUCTION
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize().background(Color(0xFF0F0F1A))) {
@@ -157,29 +186,64 @@ fun PositiveVideoCameraView(
         if (flowState == CameraFlowState.INSTRUCTION || flowState == CameraFlowState.RECORDING) {
             AndroidView(
                 factory = { ctx ->
-                    PreviewView(ctx).apply { layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT); scaleType = PreviewView.ScaleType.FILL_CENTER }
-                        .also { previewViewInstance = it; if (isActive) cameraService.start(lifecycleOwner, it.surfaceProvider) }
+                    PreviewView(ctx).apply {
+                        layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                        scaleType = PreviewView.ScaleType.FILL_CENTER
+                    }.also {
+                        previewViewInstance = it
+                        if (isActive) cameraService.start(lifecycleOwner, it.surfaceProvider)
+                    }
                 },
                 modifier = Modifier.fillMaxSize()
-                    .pointerInput(Unit) { detectTransformGestures { _, _, zoom, _ -> zoomLevel = (zoomLevel * zoom).coerceIn(1f, 5f); cameraService.camera?.cameraControl?.setZoomRatio(zoomLevel) } }
-                    .pointerInput(Unit) { detectTapGestures { offset -> val factory = previewViewInstance?.meteringPointFactory ?: return@detectTapGestures; val point = factory.createPoint(offset.x, offset.y); val action = androidx.camera.core.FocusMeteringAction.Builder(point).build(); cameraService.camera?.cameraControl?.startFocusAndMetering(action) } }
+                    .pointerInput(Unit) {
+                        detectTransformGestures { _, _, zoom, _ ->
+                            zoomLevel = (zoomLevel * zoom).coerceIn(1f, 5f)
+                            showZoomIndicator = true
+                            cameraService.camera?.cameraControl?.setZoomRatio(zoomLevel)
+                        }
+                    }
+                    .pointerInput(Unit) {
+                        detectTapGestures { offset ->
+                            val factory = previewViewInstance?.meteringPointFactory ?: return@detectTapGestures
+                            val point = factory.createPoint(offset.x, offset.y)
+                            val action = androidx.camera.core.FocusMeteringAction.Builder(point).build()
+                            cameraService.camera?.cameraControl?.startFocusAndMetering(action)
+                        }
+                    }
             )
+
+            LaunchedEffect(zoomLevel) {
+                delay(1500)
+                showZoomIndicator = false
+            }
         }
 
-        if (isReviewingRecent && reviewingUri != null) {
-            PositiveSafeVideoPlayer(uri = reviewingUri!!, modifier = Modifier.fillMaxSize())
+        val currentReviewUri = reviewingUri
+        if (isReviewingRecent && currentReviewUri != null) {
+            PositiveSafeVideoPlayer(uri = currentReviewUri, modifier = Modifier.fillMaxSize())
         }
 
         AnimatedVisibility(visible = showZoomInstruction, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.TopCenter).padding(top = 110.dp)) {
             Text("Slowly pan across the landmark while pinching to zoom in and out", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.background(Color(0xFF387DFF).copy(alpha = 0.9f), CircleShape).padding(horizontal = 14.dp, vertical = 8.dp))
         }
 
+        AnimatedVisibility(visible = showZoomIndicator, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 160.dp)) {
+            Text(
+                String.format(Locale.US, "%.1fx", zoomLevel),
+                color = Color.White,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier.background(Color.Black.copy(alpha = 0.6f), CircleShape).padding(horizontal = 16.dp, vertical = 8.dp)
+            )
+        }
+
         Column(modifier = Modifier.fillMaxSize()) {
 
             Row(modifier = Modifier.fillMaxWidth().padding(top = 58.dp, bottom = 16.dp, start = 20.dp, end = 20.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 if (flowState != CameraFlowState.GALLERY) {
-                    Box(modifier = Modifier.size(44.dp).clip(CircleShape).background(Color.White.copy(0.2f)).border(0.5.dp, Color.White.copy(0.2f), CircleShape).clickable { haptic.performHapticFeedback(HapticFeedbackType.LongPress); isCancelled = true; if (cameraService.isRecording) cameraService.stopRecording(); recordedClips.forEach { try { it.uri.path?.let { p -> File(p).delete() } } catch (e: Exception) {} }; reviewingUri?.path?.let { File(it).delete() }; onCancel() }, contentAlignment = Alignment.Center) { Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White) }
-                    Row(modifier = Modifier.background(Color.Black.copy(0.4f), CircleShape).padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(modifier = Modifier.size(44.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.2f)).border(0.5.dp, Color.White.copy(alpha = 0.2f), CircleShape).clickable { haptic.performHapticFeedback(HapticFeedbackType.LongPress); isCancelled = true; if (cameraService.isRecording) cameraService.stopRecording(); recordedClips.forEach { try { it.uri.path?.let { p -> File(p).delete() } } catch (e: Exception) {} }; reviewingUri?.path?.let { File(it).delete() }; onCancel() }, contentAlignment = Alignment.Center) { Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White) }
+                    Row(modifier = Modifier.background(Color.Black.copy(alpha = 0.4f), CircleShape).padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(if (isReady) Icons.Default.CheckCircle else Icons.Default.Schedule, contentDescription = null, tint = if (isReady) Color.Green else Color(0xFFFFA500), modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(6.dp))
                         Text("${totalTime}s / ${maxTotalTimeLimit}", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
@@ -188,13 +252,13 @@ fun PositiveVideoCameraView(
             }
 
             if (flowState == CameraFlowState.INSTRUCTION) {
-                Row(modifier = Modifier.padding(horizontal = 20.dp).fillMaxWidth().background(Color.Black.copy(0.4f), RoundedCornerShape(16.dp)).border(0.5.dp, Color.White.copy(0.2f), RoundedCornerShape(16.dp)).padding(20.dp), verticalAlignment = Alignment.Top) {
+                Row(modifier = Modifier.padding(horizontal = 20.dp).fillMaxWidth().background(Color.Black.copy(alpha = 0.4f), RoundedCornerShape(16.dp)).border(0.5.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(16.dp)).padding(20.dp), verticalAlignment = Alignment.Top) {
                     Icon(Icons.Default.CameraAlt, contentDescription = null, tint = Color(0xFF387DFF), modifier = Modifier.size(24.dp))
                     Spacer(Modifier.width(16.dp))
                     Column {
                         Text("Capture Landmark", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
                         Spacer(Modifier.height(6.dp))
-                        Text("Film from places people normally view it.", color = Color.White.copy(0.8f), fontSize = 13.sp)
+                        Text("Film from places people normally view it.", color = Color.White.copy(alpha = 0.8f), fontSize = 13.sp)
                     }
                 }
             }
@@ -205,10 +269,10 @@ fun PositiveVideoCameraView(
                 Box(modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = if (isReviewingRecent) 160.dp else 100.dp).fillMaxWidth()) {
                     when (flowState) {
                         CameraFlowState.INSTRUCTION -> {
-                            Column(modifier = Modifier.background(Color.Black.copy(0.6f), RoundedCornerShape(32.dp)).border(0.5.dp, Color.White.copy(0.2f), RoundedCornerShape(32.dp)).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Column(modifier = Modifier.background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(32.dp)).border(0.5.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(32.dp)).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                                 Text(currentPhase.title, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
                                 Spacer(Modifier.height(16.dp))
-                                Text(currentPhase.instruction, color = Color.White.copy(0.9f), fontSize = 13.sp, textAlign = TextAlign.Center)
+                                Text(currentPhase.instruction, color = Color.White.copy(alpha = 0.9f), fontSize = 13.sp, textAlign = TextAlign.Center)
                                 Spacer(Modifier.height(16.dp))
                                 Button(onClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); flowState = CameraFlowState.RECORDING; cameraService.startRecording() }, modifier = Modifier.fillMaxWidth().height(56.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF387DFF)), shape = RoundedCornerShape(16.dp)) { Text("Start Recording", fontSize = 17.sp, fontWeight = FontWeight.Bold) }
                                 if (recordedClips.isNotEmpty()) {
@@ -219,19 +283,19 @@ fun PositiveVideoCameraView(
                         }
                         CameraFlowState.RECORDING -> {
                             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                                if (timeElapsed < minPhaseTimeLimit) { Text("Keep recording for ${minPhaseTimeLimit - timeElapsed}s...", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.background(Color.Black.copy(0.6f), CircleShape).padding(horizontal = 16.dp, vertical = 8.dp)) }
-                                else { Text("Ready to stop", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.background(Color(0xFF4CAF50).copy(0.8f), CircleShape).padding(horizontal = 16.dp, vertical = 8.dp)) }
+                                if (timeElapsed < minPhaseTimeLimit) { Text("Keep recording for ${minPhaseTimeLimit - timeElapsed}s...", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.background(Color.Black.copy(alpha = 0.6f), CircleShape).padding(horizontal = 16.dp, vertical = 8.dp)) }
+                                else { Text("Ready to stop", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.background(Color(0xFF4CAF50).copy(alpha = 0.8f), CircleShape).padding(horizontal = 16.dp, vertical = 8.dp)) }
                                 Spacer(Modifier.height(20.dp))
                                 Box(modifier = Modifier.size(80.dp).clip(CircleShape).clickable(enabled = timeElapsed >= minPhaseTimeLimit) { haptic.performHapticFeedback(HapticFeedbackType.LongPress); cameraService.stopRecording() }, contentAlignment = Alignment.Center) {
-                                    CircularProgressIndicator(progress = { timeElapsed.toFloat() / maxPhaseTimeLimit.toFloat() }, modifier = Modifier.fillMaxSize(), color = Color.Red, trackColor = Color.White.copy(0.3f), strokeWidth = 4.dp)
-                                    Box(modifier = Modifier.size(if(timeElapsed >= minPhaseTimeLimit) 32.dp else 64.dp).clip(RoundedCornerShape(if(timeElapsed >= minPhaseTimeLimit) 8.dp else 40.dp)).background(if(timeElapsed >= minPhaseTimeLimit) Color.Red else Color.White.copy(0.8f)))
+                                    CircularProgressIndicator(progress = { timeElapsed.toFloat() / maxPhaseTimeLimit.toFloat().coerceAtLeast(1f) }, modifier = Modifier.fillMaxSize(), color = Color.Red, trackColor = Color.White.copy(alpha = 0.3f), strokeWidth = 4.dp)
+                                    Box(modifier = Modifier.size(if (timeElapsed >= minPhaseTimeLimit) 32.dp else 64.dp).clip(RoundedCornerShape(if (timeElapsed >= minPhaseTimeLimit) 8.dp else 40.dp)).background(if (timeElapsed >= minPhaseTimeLimit) Color.Red else Color.White.copy(alpha = 0.8f)))
                                 }
                             }
                         }
                         CameraFlowState.REVIEWING_RECENT -> {
-                            Row(modifier = Modifier.background(Color.Black.copy(0.6f), RoundedCornerShape(32.dp)).border(0.5.dp, Color.White.copy(0.2f), RoundedCornerShape(32.dp)).padding(24.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                                Button(onClick = { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove); reviewingUri?.path?.let { File(it).delete() }; flowState = CameraFlowState.INSTRUCTION }, modifier = Modifier.weight(1f).height(56.dp), colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(0.8f)), shape = RoundedCornerShape(16.dp)) { Text("Retake", fontSize = 16.sp, fontWeight = FontWeight.Bold) }
-                                Button(onClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); recordedClips = recordedClips + RecordedClip(currentPhase, reviewingUri!!, reviewingDuration); coroutineScope.launch { flowState = CameraFlowState.GALLERY; delay(100); pagerState.animateScrollToPage(recordedClips.size - 1) } }, modifier = Modifier.weight(1f).height(56.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF387DFF)), shape = RoundedCornerShape(16.dp)) { Text("Accept", fontSize = 16.sp, fontWeight = FontWeight.Bold) }
+                            Row(modifier = Modifier.background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(32.dp)).border(0.5.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(32.dp)).padding(24.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                Button(onClick = { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove); reviewingUri?.path?.let { File(it).delete() }; flowState = CameraFlowState.INSTRUCTION }, modifier = Modifier.weight(1f).height(56.dp), colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(alpha = 0.8f)), shape = RoundedCornerShape(16.dp)) { Text("Retake", fontSize = 16.sp, fontWeight = FontWeight.Bold) }
+                                Button(onClick = { val acceptedUri = reviewingUri ?: return@Button; haptic.performHapticFeedback(HapticFeedbackType.LongPress); recordedClips = recordedClips + RecordedClip(currentPhase, acceptedUri, reviewingDuration); coroutineScope.launch { flowState = CameraFlowState.GALLERY; delay(100); pagerState.animateScrollToPage((recordedClips.size - 1).coerceAtLeast(0)) } }, modifier = Modifier.weight(1f).height(56.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF387DFF)), shape = RoundedCornerShape(16.dp)) { Text("Accept", fontSize = 16.sp, fontWeight = FontWeight.Bold) }
                             }
                         }
                         CameraFlowState.GALLERY -> { }
@@ -247,18 +311,18 @@ fun PositiveVideoCameraView(
                         val clip = recordedClips[page]
                         Box {
                             PositiveSafeVideoPlayer(uri = clip.uri, modifier = Modifier.fillMaxSize())
-                            Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 58.dp), contentAlignment = Alignment.TopEnd) { Box(modifier = Modifier.size(32.dp).background(Color.Black.copy(0.6f), CircleShape).clickable { deleteClip(clip) }, contentAlignment = Alignment.Center) { Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.White, modifier = Modifier.size(16.dp)) } }
+                            Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 58.dp), contentAlignment = Alignment.TopEnd) { Box(modifier = Modifier.size(32.dp).background(Color.Black.copy(alpha = 0.6f), CircleShape).clickable { deleteClip(clip) }, contentAlignment = Alignment.Center) { Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.White, modifier = Modifier.size(16.dp)) } }
                         }
                     }
                 }
                 Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.Bottom) {
-                    Box(modifier = Modifier.fillMaxWidth().background(Color.Black.copy(0.6f)).padding(24.dp).padding(bottom = 20.dp)) {
+                    Box(modifier = Modifier.fillMaxWidth().background(Color.Black.copy(alpha = 0.6f)).padding(24.dp).padding(bottom = 20.dp)) {
                         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             val nextMandatory = (1..expectedAngles).find { idx -> recordedClips.none { it.phase is CameraPhase.Mandatory && (it.phase as CameraPhase.Mandatory).idx == idx } }?.let { CameraPhase.Mandatory(it) }
                             val timeRemaining = maxTotalTimeLimit - totalDurationElapsedInt
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 Text("Total: ${totalDurationElapsedInt}s / ${maxTotalTimeLimit}s", color = Color.Gray, fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
-                                if (nextMandatory == null) Icon(if(totalDurationElapsedInt >= actualMinTotalTimeLimit) Icons.Default.CheckCircle else Icons.Default.Warning, contentDescription = null, tint = if(totalDurationElapsedInt >= actualMinTotalTimeLimit) Color.Green else Color(0xFFFFA500))
+                                if (nextMandatory == null) Icon(if (totalDurationElapsedInt >= actualMinTotalTimeLimit) Icons.Default.CheckCircle else Icons.Default.Warning, contentDescription = null, tint = if (totalDurationElapsedInt >= actualMinTotalTimeLimit) Color.Green else Color(0xFFFFA500))
                             }
                             if (nextMandatory != null) { Button(onClick = { currentPhase = nextMandatory; flowState = CameraFlowState.INSTRUCTION }, modifier = Modifier.fillMaxWidth().height(56.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF387DFF)), shape = RoundedCornerShape(16.dp)) { Text("Record Next Angle", fontSize = 17.sp, fontWeight = FontWeight.Bold) } }
                             else {
@@ -269,7 +333,7 @@ fun PositiveVideoCameraView(
                         }
                     }
                 }
-                Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 58.dp)) { Box(modifier = Modifier.size(44.dp).clip(CircleShape).background(Color.White.copy(0.2f)).border(0.5.dp, Color.White.copy(0.2f), CircleShape).clickable { haptic.performHapticFeedback(HapticFeedbackType.LongPress); recordedClips.forEach { try { it.uri.path?.let { p -> File(p).delete() } } catch (e: Exception) {} }; recordedClips = emptyList(); timeElapsed = 0; currentPhase = CameraPhase.Mandatory(1); flowState = CameraFlowState.INSTRUCTION; onCancel() }, contentAlignment = Alignment.Center) { Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White) } }
+                Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 58.dp)) { Box(modifier = Modifier.size(44.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.2f)).border(0.5.dp, Color.White.copy(alpha = 0.2f), CircleShape).clickable { haptic.performHapticFeedback(HapticFeedbackType.LongPress); recordedClips.forEach { try { it.uri.path?.let { p -> File(p).delete() } } catch (e: Exception) {} }; recordedClips = emptyList(); timeElapsed = 0; currentPhase = CameraPhase.Mandatory(1); flowState = CameraFlowState.INSTRUCTION; onCancel() }, contentAlignment = Alignment.Center) { Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White) } }
             }
         }
     }
@@ -278,8 +342,8 @@ fun PositiveVideoCameraView(
 @Composable
 fun PositiveSafeVideoPlayer(uri: Uri, modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    val exoPlayer = remember { ExoPlayer.Builder(context).build().apply { setMediaItem(MediaItem.fromUri(uri)); repeatMode = ExoPlayer.REPEAT_MODE_ALL; prepare(); playWhenReady = true } }
-    DisposableEffect(Unit) { onDispose { exoPlayer.release() } }
+    val exoPlayer = remember(uri) { ExoPlayer.Builder(context).build().apply { setMediaItem(MediaItem.fromUri(uri)); repeatMode = ExoPlayer.REPEAT_MODE_ALL; prepare(); playWhenReady = true } }
+    DisposableEffect(exoPlayer) { onDispose { exoPlayer.release() } }
     AndroidView(
         factory = { ctx ->
             PlayerView(ctx).apply {

@@ -1,13 +1,17 @@
 package looksee.angelll.com.models
 
+import android.util.Log
 import com.google.gson.Gson
 import java.io.File
-import java.net.URLEncoder
 import java.net.URL
+import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
+import java.util.UUID
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.withContext
 
 sealed class HardNegativeUploadError(message: String) : Exception(message) {
     data object NoVideo : HardNegativeUploadError("No negative video was provided.")
@@ -86,6 +90,7 @@ class HardNegativeUploadService internal constructor(
             }
             return completeResponse
         } catch (error: Throwable) {
+            Log.e("LookSee_HardNegUpload", "Hard-negative upload failed: ${error.message}", error)
             _status.value = "Negative upload failed: ${error.message.orEmpty()}"
             throw error
         } finally {
@@ -110,12 +115,14 @@ class HardNegativeUploadService internal constructor(
         val contentType = videoContentType(video.file)
         val body = HardNegativeInitRequest(
             files = listOf(HardNegativeFileRequest(video.filename, contentType)),
+            nonce = UUID.randomUUID().toString(),
         )
         val response = httpClient.postJson(
             url = hardNegativeUrl(landmarkId, "init"),
-            authorization = token,
+            authorization = normalizeAuthHeader(token),
             jsonBody = gson.toJson(body),
             timeoutMillis = API_TIMEOUT_MILLIS,
+            extraHeaders = mapOf("x-looksee-client-platform" to "android"),
         )
         validateApiResponse(response)
         return decode(response.body, HardNegativeInitResponse::class.java)
@@ -133,7 +140,7 @@ class HardNegativeUploadService internal constructor(
         } catch (_: Exception) {
             throw HardNegativeUploadError.InvalidUrl
         }
-        val videoBytes = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { video.file.readBytes() }
+        val videoBytes = withContext(Dispatchers.IO) { video.file.readBytes() }
         val response = httpClient.postMultipartBytes(
             presignedPost = target.uploadUrl,
             contentType = target.contentType,
@@ -144,7 +151,7 @@ class HardNegativeUploadService internal constructor(
         if (response.statusCode !in 200..299) {
             throw HardNegativeUploadError.BadStatus(
                 response.statusCode,
-                "S3 POST failed for ${video.filename}",
+                "S3 POST failed for ${video.filename}: ${response.body}",
             )
         }
     }
@@ -157,12 +164,25 @@ class HardNegativeUploadService internal constructor(
     ): HardNegativeCompleteResponse {
         val response = httpClient.postJson(
             url = hardNegativeUrl(landmarkId, "complete"),
-            authorization = token,
-            jsonBody = gson.toJson(HardNegativeCompleteRequest(batchId, negativeIds)),
+            authorization = normalizeAuthHeader(token),
+            jsonBody = gson.toJson(
+                HardNegativeCompleteRequest(
+                    batchId = batchId,
+                    negativeIds = negativeIds,
+                    nonce = UUID.randomUUID().toString(),
+                )
+            ),
             timeoutMillis = API_TIMEOUT_MILLIS,
+            extraHeaders = mapOf("x-looksee-client-platform" to "android"),
         )
         validateApiResponse(response)
         return decode(response.body, HardNegativeCompleteResponse::class.java)
+    }
+
+    private fun normalizeAuthHeader(token: String): String {
+        val trimmed = token.trim()
+        if (trimmed.isEmpty()) return ""
+        return if (trimmed.startsWith("Bearer ", ignoreCase = true)) trimmed else "Bearer $trimmed"
     }
 
     private fun hardNegativeUrl(landmarkId: String, action: String): String {
@@ -204,6 +224,7 @@ class HardNegativeUploadService internal constructor(
 
 private data class HardNegativeInitRequest(
     val files: List<HardNegativeFileRequest>,
+    val nonce: String = UUID.randomUUID().toString(),
 )
 
 private data class HardNegativeFileRequest(
@@ -212,47 +233,48 @@ private data class HardNegativeFileRequest(
 )
 
 private data class HardNegativeInitResponse(
-    val message: String,
-    val batchId: String,
-    val landmarkId: String,
-    val landmarkLabel: String,
-    val landmarkFolder: String,
-    val expiresInSeconds: Int,
-    val uploads: List<HardNegativeUploadTarget>,
+    val message: String = "",
+    val batchId: String = "",
+    val landmarkId: String = "",
+    val landmarkLabel: String = "",
+    val landmarkFolder: String = "",
+    val expiresInSeconds: Int = 0,
+    val uploads: List<HardNegativeUploadTarget> = emptyList(),
 )
 
 private data class HardNegativeUploadTarget(
-    val negativeId: String,
+    val negativeId: String = "",
     val uploadUrl: looksee.angelll.com.models.S3PresignedPost,
-    val sourceBucket: String,
-    val sourceKey: String,
-    val contentType: String,
+    val sourceBucket: String = "",
+    val sourceKey: String = "",
+    val contentType: String = "",
 )
 
 private data class HardNegativeCompleteRequest(
     val batchId: String,
     val negativeIds: List<String>,
+    val nonce: String = UUID.randomUUID().toString(),
 )
 
 data class HardNegativeCompleteResponse(
-    val message: String,
-    val landmarkId: String,
-    val batchId: String,
-    val processedCount: Int,
-    val failedCount: Int,
-    val dirtyMarked: Boolean,
-    val processed: List<HardNegativeProcessedItem>,
-    val failed: List<HardNegativeFailedItem>,
+    val message: String = "",
+    val landmarkId: String = "",
+    val batchId: String = "",
+    val processedCount: Int = 0,
+    val failedCount: Int = 0,
+    val dirtyMarked: Boolean = false,
+    val processed: List<HardNegativeProcessedItem> = emptyList(),
+    val failed: List<HardNegativeFailedItem> = emptyList(),
 )
 
 data class HardNegativeProcessedItem(
-    val negativeId: String,
-    val status: String,
-    val datasetImageKey: String,
-    val datasetLabelKey: String,
+    val negativeId: String = "",
+    val status: String = "",
+    val datasetImageKey: String = "",
+    val datasetLabelKey: String = "",
 )
 
 data class HardNegativeFailedItem(
-    val negativeId: String,
-    val reason: String,
+    val negativeId: String = "",
+    val reason: String = "",
 )

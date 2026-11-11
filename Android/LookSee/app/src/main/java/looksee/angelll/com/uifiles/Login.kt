@@ -47,6 +47,7 @@ import looksee.angelll.com.services.*
 @Composable
 fun LoginScreen(
     vm: AuthViewModel,
+    authState: AuthState,
     onNavigate: (String) -> Unit
 ) {
     var email by remember { mutableStateOf("") }
@@ -267,6 +268,7 @@ fun LoginScreen(
                         
                         val success = vm.signInSync(email.trim(), password)
                         if (success) {
+                            authState.resolveTier()
                             onNavigate("main")
                         } else {
                             isLoggingIn = false

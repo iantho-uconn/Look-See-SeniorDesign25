@@ -20,9 +20,7 @@ class AutoUploadManager: ObservableObject {
     private let uploadService = UploadService()
     private let hardNegativeUploadService = HardNegativeUploadService()
     
-    // 🚀 Single fixed ID prevents duplicate/spam notifications for stuck queue items
     private let stuckQueueNotificationID = "com.informationoutpost.LookSeeProto.stuckQueueReminder"
-    // Remind the user 2 hours (7200 seconds) after an upload gets left behind
     private let stuckQueueReminderDelay: TimeInterval = 7200
 
     private init() {
@@ -39,7 +37,6 @@ class AutoUploadManager: ObservableObject {
         NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
-                // Never reset the running flag while an async upload is alive.
                 Task { await self?.autoStartIfPossible() }
             }.store(in: &cancellables)
         OfflineMediaManager.shared.$archivedItems
@@ -74,7 +71,6 @@ class AutoUploadManager: ObservableObject {
         isPaused = true
         queueMessage = isUploading ? "Pausing after the current request." : "Uploads paused. Tap Retry uploads to resume."
         updateStuckQueueReminder()
-        // Keep ownership of the active async operation until its defer runs.
     }
 
     func startProcessing(authViewModel: AuthViewModel) async {
@@ -130,7 +126,6 @@ class AutoUploadManager: ObservableObject {
             updateStuckQueueReminder()
             return
         }
-        // Lock before the first await, including account refresh and token lookup.
         isUploading = true
         beginBackgroundTask()
         defer {
@@ -161,7 +156,6 @@ class AutoUploadManager: ObservableObject {
                 print("[UploadQueue] Waiting: no active subscription")
                 return
             }
-            // Existing-landmark redos don't consume a creation token.
             if media.landmarkId == nil && media.positiveUploadCompleted != true && authVM.tokenBalance <= 0 {
                 queueMessage = "A token is required to create this landmark."
                 print("[UploadQueue] Waiting: no creation tokens")
@@ -172,6 +166,8 @@ class AutoUploadManager: ObservableObject {
             queueMessage = "Uploading media…"
             let manager = OfflineMediaManager.shared
             let landmarkID = manager.prepareUploadID(for: media)
+            VariableContainer.shared.markLandmarkProcessingNewData(landmarkId: landmarkID)
+
             let label = media.savedLabel ?? media.title
             var phase = "positive submission"
             print("[UploadQueue] Starting item=\(media.id) landmark=\(landmarkID)")
@@ -202,11 +198,13 @@ class AutoUploadManager: ObservableObject {
                         video: CapturedNegativeVideo(fileURL: negativeURL)
                     )
                 }
-                manager.deleteArchive(media: media)
+                VariableContainer.shared.markLandmarkUploadCompleted(landmarkId: finalLandmarkID)
+                manager.deleteArchive(media: media, isCompletedUpload: true)
+                NotificationCenter.default.post(name: Notification.Name("RefreshBusinessLandmarks"), object: nil)
                 print("[UploadQueue] Completed item=\(media.id)")
                 let content = UNMutableNotificationContent()
                 content.title = "LookSee Upload Complete"
-                content.body = "Your media for '\(label)' has been synced."
+                content.body = "Your media for '\(label)' has been uploaded."
                 content.sound = .default
                 UNUserNotificationCenter.current().add(
                     UNNotificationRequest(
@@ -218,15 +216,12 @@ class AutoUploadManager: ObservableObject {
                         }
                     }
                 )
-                // Use the server's balance instead of charging every redo locally.
                 await authVM.fetchUserUsageStats()
             } catch {
                 let failure = describeFailure(error)
                 manager.recordUploadFailure(id: media.id, message: failure.message,
                                             deletionBlocked: failure.blocked)
                 print("[UploadQueue] Failed item=\(media.id) phase=\(phase): \(failure.diagnostic)")
-                // Failed items remain visible; deletion-blocked ones never retry.
-                // Other queued items can continue without this item blocking them.
             }
             currentlyUploadingId = nil
         }
@@ -238,17 +233,15 @@ class AutoUploadManager: ObservableObject {
         let center = UNUserNotificationCenter.current()
         let activeQueueItems = OfflineMediaManager.shared.archivedItems.filter { $0.deletionBlocked != true }
         
-        // If all uploads are done, immediately cancel any pending reminder
         guard !activeQueueItems.isEmpty else {
             center.removePendingNotificationRequests(withIdentifiers: [stuckQueueNotificationID])
             return
         }
         
-        // Schedule (or overwrite) a single reminder for 2 hours from now
         let count = activeQueueItems.count
         let content = UNMutableNotificationContent()
         content.title = "Pending Landmark Upload\(count == 1 ? "" : "s")"
-        content.body = "You have \(count) landmark video\(count == 1 ? "" : "s") waiting in your upload queue. Open LookSee to finish syncing."
+        content.body = "You have \(count) landmark video\(count == 1 ? "" : "s") waiting in your upload queue. Open LookSee to finish uploading."
         content.sound = .default
         
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: stuckQueueReminderDelay, repeats: false)
@@ -276,7 +269,6 @@ class AutoUploadManager: ObservableObject {
                 return ("Upload blocked: deletion has been requested for this landmark. Remove this item from the queue.",
                         true, "HTTP 409: \(serverMessage)")
             }
-            // Log status and the safe, known error category, never raw URLs/tokens.
             let message: String
             if code == 409 { message = "Upload conflict. Try again; if it continues, remove and re-add the media. (409)" }
             else { message = uploadError.localizedDescription + " (HTTP \(code))" }

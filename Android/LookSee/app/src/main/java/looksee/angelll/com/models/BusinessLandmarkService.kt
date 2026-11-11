@@ -15,7 +15,107 @@ import java.net.URL
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
+
+data class PromotionTitlesEntry(
+    val landmarkId: String,
+    val titles: List<String> = emptyList()
+)
+
+data class PromotionTitlesIndex(
+    val entries: List<PromotionTitlesEntry> = emptyList()
+) {
+    fun containsLandmark(landmarkId: String): Boolean =
+        entries.any { it.landmarkId == landmarkId }
+
+    fun titlesFor(landmarkId: String): List<String> =
+        entries.firstOrNull { it.landmarkId == landmarkId }?.titles ?: emptyList()
+
+    fun withTitles(landmarkId: String, titles: List<String>): PromotionTitlesIndex =
+        PromotionTitlesIndex(
+            entries.filterNot { it.landmarkId == landmarkId } + PromotionTitlesEntry(landmarkId, titles)
+        )
+}
+
+data class ProcessingSnapshot(
+    val landmarkId: String,
+    val baselineFrames: Int?,
+    val baselineSecondsNeeded: Int?,
+    val baselineStatus: String?,
+    val startedAtMillis: Long = System.currentTimeMillis()
+)
+
+data class ProcessingTrackerState(
+    val snapshots: List<ProcessingSnapshot> = emptyList()
+) {
+    val isNotEmpty: Boolean get() = snapshots.isNotEmpty()
+
+    fun find(landmarkId: String): ProcessingSnapshot? =
+        snapshots.firstOrNull { it.landmarkId == landmarkId }
+}
+
+/**
+ * Tracks landmarks that just received new positive media uploads so the UI can pin them
+ * under "PROCESSING NEW DATA" and poll every 15s until the backend updates frame counts.
+ */
+object BusinessProcessingTracker {
+    private const val MAX_PROCESSING_WINDOW_MS = 15 * 60 * 1000L // 15 minutes safety expiry
+
+    private val _state = MutableStateFlow(ProcessingTrackerState())
+    val state: StateFlow<ProcessingTrackerState> = _state.asStateFlow()
+
+    fun markProcessingNewData(landmark: BusinessLandmark) {
+        val current = _state.value.snapshots.filterNot { it.landmarkId == landmark.landmarkId }
+        val added = ProcessingSnapshot(
+            landmarkId = landmark.landmarkId,
+            baselineFrames = landmark.cleanFrameCount,
+            baselineSecondsNeeded = landmark.secondsNeeded,
+            baselineStatus = landmark.status
+        )
+        _state.value = ProcessingTrackerState(current + added)
+    }
+
+    fun reconcileWithBackend(landmarks: List<BusinessLandmark>) {
+        val currentSnapshots = _state.value.snapshots
+        if (currentSnapshots.isEmpty()) return
+
+        val now = System.currentTimeMillis()
+        val landmarksById = landmarks.associateBy { it.landmarkId }
+
+        val remaining = currentSnapshots.filter { snapshot ->
+            val landmark = landmarksById[snapshot.landmarkId] ?: return@filter true
+            val framesChanged = landmark.cleanFrameCount != snapshot.baselineFrames
+            val secondsChanged = landmark.secondsNeeded != snapshot.baselineSecondsNeeded
+            val movedToPipeline = landmark.status in setOf(
+                "PREPARING_DATA",
+                "PENDING_TRAINING",
+                "TRAINING_MODEL",
+                "OPTIMIZING_MODEL",
+                "ACTIVE"
+            ) && landmark.status != snapshot.baselineStatus
+            val expired = (now - snapshot.startedAtMillis) > MAX_PROCESSING_WINDOW_MS
+
+            !(framesChanged || secondsChanged || movedToPipeline || expired)
+        }
+
+        if (remaining.size != currentSnapshots.size) {
+            _state.value = ProcessingTrackerState(remaining)
+        }
+    }
+
+    fun isLandmarkProcessingNewData(
+        landmark: BusinessLandmark,
+        trackerState: ProcessingTrackerState = _state.value
+    ): Boolean {
+        val snapshot = trackerState.find(landmark.landmarkId) ?: return false
+        val framesChanged = landmark.cleanFrameCount != snapshot.baselineFrames
+        val secondsChanged = landmark.secondsNeeded != snapshot.baselineSecondsNeeded
+        return !framesChanged && !secondsChanged
+    }
+}
 
 sealed class BusinessLandmarkServiceError(message: String) : Exception(message) {
     data object NotSignedIn : BusinessLandmarkServiceError("You must be signed in before managing landmarks.")
@@ -105,7 +205,7 @@ class BusinessLandmarkService internal constructor(
     }
 
     suspend fun uploadGlobalNegativeVideo(file: java.io.File): BusinessMediaUploadCompleteResponse {
-        val bytes = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { file.readBytes() }
+        val bytes = withContext(Dispatchers.IO) { file.readBytes() }
         val contentType = if (file.extension.equals("mov", ignoreCase = true)) "video/quicktime" else "video/mp4"
 
         Log.d("LookSee_Debug_Upload", "[GLOBAL NEGATIVE] Initiating network request for: ${file.name}")
@@ -451,6 +551,7 @@ internal data class BusinessHttpRequest(
     val url: String,
     val authorization: String? = null,
     val body: ByteArray? = null,
+    val fileBody: java.io.File? = null,
     val contentType: String? = null,
     val accept: String? = "application/json",
     val timeoutMillis: Int = 30_000,
@@ -479,9 +580,15 @@ internal class UrlConnectionBusinessHttpClient : BusinessHttpClient {
                     connection.setRequestProperty(key, value)
                 }
 
-                request.body?.let { bytes ->
+                if (request.fileBody != null) {
                     connection.doOutput = true
-                    connection.outputStream.use { it.write(bytes) }
+                    connection.setFixedLengthStreamingMode(request.fileBody.length())
+                    connection.outputStream.use { out ->
+                        request.fileBody.inputStream().use { it.copyTo(out) }
+                    }
+                } else if (request.body != null) {
+                    connection.doOutput = true
+                    connection.outputStream.use { it.write(request.body) }
                 }
 
                 val status = connection.responseCode
@@ -489,7 +596,7 @@ internal class UrlConnectionBusinessHttpClient : BusinessHttpClient {
 
                 BusinessHttpResponse(statusCode = status, body = stream?.use { it.readBytes() } ?: ByteArray(0))
             } finally {
-                // 🚀 THE FIX: Kept the stream open for OS connection pooling to allow for instant subsequent requests
+                // Keep stream open for OS connection pooling
             }
         }
 }

@@ -11,9 +11,11 @@ import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.util.Base64
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.edit
 import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
@@ -47,23 +49,48 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
-
 data class AutoUploadState(
     val isUploading: Boolean = false,
     val isPaused: Boolean = false,
-    val currentlyUploadingId: UUID? = null,
+    val currentlyUploadingId: String? = null,
     val currentUploadProgress: Double = 0.0,
     val completedItems: Int = 0,
     val totalItems: Int = 0,
     val currentLabel: String? = null,
 )
 
-/**
- * WorkManager-backed Android translation of AutoUploadManager.swift.
- *
- * Call [autoStartIfPossible] at app startup and after successfully archiving new media. WorkManager
- * keeps the request durable and waits for a connected network, including across process restarts.
- */
+data class AutoUploadSession(
+    val userEmail: String,
+    val idToken: String,
+    val hasActiveSubscription: Boolean,
+    val tokenBalance: Int,
+)
+
+data class AutoUploadItemProgress(
+    val mediaId: String,
+    val label: String,
+    val completedItems: Int,
+    val totalItems: Int,
+    val itemProgress: Double,
+) {
+    val overallProgress: Double
+        get() = if (totalItems == 0) {
+            0.0
+        } else {
+            ((completedItems + itemProgress.coerceIn(0.0, 1.0)) / totalItems).coerceIn(0.0, 1.0)
+        }
+}
+
+sealed interface AutoUploadRunResult {
+    data class Completed(val uploadedCount: Int) : AutoUploadRunResult
+    data class Paused(val uploadedCount: Int) : AutoUploadRunResult
+    data object NotAuthenticated : AutoUploadRunResult
+    data object SubscriptionRequired : AutoUploadRunResult
+    data object TokensUnavailable : AutoUploadRunResult
+    data class Retry(val uploadedCount: Int, val cause: Throwable) : AutoUploadRunResult
+    data class Failed(val uploadedCount: Int, val cause: Throwable) : AutoUploadRunResult
+}
+
 class AutoUploadManager private constructor(context: Context) {
     private val appContext = context.applicationContext
     private val workManager = WorkManager.getInstance(appContext)
@@ -78,23 +105,21 @@ class AutoUploadManager private constructor(context: Context) {
     fun startProcessing() {
         pauseStore.setPaused(false)
         AutoUploadRuntime.setPaused(false)
-        enqueue(expedited = true)
+        enqueue(expedited = true, replaceIfIdle = true)
     }
 
-    /** Clears a user pause and immediately retries the durable upload queue. */
     fun forceRetry() = startProcessing()
 
-    /** The active item may finish; the worker checks this flag before advancing to the next item. */
     fun stopProcessing() {
         pauseStore.setPaused(true)
         AutoUploadRuntime.setPaused(true)
     }
 
     fun autoStartIfPossible() {
-        if (!pauseStore.isPaused()) enqueue(expedited = false)
+        if (!pauseStore.isPaused()) enqueue(expedited = false, replaceIfIdle = false)
     }
 
-    private fun enqueue(expedited: Boolean) {
+    private fun enqueue(expedited: Boolean, replaceIfIdle: Boolean) {
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
             .build()
@@ -105,9 +130,14 @@ class AutoUploadManager private constructor(context: Context) {
         if (expedited) {
             builder.setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
         }
+        val policy = if (replaceIfIdle && !AutoUploadRuntime.state.value.isUploading) {
+            ExistingWorkPolicy.REPLACE
+        } else {
+            ExistingWorkPolicy.KEEP
+        }
         workManager.enqueueUniqueWork(
             UNIQUE_WORK_NAME,
-            ExistingWorkPolicy.KEEP,
+            policy,
             builder.build(),
         )
     }
@@ -140,8 +170,8 @@ class AutoUploadWorker(
     override suspend fun doWork(): Result {
         try {
             setForeground(getForegroundInfo())
-        } catch (_: IllegalStateException) {
-            return Result.retry()
+        } catch (_: Exception) {
+            // Continue in background even if OS blocks foreground notification promotion
         }
 
         AutoUploadRuntime.setUploading(true)
@@ -154,10 +184,10 @@ class AutoUploadWorker(
         return when (result) {
             is AutoUploadRunResult.Completed,
             is AutoUploadRunResult.Paused,
-            AutoUploadRunResult.NotAuthenticated,
-            AutoUploadRunResult.SubscriptionRequired,
-            AutoUploadRunResult.TokensUnavailable,
-            -> Result.success()
+            is AutoUploadRunResult.NotAuthenticated,
+            is AutoUploadRunResult.SubscriptionRequired,
+            is AutoUploadRunResult.TokensUnavailable,
+                -> Result.success()
 
             is AutoUploadRunResult.Retry -> {
                 if (runAttemptCount < MAX_RETRY_ATTEMPTS) {
@@ -205,9 +235,7 @@ private data class AutoUploadDependencies(
                     archive = OfflineMediaAutoUploadArchive(archiveManager),
                     sessionProvider = AmplifyAutoUploadSessionProvider(),
                     positiveUploader = UploadServiceAutoUploader(UploadService(appContext)),
-                    negativeUploader = HardNegativeServiceAutoUploader(
-                        HardNegativeUploadService(),
-                    ),
+                    negativeUploader = HardNegativeServiceAutoUploader(HardNegativeUploadService()),
                     pauseGate = pauseStore,
                     events = workerEvents,
                 ),
@@ -230,9 +258,10 @@ private object AutoUploadRuntime {
     }
 
     fun update(progress: AutoUploadItemProgress) {
+        val uuid = try { UUID.fromString(progress.mediaId) } catch (e: Exception) { null }
         _state.value = _state.value.copy(
             isUploading = true,
-            currentlyUploadingId = progress.mediaId,
+            currentlyUploadingId = uuid?.toString(),
             currentUploadProgress = progress.overallProgress,
             completedItems = progress.completedItems,
             totalItems = progress.totalItems,
@@ -258,7 +287,7 @@ private class SharedPreferencesAutoUploadPauseStore(context: Context) : AutoUplo
     override fun isPaused(): Boolean = preferences.getBoolean(PAUSED_KEY, false)
 
     fun setPaused(paused: Boolean) {
-        preferences.edit().putBoolean(PAUSED_KEY, paused).apply()
+        preferences.edit { putBoolean(PAUSED_KEY, paused) }
     }
 
     private companion object {
@@ -271,7 +300,7 @@ private class OfflineMediaAutoUploadArchive(
     private val manager: OfflineMediaManager,
 ) : AutoUploadArchive {
     override fun pendingItems(): List<ArchivedMedia> =
-        manager.archivedItems.value.sortedBy(ArchivedMedia::dateSaved)
+        manager.archivedItems.value.sortedBy { it.dateSaved }
 
     override fun positiveFile(media: ArchivedMedia): File = manager.getFile(media)
 
@@ -353,7 +382,7 @@ private class WorkManagerAutoUploadEvents(
         AutoUploadRuntime.update(progress)
         progressWriter(
             workDataOf(
-                AutoUploadWorker.PROGRESS_MEDIA_ID to progress.mediaId.toString(),
+                AutoUploadWorker.PROGRESS_MEDIA_ID to progress.mediaId,
                 AutoUploadWorker.PROGRESS_LABEL to progress.label,
                 AutoUploadWorker.PROGRESS_FRACTION to progress.overallProgress,
                 AutoUploadWorker.PROGRESS_COMPLETED to progress.completedItems,
@@ -387,12 +416,18 @@ private class AmplifyAutoUploadSessionProvider(
         val userId = claims.optString("sub").trim()
         if (userEmail.isEmpty() || userId.isEmpty()) return null
 
-        val stats = statsClient.fetch(userId)
+        val stats = try {
+            statsClient.fetch(userId, idToken)
+        } catch (e: Exception) {
+            Log.w("LookSee_UploadQueue", "Stats fetch failed, proceeding with authenticated session: ${e.message}")
+            AutoUploadUsageStats(tokenBalance = 1, hasActiveSubscription = true)
+        }
+
         return AutoUploadSession(
             userEmail = userEmail,
             idToken = idToken,
             hasActiveSubscription = stats.hasActiveSubscription ||
-                stats.tier == "business" || stats.stripeSubscriptionId.isNotBlank(),
+                    stats.tier == "business" || stats.stripeSubscriptionId.isNotBlank(),
             tokenBalance = stats.tokenBalance,
         )
     }
@@ -414,13 +449,13 @@ private data class AutoUploadUsageStats(
 )
 
 private interface AutoUploadStatsClient {
-    suspend fun fetch(userId: String): AutoUploadUsageStats
+    suspend fun fetch(userId: String, idToken: String = ""): AutoUploadUsageStats
 }
 
 private class UrlConnectionAutoUploadStatsClient(
     private val gson: Gson = Gson(),
 ) : AutoUploadStatsClient {
-    override suspend fun fetch(userId: String): AutoUploadUsageStats = withContext(Dispatchers.IO) {
+    override suspend fun fetch(userId: String, idToken: String): AutoUploadUsageStats = withContext(Dispatchers.IO) {
         val connection = URL(USER_STATS_URL).openConnection() as HttpURLConnection
         try {
             val body = gson.toJson(mapOf("userId" to userId)).toByteArray(Charsets.UTF_8)
@@ -428,6 +463,10 @@ private class UrlConnectionAutoUploadStatsClient(
             connection.connectTimeout = TIMEOUT_MILLIS
             connection.readTimeout = TIMEOUT_MILLIS
             connection.setRequestProperty("Content-Type", "application/json")
+            if (idToken.isNotBlank()) {
+                val authHeader = if (idToken.startsWith("Bearer ", ignoreCase = true)) idToken else "Bearer $idToken"
+                connection.setRequestProperty("Authorization", authHeader)
+            }
             connection.doOutput = true
             connection.setFixedLengthStreamingMode(body.size)
             connection.outputStream.use { it.write(body) }
@@ -489,9 +528,9 @@ private class AndroidAutoUploadNotifier(private val context: Context) {
             label.hashCode(),
             NotificationCompat.Builder(context, RESULTS_CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.stat_sys_upload_done)
-                .setContentTitle("LookSee Upload Complete! 🎉")
+                .setContentTitle("LookSee Upload Complete")
                 .setContentText(
-                    "Your offline media for '$label' was successfully synced. (1 Token consumed).",
+                    "Your media for '$label' has been uploaded.",
                 )
                 .setAutoCancel(true)
                 .setContentIntent(launchIntent())
@@ -549,7 +588,6 @@ private class AndroidAutoUploadNotifier(private val context: Context) {
     }
 
     private fun createChannels() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val systemManager = context.getSystemService(NotificationManager::class.java)
         systemManager.createNotificationChannel(
             NotificationChannel(
@@ -573,47 +611,12 @@ private class AndroidAutoUploadNotifier(private val context: Context) {
         const val FOREGROUND_NOTIFICATION_ID = 41_101
         const val LIMIT_NOTIFICATION_ID = 41_102
         const val PREFS_NAME = "LookSeePrefs"
-        
+
         fun clearStuckReminder(context: Context) {
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                .edit().remove("lastStuckNotificationTime").apply()
+                .edit { remove("lastStuckNotificationTime") }
         }
     }
-}
-
-
-// --- Merged from AutoUploadQueueEngine.kt ---
-data class AutoUploadSession(
-    val userEmail: String,
-    val idToken: String,
-    val hasActiveSubscription: Boolean,
-    val tokenBalance: Int,
-)
-
-data class AutoUploadItemProgress(
-    val mediaId: UUID,
-    val label: String,
-    val completedItems: Int,
-    val totalItems: Int,
-    val itemProgress: Double,
-) {
-    val overallProgress: Double
-        get() = if (totalItems == 0) {
-            0.0
-        } else {
-            ((completedItems + itemProgress.coerceIn(0.0, 1.0)) / totalItems)
-                .coerceIn(0.0, 1.0)
-        }
-}
-
-sealed interface AutoUploadRunResult {
-    data class Completed(val uploadedCount: Int) : AutoUploadRunResult
-    data class Paused(val uploadedCount: Int) : AutoUploadRunResult
-    data object NotAuthenticated : AutoUploadRunResult
-    data object SubscriptionRequired : AutoUploadRunResult
-    data object TokensUnavailable : AutoUploadRunResult
-    data class Retry(val uploadedCount: Int, val cause: Throwable) : AutoUploadRunResult
-    data class Failed(val uploadedCount: Int, val cause: Throwable) : AutoUploadRunResult
 }
 
 internal interface AutoUploadArchive {
@@ -665,13 +668,13 @@ internal class AutoUploadQueueEngine(
     private val pauseGate: AutoUploadPauseGate,
     private val events: AutoUploadEvents,
     private val landmarkIdFactory: () -> String = {
-        "landmark_${UUID.randomUUID().toString().take(8)}"
+        "landmark_${UUID.randomUUID().toString().replace("-", "").take(8)}"
     },
 ) {
     suspend fun process(): AutoUploadRunResult {
         if (pauseGate.isPaused()) return AutoUploadRunResult.Paused(0)
 
-        val pending = archive.pendingItems().sortedBy(ArchivedMedia::dateSaved)
+        val pending = archive.pendingItems().sortedBy { it.dateSaved }
         if (pending.isEmpty()) return AutoUploadRunResult.Completed(0)
 
         val session = try {
@@ -698,11 +701,12 @@ internal class AutoUploadQueueEngine(
                 return AutoUploadRunResult.SubscriptionRequired
             }
 
-            if (remainingTokens <= 0) {
+            val isNewLandmarkCreation = media.landmarkId.isNullOrBlank() || media.negativeVideoFileName != null
+            if (media.landmarkId.isNullOrBlank() && remainingTokens <= 0) {
                 events.onLimit(
                     title = "Out of Tokens",
                     body = "You need 1 token to upload a new landmark. " +
-                        "Purchase a token pack in Settings.",
+                            "Purchase a token pack in Settings.",
                 )
                 return AutoUploadRunResult.TokensUnavailable
             }
@@ -711,8 +715,12 @@ internal class AutoUploadQueueEngine(
             val requestedLandmarkId = media.landmarkId?.takeIf { it.isNotBlank() }
                 ?: landmarkIdFactory()
 
+            BusinessProcessingTracker.markProcessingNewData(
+                BusinessLandmark(landmarkId = requestedLandmarkId, label = label)
+            )
+
             try {
-                report(media, label, uploadedCount, pending.size, 0.0)
+                report(media.id, label, uploadedCount, pending.size, 0.0)
                 val positive = positiveUploader.upload(
                     media = media,
                     file = archive.positiveFile(media),
@@ -721,7 +729,7 @@ internal class AutoUploadQueueEngine(
                     landmarkId = requestedLandmarkId,
                 ) { positiveProgress ->
                     report(
-                        media,
+                        media.id,
                         label,
                         uploadedCount,
                         pending.size,
@@ -738,26 +746,29 @@ internal class AutoUploadQueueEngine(
                         idToken = session.idToken,
                     ) { negativeProgress ->
                         report(
-                            media,
+                            media.id,
                             label,
                             uploadedCount,
                             pending.size,
                             POSITIVE_PROGRESS_WEIGHT +
-                                (negativeProgress.coerceIn(0.0, 1.0) * NEGATIVE_PROGRESS_WEIGHT),
+                                    (negativeProgress.coerceIn(0.0, 1.0) * NEGATIVE_PROGRESS_WEIGHT),
                         )
                     }
                 }
 
-                report(media, label, uploadedCount, pending.size, 1.0)
+                report(media.id, label, uploadedCount, pending.size, 1.0)
                 archive.delete(media)
-                // Clear the stuck notification timer using the application context
-                val appContext = (events as? WorkManagerAutoUploadEvents)?.context 
-                    ?: error("Invalid context")
-                AndroidAutoUploadNotifier.clearStuckReminder(appContext)
+                val appContext = (events as? WorkManagerAutoUploadEvents)?.context
+                if (appContext != null) {
+                    AndroidAutoUploadNotifier.clearStuckReminder(appContext)
+                }
                 uploadedCount += 1
-                remainingTokens -= 1
+                if (isNewLandmarkCreation && remainingTokens > 0) {
+                    remainingTokens -= 1
+                }
                 events.onUploadSucceeded(label)
             } catch (error: Throwable) {
+                Log.e("LookSee_UploadQueue", "Failed item=${media.id}: ${error.message}", error)
                 return failureResult(uploadedCount, error)
             }
         }
@@ -766,7 +777,7 @@ internal class AutoUploadQueueEngine(
     }
 
     private suspend fun report(
-        media: ArchivedMedia,
+        mediaId: String,
         label: String,
         completedItems: Int,
         totalItems: Int,
@@ -774,7 +785,7 @@ internal class AutoUploadQueueEngine(
     ) {
         events.onProgress(
             AutoUploadItemProgress(
-                mediaId = media.id,
+                mediaId = mediaId,
                 label = label,
                 completedItems = completedItems,
                 totalItems = totalItems,
@@ -801,7 +812,7 @@ internal fun Throwable.isRetryableAutoUploadFailure(): Boolean = when (this) {
     is ConnectException,
     is SocketTimeoutException,
     is SocketException,
-    -> true
+        -> true
 
     is PositiveUploadError.BadStatus -> code == 408 || code == 429 || code >= 500
     is HardNegativeUploadError.BadStatus -> code == 408 || code == 429 || code >= 500

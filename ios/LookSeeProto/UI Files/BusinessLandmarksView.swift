@@ -33,280 +33,379 @@ struct BusinessLandmarksView: View {
 
     private let promotionService = BusinessPromotionService()
     private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00)
-    private let autoRefreshIntervalNanoseconds: UInt64 = 90_000_000_000
+    private let standardRefreshIntervalNanoseconds: UInt64 = 90_000_000_000
+    private let fastProcessingRefreshIntervalNanoseconds: UInt64 = 15_000_000_000
 
     var body: some View {
+        navigationAndLifecycleContent
+            .fullScreenCover(item: $draftToEdit) { draft in
+                LandmarkRecord(archivedMedia: draft)
+            }
+            .navigationDestination(item: $landmarkToOpen) { landmark in
+                detailDestinationView(for: landmark)
+            }
+            .sheet(item: $landmarkToPreview) { landmark in
+                BusinessLandmarkPopupPreview(landmark: landmark)
+            }
+            .sheet(item: $bulkPromotionSelection) { selection in
+                BusinessBulkPromotionEditor(landmarks: selection.landmarks) { result in
+                    handleBulkPromotionResult(result)
+                }
+            }
+            .sheet(item: $bulkDeleteSelection) { selection in
+                BusinessBulkDeleteView(landmarks: selection.landmarks) { result in
+                    handleBulkDeleteResult(result)
+                }
+            }
+            .sheet(item: $landmarkNeedingMedia) { landmark in
+                needsMoreMediaSheetView(for: landmark)
+            }
+    }
+
+    // MARK: - Split Modifier Chains
+
+    private var scrollContent: some View {
         ScrollView {
             LazyVStack(spacing: 24) {
-
-                if !offlineManager.archivedItems.isEmpty {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Pending Uploads")
-                            .font(.system(size: 14, weight: .bold, design: .rounded))
-                            .foregroundStyle(.secondary)
-                            .textCase(.uppercase)
-                            .padding(.horizontal, 20)
-
-                        LazyVStack(spacing: 0) {
-                            syncBannerRow
-                            Divider()
-                            ForEach(offlineManager.archivedItems) { item in
-                                pendingRow(for: item)
-                                if item.id != offlineManager.archivedItems.last?.id {
-                                    Divider().padding(.leading, 64)
-                                }
-                            }
-                        }
-                        .background(Color(uiColor: .secondarySystemGroupedBackground))
-                        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                        .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2)
-                        .padding(.horizontal)
-                    }
-                } else if !viewModel.landmarks.isEmpty {
-                    emptyQueueCard
-                }
-
-                if !actionNeededLandmarks.isEmpty {
-                    LazyVStack(alignment: .leading, spacing: 12) {
-                        Text("Needs Attention")
-                            .font(.system(size: 14, weight: .bold, design: .rounded))
-                            .foregroundStyle(.red)
-                            .textCase(.uppercase)
-                            .padding(.horizontal, 20)
-
-                        ForEach(actionNeededLandmarks) { landmark in
-                            landmarkRowLink(for: landmark)
-                                .padding(.horizontal)
-                        }
-                    }
-                }
-
-                if !preparingDataLandmarks.isEmpty {
-                    LazyVStack(alignment: .leading, spacing: 12) {
-                        Text("Preparing Data")
-                            .font(.system(size: 14, weight: .bold, design: .rounded))
-                            .foregroundStyle(.orange)
-                            .textCase(.uppercase)
-                            .padding(.horizontal, 20)
-
-                        ForEach(preparingDataLandmarks) { landmark in
-                            landmarkRowLink(for: landmark)
-                                .padding(.horizontal)
-                        }
-                    }
-                }
-
-                if !pendingTrainingLandmarks.isEmpty {
-                    LazyVStack(alignment: .leading, spacing: 12) {
-                        Text("Waiting for Training")
-                            .font(.system(size: 14, weight: .bold, design: .rounded))
-                            .foregroundStyle(.purple)
-                            .textCase(.uppercase)
-                            .padding(.horizontal, 20)
-
-                        ForEach(pendingTrainingLandmarks) { landmark in
-                            landmarkRowLink(for: landmark)
-                                .padding(.horizontal)
-                        }
-                    }
-                }
-
-                if !trainingModelLandmarks.isEmpty {
-                    LazyVStack(alignment: .leading, spacing: 12) {
-                        Text("In Training")
-                            .font(.system(size: 14, weight: .bold, design: .rounded))
-                            .foregroundStyle(.yellow)
-                            .textCase(.uppercase)
-                            .padding(.horizontal, 20)
-
-                        ForEach(trainingModelLandmarks) { landmark in
-                            landmarkRowLink(for: landmark)
-                                .padding(.horizontal)
-                        }
-                    }
-                }
-
-                if !optimizingModelLandmarks.isEmpty {
-                    LazyVStack(alignment: .leading, spacing: 12) {
-                        Text("Optimizing for iOS")
-                            .font(.system(size: 14, weight: .bold, design: .rounded))
-                            .foregroundStyle(.blue)
-                            .textCase(.uppercase)
-                            .padding(.horizontal, 20)
-
-                        ForEach(optimizingModelLandmarks) { landmark in
-                            landmarkRowLink(for: landmark)
-                                .padding(.horizontal)
-                        }
-                    }
-                }
-
-                LazyVStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Text("Active Landmarks")
-                            .font(.system(size: 14, weight: .bold, design: .rounded))
-                            .foregroundStyle(.green)
-                            .textCase(.uppercase)
-
-                        if !viewModel.landmarks.isEmpty {
-                            Text(activeLandmarkCountText(activeCount: activeLandmarks.count))
-                                .font(.system(size: 14, weight: .bold, design: .rounded))
-                                .foregroundStyle(.secondary)
-                        }
-
-                        Spacer()
-
-                        if isIndexingPromotionTitles && !cleanedSearchText.isEmpty {
-                            ProgressView()
-                                .controlSize(.small)
-                                .tint(primaryColor)
-                        }
-                    }
-                    .padding(.horizontal, 20)
-
-                    if isIndexingPromotionTitles && !cleanedSearchText.isEmpty {
-                        Text("Checking promotion titles...")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 20)
-                    }
-
-                    if isSelectionMode {
-                        selectionSummaryCard
-                    }
-
-                    if viewModel.isLoading && viewModel.landmarks.isEmpty {
-                        loadingView
-                    } else if viewModel.landmarks.isEmpty {
-                        Text("No active business landmarks.")
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundColor(.secondary)
-                            .padding(.horizontal, 20)
-                    } else if displayedLandmarks.isEmpty {
-                        noSearchResultsView
-                    } else if activeLandmarks.isEmpty && displayedLandmarks.contains(where: { $0.status == "NEEDS_MORE_MEDIA" || $0.isProcessing }) {
-                        EmptyView()
-                    } else {
-                        ForEach(activeLandmarks) { landmark in
-                            landmarkRowLink(for: landmark)
-                                .padding(.horizontal)
-                        }
-                    }
-                }
-
+                pendingUploadsSection
+                processingNewDataSection
+                needsAttentionSection
+                preparingDataSection
+                waitingForTrainingSection
+                inTrainingSection
+                optimizingSection
+                activeLandmarksSection
                 Spacer(minLength: 40)
             }
             .padding(.top, 16)
         }
         .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
         .animation(.default, value: offlineManager.archivedItems.isEmpty)
+        .animation(.default, value: processingNewDataLandmarks.map(\.landmarkId))
         .refreshable {
             await refreshLandmarksAndSearchIndex()
         }
-        .navigationTitle("My Landmarks")
-        .navigationBarTitleDisplayMode(.inline)
-        .searchable(
-            text: $searchText,
-            placement: .navigationBarDrawer(displayMode: .always),
-            prompt: String(localized: "Search labels or promotion titles")
+    }
+
+    private var navigationAndLifecycleContent: some View {
+        scrollContent
+            .navigationTitle("My Landmarks")
+            .navigationBarTitleDisplayMode(.inline)
+            .searchable(
+                text: $searchText,
+                placement: .navigationBarDrawer(displayMode: .always),
+                prompt: String(localized: "Search labels or promotion titles")
+            )
+            .task {
+                if !hasLoadedOnce {
+                    hasLoadedOnce = true
+                    await viewModel.loadLandmarks()
+                    NotificationCenter.default.post(name: Notification.Name("CheckGlobalNotifications"), object: nil)
+                }
+            }
+            .onAppear {
+                startAutoRefresh()
+            }
+            .onDisappear {
+                stopAutoRefresh()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: Notification.Name("RefreshBusinessLandmarks"))) { _ in
+                Task {
+                    await refreshLandmarksAndSearchIndex()
+                }
+            }
+            .onChange(of: viewModel.landmarks.map(\.landmarkId)) { _, validIds in
+                selectedLandmarkIds.formIntersection(Set(validIds))
+            }
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    if isSelectionMode {
+                        selectionActionsMenu
+                    } else {
+                        refreshToolbarButton
+                    }
+                }
+
+                ToolbarItem(placement: .topBarTrailing) {
+                    if isSelectionMode {
+                        doneToolbarButton
+                    } else {
+                        selectToolbarButton
+                    }
+                }
+            }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if isSelectionMode { selectionBottomBar }
+            }
+    }
+
+    private func detailDestinationView(for landmark: BusinessLandmark) -> some View {
+        BusinessLandmarkDetailView(
+            landmark: landmark,
+            onLandmarkUpdated: { updatedLandmark in
+                viewModel.replaceLandmark(updatedLandmark)
+            },
+            onLandmarkDeleted: { landmarkId in
+                viewModel.removeLandmark(landmarkId: landmarkId)
+                promotionTitlesByLandmarkId.removeValue(forKey: landmarkId)
+                selectedLandmarkIds.remove(landmarkId)
+            },
+            onPromotionTitlesChanged: { landmarkId, titles in
+                promotionTitlesByLandmarkId[landmarkId] = titles
+            }
         )
-        .task {
-            if !hasLoadedOnce {
-                hasLoadedOnce = true
-                await viewModel.loadLandmarks()
-                NotificationCenter.default.post(name: Notification.Name("CheckGlobalNotifications"), object: nil)
+    }
+
+    private func needsMoreMediaSheetView(for landmark: BusinessLandmark) -> some View {
+        NeedsMoreMediaSheet(
+            landmark: landmark,
+            onAddMedia: {
+                landmarkNeedingMedia = nil
+                let targetId = landmark.landmarkId
+                let targetLabel = landmark.label
+                let targetDesc = landmark.shortDescription ?? ""
+                let targetSeconds: Int = landmark.secondsNeeded ?? 30
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    NotificationCenter.default.post(
+                        name: Notification.Name("TriggerRedoRecord"),
+                        object: nil,
+                        userInfo: [
+                            "id": targetId,
+                            "label": targetLabel,
+                            "description": targetDesc,
+                            "secondsNeeded": targetSeconds
+                        ]
+                    )
+                }
+            },
+            onForceTrain: {
+                let success = await vm.forceTrainLandmark(landmarkId: landmark.landmarkId)
+                if success {
+                    landmarkNeedingMedia = nil
+                    await refreshLandmarksAndSearchIndex()
+                }
+            }
+        )
+        .presentationDetents([.fraction(0.65)])
+        .presentationDragIndicator(.visible)
+    }
+
+    // MARK: - ViewBuilder Sections
+
+    @ViewBuilder
+    private var pendingUploadsSection: some View {
+        if !offlineManager.archivedItems.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Pending Uploads")
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .padding(.horizontal, 20)
+
+                LazyVStack(spacing: 0) {
+                    syncBannerRow
+                    Divider()
+                    ForEach(offlineManager.archivedItems) { item in
+                        pendingRow(for: item)
+                        if item.id != offlineManager.archivedItems.last?.id {
+                            Divider().padding(.leading, 64)
+                        }
+                    }
+                }
+                .background(Color(uiColor: .secondarySystemGroupedBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2)
+                .padding(.horizontal)
+            }
+        } else if !viewModel.landmarks.isEmpty {
+            emptyQueueCard
+        }
+    }
+
+    @ViewBuilder
+    private var processingNewDataSection: some View {
+        if !processingNewDataLandmarks.isEmpty {
+            LazyVStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 8) {
+                    Text("Processing New Data")
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .foregroundStyle(.cyan)
+                        .textCase(.uppercase)
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(.cyan)
+                }
+                .padding(.horizontal, 20)
+
+                ForEach(processingNewDataLandmarks) { landmark in
+                    landmarkRowLink(for: landmark)
+                        .padding(.horizontal)
+                }
             }
         }
-        .onAppear {
-            startAutoRefresh()
-        }
-        .onDisappear {
-            stopAutoRefresh()
-        }
-        .onChange(of: viewModel.landmarks.map(\.landmarkId)) { _, validIds in
-            selectedLandmarkIds.formIntersection(Set(validIds))
-        }
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                if isSelectionMode {
-                    selectionActionsMenu
-                } else {
-                    refreshToolbarButton
+    }
+
+    @ViewBuilder
+    private var needsAttentionSection: some View {
+        if !actionNeededLandmarks.isEmpty {
+            LazyVStack(alignment: .leading, spacing: 12) {
+                Text("Needs Attention")
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .foregroundStyle(.red)
+                    .textCase(.uppercase)
+                    .padding(.horizontal, 20)
+
+                ForEach(actionNeededLandmarks) { landmark in
+                    landmarkRowLink(for: landmark)
+                        .padding(.horizontal)
                 }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var preparingDataSection: some View {
+        if !preparingDataLandmarks.isEmpty {
+            LazyVStack(alignment: .leading, spacing: 12) {
+                Text("Preparing Data")
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .foregroundStyle(.orange)
+                    .textCase(.uppercase)
+                    .padding(.horizontal, 20)
+
+                ForEach(preparingDataLandmarks) { landmark in
+                    landmarkRowLink(for: landmark)
+                        .padding(.horizontal)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var waitingForTrainingSection: some View {
+        if !pendingTrainingLandmarks.isEmpty {
+            LazyVStack(alignment: .leading, spacing: 12) {
+                Text("Waiting for Training")
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .foregroundStyle(.purple)
+                    .textCase(.uppercase)
+                    .padding(.horizontal, 20)
+
+                ForEach(pendingTrainingLandmarks) { landmark in
+                    landmarkRowLink(for: landmark)
+                        .padding(.horizontal)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var inTrainingSection: some View {
+        if !trainingModelLandmarks.isEmpty {
+            LazyVStack(alignment: .leading, spacing: 12) {
+                Text("In Training")
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .foregroundStyle(.yellow)
+                    .textCase(.uppercase)
+                    .padding(.horizontal, 20)
+
+                ForEach(trainingModelLandmarks) { landmark in
+                    landmarkRowLink(for: landmark)
+                        .padding(.horizontal)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var optimizingSection: some View {
+        if !optimizingModelLandmarks.isEmpty {
+            LazyVStack(alignment: .leading, spacing: 12) {
+                Text("Optimizing for iOS")
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .foregroundStyle(.blue)
+                    .textCase(.uppercase)
+                    .padding(.horizontal, 20)
+
+                ForEach(optimizingModelLandmarks) { landmark in
+                    landmarkRowLink(for: landmark)
+                        .padding(.horizontal)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var activeLandmarksSection: some View {
+        LazyVStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Active Landmarks")
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .foregroundStyle(.green)
+                    .textCase(.uppercase)
+
+                if !viewModel.landmarks.isEmpty {
+                    Text(activeLandmarkCountText(activeCount: activeLandmarks.count))
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                if isIndexingPromotionTitles && !cleanedSearchText.isEmpty {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(primaryColor)
+                }
+            }
+            .padding(.horizontal, 20)
+
+            if isIndexingPromotionTitles && !cleanedSearchText.isEmpty {
+                Text("Checking promotion titles...")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 20)
             }
 
-            ToolbarItem(placement: .topBarTrailing) {
-                if isSelectionMode {
-                    doneToolbarButton
-                } else {
-                    selectToolbarButton
-                }
+            if isSelectionMode {
+                selectionSummaryCard
+            }
+
+            activeLandmarksListContent
+        }
+    }
+
+    @ViewBuilder
+    private var activeLandmarksListContent: some View {
+        if viewModel.isLoading && viewModel.landmarks.isEmpty {
+            loadingView
+        } else if viewModel.landmarks.isEmpty {
+            Text("No active business landmarks.")
+                .font(.system(size: 15, weight: .medium))
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 20)
+        } else if displayedLandmarks.isEmpty {
+            noSearchResultsView
+        } else if hasOnlyProcessingOrActionNeededLandmarks {
+            EmptyView()
+        } else {
+            ForEach(activeLandmarks) { landmark in
+                landmarkRowLink(for: landmark)
+                    .padding(.horizontal)
             }
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if isSelectionMode { selectionBottomBar }
+    }
+
+    private var hasOnlyProcessingOrActionNeededLandmarks: Bool {
+        activeLandmarks.isEmpty && displayedLandmarks.contains { landmark in
+            landmark.status == "NEEDS_MORE_MEDIA" || landmark.isProcessing || isProcessingNewData(landmark)
         }
-        .fullScreenCover(item: $draftToEdit) { draft in
-            LandmarkRecord(archivedMedia: draft)
-        }
-        .navigationDestination(item: $landmarkToOpen) { landmark in
-            BusinessLandmarkDetailView(
-                landmark: landmark,
-                onLandmarkUpdated: { updatedLandmark in
-                    viewModel.replaceLandmark(updatedLandmark)
-                },
-                onLandmarkDeleted: { landmarkId in
-                    viewModel.removeLandmark(landmarkId: landmarkId)
-                    promotionTitlesByLandmarkId.removeValue(forKey: landmarkId)
-                    selectedLandmarkIds.remove(landmarkId)
-                },
-                onPromotionTitlesChanged: { landmarkId, titles in
-                    promotionTitlesByLandmarkId[landmarkId] = titles
-                }
-            )
-        }
-        .sheet(item: $landmarkToPreview) { landmark in
-            BusinessLandmarkPopupPreview(landmark: landmark)
-        }
-        .sheet(item: $bulkPromotionSelection) { selection in
-            BusinessBulkPromotionEditor(landmarks: selection.landmarks) { result in
-                handleBulkPromotionResult(result)
-            }
-        }
-        .sheet(item: $bulkDeleteSelection) { selection in
-            BusinessBulkDeleteView(landmarks: selection.landmarks) { result in
-                handleBulkDeleteResult(result)
-            }
-        }
-        .sheet(item: $landmarkNeedingMedia) { landmark in
-            NeedsMoreMediaSheet(
-                landmark: landmark,
-                onAddMedia: {
-                    landmarkNeedingMedia = nil
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                        NotificationCenter.default.post(
-                            name: Notification.Name("TriggerRedoRecord"),
-                            object: nil,
-                            userInfo: [
-                                "id": landmark.landmarkId,
-                                "label": landmark.label,
-                                "description": landmark.shortDescription ?? "",
-                                "secondsNeeded": 1.0
-                            ]
-                        )
-                    }
-                },
-                onForceTrain: {
-                    let success = await vm.forceTrainLandmark(landmarkId: landmark.landmarkId)
-                    if success {
-                        landmarkNeedingMedia = nil
-                        await refreshLandmarksAndSearchIndex()
-                    }
-                }
-            )
-            .presentationDetents([.fraction(0.65)])
-            .presentationDragIndicator(.visible)
-        }
+    }
+
+    // MARK: - Logic & Properties
+
+    private func isProcessingNewData(_ landmark: BusinessLandmark) -> Bool {
+        return container.isLandmarkProcessingNewData(landmark)
     }
 
     @ViewBuilder
@@ -318,6 +417,7 @@ struct BusinessLandmarksView: View {
             }
             return (landmark.isActive ?? true) && !isLocallyInactive
         }()
+        let processingNewData = isProcessingNewData(landmark)
 
         if isSelectionMode {
             let isSelected = selectedLandmarkIds.contains(landmark.landmarkId)
@@ -330,6 +430,7 @@ struct BusinessLandmarksView: View {
                 BusinessLandmarkRow(
                     landmark: landmark,
                     effectiveIsActive: effectiveIsActive,
+                    isProcessingNewData: processingNewData,
                     matchedPromotionTitle: matchedPromotionTitle(for: landmark),
                     isSelectionMode: true,
                     isSelected: isSelected,
@@ -344,6 +445,7 @@ struct BusinessLandmarksView: View {
             BusinessLandmarkRow(
                 landmark: landmark,
                 effectiveIsActive: effectiveIsActive,
+                isProcessingNewData: processingNewData,
                 matchedPromotionTitle: matchedPromotionTitle(for: landmark),
                 isSelectionMode: false,
                 isSelected: false,
@@ -363,24 +465,30 @@ struct BusinessLandmarksView: View {
 
     private var actionNeededLandmarks: [BusinessLandmark] {
         displayedLandmarks.filter { landmark in
-            landmark.status == "NEEDS_MORE_MEDIA"
+            landmark.status == "NEEDS_MORE_MEDIA" && !isProcessingNewData(landmark)
+        }
+    }
+
+    private var processingNewDataLandmarks: [BusinessLandmark] {
+        displayedLandmarks.filter { landmark in
+            isProcessingNewData(landmark)
         }
     }
 
     private var preparingDataLandmarks: [BusinessLandmark] {
-        displayedLandmarks.filter { $0.status == "PREPARING_DATA" }
+        displayedLandmarks.filter { $0.status == "PREPARING_DATA" && !isProcessingNewData($0) }
     }
 
     private var pendingTrainingLandmarks: [BusinessLandmark] {
-        displayedLandmarks.filter { $0.status == "PENDING_TRAINING" }
+        displayedLandmarks.filter { $0.status == "PENDING_TRAINING" && !isProcessingNewData($0) }
     }
 
     private var trainingModelLandmarks: [BusinessLandmark] {
-        displayedLandmarks.filter { $0.status == "TRAINING_MODEL" }
+        displayedLandmarks.filter { $0.status == "TRAINING_MODEL" && !isProcessingNewData($0) }
     }
 
     private var optimizingModelLandmarks: [BusinessLandmark] {
-        displayedLandmarks.filter { $0.status == "OPTIMIZING_MODEL" }
+        displayedLandmarks.filter { $0.status == "OPTIMIZING_MODEL" && !isProcessingNewData($0) }
     }
 
     private var activeLandmarks: [BusinessLandmark] {
@@ -388,7 +496,8 @@ struct BusinessLandmarksView: View {
 
         return displayedLandmarks.filter { landmark in
             !pipelineStates.contains(landmark.status ?? "") &&
-            !landmark.isProcessing
+            !landmark.isProcessing &&
+            !isProcessingNewData(landmark)
         }
     }
 
@@ -400,7 +509,8 @@ struct BusinessLandmarksView: View {
         let pipelineStates = ["NEEDS_MORE_MEDIA", "PREPARING_DATA", "PENDING_TRAINING", "TRAINING_MODEL", "OPTIMIZING_MODEL"]
         let totalActive = viewModel.landmarks.filter { landmark in
             !pipelineStates.contains(landmark.status ?? "") &&
-            !landmark.isProcessing
+            !landmark.isProcessing &&
+            !isProcessingNewData(landmark)
         }.count
 
         return "(\(activeCount) of \(totalActive))"
@@ -504,8 +614,10 @@ struct BusinessLandmarksView: View {
 
         autoRefreshTask = Task {
             while !Task.isCancelled {
+                let hasProcessing = !container.processingNewDataById.isEmpty
+                let sleepInterval = hasProcessing ? fastProcessingRefreshIntervalNanoseconds : standardRefreshIntervalNanoseconds
                 do {
-                    try await Task.sleep(nanoseconds: autoRefreshIntervalNanoseconds)
+                    try await Task.sleep(nanoseconds: sleepInterval)
                 } catch {
                     return
                 }
@@ -657,14 +769,146 @@ struct BusinessLandmarksView: View {
         }
     }
 
-    private var selectionSummaryCard: some View { HStack(spacing: 12) { Image(systemName: selectedLandmarkIds.isEmpty ? "checkmark.circle" : "checkmark.circle.fill").font(.system(size: 22, weight: .semibold)).foregroundStyle(primaryColor); VStack(alignment: .leading, spacing: 3) { Text(selectionCountText).font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(.primary); if hiddenSelectedCount > 0 { Text("\(hiddenSelectedCount) selected landmark\(hiddenSelectedCount == 1 ? "" : "s") hidden by the current search").font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary) } else if !cleanedSearchText.isEmpty { Text("\(visibleSelectedCount) selected in these search results").font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary) } else { Text("Search for more landmarks without losing this selection.").font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary) } }; Spacer() }.padding(14).background(primaryColor.opacity(0.10)).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous)).overlay { RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(primaryColor.opacity(0.20), lineWidth: 1) }.padding(.horizontal) }
-    private var selectionActionsMenu: some View { Menu { Button { UIImpactFeedbackGenerator(style: .light).impactOccurred(); selectVisibleLandmarks() } label: { Label("Select Visible (\(displayedLandmarks.count))", systemImage: "checkmark.circle") }.disabled(displayedLandmarks.isEmpty); Button { UIImpactFeedbackGenerator(style: .light).impactOccurred(); deselectVisibleLandmarks() } label: { Label("Deselect Visible (\(visibleSelectedCount))", systemImage: "circle") }.disabled(visibleSelectedCount == 0); Divider(); Button(role: .destructive) { UIImpactFeedbackGenerator(style: .light).impactOccurred(); selectedLandmarkIds.removeAll() } label: { Label("Clear All Selection", systemImage: "xmark.circle") }.disabled(selectedLandmarkIds.isEmpty) } label: { Image(systemName: "ellipsis") .font(.system(size: 18, weight: .bold)) }.accessibilityLabel("Selection actions") }
-    private var selectionBottomBar: some View { VStack(spacing: 10) { HStack(spacing: 12) { VStack(alignment: .leading, spacing: 2) { Text(selectionCountText).font(.system(size: 15, weight: .bold, design: .rounded)); if hiddenSelectedCount > 0 { Text("\(hiddenSelectedCount) hidden by search").font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary) } else { Text("Selection stays active while searching").font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary) } }; Spacer(); Button("Clear") { UIImpactFeedbackGenerator(style: .light).impactOccurred(); selectedLandmarkIds.removeAll() }.font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.red).disabled(selectedLandmarkIds.isEmpty) }; HStack(spacing: 12) { Button { UIImpactFeedbackGenerator(style: .medium).impactOccurred(); beginBulkPromotion() } label: { Label("Add Promotion", systemImage: "tag.fill").font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.white).frame(maxWidth: .infinity).padding(.vertical, 12).background(primaryColor).clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous)) }.buttonStyle(.plain).disabled(selectedLandmarkIds.isEmpty).opacity(selectedLandmarkIds.isEmpty ? 0.45 : 1); Button(role: .destructive) { UIImpactFeedbackGenerator(style: .heavy).impactOccurred(); beginBulkDelete() } label: { Label("Delete", systemImage: "trash.fill").font(.system(size: 14, weight: .bold, design: .rounded)).foregroundStyle(.red).frame(maxWidth: .infinity).padding(.vertical, 12).background(Color.red.opacity(0.12)).clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous)) }.buttonStyle(.plain).disabled(selectedLandmarkIds.isEmpty).opacity(selectedLandmarkIds.isEmpty ? 0.45 : 1) } }.padding(.horizontal, 20).padding(.top, 12).padding(.bottom, 10).background(.ultraThinMaterial).overlay(alignment: .top) { Divider() } }
+    private var selectionSummaryCard: some View {
+        HStack(spacing: 12) {
+            Image(systemName: selectedLandmarkIds.isEmpty ? "checkmark.circle" : "checkmark.circle.fill")
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundStyle(primaryColor)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(selectionCountText)
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .foregroundStyle(.primary)
+                if hiddenSelectedCount > 0 {
+                    Text("\(hiddenSelectedCount) selected landmark\(hiddenSelectedCount == 1 ? "" : "s") hidden by the current search")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                } else if !cleanedSearchText.isEmpty {
+                    Text("\(visibleSelectedCount) selected in these search results")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("Search for more landmarks without losing this selection.")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+        }
+        .padding(14)
+        .background(primaryColor.opacity(0.10))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(primaryColor.opacity(0.20), lineWidth: 1)
+        }
+        .padding(.horizontal)
+    }
+
+    private var selectionActionsMenu: some View {
+        Menu {
+            Button {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                selectVisibleLandmarks()
+            } label: {
+                Label("Select Visible (\(displayedLandmarks.count))", systemImage: "checkmark.circle")
+            }
+            .disabled(displayedLandmarks.isEmpty)
+
+            Button {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                deselectVisibleLandmarks()
+            } label: {
+                Label("Deselect Visible (\(visibleSelectedCount))", systemImage: "circle")
+            }
+            .disabled(visibleSelectedCount == 0)
+
+            Divider()
+
+            Button(role: .destructive) {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                selectedLandmarkIds.removeAll()
+            } label: {
+                Label("Clear All Selection", systemImage: "xmark.circle")
+            }
+            .disabled(selectedLandmarkIds.isEmpty)
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 18, weight: .bold))
+        }
+        .accessibilityLabel("Selection actions")
+    }
+
+    private var selectionBottomBar: some View {
+        VStack(spacing: 10) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(selectionCountText)
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                    if hiddenSelectedCount > 0 {
+                        Text("\(hiddenSelectedCount) hidden by search")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text("Selection stays active while searching")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Spacer()
+                Button("Clear") {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    selectedLandmarkIds.removeAll()
+                }
+                .font(.system(size: 14, weight: .bold, design: .rounded))
+                .foregroundStyle(.red)
+                .disabled(selectedLandmarkIds.isEmpty)
+            }
+            HStack(spacing: 12) {
+                Button {
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    beginBulkPromotion()
+                } label: {
+                    Label("Add Promotion", systemImage: "tag.fill")
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(primaryColor)
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .disabled(selectedLandmarkIds.isEmpty)
+                .opacity(selectedLandmarkIds.isEmpty ? 0.45 : 1)
+
+                Button(role: .destructive) {
+                    UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+                    beginBulkDelete()
+                } label: {
+                    Label("Delete", systemImage: "trash.fill")
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .foregroundStyle(.red)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Color.red.opacity(0.12))
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .disabled(selectedLandmarkIds.isEmpty)
+                .opacity(selectedLandmarkIds.isEmpty ? 0.45 : 1)
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 12)
+        .padding(.bottom, 10)
+        .background(.ultraThinMaterial)
+        .overlay(alignment: .top) { Divider() }
+    }
 }
 
 private struct BusinessLandmarkRow: View {
     let landmark: BusinessLandmark
     let effectiveIsActive: Bool
+    let isProcessingNewData: Bool
     let matchedPromotionTitle: String?
     let isSelectionMode: Bool
     let isSelected: Bool
@@ -675,6 +919,7 @@ private struct BusinessLandmarkRow: View {
     private let selectionColor = Color(red: 0.22, green: 0.49, blue: 1.00)
 
     private var badgeColor: Color {
+        if isProcessingNewData { return .cyan }
         switch landmark.status {
         case "NEEDS_MORE_MEDIA": return .red
         case "PREPARING_DATA": return .orange
@@ -686,6 +931,7 @@ private struct BusinessLandmarkRow: View {
     }
 
     private var badgeText: String {
+        if isProcessingNewData { return "PROCESSING NEW DATA" }
         switch landmark.status {
         case "NEEDS_MORE_MEDIA": return "NEEDS MEDIA"
         case "PREPARING_DATA", "PENDING_TRAINING", "TRAINING_MODEL", "OPTIMIZING_MODEL":
@@ -739,7 +985,7 @@ private struct BusinessLandmarkRow: View {
     }
 
     var body: some View {
-        let needsMoreMedia = landmark.status == "NEEDS_MORE_MEDIA"
+        let needsMoreMedia = (landmark.status == "NEEDS_MORE_MEDIA") && !isProcessingNewData
 
         VStack(spacing: 0) {
             HStack(alignment: .top, spacing: 14) {
@@ -829,147 +1075,118 @@ private struct BusinessLandmarkRow: View {
     }
 }
 
-// MARK: - The Action Required Bottom Sheet
+struct BulkLandmarkSelection: Identifiable {
+    let id = UUID()
+    let landmarks: [BusinessLandmark]
+}
+
 struct NeedsMoreMediaSheet: View {
-    @Environment(\.dismiss) var dismiss
     let landmark: BusinessLandmark
+    let onAddMedia: () -> Void
+    let onForceTrain: () async -> Void
 
-    var onAddMedia: () -> Void
-    var onForceTrain: () async -> Void
-
+    @Environment(\.dismiss) private var dismiss
     @State private var isForcingTrain = false
-    @State private var showingForceTrainAlert = false
 
-    private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00)
+    private var extractedFrames: Int {
+        landmark.cleanFrameCount ?? 0
+    }
+
+    private var requiredFramesCount: Int {
+        landmark.requiredFrames ?? 1500
+    }
+
+    private var recommendedSeconds: Int {
+        landmark.secondsNeeded ?? 50
+    }
 
     var body: some View {
-        VStack(spacing: 0) {
-            ScrollView {
-                VStack(spacing: 24) {
-                    ZStack {
-                        Circle().fill(Color.red.opacity(0.15)).frame(width: 80, height: 80)
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.system(size: 36))
-                            .foregroundStyle(.red)
-                    }
-                    .padding(.top, 32)
+        VStack(spacing: 24) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 50))
+                .foregroundStyle(.red)
+                .padding(.top, 30)
 
-                    VStack(spacing: 8) {
-                        Text("More Media Required")
-                            .font(.system(size: 24, weight: .bold, design: .rounded))
+            Text("More Media Required")
+                .font(.system(size: 24, weight: .bold, design: .rounded))
 
-                        Text("We couldn't extract enough unique frames of \(landmark.label) to train a reliable model.")
-                            .font(.system(size: 15))
-                            .multilineTextAlignment(.center)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .lineLimit(nil)
-                            .padding(.horizontal, 24)
-                    }
+            Text("We couldn't extract enough unique frames of \(landmark.label) to train a reliable model.")
+                .font(.system(size: 15))
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal)
 
-                    VStack(spacing: 16) {
-                        let processed = landmark.cleanFrameCount ?? 0
-                        let required = landmark.requiredFrames ?? 2000
-                        let recommendedSeconds = landmark.secondsNeeded ?? 30
+            HStack(spacing: 20) {
+                VStack {
+                    Text("Frames Extracted")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text("\(extractedFrames) / \(requiredFramesCount)")
+                        .font(.system(size: 20, weight: .bold, design: .rounded))
+                        .foregroundStyle(.red)
+                }
 
-                        HStack {
-                            VStack(alignment: .leading) {
-                                Text("Frames Extracted").font(.caption).foregroundStyle(.secondary)
-                                Text("\(processed) / \(required)")
-                                    .font(.system(size: 18, weight: .bold, design: .monospaced))
-                                    .foregroundStyle(processed < 1500 ? .red : .orange)
-                                    .minimumScaleFactor(0.5)
-                                    .lineLimit(1)
-                            }
-                            Spacer(minLength: 8)
-                            VStack(alignment: .trailing) {
-                                Text("AI Target Video").font(.caption).foregroundStyle(.secondary)
-                                Text("~\(recommendedSeconds) Secs")
-                                    .font(.system(size: 18, weight: .bold, design: .rounded))
-                                    .foregroundStyle(.red)
-                                    .minimumScaleFactor(0.5)
-                                    .lineLimit(1)
-                            }
-                        }
-
-                        Divider()
-
-                        Text("We recommend capturing about **\(recommendedSeconds) more seconds** of video, but any additional footage helps! Record between 1 and 90 seconds. Once uploaded, training will resume automatically.")
-                            .font(.system(size: 14))
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .lineLimit(nil)
-                    }
-                    .padding(20)
-                    .background(Color(uiColor: .secondarySystemGroupedBackground))
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .padding(.horizontal, 20)
-
-                    Spacer(minLength: 20)
+                VStack {
+                    Text("AI Target Video")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text("~\(recommendedSeconds) Secs")
+                        .font(.system(size: 20, weight: .bold, design: .rounded))
+                        .foregroundStyle(.orange)
                 }
             }
+            .padding(.vertical, 10)
+
+            Text("We recommend capturing about \(recommendedSeconds) more seconds of video, but any additional footage helps! Record between 1 and 120 seconds. Once uploaded, training will resume automatically.")
+                .font(.system(size: 13))
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal)
+
+            Spacer()
 
             VStack(spacing: 12) {
                 Button {
-                    UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
                     dismiss()
                     onAddMedia()
                 } label: {
                     Text("Add Media Now")
-                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .font(.system(size: 16, weight: .bold))
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
-                        .background(primaryColor)
-                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .padding(.vertical, 14)
+                        .background(Color(red: 0.22, green: 0.49, blue: 1.00))
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 }
                 .disabled(isForcingTrain)
 
                 Button {
-                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                    showingForceTrainAlert = true
-                } label: {
-                    if isForcingTrain {
-                        ProgressView().tint(.red)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
-                            .background(Color.red.opacity(0.15))
-                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    } else {
-                        Text("Force Train Anyway")
-                            .font(.system(size: 16, weight: .bold, design: .rounded))
-                            .foregroundStyle(.red)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
-                            .background(Color.red.opacity(0.15))
-                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    isForcingTrain = true
+                    Task {
+                        await onForceTrain()
+                        await MainActor.run {
+                            isForcingTrain = false
+                            dismiss()
+                        }
                     }
+                } label: {
+                    HStack(spacing: 8) {
+                        if isForcingTrain {
+                            ProgressView().tint(.red)
+                        }
+                        Text("Force Train Anyway")
+                            .font(.system(size: 16, weight: .bold))
+                    }
+                    .foregroundStyle(.red)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(Color.red.opacity(0.1))
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 }
                 .disabled(isForcingTrain)
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 12)
+            .padding(.horizontal, 24)
             .padding(.bottom, 20)
-            .background(Color(uiColor: .systemGroupedBackground))
-        }
-        .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea(edges: .bottom))
-        .alert("Force Train Landmark?", isPresented: $showingForceTrainAlert) {
-            Button("Cancel", role: .cancel) { }
-            Button("Train", role: .destructive) {
-                Task {
-                    isForcingTrain = true
-                    await onForceTrain()
-                    isForcingTrain = false
-                    dismiss()
-                }
-            }
-        } message: {
-            Text("This landmark has less than the recommended 2,000 frames. Detection reliability may be reduced. Are you sure you want to train it anyway?")
         }
     }
-}
-
-private struct BulkLandmarkSelection: Identifiable {
-    let id = UUID()
-    let landmarks: [BusinessLandmark]
 }

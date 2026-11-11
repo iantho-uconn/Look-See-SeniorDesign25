@@ -13,7 +13,6 @@ from boto3.dynamodb.conditions import Key
 AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
 s3 = boto3.client("s3")
 dynamodb = boto3.resource("dynamodb", region_name=AWS_REGION)
-sns_client = boto3.client("sns", region_name=AWS_REGION)
 
 # ---------------------------------------------------------------------------
 # Environment config
@@ -39,11 +38,10 @@ HARD_NEG_RATIO = float(os.environ.get("HARD_NEG_RATIO", "0.25"))
 HARD_NEG_MAX_PER_LANDMARK = int(os.environ.get("HARD_NEG_MAX_PER_LANDMARK", "25"))
 
 BALANCE_STRATEGY = os.environ.get("BALANCE_STRATEGY", "none").lower()
-MAX_IMAGES_PER_CLASS = int(os.environ.get("MAX_IMAGES_PER_CLASS", "2200"))
-MIN_IMAGES_PER_CLASS = int(os.environ.get("MIN_IMAGES_PER_CLASS", "2000"))
+MAX_IMAGES_PER_CLASS = int(os.environ.get("MAX_IMAGES_PER_CLASS", "2000"))
+MIN_IMAGES_PER_CLASS = int(os.environ.get("MIN_IMAGES_PER_CLASS", "1500"))
 
 LANDMARKS_TABLE = os.environ.get("LANDMARKS_TABLE", "LookSeeLandmarks")
-USERS_TABLE = os.environ.get("USERS_TABLE", "LookSeeUsers")
 PUBLISHED_CLUSTER_MAPPINGS_TABLE = os.environ.get("PUBLISHED_CLUSTER_MAPPINGS_TABLE", "LookSeePublishedClusterMappings")
 COREML_RELEASE_PREFIX = os.environ.get("COREML_OUTPUT_PREFIX", "ml_conversions/")
 MAPPING_VERSION = os.environ.get("MAPPING_VERSION", "").strip()
@@ -54,45 +52,6 @@ SNAPSHOT_METADATA_LANDMARK_ID = "__METADATA__"
 NEGATIVE_NAMES = {"negative", "negatives"}
 IMAGE_EXTS = (".jpg", ".jpeg", ".png")
 LANDMARK_MANIFEST_SCHEMA_VERSION = 2
-
-# ---------------------------------------------------------------------------
-# Push Notification Helper
-# ---------------------------------------------------------------------------
-
-def send_push_notification(user_id: Optional[str], title: str, body: str, custom_data: Optional[dict] = None):
-    """Looks up the user's pushEndpointArn in LookSeeUsers and fires an APNs notification via SNS."""
-    if not user_id:
-        return
-    try:
-        user_item = dynamodb.Table(USERS_TABLE).get_item(Key={"user_id": str(user_id)}).get("Item")
-        if not user_item:
-            return
-        endpoint_arn = user_item.get("pushEndpointArn")
-        if not endpoint_arn:
-            return
-
-        apns_payload = {
-            "aps": {
-                "alert": {"title": title, "body": body},
-                "sound": "default"
-            }
-        }
-        if custom_data:
-            apns_payload.update(custom_data)
-
-        apns_json = json.dumps(apns_payload)
-        sns_client.publish(
-            TargetArn=endpoint_arn,
-            MessageStructure="json",
-            Message=json.dumps({
-                "default": body,
-                "APNS": apns_json,
-                "APNS_SANDBOX": apns_json
-            })
-        )
-        print(f"  📲 Sent push notification to user {user_id}: {title}")
-    except Exception as e:
-        print(f"  ⚠️ Failed to send push notification to {user_id}: {e}")
 
 # ---------------------------------------------------------------------------
 # S3 helpers
@@ -304,7 +263,7 @@ def deterministic_sample(keys: List[str], k: int, salt: str) -> List[str]:
     return sorted(keys, key=lambda x: hashlib.md5((salt + "|" + x).encode("utf-8")).hexdigest())[:k]
 
 def safe_name(prefix: str, filename: str) -> str:
-    return f"{prefix}__{filename}"
+    return f"{prefix}____{filename}"
 
 def image_keys_under(bucket: str, img_prefix: str) -> List[str]:
     keys = list_objects(bucket, img_prefix)
@@ -512,7 +471,7 @@ def main():
             target_count = len(keys)
             discovered_positive_counts[folder] = target_count
             
-            # 🛡️ Bypass the 2,000 minimum if Force Train is enabled OR if the landmark was already trained previously
+            # 🛡️ Bypass the 1,500 minimum if Force Train is enabled OR if the landmark was already trained previously
             bypass_minimum = force_train or (already_trained and target_count > 0)
 
             if target_count < MIN_IMAGES_PER_CLASS and not bypass_minimum:
@@ -533,14 +492,6 @@ def main():
                                 ':sec': seconds_needed
                             }
                         )
-                        # 📲 Only notify on transition into NEEDS_MORE_MEDIA (prevents repeat spam on future runs)
-                        if status != "NEEDS_MORE_MEDIA":
-                            send_push_notification(
-                                user_id=owner_id,
-                                title="More Frames Needed",
-                                body=f"'{display_label}' only had {target_count}/{MIN_IMAGES_PER_CLASS} usable frames after AI review. Please add ~{seconds_needed}s more video.",
-                                custom_data={"notificationType": "NEEDS_MORE_MEDIA", "landmarkId": landmark_id}
-                            )
                     except Exception:
                         pass
                 continue

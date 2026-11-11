@@ -4,9 +4,6 @@ import android.annotation.SuppressLint
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.util.Log
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
@@ -24,29 +21,38 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -58,6 +64,7 @@ import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -68,7 +75,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
-import kotlin.math.pow
+import kotlin.math.roundToInt
 import kotlin.math.sqrt
 import looksee.angelll.com.detection.*
 import looksee.angelll.com.models.*
@@ -134,11 +141,12 @@ private fun TextScannerCameraView(onTextTapped: (String) -> Unit) {
 
     val previewView = remember { PreviewView(context).apply { scaleType = PreviewView.ScaleType.FILL_CENTER } }
 
-    var rawTextBlocks by remember { mutableStateOf<List<Text.TextBlock>>(emptyList()) }
+    var rawTextBlocks by remember { mutableStateOf(emptyList<Text.TextBlock>()) }
     var imageWidth by remember { mutableIntStateOf(1) }
     var imageHeight by remember { mutableIntStateOf(1) }
 
-    var camera by remember { mutableStateOf<Camera?>(null) }
+    val initialNullCamera: Camera? = null
+    var camera by remember { mutableStateOf(initialNullCamera) }
     var currentZoom by remember { mutableFloatStateOf(1f) }
     var maxZoomRatio by remember { mutableFloatStateOf(5f) }
 
@@ -240,7 +248,6 @@ private fun TextScannerCameraView(onTextTapped: (String) -> Unit) {
             modifier = Modifier.fillMaxSize()
         )
 
-        // 1. Convert ML Kit blocks to Screen Coordinates & prune offscreen artifacts
         val visibleChunks = remember(rawTextBlocks, imageWidth, imageHeight, containerWidth, containerHeight) {
             val scaleX = containerWidth / imageWidth.toFloat()
             val scaleY = containerHeight / imageHeight.toFloat()
@@ -260,7 +267,6 @@ private fun TextScannerCameraView(onTextTapped: (String) -> Unit) {
                 val right = box.right * scale + offsetX
                 val bottom = box.bottom * scale + offsetY
 
-                // Strict Viewport Culling: drop items outside view bounds
                 if (right > 20f && left < containerWidth - 20f && bottom > 20f && top < containerHeight - 20f) {
                     val clampedBounds = Rect(
                         left = max(10f, left),
@@ -273,7 +279,6 @@ private fun TextScannerCameraView(onTextTapped: (String) -> Unit) {
             }
         }
 
-        // 2. Select the single focused chunk closest to screen center (iOS Style)
         val targetChunk = remember(visibleChunks, screenCenterX, screenCenterY) {
             visibleChunks.minByOrNull { chunk ->
                 val chunkCenterX = (chunk.bounds.left + chunk.bounds.right) / 2f
@@ -284,7 +289,6 @@ private fun TextScannerCameraView(onTextTapped: (String) -> Unit) {
             }
         }
 
-        // 3. Hardware-smoothed corner box animation to eliminate 30Hz jitter
         val targetLeft = targetChunk?.bounds?.left ?: screenCenterX
         val targetTop = targetChunk?.bounds?.top ?: screenCenterY
         val targetRight = targetChunk?.bounds?.right ?: screenCenterX
@@ -296,7 +300,6 @@ private fun TextScannerCameraView(onTextTapped: (String) -> Unit) {
         val smoothRight by animateFloatAsState(targetValue = targetRight, animationSpec = animSpec, label = "boxRight")
         val smoothBottom by animateFloatAsState(targetValue = targetBottom, animationSpec = animSpec, label = "boxBottom")
 
-        // 4. Draw iOS-Style Corner Brackets and Tap Overlay
         if (targetChunk != null && smoothRight > smoothLeft + 20f && smoothBottom > smoothTop + 14f) {
             Canvas(modifier = Modifier.fillMaxSize()) {
                 val pad = 12f
@@ -309,7 +312,6 @@ private fun TextScannerCameraView(onTextTapped: (String) -> Unit) {
                 val strokeW = 3.5.dp.toPx()
                 val bracketColor = Color(0xFFFFD60A)
 
-                // Soft background tint inside the target
                 drawRoundRect(
                     color = Color(0xFFFFCC00).copy(alpha = 0.16f),
                     topLeft = Offset(left, top),
@@ -317,24 +319,19 @@ private fun TextScannerCameraView(onTextTapped: (String) -> Unit) {
                     cornerRadius = androidx.compose.ui.geometry.CornerRadius(10f, 10f)
                 )
 
-                // Top-Left Corner
                 drawLine(bracketColor, Offset(left, top + bracketLen), Offset(left, top), strokeW)
                 drawLine(bracketColor, Offset(left, top), Offset(left + bracketLen, top), strokeW)
 
-                // Top-Right Corner
                 drawLine(bracketColor, Offset(right - bracketLen, top), Offset(right, top), strokeW)
                 drawLine(bracketColor, Offset(right, top), Offset(right, top + bracketLen), strokeW)
 
-                // Bottom-Left Corner
                 drawLine(bracketColor, Offset(left, bottom - bracketLen), Offset(left, bottom), strokeW)
                 drawLine(bracketColor, Offset(left, bottom), Offset(left + bracketLen, bottom), strokeW)
 
-                // Bottom-Right Corner
                 drawLine(bracketColor, Offset(right - bracketLen, bottom), Offset(right, bottom), strokeW)
                 drawLine(bracketColor, Offset(right, bottom), Offset(right, bottom - bracketLen), strokeW)
             }
 
-            // Tap anywhere on screen to copy the focused block
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -350,7 +347,6 @@ private fun TextScannerCameraView(onTextTapped: (String) -> Unit) {
             )
         }
 
-        // 5. Floating Zoom Control Pill (Pinch or Tap)
         Row(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
@@ -393,8 +389,31 @@ fun LandmarkRecordScreen(
 ) {
     val haptic = LocalHapticFeedback.current
     val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
+    val density = LocalDensity.current
+
+    val scrollState = rememberScrollState()
+    var labelSectionY by remember { mutableIntStateOf(0) }
+    var descSectionY by remember { mutableIntStateOf(0) }
+    var isLabelFocused by remember { mutableStateOf(false) }
+    var isDescFocused by remember { mutableStateOf(false) }
+
+    val isKeyboardVisible = WindowInsets.ime.getBottom(density) > 0
+
+    // Smoothly scroll the active text field into position when the keyboard opens or focus changes,
+    // without any scroll-interceptor that could prematurely close the keyboard.
+    LaunchedEffect(isKeyboardVisible, isLabelFocused, isDescFocused) {
+        if (isKeyboardVisible) {
+            delay(150)
+            if (isLabelFocused && labelSectionY > 0) {
+                scrollState.animateScrollTo((labelSectionY - 40).coerceAtLeast(0))
+            } else if (isDescFocused && descSectionY > 0) {
+                scrollState.animateScrollTo((descSectionY - 40).coerceAtLeast(0))
+            }
+        }
+    }
 
     val uploadService = remember { UploadService(context) }
     val isUploading by uploadService.isUploading.collectAsState()
@@ -407,6 +426,14 @@ fun LandmarkRecordScreen(
 
     val isAdditionalMedia = existingLandmarkId != null
 
+    // Exact iOS duration limits:
+    // Positive: 30s min / 120s max (1s min for additional media)
+    // Negative: 10s min / 45s max (1s min for additional media)
+    val maxPositiveVideoDuration = 120
+    val maxNegativeVideoDuration = 45
+    val minPositiveVideoDuration = if (existingLandmarkId != null) 1 else 30
+    val negativeTargetDuration = if (existingLandmarkId != null) 1 else 10
+
     DisposableEffect(Unit) {
         locationManager.start()
         onDispose {
@@ -418,10 +445,12 @@ fun LandmarkRecordScreen(
     var shortDescription by remember { mutableStateOf(existingDescription ?: "") }
     var businessLandmarkId by remember { mutableStateOf(existingLandmarkId) }
 
-    var pickedVideoUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
-    var pickedImageUri by remember { mutableStateOf<Uri?>(null) }
-    var clipDurations by remember { mutableStateOf<Map<Uri, Double>>(emptyMap()) }
-    var capturedNegativeVideo by remember { mutableStateOf<CapturedNegativeVideo?>(null) }
+    var pickedVideoUris by remember { mutableStateOf(emptyList<Uri>()) }
+    val initialNullUri: Uri? = null
+    var pickedImageUri by remember { mutableStateOf(initialNullUri) }
+    var clipDurations by remember { mutableStateOf(emptyMap<Uri, Double>()) }
+    val initialNullNegative: CapturedNegativeVideo? = null
+    var capturedNegativeVideo by remember { mutableStateOf(initialNullNegative) }
     var showTextScanner by remember { mutableStateOf(false) }
 
     var showNegativeCamera by remember { mutableStateOf(false) }
@@ -435,10 +464,12 @@ fun LandmarkRecordScreen(
     var limitAlertTitle by remember { mutableStateOf("") }
     var limitAlertMessage by remember { mutableStateOf("") }
 
-    var extractedLatitude by remember { mutableStateOf<Double?>(null) }
-    var extractedLongitude by remember { mutableStateOf<Double?>(null) }
+    val initialNullDouble: Double? = null
+    var extractedLatitude by remember { mutableStateOf(initialNullDouble) }
+    var extractedLongitude by remember { mutableStateOf(initialNullDouble) }
     var isStitchingVideos by remember { mutableStateOf(false) }
-    var completedPositiveResult by remember { mutableStateOf<PositiveSubmissionResult?>(null) }
+    val initialNullResult: PositiveSubmissionResult? = null
+    var completedPositiveResult by remember { mutableStateOf(initialNullResult) }
     var isFullSubmissionComplete by remember { mutableStateOf(false) }
 
     LaunchedEffect(isFormVisible) {
@@ -447,6 +478,8 @@ fun LandmarkRecordScreen(
             if (fix != null) {
                 extractedLatitude = fix.latitude
                 extractedLongitude = fix.longitude
+                // Stop continuous GPS updates once coordinates are locked so the form doesn't recompose while typing
+                locationManager.stop()
             }
         }
     }
@@ -457,6 +490,7 @@ fun LandmarkRecordScreen(
             if (fix != null) {
                 extractedLatitude = fix.latitude
                 extractedLongitude = fix.longitude
+                locationManager.stop()
             }
         }
     }
@@ -486,14 +520,12 @@ fun LandmarkRecordScreen(
         }
     }
 
-    val uiTargetDuration = if (existingSecondsNeeded != null) ceil(existingSecondsNeeded).toInt() else if (existingLandmarkId != null) 1 else 30
-    val negativeTargetDuration = if (existingLandmarkId != null) 1 else 10
     val totalClipDuration = pickedVideoUris.sumOf { clipDurations[it] ?: 0.0 }
     val hasMinimumClipDuration = pickedImageUri != null || totalClipDuration >= 1.0
 
     val canUpload = !isUploading && !isHardNegativeUploading && !isStitchingVideos && !isFullSubmissionComplete &&
             (if (completedPositiveResult != null) (existingLandmarkId != null || capturedNegativeVideo != null)
-            else ( (pickedVideoUris.isNotEmpty() || pickedImageUri != null) && labelText.isNotBlank() && shortDescription.isNotBlank() && (existingLandmarkId != null || capturedNegativeVideo != null) && hasMinimumClipDuration ))
+            else ((pickedVideoUris.isNotEmpty() || pickedImageUri != null) && labelText.isNotBlank() && shortDescription.isNotBlank() && (existingLandmarkId != null || capturedNegativeVideo != null) && hasMinimumClipDuration))
 
     val arePositiveDetailsLocked = isUploading || isHardNegativeUploading || completedPositiveResult != null || isFullSubmissionComplete || isAdditionalMedia
 
@@ -502,15 +534,23 @@ fun LandmarkRecordScreen(
         clipDurations = emptyMap()
         pickedImageUri = null
 
-        capturedNegativeVideo?.file?.let { try { it.delete() } catch(e:Exception){ Log.e("Cleanup", "Failed to delete temp file", e) } }
+        capturedNegativeVideo?.file?.let {
+            try { it.delete() } catch (e: Exception) { Log.e("Cleanup", "Failed to delete temp file", e) }
+        }
 
         capturedNegativeVideo = null
-        if (existingLandmarkId == null) { businessLandmarkId = null; labelText = ""; shortDescription = "" }
+        if (existingLandmarkId == null) {
+            businessLandmarkId = null
+            labelText = ""
+            shortDescription = ""
+        }
         isFormVisible = false
         statusText = "No landmark media selected."
     }
 
     fun startFullSubmission() {
+        focusManager.clearFocus()
+        keyboardController?.hide()
         Log.d("LookSee_Debug_Record", "Starting full submission!")
         if (completedPositiveResult == null) {
             if (!vm.hasActiveSubscription) {
@@ -558,20 +598,28 @@ fun LandmarkRecordScreen(
             PositiveVideoCameraView(
                 isActive = isActive,
                 isNavVisible = navState,
-                uiTargetDuration = uiTargetDuration,
-                minTotalTimeLimit = 1,
+                uiTargetDuration = maxPositiveVideoDuration,
+                minTotalTimeLimit = minPositiveVideoDuration,
+                maxTotalTimeLimit = maxPositiveVideoDuration,
                 onDone = { uris ->
-                    isStitchingVideos = true
-                    coroutineScope.launch {
-                        try {
-                            val stitchedUri = VideoMerger.mergeAndValidate(context, uris, 1.0)
-                            pickedVideoUris = listOf(stitchedUri)
-                        } catch (e: Exception) {
-                            Log.e("LookSee", "Merge failed", e)
-                            pickedVideoUris = listOf(uris.first())
-                        } finally {
-                            isStitchingVideos = false
-                            isFormVisible = true
+                    if (uris.size <= 1) {
+                        pickedVideoUris = uris
+                        isFormVisible = true
+                    } else {
+                        isStitchingVideos = true
+                        coroutineScope.launch {
+                            try {
+                                val stitchedUri = withContext(Dispatchers.Default) {
+                                    VideoMerger.mergeAndValidate(context, uris, 1.0)
+                                }
+                                pickedVideoUris = listOf(stitchedUri)
+                            } catch (e: Exception) {
+                                Log.e("LookSee", "Merge failed", e)
+                                pickedVideoUris = listOf(uris.first())
+                            } finally {
+                                isStitchingVideos = false
+                                isFormVisible = true
+                            }
                         }
                     }
                 },
@@ -582,178 +630,307 @@ fun LandmarkRecordScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(Color.Black)
-                    .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) { focusManager.clearFocus() }
-                    .verticalScroll(rememberScrollState())
                     .imePadding()
-                    .padding(bottom = 100.dp)
             ) {
-                Row(modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(16.dp)) {
-                    IconButton(onClick = { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove); onDismiss() }) {
-                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
-                    }
-                }
-
-                if (pickedVideoUris.isNotEmpty()) {
-                    Column(modifier = Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Icon(if (hasMinimumClipDuration) Icons.Default.CheckCircle else Icons.Default.Schedule, contentDescription = null, tint = if (hasMinimumClipDuration) Color.Green else Color(0xFFFFA500), modifier = Modifier.size(16.dp))
-                            Text("${String.format(Locale.US, "%.1f", totalClipDuration)}s total — ready to upload", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = if (hasMinimumClipDuration) Color.Green else Color(0xFFFFA500))
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .clickable(
+                            indication = null,
+                            interactionSource = remember { MutableInteractionSource() }
+                        ) {
+                            focusManager.clearFocus()
+                            keyboardController?.hide()
                         }
+                        .verticalScroll(scrollState)
+                        .padding(bottom = 120.dp)
+                ) {
+                    Row(modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(16.dp)) {
+                        IconButton(onClick = {
+                            focusManager.clearFocus()
+                            keyboardController?.hide()
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onDismiss()
+                        }) {
+                            Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+                        }
+                    }
 
-                        pickedVideoUris.forEach { uri ->
-                            Box(modifier = Modifier.fillMaxWidth().height(240.dp).clip(RoundedCornerShape(16.dp))) {
-                                PositiveSafeVideoPlayer(uri = uri, modifier = Modifier.fillMaxSize())
-                                if (!arePositiveDetailsLocked && !isAdditionalMedia) {
-                                    Box(modifier = Modifier.align(Alignment.TopEnd).padding(12.dp).size(32.dp).background(Color.Black.copy(0.6f), CircleShape).clickable { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove); clearScreen() }, contentAlignment = Alignment.Center) {
-                                        Icon(Icons.Default.Close, contentDescription = "Remove", tint = Color.White, modifier = Modifier.size(14.dp))
+                    if (pickedVideoUris.isNotEmpty()) {
+                        Column(modifier = Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Icon(if (hasMinimumClipDuration) Icons.Default.CheckCircle else Icons.Default.Schedule, contentDescription = null, tint = if (hasMinimumClipDuration) Color.Green else Color(0xFFFFA500), modifier = Modifier.size(16.dp))
+                                Text("${String.format(Locale.US, "%.1f", totalClipDuration)}s total — ready to upload", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = if (hasMinimumClipDuration) Color.Green else Color(0xFFFFA500))
+                            }
+
+                            pickedVideoUris.forEach { uri ->
+                                Box(modifier = Modifier.fillMaxWidth().height(240.dp).clip(RoundedCornerShape(16.dp))) {
+                                    PositiveSafeVideoPlayer(uri = uri, modifier = Modifier.fillMaxSize())
+                                    if (!arePositiveDetailsLocked && !isAdditionalMedia) {
+                                        Box(
+                                            modifier = Modifier
+                                                .align(Alignment.TopEnd)
+                                                .padding(12.dp)
+                                                .size(32.dp)
+                                                .background(Color.Black.copy(alpha = 0.6f), CircleShape)
+                                                .clickable {
+                                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                    clearScreen()
+                                                },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(Icons.Default.Close, contentDescription = "Remove", tint = Color.White, modifier = Modifier.size(14.dp))
+                                        }
                                     }
                                 }
                             }
                         }
                     }
-                }
 
-                Surface(modifier = Modifier.padding(16.dp).fillMaxWidth(), color = Color(0xFF1C1C1E), shape = RoundedCornerShape(16.dp)) {
-                    Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                        Icon(Icons.Default.NearMe, contentDescription = null, tint = AppleBlue)
-                        Column {
-                            if (extractedLatitude != null && extractedLongitude != null) {
-                                Text(String.format(Locale.US, "%.6f, %.6f", extractedLatitude, extractedLongitude), fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, color = Color.White)
-                                Text("Location Locked", fontSize = 13.sp, color = Color.Gray)
-                            } else {
-                                val fix = (locationState as? LookSeeLocationState.Ready)?.fix
-                                if (fix != null) {
-                                    Text(String.format(Locale.US, "%.6f, %.6f", fix.latitude, fix.longitude), fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, color = Color.White)
-                                    Text("Accuracy: ±${fix.accuracyMeters.toInt()}m", fontSize = 13.sp, color = Color.Gray)
+                    Surface(modifier = Modifier.padding(16.dp).fillMaxWidth(), color = Color(0xFF1C1C1E), shape = RoundedCornerShape(16.dp)) {
+                        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                            Icon(Icons.Default.NearMe, contentDescription = null, tint = AppleBlue)
+                            Column {
+                                if (extractedLatitude != null && extractedLongitude != null) {
+                                    Text(String.format(Locale.US, "%.6f, %.6f", extractedLatitude, extractedLongitude), fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, color = Color.White)
+                                    Text("Location Locked", fontSize = 13.sp, color = Color.Gray)
                                 } else {
-                                    Text("Requesting location...", fontSize = 15.sp, color = Color.Gray)
+                                    val fix = (locationState as? LookSeeLocationState.Ready)?.fix
+                                    if (fix != null) {
+                                        Text(String.format(Locale.US, "%.6f, %.6f", fix.latitude, fix.longitude), fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, color = Color.White)
+                                        Text("Accuracy: ±${fix.accuracyMeters.toInt()}m", fontSize = 13.sp, color = Color.Gray)
+                                    } else {
+                                        Text("Requesting location...", fontSize = 15.sp, color = Color.Gray)
+                                    }
                                 }
                             }
                         }
                     }
-                }
 
-                if (isFormVisible) {
-                    Text("LANDMARK LABEL", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
-                    Surface(modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth(), color = Color(0xFF1C1C1E), shape = RoundedCornerShape(16.dp)) {
-                        Box(modifier = Modifier.padding(if (isAdditionalMedia) 16.dp else 8.dp)) {
-                            if (isAdditionalMedia) {
+                    if (isFormVisible) {
+                        // LANDMARK LABEL SECTION
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .onGloballyPositioned { coords ->
+                                    labelSectionY = coords.positionInParent().y.roundToInt()
+                                }
+                        ) {
+                            Text("LANDMARK LABEL", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                            Surface(modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth(), color = Color(0xFF1C1C1E), shape = RoundedCornerShape(16.dp)) {
+                                Box(modifier = Modifier.padding(if (isAdditionalMedia) 16.dp else 8.dp)) {
+                                    if (isAdditionalMedia) {
+                                        Text(
+                                            text = labelText.ifEmpty { "Untitled Landmark" },
+                                            color = Color.White,
+                                            fontSize = 16.sp,
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                    } else {
+                                        OutlinedTextField(
+                                            value = labelText,
+                                            onValueChange = { labelText = it },
+                                            placeholder = { Text("e.g., Gampel Pavilion", color = Color.Gray) },
+                                            singleLine = true,
+                                            keyboardOptions = KeyboardOptions(
+                                                capitalization = KeyboardCapitalization.Words,
+                                                imeAction = ImeAction.Next
+                                            ),
+                                            keyboardActions = KeyboardActions(
+                                                onNext = { focusManager.moveFocus(FocusDirection.Down) }
+                                            ),
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .onFocusChanged { state ->
+                                                    isLabelFocused = state.isFocused
+                                                },
+                                            colors = OutlinedTextFieldDefaults.colors(
+                                                focusedBorderColor = Color.Transparent,
+                                                unfocusedBorderColor = Color.Transparent,
+                                                focusedTextColor = Color.White,
+                                                unfocusedTextColor = Color.White
+                                            ),
+                                            enabled = !arePositiveDetailsLocked
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        if (businessLandmarkId != null) {
+                            Text("ID: $businessLandmarkId", fontSize = 12.sp, color = Color.Gray, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+                        }
+
+                        Spacer(Modifier.height(10.dp))
+
+                        // SHORT DESCRIPTION SECTION
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .onGloballyPositioned { coords ->
+                                    descSectionY = coords.positionInParent().y.roundToInt()
+                                }
+                        ) {
+                            Text("SHORT DESCRIPTION", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                            Surface(modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth(), color = Color(0xFF1C1C1E), shape = RoundedCornerShape(16.dp)) {
+                                Box(modifier = Modifier.padding(if (isAdditionalMedia) 16.dp else 8.dp).fillMaxWidth().defaultMinSize(minHeight = if (isAdditionalMedia) 60.dp else 100.dp)) {
+                                    if (isAdditionalMedia) {
+                                        Text(
+                                            text = shortDescription.ifEmpty { "No description provided." },
+                                            color = Color.White,
+                                            fontSize = 16.sp,
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                    } else {
+                                        OutlinedTextField(
+                                            value = shortDescription,
+                                            onValueChange = { shortDescription = it },
+                                            placeholder = { Text("e.g., Front entrance", color = Color.Gray) },
+                                            keyboardOptions = KeyboardOptions(
+                                                capitalization = KeyboardCapitalization.Sentences
+                                            ),
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(bottom = 36.dp)
+                                                .onFocusChanged { state ->
+                                                    isDescFocused = state.isFocused
+                                                },
+                                            minLines = 3,
+                                            maxLines = 6,
+                                            colors = OutlinedTextFieldDefaults.colors(
+                                                focusedBorderColor = Color.Transparent,
+                                                unfocusedBorderColor = Color.Transparent,
+                                                focusedTextColor = Color.White,
+                                                unfocusedTextColor = Color.White
+                                            ),
+                                            enabled = !arePositiveDetailsLocked
+                                        )
+                                        Box(
+                                            modifier = Modifier
+                                                .align(Alignment.BottomEnd)
+                                                .padding(8.dp)
+                                                .size(36.dp)
+                                                .background(AppleBlue, CircleShape)
+                                                .clickable {
+                                                    focusManager.clearFocus()
+                                                    keyboardController?.hide()
+                                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                    showTextScanner = true
+                                                },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(Icons.Default.CenterFocusStrong, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if (!isAdditionalMedia) {
+                            Spacer(Modifier.height(20.dp))
+                            Surface(modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth(), color = Color(0xFF1C1C1E), shape = RoundedCornerShape(16.dp)) {
+                                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                                        Text("Negative Background", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                        Icon(
+                                            imageVector = if (capturedNegativeVideo != null) Icons.Default.CheckCircle else Icons.Default.Error,
+                                            contentDescription = null,
+                                            tint = if (capturedNegativeVideo != null) Color.Green else Color(0xFFFFA500)
+                                        )
+                                    }
+                                    Text("Record a >= ${negativeTargetDuration}s video panning the area. Do NOT include the landmark.", fontSize = 14.sp, color = Color.Gray)
+                                    Button(
+                                        onClick = {
+                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            focusManager.clearFocus()
+                                            keyboardController?.hide()
+                                            showNegativeCamera = true
+                                        },
+                                        modifier = Modifier.fillMaxWidth().height(50.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2C2C2E)),
+                                        shape = RoundedCornerShape(12.dp)
+                                    ) {
+                                        Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Spacer(Modifier.width(8.dp))
+                                        Text(if (capturedNegativeVideo == null) "Record Negative" else "Retake Negative", fontWeight = FontWeight.Bold)
+                                    }
+
+                                    val currentNeg = capturedNegativeVideo
+                                    if (currentNeg != null) {
+                                        Box(modifier = Modifier.fillMaxWidth().height(180.dp).clip(RoundedCornerShape(12.dp))) {
+                                            PositiveSafeVideoPlayer(uri = Uri.fromFile(currentNeg.file), modifier = Modifier.fillMaxSize())
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Row(modifier = Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Button(
+                                onClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); startFullSubmission() },
+                                modifier = Modifier.weight(1f).height(60.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = if (canUpload) AppleBlue else Color(0xFF2C2C2E)),
+                                shape = RoundedCornerShape(16.dp),
+                                enabled = canUpload
+                            ) {
+                                Icon(Icons.Default.ArrowUpward, contentDescription = null, modifier = Modifier.size(18.dp), tint = Color.White)
+                                Spacer(Modifier.width(8.dp))
                                 Text(
-                                    text = labelText.ifEmpty { "Untitled Landmark" },
-                                    color = Color.White,
+                                    text = if (archivedMedia != null) "Upload Draft" else (if (isAdditionalMedia) "Upload Additional Media" else "Upload Landmark"),
                                     fontSize = 16.sp,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                            } else {
-                                OutlinedTextField(
-                                    value = labelText, onValueChange = { labelText = it },
-                                    placeholder = { Text("e.g., Gampel Pavilion", color = Color.Gray) },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Color.Transparent, unfocusedBorderColor = Color.Transparent, focusedTextColor = Color.White, unfocusedTextColor = Color.White),
-                                    enabled = !arePositiveDetailsLocked
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (canUpload) Color.White else Color.Gray
                                 )
                             }
-                        }
-                    }
 
-                    if (businessLandmarkId != null) {
-                        Text("ID: $businessLandmarkId", fontSize = 12.sp, color = Color.Gray, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
-                    }
-
-                    Spacer(Modifier.height(10.dp))
-                    Text("SHORT DESCRIPTION", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
-                    Surface(modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth(), color = Color(0xFF1C1C1E), shape = RoundedCornerShape(16.dp)) {
-                        Box(modifier = Modifier.padding(if (isAdditionalMedia) 16.dp else 8.dp).fillMaxWidth().defaultMinSize(minHeight = if (isAdditionalMedia) 60.dp else 100.dp)) {
-                            if (isAdditionalMedia) {
-                                Text(
-                                    text = shortDescription.ifEmpty { "No description provided." },
-                                    color = Color.White,
-                                    fontSize = 16.sp,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                            } else {
-                                OutlinedTextField(
-                                    value = shortDescription, onValueChange = { shortDescription = it },
-                                    placeholder = { Text("e.g., Front entrance", color = Color.Gray) },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    minLines = 4,
-                                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Color.Transparent, unfocusedBorderColor = Color.Transparent, focusedTextColor = Color.White, unfocusedTextColor = Color.White),
-                                    enabled = !arePositiveDetailsLocked
-                                )
-                                Box(modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp).size(36.dp).background(AppleBlue, CircleShape).clickable {
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    showTextScanner = true
-                                }, contentAlignment = Alignment.Center) {
-                                    Icon(Icons.Default.CenterFocusStrong, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
-                                }
-                            }
-                        }
-                    }
-
-                    if (!isAdditionalMedia) {
-                        Spacer(Modifier.height(20.dp))
-                        Surface(modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth(), color = Color(0xFF1C1C1E), shape = RoundedCornerShape(16.dp)) {
-                            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                                    Text("Negative Background", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                                    Icon(
-                                        imageVector = if (capturedNegativeVideo != null) Icons.Default.CheckCircle else Icons.Default.Error,
-                                        contentDescription = null,
-                                        tint = if (capturedNegativeVideo != null) Color.Green else Color(0xFFFFA500)
-                                    )
-                                }
-                                Text("Record a >= ${negativeTargetDuration}s video panning the area. Do NOT include the landmark.", fontSize = 14.sp, color = Color.Gray)
+                            if (archivedMedia == null) {
                                 Button(
                                     onClick = {
-                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                         focusManager.clearFocus()
-                                        showNegativeCamera = true
+                                        keyboardController?.hide()
+                                        showDiscardAlert = true
                                     },
-                                    modifier = Modifier.fillMaxWidth().height(50.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2C2C2E)),
-                                    shape = RoundedCornerShape(12.dp)
+                                    modifier = Modifier.size(60.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(alpha = 0.15f)),
+                                    shape = RoundedCornerShape(16.dp),
+                                    contentPadding = PaddingValues(0.dp)
                                 ) {
-                                    Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(18.dp))
-                                    Spacer(Modifier.width(8.dp))
-                                    Text(if (capturedNegativeVideo == null) "Record Negative" else "Retake Negative", fontWeight = FontWeight.Bold)
-                                }
-
-                                if (capturedNegativeVideo != null) {
-                                    Box(modifier = Modifier.fillMaxWidth().height(180.dp).clip(RoundedCornerShape(12.dp))) {
-                                        PositiveSafeVideoPlayer(uri = Uri.fromFile(capturedNegativeVideo!!.file), modifier = Modifier.fillMaxSize())
-                                    }
+                                    Icon(Icons.Default.Delete, contentDescription = null, tint = Color.Red)
                                 }
                             }
                         }
                     }
+                }
 
-                    Row(modifier = Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Button(
-                            onClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); startFullSubmission() },
-                            modifier = Modifier.weight(1f).height(60.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = if(canUpload) AppleBlue else Color(0xFF2C2C2E)),
-                            shape = RoundedCornerShape(16.dp),
-                            enabled = canUpload
+                // Keyboard accessory bar (stays anchored cleanly above the keyboard)
+                if (isKeyboardVisible) {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        color = Color(0xFF2C2C2E),
+                        tonalElevation = 8.dp
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(Icons.Default.ArrowUpward, contentDescription = null, modifier = Modifier.size(18.dp), tint = Color.White)
-                            Spacer(Modifier.width(8.dp))
                             Text(
-                                text = if (archivedMedia != null) "Upload Draft" else (if (isAdditionalMedia) "Upload Additional Media" else "Upload Landmark"),
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (canUpload) Color.White else Color.Gray
+                                text = if (isLabelFocused) "Landmark Label" else if (isDescFocused) "Short Description" else "",
+                                color = Color.LightGray,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Medium
                             )
-                        }
-
-                        if (archivedMedia == null) {
-                            Button(
-                                onClick = { showDiscardAlert = true },
-                                modifier = Modifier.size(60.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(alpha = 0.15f)),
-                                shape = RoundedCornerShape(16.dp),
-                                contentPadding = PaddingValues(0.dp)
+                            TextButton(
+                                onClick = {
+                                    focusManager.clearFocus()
+                                    keyboardController?.hide()
+                                },
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
                             ) {
-                                Icon(Icons.Default.Delete, contentDescription = null, tint = Color.Red)
+                                Text("Done", color = AppleBlue, fontSize = 15.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -762,7 +939,7 @@ fun LandmarkRecordScreen(
         }
 
         if (isStitchingVideos) {
-            Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(0.6f)).zIndex(100f), contentAlignment = Alignment.Center) {
+            Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f)).zIndex(100f), contentAlignment = Alignment.Center) {
                 Column(
                     modifier = Modifier.background(Color(0xFF1E1E24), RoundedCornerShape(24.dp)).padding(32.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -778,9 +955,9 @@ fun LandmarkRecordScreen(
         if (showNegativeCamera) {
             Box(modifier = Modifier.fillMaxSize().zIndex(200f)) {
                 NegativeVideoCameraView(
-                    uiTargetDuration = negativeTargetDuration,
-                    minTotalTimeLimit = 1,
-                    maxTotalTimeLimit = 30,
+                    uiTargetDuration = maxNegativeVideoDuration,
+                    minTotalTimeLimit = negativeTargetDuration,
+                    maxTotalTimeLimit = maxNegativeVideoDuration,
                     onDone = { video ->
                         capturedNegativeVideo = video
                         showNegativeCamera = false
@@ -795,7 +972,7 @@ fun LandmarkRecordScreen(
         if (showTextScanner) {
             TextScannerSheet(
                 onTextScanned = { newText: String ->
-                    shortDescription = newText
+                    shortDescription = if (shortDescription.isBlank()) newText else "$shortDescription\n$newText"
                 },
                 onDismiss = { showTextScanner = false }
             )

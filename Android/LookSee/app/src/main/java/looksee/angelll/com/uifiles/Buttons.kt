@@ -66,6 +66,7 @@ import looksee.angelll.com.viewmodels.AuthViewModel
 @Composable
 fun ButtonsScreen(
     vm: AuthViewModel,
+    authState: AuthState,
     onNavigate: (String) -> Unit
 ) {
     val context = LocalContext.current
@@ -74,7 +75,6 @@ fun ButtonsScreen(
 
     // ViewModels & Managers
     val infoView = remember { VariableContainer.shared }
-    val authState = remember { AuthState() }
     val libraryService = remember { LibraryService.shared(context) }
     val modelService = remember { ModelService.shared(context) }
     val locationManager = remember { LocationManager(context) }
@@ -109,7 +109,9 @@ fun ButtonsScreen(
     var showGenericNotification by remember { mutableStateOf(false) }
     var hasShownNotificationThisSession by remember { mutableStateOf(false) }
 
-    val isBusinessMode = vm.hasActiveSubscription
+    val tier by authState.tier.collectAsState()
+    val isBusinessMode = tier == looksee.angelll.com.viewmodels.UserTier.BUSINESS || vm.hasActiveSubscription
+
     val isScanTab = currentTab == 0
     val topBarTitle = if (isScanTab) "LookSee" else "Map"
 
@@ -530,7 +532,7 @@ fun ButtonsScreen(
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                     showSignUpPrompt = false
                                     if (vm.isSignedIn) {
-                                        onNavigate("Settings")
+                                        onNavigate("BusinessPlans")
                                     } else {
                                         onNavigate("guest_signup")
                                     }

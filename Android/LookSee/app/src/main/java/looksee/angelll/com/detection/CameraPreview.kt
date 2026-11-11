@@ -684,7 +684,7 @@ private fun mapDisplayDetections(
 
 internal fun detectionOverlayLabel(detection: Detection): String {
     val cleanLabel = detection.displayLabel().substringBefore("%").trim()
-    return "$cleanLabel ${(detection.confidence * 100).toInt()}%"
+    return cleanLabel
 }
 
 internal fun DetectionBox.intersectionOrNull(other: DetectionBox): DetectionBox? {
