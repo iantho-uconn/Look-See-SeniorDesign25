@@ -167,6 +167,9 @@
 		D0E78BCF3006F92800E5FE00 /* PositiveVideoCameraView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0E78BCE3006F92500E5FE00 /* PositiveVideoCameraView.swift */; };
 		D0E78BDB3008C6E800E5FE00 /* StripePaymentSheet in Frameworks */ = {isa = PBXBuildFile; productRef = D0E78BDA3008C6E800E5FE00 /* StripePaymentSheet */; };
 		D0E78BE23008FF9100E5FE00 /* GuestSignUpView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0E78BE13008FF8D00E5FE00 /* GuestSignUpView.swift */; };
+		EB5B322130A3ABB90048A948 /* Sentry in Frameworks */ = {isa = PBXBuildFile; productRef = EB5B322030A3ABB90048A948 /* Sentry */; };
+		EB5B322330A3ABD20048A948 /* GoogleMobileAds in Frameworks */ = {isa = PBXBuildFile; productRef = EB5B322230A3ABD20048A948 /* GoogleMobileAds */; };
+		EB5B322530A3ABE60048A948 /* GoogleUserMessagingPlatform in Frameworks */ = {isa = PBXBuildFile; productRef = EB5B322430A3ABE60048A948 /* GoogleUserMessagingPlatform */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -259,6 +262,7 @@
 		D0E78BCC3006A63200E5FE00 /* GuidedCaptureOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuidedCaptureOverlay.swift; sourceTree = "<group>"; };
 		D0E78BCE3006F92500E5FE00 /* PositiveVideoCameraView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PositiveVideoCameraView.swift; sourceTree = "<group>"; };
 		D0E78BE13008FF8D00E5FE00 /* GuestSignUpView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuestSignUpView.swift; sourceTree = "<group>"; };
+		EB5B322630A3AEBC0048A948 /* LookSee-Preview-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "LookSee-Preview-Info.plist"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -344,9 +348,12 @@
 			files = (
 				3C5BC5DB301E356400953451 /* AWSS3StoragePlugin in Frameworks */,
 				3C5BC5DC301E356400953451 /* StripePaymentSheet in Frameworks */,
+				EB5B322530A3ABE60048A948 /* GoogleUserMessagingPlatform in Frameworks */,
 				3C5BC5DD301E356400953451 /* Amplify in Frameworks */,
 				3C5BC5DE301E356400953451 /* AWSCognitoAuthPlugin in Frameworks */,
 				3C5BC5DF301E356400953451 /* ZIPFoundation in Frameworks */,
+				EB5B322130A3ABB90048A948 /* Sentry in Frameworks */,
+				EB5B322330A3ABD20048A948 /* GoogleMobileAds in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -409,6 +416,7 @@
 		3C918F942E9ECE5F00AF5DAF = {
 			isa = PBXGroup;
 			children = (
+				EB5B322630A3AEBC0048A948 /* LookSee-Preview-Info.plist */,
 				3CF3703B300683FB005780B3 /* ITlo.gpx */,
 				3C9020BF2F3AC88600EE30BF /* MachineLearningModels */,
 				3C90209B2F3ABC8B00EE30BF /* Detection */,
@@ -549,6 +557,9 @@
 				3C5BC599301E356400953451 /* ZIPFoundation */,
 				3C5BC59B301E356400953451 /* StripePaymentSheet */,
 				3C5BC59D301E356400953451 /* AWSS3StoragePlugin */,
+				EB5B322030A3ABB90048A948 /* Sentry */,
+				EB5B322230A3ABD20048A948 /* GoogleMobileAds */,
+				EB5B322430A3ABE60048A948 /* GoogleUserMessagingPlatform */,
 			);
 			productName = LookSeeProto;
 			productReference = 3C5BC5E5301E356400953451 /* LookSee Preview.app */;
@@ -939,11 +950,14 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = C66T6ZH83N;
+				DEVELOPMENT_TEAM = 23QV3A7PY2;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "LookSee-Preview-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "";
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Camera is used to scan objects in real time.";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Location services are used to tags scans made in app and help strengthen model data.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Microphone is used in video recordings for training data";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "\"LookSee needs access to your gallery so you can upload existing videos and photos of landmarks.\"";
@@ -957,7 +971,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = looksee.ianagain.com;
+				PRODUCT_BUNDLE_IDENTIFIER = looksee.bradychan.com;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -978,11 +992,14 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = C66T6ZH83N;
+				DEVELOPMENT_TEAM = 23QV3A7PY2;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "LookSee-Preview-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "";
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Camera is used to scan objects in real time.";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Location services are used to tags scans made in app and help strengthen model data.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Microphone is used in video recordings for training data";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "\"LookSee needs access to your gallery so you can upload existing videos and photos of landmarks.\"";
@@ -996,7 +1013,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = looksee.ianagain.com;
+				PRODUCT_BUNDLE_IDENTIFIER = looksee.bradychan.com;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -1148,7 +1165,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = MLBT5UQ68X;
+				DEVELOPMENT_TEAM = 23QV3A7PY2;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -1192,7 +1209,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = MLBT5UQ68X;
+				DEVELOPMENT_TEAM = 23QV3A7PY2;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -1424,8 +1441,6 @@
 				kind = upToNextMajorVersion;
 				minimumVersion = 9.26.1;
 			};
-			traits = (
-			);
 		};
 		D0E78BD93008C65A00E5FE00 /* XCRemoteSwiftPackageReference "stripe-ios-spm" */ = {
 			isa = XCRemoteSwiftPackageReference;
@@ -1507,6 +1522,21 @@
 			isa = XCSwiftPackageProductDependency;
 			package = D0E78BD93008C65A00E5FE00 /* XCRemoteSwiftPackageReference "stripe-ios-spm" */;
 			productName = StripePaymentSheet;
+		};
+		EB5B322030A3ABB90048A948 /* Sentry */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D079C5EF304062DB000A1237 /* XCRemoteSwiftPackageReference "sentry-cocoa" */;
+			productName = Sentry;
+		};
+		EB5B322230A3ABD20048A948 /* GoogleMobileAds */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 3C14A9063051A27C00907E77 /* XCRemoteSwiftPackageReference "swift-package-manager-google-mobile-ads" */;
+			productName = GoogleMobileAds;
+		};
+		EB5B322430A3ABE60048A948 /* GoogleUserMessagingPlatform */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 3C14A90C3051AE6F00907E77 /* XCRemoteSwiftPackageReference "swift-package-manager-google-user-messaging-platform" */;
+			productName = GoogleUserMessagingPlatform;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
