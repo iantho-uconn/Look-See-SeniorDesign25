@@ -19,12 +19,26 @@ class VariableContainer private constructor() {
     companion object {
         val shared = VariableContainer()
 
-        // Hold a reference to the app context for SharedPreferences access
         private var appContext: Context? = null
 
         fun initialize(context: Context) {
             appContext = context.applicationContext
         }
+
+        fun isLandmarkInactive(landmarkId: String): Boolean {
+            val context = appContext ?: return false
+            return looksee.angelll.com.models.SuppressionCache.shared(context).isInactive(landmarkId)
+        }
+
+        fun isLandmarkHiddenOnMap(landmarkId: String): Boolean {
+            val context = appContext ?: return false
+            return looksee.angelll.com.models.SuppressionCache.shared(context).isHidden(landmarkId)
+        }
+    }
+
+    fun isLocallyModified(landmarkId: String): Boolean {
+        val context = appContext ?: return false
+        return looksee.angelll.com.models.SuppressionCache.shared(context).isLocallyModified(landmarkId)
     }
 
     var infoView by mutableStateOf(false)
@@ -63,8 +77,98 @@ class VariableContainer private constructor() {
     var mapLongitude by mutableStateOf<Double?>(null)
     var reportedOwnerId by mutableStateOf<String?>(null)
 
+    var allLandmarks = emptyList<NearbyLandmark>()
+        set(value) {
+            field = value
+            syncSuppressionSetsFromNearby()
+        }
+        
+    var inactiveLandmarkIds by mutableStateOf<Set<String>>(emptySet())
+    var hiddenMapLandmarkIds by mutableStateOf<Set<String>>(emptySet())
+    private var locallyModifiedIds = mutableSetOf<String>()
+
     init {
+        appContext?.let { ctx ->
+            val cache = looksee.angelll.com.models.SuppressionCache.shared(ctx)
+            inactiveLandmarkIds = cache.getInitialInactive()
+            hiddenMapLandmarkIds = cache.getInitialHidden()
+            locallyModifiedIds.addAll(cache.getInitialModified())
+        }
         resetLandmarkDisplay()
+    }
+
+    private fun persistSuppressionSets() {
+        val context = appContext ?: return
+        looksee.angelll.com.models.SuppressionCache.shared(context).update(
+            inactive = inactiveLandmarkIds,
+            hidden = hiddenMapLandmarkIds,
+            modified = locallyModifiedIds
+        )
+    }
+
+    fun syncSuppressionSetsFromNearby() {
+        var updatedInactive = inactiveLandmarkIds.toMutableSet()
+        var updatedHidden = hiddenMapLandmarkIds.toMutableSet()
+        var updatedModified = locallyModifiedIds.toMutableSet()
+
+        for (item in allLandmarks) {
+            val id = item.landmarkId.trim()
+            if (id.isEmpty()) continue
+
+            if (updatedModified.contains(id)) {
+                val localIsActive = !updatedInactive.contains(id)
+                if (item.isActive == localIsActive) {
+                    updatedModified.remove(id)
+                } else {
+                    continue
+                }
+            }
+
+            if (item.isActive == false) {
+                updatedInactive.add(id)
+            } else if (item.isActive == true) {
+                updatedInactive.remove(id)
+            }
+
+            if (item.isVisibleOnMap == false) {
+                updatedHidden.add(id)
+            } else if (item.isVisibleOnMap == true) {
+                updatedHidden.remove(id)
+            }
+        }
+
+        inactiveLandmarkIds = updatedInactive
+        hiddenMapLandmarkIds = updatedHidden
+        locallyModifiedIds = updatedModified
+        persistSuppressionSets()
+    }
+
+    fun setLandmarkState(landmarkId: String, isActive: Boolean, isVisibleOnMap: Boolean) {
+        val id = landmarkId.trim()
+        if (id.isEmpty()) return
+
+        locallyModifiedIds.add(id)
+
+        val updatedInactive = inactiveLandmarkIds.toMutableSet()
+        if (isActive) {
+            updatedInactive.remove(id)
+        } else {
+            updatedInactive.add(id)
+            if (this.landmarkId == id) {
+                dismissLandmark()
+            }
+        }
+        inactiveLandmarkIds = updatedInactive
+
+        val updatedHidden = hiddenMapLandmarkIds.toMutableSet()
+        if (isVisibleOnMap) {
+            updatedHidden.remove(id)
+        } else {
+            updatedHidden.add(id)
+        }
+        hiddenMapLandmarkIds = updatedHidden
+
+        persistSuppressionSets()
     }
 
     /**
@@ -82,6 +186,8 @@ class VariableContainer private constructor() {
         trainingRunId: String,
         detectionConfidence: Float
     ) {
+        if (isLandmarkInactive(entry.landmarkId)) return
+        
         landmarkId = entry.landmarkId
         landmarkClassIndex = entry.classIndex
         landmarkClusterId = clusterId

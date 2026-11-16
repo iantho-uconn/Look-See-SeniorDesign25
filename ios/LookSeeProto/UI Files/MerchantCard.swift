@@ -2,7 +2,11 @@ import SwiftUI
 
 /// Modern state-driven card for the AR popup view
 struct MerchantCardView: View {
-    @ObservedObject var vm = VariableContainer.shared
+    @ObservedObject var vm: VariableContainer
+
+    init(vm: VariableContainer = .shared) {
+        _vm = ObservedObject(wrappedValue: vm)
+    }
     @Environment(\.openURL) var openURL
     @State private var showWebsiteAlert = false
 

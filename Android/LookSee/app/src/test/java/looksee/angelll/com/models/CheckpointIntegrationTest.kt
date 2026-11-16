@@ -64,7 +64,7 @@ class CheckpointIntegrationTest {
             withNegative: Boolean = false,
             landmarkId: String? = "existing_landmark",
         ): ArchivedMedia {
-            val id = UUID.randomUUID()
+            val id = UUID.randomUUID().toString()
             return ArchivedMedia(
                 id = id,
                 title = "Library",
@@ -73,7 +73,7 @@ class CheckpointIntegrationTest {
                 isVideo = false,
                 latitude = 40.7536,
                 longitude = -73.9832,
-                dateSaved = Date(1_786_000_000_000L),
+                dateSaved = 1_786_000_000_000L,
                 landmarkId = landmarkId,
                 savedLabel = savedLabel,
                 savedDescription = "Stone facade",

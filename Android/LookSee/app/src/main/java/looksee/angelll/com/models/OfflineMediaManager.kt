@@ -7,7 +7,6 @@ import android.media.MediaMetadataRetriever
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.google.gson.TypeAdapter
-import com.google.gson.reflect.TypeToken
 import com.google.gson.stream.JsonReader
 import com.google.gson.stream.JsonToken
 import com.google.gson.stream.JsonWriter
@@ -19,18 +18,16 @@ import java.util.UUID
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
-/**
- * Android translation of OfflineMediaManager.swift.
- *
- * Positive media, thumbnails, and optional negative-reference videos live in the app's private
- * files directory. The queue ledger remains a single JSON value, matching the Swift manager.
- */
+data class NegativePhotoCacheEntry(
+    val mediaId: String,
+    val photos: List<CapturedNegativePhoto> = emptyList()
+)
+
 class OfflineMediaManager internal constructor(
     private val fileStore: ArchiveFileStore,
     private val ledger: ArchiveLedger,
@@ -40,13 +37,10 @@ class OfflineMediaManager internal constructor(
     private val mutationMutex = Mutex()
 
     private val _archivedItems = MutableStateFlow(loadArchive())
-    val archivedItems: StateFlow<List<ArchivedMedia>> = _archivedItems.asStateFlow()
+    val archivedItems = _archivedItems.asStateFlow()
 
-    /** Session-only cache that keeps captured negative-photo files alive with their identities. */
-    private val _negativeCache =
-        MutableStateFlow<Map<UUID, List<CapturedNegativePhoto>>>(emptyMap())
-    val negativeCache: StateFlow<Map<UUID, List<CapturedNegativePhoto>>> =
-        _negativeCache.asStateFlow()
+    private val _negativeCacheEntries = MutableStateFlow(emptyList<NegativePhotoCacheEntry>())
+    val negativeCache = _negativeCacheEntries.asStateFlow()
 
     constructor(context: Context) : this(
         fileStore = AndroidArchiveFileStore(context.applicationContext),
@@ -73,6 +67,12 @@ class OfflineMediaManager internal constructor(
         negativeVideoFile: File?,
         isTier2: Boolean = false,
     ): ArchivedMedia? {
+        if (!landmarkId.isNullOrEmpty()) {
+            BusinessProcessingTracker.markProcessingNewData(
+                BusinessLandmark(landmarkId = landmarkId, label = label)
+            )
+        }
+
         val uniqueName = UUID.randomUUID().toString()
         val fileName = "$uniqueName.${videoExtension(tempFile)}"
         val thumbnailFileName = "${uniqueName}_thumb.jpg"
@@ -98,13 +98,14 @@ class OfflineMediaManager internal constructor(
         if (!archived) return null
 
         val entry = ArchivedMedia(
+            id = uniqueName,
             title = label,
             fileName = fileName,
             thumbnailFileName = thumbnailFileName,
             isVideo = true,
             latitude = latitude,
             longitude = longitude,
-            dateSaved = now(),
+            dateSaved = now().time,
             isFavorite = false,
             landmarkId = landmarkId,
             savedLabel = label,
@@ -117,7 +118,6 @@ class OfflineMediaManager internal constructor(
         return entry
     }
 
-    /** Accepts a complete JPEG and stores 80%- and 30%-quality archive copies. */
     suspend fun archivePhoto(
         imageJpegData: ByteArray,
         latitude: Double,
@@ -129,6 +129,12 @@ class OfflineMediaManager internal constructor(
         negativeVideoFile: File?,
         isTier2: Boolean = false,
     ): ArchivedMedia? {
+        if (!landmarkId.isNullOrEmpty()) {
+            BusinessProcessingTracker.markProcessingNewData(
+                BusinessLandmark(landmarkId = landmarkId, label = label)
+            )
+        }
+
         val uniqueName = UUID.randomUUID().toString()
         val fileName = "$uniqueName.jpg"
         val thumbnailFileName = "${uniqueName}_thumb.jpg"
@@ -154,13 +160,14 @@ class OfflineMediaManager internal constructor(
         if (!archived) return null
 
         val entry = ArchivedMedia(
+            id = uniqueName,
             title = label,
             fileName = fileName,
             thumbnailFileName = thumbnailFileName,
             isVideo = false,
             latitude = latitude,
             longitude = longitude,
-            dateSaved = now(),
+            dateSaved = now().time,
             isFavorite = false,
             landmarkId = landmarkId,
             savedLabel = label,
@@ -198,18 +205,20 @@ class OfflineMediaManager internal constructor(
     }
 
     suspend fun cacheNegativePhotos(
-        mediaId: UUID,
+        mediaId: String,
         photos: List<CapturedNegativePhoto>,
     ) {
         mutationMutex.withLock {
-            _negativeCache.value = _negativeCache.value + (mediaId to photos.toList())
+            _negativeCacheEntries.value =
+                _negativeCacheEntries.value.filterNot { it.mediaId == mediaId } +
+                        NegativePhotoCacheEntry(mediaId, photos.toList())
         }
     }
 
-    /** Removes the queue item immediately, then deletes its files on the I/O dispatcher. */
     suspend fun deleteArchive(media: ArchivedMedia) {
         mutationMutex.withLock {
-            _negativeCache.value = _negativeCache.value - media.id
+            _negativeCacheEntries.value =
+                _negativeCacheEntries.value.filterNot { it.mediaId == media.id }
             _archivedItems.value = _archivedItems.value.filterNot { it.id == media.id }
             saveArchive(_archivedItems.value)
         }
@@ -225,20 +234,22 @@ class OfflineMediaManager internal constructor(
         mutationMutex.withLock {
             val current = _archivedItems.value
             val item = current.find { it.id == media.id } ?: return@withLock
-            _archivedItems.value = listOf(item) + current.filterNot { it.id == media.id }
+            val prioritized = item.copy(dateSaved = 0L)
+            _archivedItems.value = (listOf(prioritized) + current.filterNot { it.id == media.id })
+                .sortedBy { it.dateSaved }
             saveArchive(_archivedItems.value)
         }
     }
 
     private suspend fun appendAndPersist(entry: ArchivedMedia) {
         mutationMutex.withLock {
-            _archivedItems.value = _archivedItems.value + entry
+            _archivedItems.value = (_archivedItems.value + entry).sortedBy { it.dateSaved }
             saveArchive(_archivedItems.value)
         }
     }
 
     private suspend fun updateAndPersist(
-        mediaId: UUID,
+        mediaId: String,
         transform: (ArchivedMedia) -> ArchivedMedia,
     ) {
         mutationMutex.withLock {
@@ -253,15 +264,14 @@ class OfflineMediaManager internal constructor(
     }
 
     private fun saveArchive(items: List<ArchivedMedia>) {
-        ledger.write(ArchiveJson.gson.toJson(items, ArchiveJson.listType))
+        ledger.write(ArchiveJson.gson.toJson(items.toTypedArray()))
     }
 
     private fun loadArchive(): List<ArchivedMedia> {
         val saved = ledger.read() ?: return emptyList()
         return try {
-            ArchiveJson.gson.fromJson<List<ArchivedMedia>>(saved, ArchiveJson.listType)
-                ?.toList()
-                .orEmpty()
+            val array = ArchiveJson.gson.fromJson(saved, Array<ArchivedMedia>::class.java)
+            array?.toList()?.sortedBy { it.dateSaved }.orEmpty()
         } catch (_: Exception) {
             emptyList()
         }
@@ -322,10 +332,8 @@ private class AndroidArchiveFileStore(context: Context) : ArchiveFileStore {
 
     override fun archiveVideo(source: File, fileName: String, thumbnailFileName: String) {
         require(source.isFile) { "Video source does not exist: ${source.name}" }
-        source.copyTo(file(fileName), overwrite = false)
+        source.copyTo(file(fileName), overwrite = true)
 
-        // Swift uses try? for video thumbnail extraction/writing. Keep the archived video even
-        // when a device codec cannot produce frame zero.
         try {
             val retriever = MediaMetadataRetriever()
             val frame = try {
@@ -373,14 +381,14 @@ private class AndroidArchiveFileStore(context: Context) : ArchiveFileStore {
 
     override fun copy(source: File, fileName: String) {
         require(source.isFile) { "Media source does not exist: ${source.name}" }
-        source.copyTo(file(fileName), overwrite = false)
+        source.copyTo(file(fileName), overwrite = true)
     }
 
     override fun deleteQuietly(fileName: String) {
         try {
             file(fileName).delete()
         } catch (_: SecurityException) {
-            // Swift also treats archive-file deletion as best effort.
+            // Best effort
         }
     }
 
@@ -393,13 +401,11 @@ private class AndroidArchiveFileStore(context: Context) : ArchiveFileStore {
 }
 
 private object ArchiveJson {
-    val listType = object : TypeToken<List<ArchivedMedia>>() {}.type
     val gson: Gson = GsonBuilder()
         .registerTypeAdapter(Date::class.java, SwiftReferenceDateAdapter())
         .create()
 }
 
-/** JSONEncoder's default Date format: seconds since 2001-01-01T00:00:00Z. */
 private class SwiftReferenceDateAdapter : TypeAdapter<Date>() {
     override fun write(output: JsonWriter, value: Date?) {
         if (value == null) {

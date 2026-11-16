@@ -64,7 +64,8 @@ final class LiveLandmarkInfoService {
 
     func fetchLiveInfo(
         landmarkId: String,
-        timeoutSeconds: TimeInterval = 3.5
+        timeoutSeconds: TimeInterval = 3.5,
+        updateSharedMerchant: Bool = true
     ) async throws -> LiveLandmarkInfoResponse {
         let url = baseURL
             .appendingPathComponent("landmarks")
@@ -111,15 +112,17 @@ final class LiveLandmarkInfoService {
         UserDefaults.standard.set(merchantDict, forKey: cacheKey)
 
         // Automatically inject merchant data into VariableContainer for the UI popup
-        Task { @MainActor in
-            VariableContainer.shared.merchantName = decoded.merchantName ?? ""
-            VariableContainer.shared.merchantBio = decoded.merchantBio ?? ""
-            VariableContainer.shared.merchantPhone = decoded.merchantPhone ?? ""
-            VariableContainer.shared.merchantLogoUrl = decoded.merchantLogoUrl ?? ""
-            
-            // 🚀 THE FIX: Send the new fields right to your AR pop-up UI
-            VariableContainer.shared.merchantWebsite = decoded.merchantWebsite ?? ""
-            VariableContainer.shared.merchantAddress = decoded.merchantAddress ?? ""
+        if updateSharedMerchant {
+            Task { @MainActor in
+                VariableContainer.shared.merchantName = decoded.merchantName ?? ""
+                VariableContainer.shared.merchantBio = decoded.merchantBio ?? ""
+                VariableContainer.shared.merchantPhone = decoded.merchantPhone ?? ""
+                VariableContainer.shared.merchantLogoUrl = decoded.merchantLogoUrl ?? ""
+                
+                // 🚀 THE FIX: Send the new fields right to your AR pop-up UI
+                VariableContainer.shared.merchantWebsite = decoded.merchantWebsite ?? ""
+                VariableContainer.shared.merchantAddress = decoded.merchantAddress ?? ""
+            }
         }
 
         print("""

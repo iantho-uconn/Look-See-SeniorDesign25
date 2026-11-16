@@ -6,7 +6,6 @@
 //  Updated for Outbox/Queue functionality
 //
 
-
 import Foundation
 import CoreLocation
 import SwiftUI
@@ -45,15 +44,18 @@ class OfflineMediaManager: ObservableObject {
         return getDocumentsDirectory().appendingPathComponent(negName)
     }
     
-    // 🚀 THE FIX: Bumps an item to the absolute front of the queue by spoofing an old date
+    // Bumps an item to the absolute front of the queue by spoofing an old date
     func prioritizeAndRetry(media: ArchivedMedia) {
         if let index = archivedItems.firstIndex(where: { $0.id == media.id }) {
             guard archivedItems[index].deletionBlocked != true else { return }
             archivedItems[index].lastUploadError = nil
-            // Date(timeIntervalSince1970: 0) makes it the oldest possible item, forcing it to the front!
             archivedItems[index].dateSaved = Date(timeIntervalSince1970: 0)
             archivedItems.sort { $0.dateSaved < $1.dateSaved }
             saveArchive()
+
+            if let targetId = archivedItems[index].landmarkId ?? archivedItems[index].queueLandmarkId {
+                VariableContainer.shared.markLandmarkProcessingNewData(landmarkId: targetId)
+            }
         }
     }
     
@@ -62,11 +64,18 @@ class OfflineMediaManager: ObservableObject {
         archivedItems[index].lastUploadError = message
         archivedItems[index].deletionBlocked = deletionBlocked
         saveArchive()
+
+        if let targetId = archivedItems[index].landmarkId ?? archivedItems[index].queueLandmarkId {
+            VariableContainer.shared.clearLandmarkProcessingNewData(landmarkId: targetId)
+        }
     }
 
     func clearRetryableFailures() {
         for index in archivedItems.indices where archivedItems[index].deletionBlocked != true {
             archivedItems[index].lastUploadError = nil
+            if let targetId = archivedItems[index].landmarkId ?? archivedItems[index].queueLandmarkId {
+                VariableContainer.shared.markLandmarkProcessingNewData(landmarkId: targetId)
+            }
         }
         saveArchive()
     }
@@ -86,6 +95,7 @@ class OfflineMediaManager: ObservableObject {
         archivedItems[index].queueLandmarkId = landmarkID
         archivedItems[index].positiveUploadCompleted = true
         saveArchive()
+        VariableContainer.shared.markLandmarkUploadCompleted(landmarkId: landmarkID)
     }
 
     // MARK: - Archive Video (Queue) - Background Optimized
@@ -100,24 +110,24 @@ class OfflineMediaManager: ObservableObject {
         negativeVideoURL: URL?,
         isTier2: Bool = false
     ) async -> ArchivedMedia? {
+        // Instantly mark existing landmark as Processing New Data so UI updates without delay
+        if let landmarkId, !landmarkId.isEmpty {
+            VariableContainer.shared.markLandmarkProcessingNewData(landmarkId: landmarkId)
+        }
         
         let uniqueID = UUID().uuidString
         let fileName = uniqueID + ".mov"
         let thumbName = uniqueID + "_thumb.jpg"
         
-        // Grab the directory on the main thread to pass to the background
         let docsDir = getDocumentsDirectory()
         let permanentURL = docsDir.appendingPathComponent(fileName)
         
-        // Detach heavy file I/O to a background thread to prevent UI lag
         let newEntry = await Task.detached(priority: .userInitiated) { () -> ArchivedMedia? in
             var permanentNegName: String? = nil
             
             do {
-                // 1. Copy Positive Video
                 try FileManager.default.copyItem(at: tempURL, to: permanentURL)
                 
-                // 2. Generate Thumbnail (Heavy CPU Task)
                 let asset = AVAsset(url: permanentURL)
                 let generator = AVAssetImageGenerator(asset: asset)
                 generator.appliesPreferredTrackTransform = true
@@ -130,7 +140,6 @@ class OfflineMediaManager: ObservableObject {
                     }
                 }
                 
-                // 3. Copy Negative Video
                 if let negURL = negativeVideoURL {
                     let negName = uniqueID + "_negative.mov"
                     let permanentNegURL = docsDir.appendingPathComponent(negName)
@@ -138,7 +147,6 @@ class OfflineMediaManager: ObservableObject {
                     permanentNegName = negName
                 }
                 
-                // 4. Create Queue Record
                 return ArchivedMedia(
                     title: label,
                     fileName: fileName,
@@ -162,10 +170,9 @@ class OfflineMediaManager: ObservableObject {
             }
         }.value
         
-        // Back on Main Thread: Update UI immediately
         if let entry = newEntry {
             self.archivedItems.append(entry)
-            self.archivedItems.sort { $0.dateSaved < $1.dateSaved } // 🚀 Keep chronological
+            self.archivedItems.sort { $0.dateSaved < $1.dateSaved }
             self.saveArchive()
         }
         
@@ -184,13 +191,15 @@ class OfflineMediaManager: ObservableObject {
         negativeVideoURL: URL?,
         isTier2: Bool = false
     ) async -> ArchivedMedia? {
+        if let landmarkId, !landmarkId.isEmpty {
+            VariableContainer.shared.markLandmarkProcessingNewData(landmarkId: landmarkId)
+        }
         
         let uniqueID = UUID().uuidString
         let fileName = uniqueID + ".jpg"
         let thumbName = uniqueID + "_thumb.jpg"
         let docsDir = getDocumentsDirectory()
         
-        // Detach heavy image compression to background thread
         let newEntry = await Task.detached(priority: .userInitiated) { () -> ArchivedMedia? in
             var permanentNegName: String? = nil
             
@@ -206,7 +215,6 @@ class OfflineMediaManager: ObservableObject {
                 try data.write(to: url)
                 try thumbData.write(to: thumbURL)
                 
-                // Copy Negative Video
                 if let negURL = negativeVideoURL {
                     let negName = uniqueID + "_negative.mov"
                     let permanentNegURL = docsDir.appendingPathComponent(negName)
@@ -238,7 +246,7 @@ class OfflineMediaManager: ObservableObject {
         
         if let entry = newEntry {
             self.archivedItems.append(entry)
-            self.archivedItems.sort { $0.dateSaved < $1.dateSaved } // 🚀 Keep chronological
+            self.archivedItems.sort { $0.dateSaved < $1.dateSaved }
             self.saveArchive()
         }
         
@@ -272,12 +280,12 @@ class OfflineMediaManager: ObservableObject {
     }
     
     // MARK: - Delete (Background Optimized)
-    func deleteArchive(media: ArchivedMedia) {
+    func deleteArchive(media: ArchivedMedia, isCompletedUpload: Bool = false) {
         let fileURL = getFileURL(for: media)
         let thumbURL = getThumbnailURL(for: media)
         let negURL = getNegativeVideoURL(for: media)
+        let targetLandmarkId = media.landmarkId ?? media.queueLandmarkId
         
-        // Tell the hard drive to delete the heavy files in the background
         Task.detached(priority: .background) {
             try? FileManager.default.removeItem(at: fileURL)
             try? FileManager.default.removeItem(at: thumbURL)
@@ -286,10 +294,18 @@ class OfflineMediaManager: ObservableObject {
             }
         }
         
-        // Remove from the UI immediately so it feels instant
         negativeCache.removeValue(forKey: media.id)
         archivedItems.removeAll { $0.id == media.id }
         saveArchive()
+
+        if !isCompletedUpload, let targetLandmarkId {
+            let stillHasOtherUploads = archivedItems.contains {
+                ($0.landmarkId == targetLandmarkId || $0.queueLandmarkId == targetLandmarkId) && $0.deletionBlocked != true
+            }
+            if !stillHasOtherUploads {
+                VariableContainer.shared.clearLandmarkProcessingNewData(landmarkId: targetLandmarkId)
+            }
+        }
     }
     
     private func saveArchive() {
@@ -301,7 +317,6 @@ class OfflineMediaManager: ObservableObject {
     private func loadArchive() {
         if let savedData = UserDefaults.standard.data(forKey: ledgerKey),
            let decoded = try? JSONDecoder().decode([ArchivedMedia].self, from: savedData) {
-            // 🚀 THE FIX: Ensure it is sorted oldest-first on load
             archivedItems = decoded.sorted { $0.dateSaved < $1.dateSaved }
         }
     }

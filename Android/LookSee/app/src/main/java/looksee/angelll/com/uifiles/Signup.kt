@@ -107,8 +107,16 @@ fun SignupScreen(
                 } else {
                     message = "Verification incomplete. Please check the code."
                 }
-            } catch (e: Exception) {
-                message = e.localizedMessage ?: "Verification failed."
+            } catch (error: com.amplifyframework.auth.AuthException) {
+                if (error.cause is aws.sdk.kotlin.services.cognitoidentityprovider.model.CodeMismatchException) {
+                    message = "That verification code is incorrect. Please try again."
+                } else if (error.cause is aws.sdk.kotlin.services.cognitoidentityprovider.model.ExpiredCodeException) {
+                    message = "Your verification code has expired. Please request a new code."
+                } else {
+                    message = "Unable to verify your account right now. Please try again."
+                }
+            } catch (_: Exception) {
+                message = "Unable to verify your account. Please try again."
             } finally {
                 isLoading = false
             }

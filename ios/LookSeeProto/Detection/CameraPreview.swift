@@ -117,10 +117,12 @@ final class OverlayView: UIView {
 
                 //let labelText = "\(target.displayLabel)"
                 // label with confi %
-                
+                /*
                 let confidencePercent = Int(target.confidence * 100)
                 let labelText = "\(target.displayLabel) \(confidencePercent)%"
+                */
                 
+                let labelText = target.displayLabel
                 let font = UIFont.systemFont(ofSize: 16, weight: .bold)
                 let textStyle: [NSAttributedString.Key: Any] = [
                     .font: font,

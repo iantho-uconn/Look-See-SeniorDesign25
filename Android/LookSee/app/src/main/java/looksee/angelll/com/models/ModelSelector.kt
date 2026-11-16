@@ -292,7 +292,7 @@ class ModelSelector internal constructor(
             sharedInstance ?: synchronized(this) {
                 sharedInstance ?: ModelSelector(
                     modelState = ModelService.shared(context).state,
-                    testingEnabled = BuildConfig.DEBUG,
+                    testingEnabled = false,
                     bundledTestModels = discoverBundledTestModels(context),
                     testSelectionStore = AndroidTestModelSelectionStore(context),
                 ).also { sharedInstance = it }

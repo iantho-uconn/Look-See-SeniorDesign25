@@ -161,7 +161,7 @@ class CameraPreviewTest {
             displayLabelOverride = "Clock",
         )
 
-        assertEquals("Clock 83%", detectionOverlayLabel(detection))
+        assertEquals("Clock", detectionOverlayLabel(detection))
     }
 
     private fun putArgb(

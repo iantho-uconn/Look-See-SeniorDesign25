@@ -37,54 +37,15 @@ signal.signal(signal.SIGINT, handle_sigterm)
 AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
 s3 = boto3.client('s3')
 sqs = boto3.client('sqs')
-sns_client = boto3.client('sns', region_name=AWS_REGION)
 dynamodb = boto3.resource('dynamodb', region_name=AWS_REGION)
 
 BUCKET_NAME = 'looksee-models'
 QUEUE_URL = os.environ.get('QUEUE_URL')
 LANDMARKS_TABLE_NAME = os.environ.get('LANDMARKS_TABLE', 'LookSeeLandmarks')
-USERS_TABLE_NAME = os.environ.get('USERS_TABLE', 'LookSeeUsers')
 
 if not QUEUE_URL:
     print("❌ Error: No QUEUE_URL environment variable found.")
     sys.exit(1)
-
-
-def send_push_notification(user_id, title, body, custom_data=None):
-    """Looks up the user's pushEndpointArn in LookSeeUsers and fires an APNs notification via SNS."""
-    if not user_id:
-        return
-    try:
-        user_item = dynamodb.Table(USERS_TABLE_NAME).get_item(Key={"user_id": str(user_id)}).get("Item")
-        if not user_item:
-            return
-        endpoint_arn = user_item.get("pushEndpointArn")
-        if not endpoint_arn:
-            return
-
-        apns_payload = {
-            "aps": {
-                "alert": {"title": title, "body": body},
-                "sound": "default"
-            }
-        }
-        if custom_data:
-            apns_payload.update(custom_data)
-
-        apns_json = json.dumps(apns_payload)
-        sns_client.publish(
-            TargetArn=endpoint_arn,
-            MessageStructure="json",
-            Message=json.dumps({
-                "default": body,
-                "APNS": apns_json,
-                "APNS_SANDBOX": apns_json
-            })
-        )
-        print(f"📲 Sent push notification to user {user_id}: {title}")
-    except Exception as e:
-        print(f"⚠️ Failed to send push notification to {user_id}: {e}")
-
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"🚀 Booting up LookSee Worker on {device}. Checking SQS queue for tasks...")
@@ -358,21 +319,6 @@ while not shutdown_requested:
                 }
             )
             print(f"💾 Successfully updated DynamoDB landmark status to '{final_status}'.")
-
-            if final_status == 'NEEDS_MORE_MEDIA' and current_status != 'NEEDS_MORE_MEDIA':
-                owner_id = (
-                    existing_landmark.get('userId')
-                    or existing_landmark.get('user_id')
-                    or metadata.get('userId')
-                    or metadata.get('user_id')
-                )
-                display_label = existing_landmark.get('label') or metadata.get('label') or class_name
-                send_push_notification(
-                    user_id=owner_id,
-                    title="More Frames Needed",
-                    body=f"We couldn't clearly detect '{display_label}' in enough frames. Please record a clearer video with the object centered.",
-                    custom_data={"notificationType": "NEEDS_MORE_MEDIA", "landmarkId": landmark_id}
-                )
         except Exception as e:
             print(f"⚠️ Failed to update DynamoDB success status: {e}")
     else:

@@ -43,6 +43,8 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     var hasActiveSubscription by mutableStateOf(false)
     var stripeSubscriptionId by mutableStateOf("")
 
+    private var lastStatsFetchTime = 0L
+
     var activePlanCents by mutableIntStateOf(0)
     var activePlanYears by mutableIntStateOf(0)
 
@@ -84,35 +86,46 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun signIn(usernameInput: String, passwordInput: String) {
-        viewModelScope.launch {
-            try {
-                val result = Amplify.Auth.signIn(usernameInput, passwordInput)
-                if (result.isSignedIn) {
+    suspend fun signInSync(usernameInput: String, passwordInput: String): Boolean {
+        return try {
+            val result = Amplify.Auth.signIn(usernameInput, passwordInput)
+            if (result.isSignedIn) {
+                withContext(Dispatchers.Main) {
                     isSignedIn = true
                     requiresNewPassword = false
                     errorMessage = ""
+                    userEmail = usernameInput
+                }
 
-                    // 🚀 Capture the typed email instantly to bypass state delays
-                    val guaranteedEmail = usernameInput
-                    userEmail = guaranteedEmail
-
+                try {
+                    val user = Amplify.Auth.getCurrentUser()
+                    withContext(Dispatchers.Main) { userId = user.userId }
+                } catch (_: Exception) { 
                     try {
-                        val user = Amplify.Auth.getCurrentUser()
-                        userId = user.userId
-                    } catch (_: Exception) { /* User might not be fully cached yet */ }
+                        val session = Amplify.Auth.fetchAuthSession() as? AWSCognitoAuthSession
+                        val idToken = session?.userPoolTokensResult?.value?.idToken
+                        if (idToken != null) {
+                            val payload = String(android.util.Base64.decode(idToken.split(".")[1], android.util.Base64.DEFAULT))
+                            val sub = org.json.JSONObject(payload).optString("sub")
+                            if (sub.isNotEmpty()) {
+                                withContext(Dispatchers.Main) { userId = sub }
+                            }
+                        }
+                    } catch (_: Exception) {}
+                }
 
-                    // 🚀 Force-feed the guaranteed email directly into the network payloads
-                    initDatabaseRow(emailToSave = guaranteedEmail)
+                initDatabaseRow(emailToSave = usernameInput)
 
-                    if (pendingUsernameToSave.isNotEmpty()) {
-                        updateUserIdentity(newUsername = pendingUsernameToSave, emailToSave = guaranteedEmail)
-                        pendingUsernameToSave = "" // Clear memory
-                    }
+                if (pendingUsernameToSave.isNotEmpty()) {
+                    updateUserIdentity(newUsername = pendingUsernameToSave, emailToSave = usernameInput)
+                    withContext(Dispatchers.Main) { pendingUsernameToSave = "" }
+                }
 
-                    fetchUserDetails()
-                    fetchUserUsageStats()
-                } else {
+                fetchUserDetails()
+                fetchUserUsageStats(force = true)
+                true
+            } else {
+                withContext(Dispatchers.Main) {
                     when (result.nextStep.signInStep) {
                         AuthSignInStep.CONFIRM_SIGN_IN_WITH_NEW_PASSWORD -> {
                             requiresNewPassword = true
@@ -130,13 +143,26 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     isSignedIn = false
                 }
-            } catch (error: AuthException) {
-                errorMessage = friendlyMessage(error as? com.amplifyframework.auth.AuthException ?: com.amplifyframework.auth.AuthException("Unknown error", "Unknown error", error))
+                false
+            }
+        } catch (error: AuthException) {
+            withContext(Dispatchers.Main) {
+                errorMessage = friendlyMessage(error)
                 isSignedIn = false
-            } catch (_: Exception) {
+            }
+            false
+        } catch (_: Exception) {
+            withContext(Dispatchers.Main) {
                 errorMessage = "Something went wrong. Please try again."
                 isSignedIn = false
             }
+            false
+        }
+    }
+
+    fun signIn(usernameInput: String, passwordInput: String) {
+        viewModelScope.launch {
+            signInSync(usernameInput, passwordInput)
         }
     }
 
@@ -156,7 +182,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
 
                     initDatabaseRow(emailToSave = userEmail)
                     fetchUserDetails()
-                    fetchUserUsageStats()
+                    fetchUserUsageStats(force = true)
                 } else {
                     errorMessage = "Additional steps required to sign in."
                 }
@@ -201,13 +227,27 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
 
     suspend fun fetchUserDetails() {
         try {
-            val user = Amplify.Auth.getCurrentUser()
-            userId = user.userId
+            try {
+                val user = Amplify.Auth.getCurrentUser()
+                withContext(Dispatchers.Main) { userId = user.userId }
+            } catch (e: Exception) {
+                // Ignore, try attributes fallback
+            }
 
             val attributes = Amplify.Auth.fetchUserAttributes()
-            val emailAttr = attributes.find { it.key.keyString == "email" }
-            if (emailAttr != null) {
-                userEmail = emailAttr.value
+            
+            withContext(Dispatchers.Main) {
+                val emailAttr = attributes.find { it.key.keyString == "email" }
+                if (emailAttr != null) {
+                    userEmail = emailAttr.value
+                }
+                
+                if (userId.isEmpty()) {
+                    val subAttr = attributes.find { it.key.keyString == "sub" }
+                    if (subAttr != null) {
+                        userId = subAttr.value
+                    }
+                }
             }
         } catch (error: Exception) {
             println("❌ Failed to fetch user details: $error")
@@ -252,8 +292,16 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
 
     // MARK: - Networking & API Calls
 
-    suspend fun fetchUserUsageStats() {
+    suspend fun fetchUserUsageStats(force: Boolean = false) {
         if (userId.isEmpty()) return
+
+        if (!force) {
+            val now = System.currentTimeMillis()
+            if (now - lastStatsFetchTime < 30_000) return
+            lastStatsFetchTime = now
+        } else {
+            lastStatsFetchTime = System.currentTimeMillis()
+        }
 
         val url = "https://d11vl3v9w133rh.cloudfront.net/LookSeeGetUserStats"
         val body = JSONObject().apply { put("userId", userId) }
@@ -320,6 +368,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                 val prefs = getApplication<Application>().getSharedPreferences("LookSeePrefs", Context.MODE_PRIVATE)
                 prefs.edit().putBoolean("isFreeTrial_$userEmail", false).apply()
             }
+            fetchUserUsageStats(force = true)
             true
         } else {
             println("❌ Failed to cancel subscription")
@@ -536,7 +585,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
             put("userId", userId)
             put("scannedAt", scannedAt)
         }
-        makeHttpRequest("DELETE", url, body)
+        makeHttpRequest("DELETE", url, body, fetchIdToken())
     }
 
     // MARK: - Force Train Landmark API
@@ -571,10 +620,10 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
 
     // MARK: - Native Android Network Helper (No Retrofit Required)
     private suspend fun makePostRequest(urlStr: String, body: JSONObject): Pair<Int, String?> =
-        makeHttpRequest("POST", urlStr, body)
+        makeHttpRequest("POST", urlStr, body, fetchIdToken())
 
     private suspend fun makeGetRequest(urlStr: String): Pair<Int, String?> =
-        makeHttpRequest("GET", urlStr, null)
+        makeHttpRequest("GET", urlStr, null, fetchIdToken())
 
     private suspend fun makeHttpRequest(
         method: String,

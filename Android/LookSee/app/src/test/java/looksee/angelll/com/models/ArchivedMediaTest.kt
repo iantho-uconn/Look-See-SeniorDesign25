@@ -35,6 +35,6 @@ class ArchivedMediaTest {
         isVideo = false,
         latitude = 40.7128,
         longitude = -74.0060,
-        dateSaved = Date(1_754_390_400_000),
+        dateSaved = 1_754_390_400_000L,
     )
 }

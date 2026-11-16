@@ -98,7 +98,8 @@ struct PositiveVideoCameraView: View {
     private let onDone: ([URL]) -> Void
     private let onCancel: () -> Void
     
-    private let maxTotalTimeLimit: Int = 90
+    // 🚀 FIXED: Removed hardcoded 90. Now configurable, defaulting to 120s!
+    private let maxTotalTimeLimit: Int
     private let uiTargetDuration: Int
     private let minTotalTimeLimit: Int
 
@@ -107,6 +108,7 @@ struct PositiveVideoCameraView: View {
         isNavVisible: Binding<Bool>,
         uiTargetDuration: Int = 30,
         minTotalTimeLimit: Int? = nil,
+        maxTotalTimeLimit: Int = 120, // Default to our new 120s limit!
         completionButtonTitle: String = "Finish Submission",
         onDone: @escaping ([URL]) -> Void,
         onCancel: @escaping () -> Void
@@ -115,6 +117,7 @@ struct PositiveVideoCameraView: View {
         self._isNavVisible = isNavVisible
         self.uiTargetDuration = uiTargetDuration
         self.minTotalTimeLimit = minTotalTimeLimit ?? uiTargetDuration
+        self.maxTotalTimeLimit = maxTotalTimeLimit
         self.completionButtonTitle = completionButtonTitle
         self.onDone = onDone
         self.onCancel = onCancel
@@ -906,7 +909,6 @@ private final class PositiveCameraPreviewUIView: UIView {
         
         if pinch.state == .changed || pinch.state == .began {
             let maxAllowedZoom = min(5.0 * baseZoomFactor, device.activeFormat.videoMaxZoomFactor)
-            
             let zoomFactor = min(max(initialZoom * pinch.scale, device.minAvailableVideoZoomFactor), maxAllowedZoom)
             
             try? device.lockForConfiguration()

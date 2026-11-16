@@ -60,6 +60,7 @@ final class BusinessLandmarksViewModel: ObservableObject {
             }
             landmarks = sorted
             saveToCache(sorted)
+            VariableContainer.shared.reconcileProcessingNewData(with: sorted)
         } catch {
             errorMessage = error.localizedDescription
             print("⚠️ API fetch failed: \(error.localizedDescription)")
@@ -84,6 +85,7 @@ final class BusinessLandmarksViewModel: ObservableObject {
             return comparison == .orderedAscending
         }
         saveToCache(landmarks)
+        VariableContainer.shared.reconcileProcessingNewData(with: landmarks)
     }
 
     func replaceLandmarks(_ updatedLandmarks: [BusinessLandmark]) {
@@ -106,13 +108,14 @@ final class BusinessLandmarksViewModel: ObservableObject {
         }
 
         saveToCache(landmarks)
+        VariableContainer.shared.reconcileProcessingNewData(with: landmarks)
     }
 
     func removeLandmark(landmarkId: String) {
         landmarks.removeAll {
             $0.landmarkId == landmarkId
         }
-
+        VariableContainer.shared.clearLandmarkProcessingNewData(landmarkId: landmarkId)
         saveToCache(landmarks)
     }
 
@@ -123,6 +126,9 @@ final class BusinessLandmarksViewModel: ObservableObject {
 
         landmarks.removeAll {
             landmarkIds.contains($0.landmarkId)
+        }
+        for id in landmarkIds {
+            VariableContainer.shared.clearLandmarkProcessingNewData(landmarkId: id)
         }
 
         saveToCache(landmarks)

@@ -20,7 +20,6 @@ fun GuestSignUpView(
         },
         onNavigate = { route: String ->
             if (route == "login") {
-                onDismiss()
                 onGoToLogin()
             } else {
                 onDismiss()

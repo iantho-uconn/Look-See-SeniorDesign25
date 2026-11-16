@@ -99,10 +99,18 @@ class SettingsPresenter {
 @Composable
 fun SettingsScreen(
     vm: AuthViewModel,
+    startWithSubscriptions: Boolean = false,
     onDismiss: () -> Unit,
     onNavigate: (String) -> Unit
 ) {
-    val presenter = remember { SettingsPresenter() }
+    val presenter = remember { 
+        SettingsPresenter().apply {
+            if (startWithSubscriptions) {
+                showSubscriptionFlow = true
+                subscriptionStartingTab = 0
+            }
+        }
+    }
     val haptic = LocalHapticFeedback.current
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -865,45 +873,8 @@ fun DeepSettingsView(
                 }
             }
 
-            // Testing Section
-            if (BuildConfig.DEBUG) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        "TESTING",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.Gray
-                    )
 
-                    Surface(
-                        onClick = { onNavigate("ModelSelectionView") },
-                        color = Color(0xFF1C1C1E),
-                        shape = RoundedCornerShape(16.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(16.dp).fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(14.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier.size(36.dp).background(Color(0xFF4B0082), RoundedCornerShape(10.dp)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(Icons.Default.Memory, contentDescription = null, tint = Color.White, modifier = Modifier.size(17.dp))
-                            }
 
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("Model Select", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                                Text(modelSelector.activeDisplayName, color = Color.Gray, fontSize = 13.sp, maxLines = 1)
-                            }
-
-                            Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = Color.Gray.copy(alpha = 0.5f), modifier = Modifier.size(13.dp))
-                        }
-                    }
-                }
-            }
-
-            // Admin Tools
             val adminEmails = listOf("angelgabriel2828@icloud.com", "angelgabriel0846@gmail.com", "nisargdpatel04@gmail.com", "matt@informationoutpost.com")
             if (vm.userEmail.lowercase() in adminEmails) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {

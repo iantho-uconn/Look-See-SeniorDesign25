@@ -85,8 +85,16 @@ struct SubscriptionPlans: View {
                 
                 GeometryReader { geo in
                     ZStack {
-                        Circle().fill(primaryColor.opacity(0.15)).frame(width: geo.size.width * 0.8).blur(radius: 60).offset(x: -geo.size.width * 0.3, y: -geo.size.height * 0.2)
-                        Circle().fill(Color(red: 0.11, green: 0.22, blue: 0.55).opacity(0.15)).frame(width: geo.size.width * 0.9).blur(radius: 80).offset(x: geo.size.width * 0.4, y: geo.size.height * 0.4)
+                        Circle()
+                            .fill(primaryColor.opacity(0.15))
+                            .frame(width: geo.size.width * 0.8)
+                            .blur(radius: 60)
+                            .offset(x: -geo.size.width * 0.3, y: -geo.size.height * 0.2)
+                        Circle()
+                            .fill(Color(red: 0.11, green: 0.22, blue: 0.55).opacity(0.15))
+                            .frame(width: geo.size.width * 0.9)
+                            .blur(radius: 80)
+                            .offset(x: geo.size.width * 0.4, y: geo.size.height * 0.4)
                     }
                 }.ignoresSafeArea()
                 
@@ -172,8 +180,8 @@ struct SubscriptionPlans: View {
             .onChange(of: showPaymentSheet) { _, isShowing in
                 if !isShowing && !wasPaymentSuccessful {
                     if let orderToCancel = currentOrderId {
-                        // 🚀 Synchronous wipe prevents the double-firing race condition
                         self.currentOrderId = nil
+                        self.checkoutOrderId = nil
                         print("🟡 Stripe sheet disappeared manually! Triggering cancellation.")
                         Task {
                             await cancelPendingOrder(orderId: orderToCancel)
@@ -342,7 +350,6 @@ struct SubscriptionPlans: View {
             Divider().background(Color.white.opacity(0.12)).padding(.vertical, 14)
             
             VStack(alignment: .leading, spacing: 10) {
-                // 🚀 Changed token count and updated feature descriptions
                 featureRow("Includes 2 Tokens")
                 featureRow("Full access to business tools")
                 featureRow("Auto-renews to 1-Year Plan ($10)")
@@ -491,8 +498,12 @@ struct SubscriptionPlans: View {
     private func preparePaymentSheet(purchaseType: String, amountCents: Int = 0, tokenCount: Int = 0, isFreeTrial: Bool = false) async {
         await vm.fetchUserDetails()
         tokenBalanceBeforePurchase = vm.tokenBalance
-        checkoutOrderId = nil
-        checkoutRequestId = UUID().uuidString
+        
+        // Use a single consistent lowercase UUID for both request and cancellation tracking
+        let newOrderId = UUID().uuidString.lowercased()
+        self.checkoutRequestId = newOrderId
+        self.currentOrderId = newOrderId
+        self.checkoutOrderId = newOrderId
         
         guard let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/checkout") else {
             isProcessing = false; paymentStatusMessage = String(localized: "Invalid API URL."); return
@@ -522,10 +533,6 @@ struct SubscriptionPlans: View {
         }
         request.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
         
-        // 🚀 THE FIX: Force lowercase so DynamoDB matches the format saved by Python
-        let newOrderId = UUID().uuidString.lowercased()
-        self.currentOrderId = newOrderId
-        
         var body: [String: Any] = [
             "purchaseType": purchaseType,
             "userId": vm.userId,
@@ -551,7 +558,6 @@ struct SubscriptionPlans: View {
             }
         }
         
-        body["checkoutRequestId"] = checkoutRequestId
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
         
         await request.signWithAppAttest(idToken: idToken)
@@ -563,6 +569,7 @@ struct SubscriptionPlans: View {
                     DispatchQueue.main.async {
                         self.isProcessing = false
                         self.currentOrderId = nil
+                        self.checkoutOrderId = nil
                         self.presenter.resumeCheckoutAction = nil
                         self.paymentStatusMessage = String(localized: "Stripe Error: \(errorMsg)")
                     }
@@ -571,6 +578,7 @@ struct SubscriptionPlans: View {
                 
                 if let orderId = json["orderId"] as? String {
                     checkoutOrderId = orderId
+                    currentOrderId = orderId
                 }
                 if json["confirmed"] as? Bool == true {
                     onPaymentCompletion(result: .completed)
@@ -625,7 +633,7 @@ struct SubscriptionPlans: View {
                    let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
                    json["confirmed"] as? Bool == true {
                     await vm.fetchUserDetails()
-                    await vm.fetchUserUsageStats()
+                    await vm.fetchUserUsageStats(force: true)
                     await authState.resolveTier()
                     await MainActor.run {
                         if let cents = json["activePlanCents"] as? Int { vm.activePlanCents = cents }
@@ -637,39 +645,11 @@ struct SubscriptionPlans: View {
                     return true
                 }
             } catch {
-                // A transient failure does not establish success for this order.
+                // Ignore transient polling failure
             }
             if attempt < 9 { try? await Task.sleep(nanoseconds: 1_000_000_000) }
         }
         return false
-    }
-
-    private func cancelPendingCheckout() async {
-        guard let orderId = checkoutOrderId,
-              let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/checkout") else { return }
-        let idToken = await vm.fetchIdToken()
-        guard !idToken.isEmpty else { return }
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
-        request.httpBody = try? JSONSerialization.data(withJSONObject: [
-            "purchaseType": "cancel_pending_checkout", "orderId": orderId
-        ])
-        await request.signWithAppAttest(idToken: idToken)
-        do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            if (response as? HTTPURLResponse)?.statusCode != 200 {
-                let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-                await MainActor.run {
-                    paymentStatusMessage = json?["error"] as? String ?? "Checkout cancellation is pending. Please retry the same selection."
-                }
-            }
-        } catch {
-            await MainActor.run {
-                paymentStatusMessage = "Checkout cancellation could not be confirmed. Please retry the same selection."
-            }
-        }
     }
 
     private func onPaymentCompletion(result: PaymentSheetResult) {
@@ -699,14 +679,21 @@ struct SubscriptionPlans: View {
                     }
                 }
             }
-             
+            
         case .canceled:
-            Task {
-                await cancelPendingCheckout()
-                await MainActor.run {
-                    self.isProcessing = false
-                    self.presenter.resumeCheckoutAction = nil
+            if let orderToCancel = currentOrderId ?? checkoutOrderId {
+                self.currentOrderId = nil
+                self.checkoutOrderId = nil
+                Task {
+                    await cancelPendingOrder(orderId: orderToCancel)
+                    await MainActor.run {
+                        self.isProcessing = false
+                        self.presenter.resumeCheckoutAction = nil
+                    }
                 }
+            } else {
+                self.isProcessing = false
+                self.presenter.resumeCheckoutAction = nil
             }
         case .failed(let error):
             DispatchQueue.main.async {
@@ -717,7 +704,6 @@ struct SubscriptionPlans: View {
         }
     }
     
-    // 🚀 Pass the orderId directly in so we don't rely on the global variable that we just wiped
     private func cancelPendingOrder(orderId: String) async {
         guard let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/checkout") else {
             print("🚨 CANCEL ERROR: Invalid URL")
