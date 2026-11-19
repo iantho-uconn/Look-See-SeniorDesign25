@@ -1,10 +1,9 @@
 package looksee.angelll.com.uifiles
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
@@ -14,12 +13,14 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -50,12 +51,16 @@ fun BusinessBulkDeleteView(
     val service = remember { BusinessLandmarkService() }
     val coroutineScope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
 
     val requiredConfirmationText = "delete ${landmarks.size} landmark${if (landmarks.size == 1) "" else "s"}"
     val isConfirmationValid = confirmationText.trim() == requiredConfirmationText
 
     val deleteLandmarks: () -> Unit = {
         if (!isDeleting && isConfirmationValid) {
+            focusManager.clearFocus()
+            keyboardController?.hide()
             isDeleting = true
             completedResult = null
 
@@ -96,14 +101,18 @@ fun BusinessBulkDeleteView(
         containerColor = Color(0xFF000000),
         topBar = {
             TopAppBar(
-                title = { Text("Delete Landmarks", color = Color.White) },
+                title = { Text("Delete Landmarks", color = Color.White, fontWeight = FontWeight.Bold) },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color(0xFF000000),
                     titleContentColor = Color.White
                 ),
                 navigationIcon = {
                     TextButton(onClick = onDismiss, enabled = !isDeleting) {
-                        Text(if (completedResult == null) "Cancel" else "Close", color = Color(0xFF007AFF), modifier = Modifier.padding(horizontal = 8.dp))
+                        Text(
+                            text = if (completedResult == null) "Cancel" else "Close",
+                            color = Color(0xFF007AFF),
+                            modifier = Modifier.padding(horizontal = 4.dp)
+                        )
                     }
                 },
                 actions = {
@@ -117,24 +126,45 @@ fun BusinessBulkDeleteView(
         }
     ) { paddingValues ->
         LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(paddingValues).padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(24.dp)
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .imePadding()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(24.dp),
+            contentPadding = PaddingValues(bottom = 32.dp)
         ) {
             // Section 1: Selected Landmarks
             item {
-                SettingsSection(footer = "Deleting a landmark begins backend cleanup for its promotions, dataset files, and cluster mappings. This cannot be undone.") {
+                SettingsSection(
+                    footer = "Deleting a landmark begins backend cleanup for its promotions, dataset files, and cluster mappings. This cannot be undone."
+                ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Default.Delete, contentDescription = null, tint = Color.Red, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("${landmarks.size} landmark${if (landmarks.size == 1) "" else "s"}", color = Color.Red, fontWeight = FontWeight.Bold)
+                            Text(
+                                text = "${landmarks.size} landmark${if (landmarks.size == 1) "" else "s"}",
+                                color = Color.Red,
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                         Spacer(modifier = Modifier.height(16.dp))
 
                         landmarks.forEach { landmark ->
                             Column(modifier = Modifier.padding(vertical = 4.dp)) {
-                                Text(displayLabel(landmark), fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-                                Text(landmark.landmarkId, fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = Color.Gray)
+                                Text(
+                                    text = displayLabel(landmark),
+                                    color = Color.White,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 15.sp
+                                )
+                                Text(
+                                    text = landmark.landmarkId,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 11.sp,
+                                    color = Color.Gray
+                                )
                             }
                         }
                     }
@@ -150,7 +180,21 @@ fun BusinessBulkDeleteView(
                             onValueChange = { confirmationText = it },
                             placeholder = { Text(requiredConfirmationText, color = Color.Gray) },
                             enabled = !isDeleting,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, autoCorrectEnabled = false),
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Text,
+                                autoCorrectEnabled = false,
+                                imeAction = ImeAction.Done
+                            ),
+                            keyboardActions = KeyboardActions(
+                                onDone = {
+                                    focusManager.clearFocus()
+                                    keyboardController?.hide()
+                                    if (isConfirmationValid) {
+                                        deleteLandmarks()
+                                    }
+                                }
+                            ),
                             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = Color.Transparent,
@@ -182,7 +226,12 @@ fun BusinessBulkDeleteView(
                         } else {
                             Icon(Icons.Default.Delete, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Delete ${landmarks.size} Landmark${if (landmarks.size == 1) "" else "s"}", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.White)
+                            Text(
+                                text = "Delete ${landmarks.size} Landmark${if (landmarks.size == 1) "" else "s"}",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp,
+                                color = Color.White
+                            )
                         }
                     }
                 }
@@ -196,7 +245,7 @@ fun BusinessBulkDeleteView(
                             CircularProgressIndicator(modifier = Modifier.size(24.dp))
                             Spacer(modifier = Modifier.width(16.dp))
                             Column {
-                                Text("Deleting landmarks...", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                                Text("Deleting landmarks...", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                                 if (progressText != null) {
                                     Text(progressText!!, fontSize = 13.sp, color = Color.Gray)
                                 }
@@ -220,9 +269,18 @@ fun BusinessBulkDeleteView(
                                 )
                                 Spacer(modifier = Modifier.width(10.dp))
                                 Column {
-                                    Text("Deleted ${result.successfulCount} of ${landmarks.size} landmarks", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                                    Text(
+                                        text = "Deleted ${result.successfulCount} of ${landmarks.size} landmarks",
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 15.sp
+                                    )
                                     if (result.failedLandmarks.isNotEmpty()) {
-                                        Text("Failed landmarks remain selected so you can retry them.", fontSize = 12.sp, color = Color.Gray)
+                                        Text(
+                                            text = "Failed landmarks remain selected so you can retry them.",
+                                            fontSize = 12.sp,
+                                            color = Color.Gray
+                                        )
                                     }
                                 }
                             }
@@ -231,7 +289,12 @@ fun BusinessBulkDeleteView(
                                 Spacer(modifier = Modifier.height(16.dp))
                                 result.failedLandmarks.forEach { failure ->
                                     Column(modifier = Modifier.padding(vertical = 4.dp)) {
-                                        Text(if (failure.landmarkLabel.isEmpty()) failure.landmarkId else failure.landmarkLabel, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                        Text(
+                                            text = if (failure.landmarkLabel.isEmpty()) failure.landmarkId else failure.landmarkLabel,
+                                            color = Color.White,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 14.sp
+                                        )
                                         Text(failure.error, fontSize = 12.sp, color = Color.Gray)
                                     }
                                 }

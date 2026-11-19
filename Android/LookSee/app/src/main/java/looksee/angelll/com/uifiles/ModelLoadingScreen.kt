@@ -12,7 +12,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -46,7 +48,6 @@ fun ModelLoadingScreen(
     var failed by remember { mutableStateOf(false) }
     var showLoadingUI by remember { mutableStateOf(false) }
 
-    // Requests BOTH Fine and Coarse permissions to prevent Android 12+ dialog traps
     val locationPermissionsState = rememberMultiplePermissionsState(
         listOf(
             android.Manifest.permission.ACCESS_FINE_LOCATION,
@@ -66,12 +67,11 @@ fun ModelLoadingScreen(
         failed = false
         statusMessage = "Getting your location…"
 
-        // 🚀 THE FIX: Check the raw value inside the loop so we don't restart when location shifts slightly
         var attempts = 0
         while (locationManager.state.value !is LookSeeLocationState.Ready) {
             delay(500)
             attempts++
-            if (attempts > 40) { // Allow 20 seconds for cold Android network locations to settle
+            if (attempts > 40) {
                 failed = true
                 statusMessage = "Could not get your location. Ensure location access is enabled."
                 return
@@ -91,7 +91,6 @@ fun ModelLoadingScreen(
 
         val finalState = modelService.state.value
         if (finalState is ModelState.Failed) {
-            // 🚀 THE FIX: Filter out internal Compose cancellation messages so they never show up
             if (finalState.message.contains("coroutine", ignoreCase = true) ||
                 finalState.message.contains("cancel", ignoreCase = true)) {
                 return
@@ -129,23 +128,36 @@ fun ModelLoadingScreen(
         startLoading()
     }
 
-    Box(modifier = Modifier.fillMaxSize().alpha(opacity.value)) {
-        AnimatedBackground(showLoadingUI = showLoadingUI)
+    // 🚀 THE FIX: This root Box now has the deep dark background color that matches iOS,
+    // so when it stretches beneath the nav bar, the white line floats seamlessly.
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF0D0F17))
+            .alpha(opacity.value)
+    ) {
+        // We push the animated background out so it doesn't leave a black line at the bottom
+        Box(modifier = Modifier.fillMaxSize()) {
+            AnimatedBackground(showLoadingUI = showLoadingUI)
+        }
+
+        // Center Glow
         Box(
             modifier = Modifier
                 .align(Alignment.Center)
                 .size(300.dp)
                 .background(
                     brush = Brush.radialGradient(
-                        0.0f to Color(0xFF387DFF).copy(alpha = 0.12f),
-                        1.0f to Color.Transparent
+                        colors = listOf(Color(0xFF387DFF).copy(alpha = 0.12f), Color.Transparent)
                     ),
                     shape = CircleShape
                 )
         )
 
         Column(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .systemBarsPadding(), // Ensures the interactive content (text, buttons, logo) doesn't hide under the nav bar
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Spacer(modifier = Modifier.weight(1f))
@@ -212,12 +224,11 @@ fun ModelLoadingScreen(
             Text(
                 text = "Copyright © 2026 Information Outpost, LLC. All rights reserved.",
                 fontSize = 11.sp,
-                color = Color.White.copy(alpha = 0.9f), // Made brighter
+                color = Color.White.copy(alpha = 0.9f),
                 textAlign = TextAlign.Center,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .navigationBarsPadding() // Ensures it respects the system nav bar
-                    .padding(bottom = 24.dp, start = 20.dp, end = 20.dp) // Pushes it up
+                    .padding(bottom = 24.dp, start = 20.dp, end = 20.dp)
             )
         }
     }

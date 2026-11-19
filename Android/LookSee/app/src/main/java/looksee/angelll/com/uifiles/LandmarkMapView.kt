@@ -1,13 +1,19 @@
 package looksee.angelll.com.uifiles
 
 import androidx.compose.animation.*
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -16,15 +22,23 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.MapStyleOptions
@@ -32,15 +46,12 @@ import com.google.maps.android.compose.*
 import kotlinx.coroutines.launch
 import looksee.angelll.com.R
 import looksee.angelll.com.models.*
-import looksee.angelll.com.viewmodels.*
 import looksee.angelll.com.services.*
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.foundation.gestures.detectDragGestures
-import looksee.angelll.com.detection.*
 import looksee.angelll.com.ui.theme.AppleBlue
 import looksee.angelll.com.ui.theme.AppleOrange
+import looksee.angelll.com.viewmodels.*
+import looksee.angelll.com.detection.*
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -64,7 +75,7 @@ fun LandmarkMapScreen(
     var searchText by remember { mutableStateOf("") }
 
     var isGlobalSearch by remember { mutableStateOf(false) }
-    var searchRadiusMiles by remember { mutableStateOf(10.0f) }
+    var searchRadiusMiles by remember { mutableFloatStateOf(10.0f) }
     var myUploadsOnly by remember { mutableStateOf(false) }
     var promotedOnly by remember { mutableStateOf(false) }
     val selectedClusters = remember { mutableStateListOf<String>() }
@@ -75,24 +86,39 @@ fun LandmarkMapScreen(
 
     val filterSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    val untrainedStatuses = setOf("NEEDS_MORE_MEDIA", "PREPARING_DATA", "PENDING_TRAINING", "TRAINING_MODEL", "OPTIMIZING_MODEL")
+    val untrainedStatuses = setOf(
+        "NEEDS_MORE_MEDIA",
+        "PREPARING_DATA",
+        "PENDING_TRAINING",
+        "TRAINING_MODEL",
+        "OPTIMIZING_MODEL"
+    )
 
-    val activeLandmarks = remember(rawLandmarks, searchText, myUploadsOnly, promotedOnly, selectedClusters.toList(), infoView.inactiveLandmarkIds, infoView.hiddenMapLandmarkIds) {
-        infoView.allLandmarks = rawLandmarks // sync
+    val activeLandmarks = remember(
+        rawLandmarks,
+        searchText,
+        myUploadsOnly,
+        promotedOnly,
+        selectedClusters.toList(),
+        infoView.inactiveLandmarkIds,
+        infoView.hiddenMapLandmarkIds
+    ) {
+        infoView.allLandmarks = rawLandmarks
         val prefs = context.getSharedPreferences("LookSeePrefs", android.content.Context.MODE_PRIVATE)
         if (vm.userEmail.isNotEmpty()) {
             prefs.edit().putString("lastKnownEmail", vm.userEmail).apply()
         }
         val currentEmail = vm.userEmail.takeIf { it.isNotEmpty() } ?: prefs.getString("lastKnownEmail", "") ?: ""
-        
+
         rawLandmarks.filter { landmark ->
             val cluster = landmark.clusterId?.trim() ?: ""
             if (cluster.isEmpty()) return@filter false
-            
+
             val status = landmark.status?.uppercase()
             if (status != null && untrainedStatuses.contains(status)) return@filter false
 
-            val isLocallyInactive = infoView.inactiveLandmarkIds.contains(landmark.landmarkId) || VariableContainer.isLandmarkInactive(landmark.landmarkId)
+            val isLocallyInactive = infoView.inactiveLandmarkIds.contains(landmark.landmarkId) ||
+                    VariableContainer.isLandmarkInactive(landmark.landmarkId)
             val isActive = if (infoView.isLocallyModified(landmark.landmarkId)) {
                 !isLocallyInactive
             } else {
@@ -116,7 +142,14 @@ fun LandmarkMapScreen(
     }
 
     val availableClusters = remember(rawLandmarks) {
-        rawLandmarks.mapNotNull { it.clusterId }.distinct().sortedBy { it.toIntOrNull() ?: Int.MAX_VALUE }
+        rawLandmarks
+            .mapNotNull { it.clusterId?.trim()?.takeIf { c -> c.isNotEmpty() } }
+            .distinct()
+            .sortedWith { lhs, rhs ->
+                val lNum = lhs.toIntOrNull()
+                val rNum = rhs.toIntOrNull()
+                if (lNum != null && rNum != null) lNum.compareTo(rNum) else lhs.compareTo(rhs)
+            }
     }
 
     val mapStyleOptions = remember {
@@ -161,7 +194,6 @@ fun LandmarkMapScreen(
     }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-
         GoogleMap(
             modifier = Modifier.fillMaxSize(),
             cameraPositionState = cameraPositionState,
@@ -212,7 +244,6 @@ fun LandmarkMapScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    // 🚀 THE FIX: Use safeDrawingPadding() again now that the rigid background blocks are gone
                     .safeDrawingPadding()
                     .padding(top = 80.dp, start = 20.dp, end = 20.dp),
                 horizontalAlignment = Alignment.End,
@@ -234,23 +265,20 @@ fun LandmarkMapScreen(
                             if (searchText.isEmpty()) {
                                 Text("Search landmarks...", color = Color.Gray, fontSize = 16.sp, fontWeight = FontWeight.Medium)
                             }
-                            androidx.compose.foundation.text.BasicTextField(
+                            BasicTextField(
                                 value = searchText,
                                 onValueChange = { searchText = it },
-                                textStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Medium),
+                                textStyle = TextStyle(color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Medium),
                                 modifier = Modifier.fillMaxWidth(),
-                                cursorBrush = androidx.compose.ui.graphics.SolidColor(AppleBlue),
-                                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                                    imeAction = androidx.compose.ui.text.input.ImeAction.Search
-                                ),
-                                keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+                                cursorBrush = SolidColor(AppleBlue),
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                                keyboardActions = KeyboardActions(
                                     onSearch = {
                                         focusManager.clearFocus()
-
                                         activeLandmarks.firstOrNull()?.let { firstMatch ->
                                             coroutineScope.launch {
                                                 cameraPositionState.animate(
-                                                    com.google.android.gms.maps.CameraUpdateFactory.newLatLngZoom(
+                                                    CameraUpdateFactory.newLatLngZoom(
                                                         LatLng(firstMatch.latitude, firstMatch.longitude), 17f
                                                     ),
                                                     1000
@@ -269,6 +297,7 @@ fun LandmarkMapScreen(
                                 modifier = Modifier
                                     .size(20.dp)
                                     .clickable {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                         searchText = ""
                                         focusManager.clearFocus()
                                     }
@@ -292,7 +321,10 @@ fun LandmarkMapScreen(
                 ) {
                     BadgedBox(badge = {
                         if (myUploadsOnly || promotedOnly || selectedClusters.isNotEmpty()) {
-                            Badge(containerColor = AppleOrange, modifier = Modifier.size(14.dp).offset(x = (-2).dp, y = 2.dp))
+                            Badge(
+                                containerColor = AppleOrange,
+                                modifier = Modifier.size(14.dp).offset(x = (-2).dp, y = 2.dp)
+                            )
                         }
                     }) {
                         Icon(Icons.Default.Tune, contentDescription = "Filter", tint = Color.White, modifier = Modifier.size(20.dp))
@@ -301,6 +333,7 @@ fun LandmarkMapScreen(
             }
         }
 
+        // Left-edge swipe zone back to Scan tab
         Box(
             modifier = Modifier
                 .align(Alignment.CenterStart)
@@ -317,7 +350,6 @@ fun LandmarkMapScreen(
                 }
         )
 
-        // Transparent dismissal layer for the popup
         if (infoView.infoView) {
             Box(
                 modifier = Modifier
@@ -361,7 +393,16 @@ fun LandmarkMapScreen(
                 onMyUploadsChange = { myUploadsOnly = it },
                 promotedOnly = promotedOnly,
                 onPromotedChange = { promotedOnly = it },
-
+                availableClusters = availableClusters,
+                selectedClusters = selectedClusters,
+                onToggleCluster = { clusterId ->
+                    if (selectedClusters.contains(clusterId)) {
+                        selectedClusters.remove(clusterId)
+                    } else {
+                        selectedClusters.add(clusterId)
+                    }
+                },
+                onClearClusters = { selectedClusters.clear() },
                 onApply = {
                     showFilterSheet = false
                     val target = cameraPositionState.position.target
@@ -445,20 +486,31 @@ fun FilterMenuContent(
     onMyUploadsChange: (Boolean) -> Unit,
     promotedOnly: Boolean,
     onPromotedChange: (Boolean) -> Unit,
+    availableClusters: List<String>,
+    selectedClusters: List<String>,
+    onToggleCluster: (String) -> Unit,
+    onClearClusters: () -> Unit,
     onApply: () -> Unit
 ) {
+    val focusManager = LocalFocusManager.current
+    val haptic = LocalHapticFeedback.current
     val iOSLightBackground = Color(0xFFF2F2F7)
     val iOSCardBackground = Color.White
     val iOSTextPrimary = Color.Black
     val iOSTextSecondary = Color(0xFF6E6E73)
 
+    var radiusText by remember(searchRadiusMiles) { mutableStateOf(searchRadiusMiles.roundToInt().toString()) }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .background(iOSLightBackground)
+            .pointerInput(Unit) { detectTapGestures(onTap = { focusManager.clearFocus() }) }
     ) {
         Box(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 8.dp),
         ) {
             Text(
                 "Map Filters",
@@ -472,7 +524,10 @@ fun FilterMenuContent(
                 onClick = onApply,
                 modifier = Modifier.align(Alignment.CenterEnd).height(32.dp),
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 0.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = AppleBlue.copy(alpha = 0.12f), contentColor = AppleBlue),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = AppleBlue.copy(alpha = 0.12f),
+                    contentColor = AppleBlue
+                ),
                 shape = RoundedCornerShape(16.dp)
             ) {
                 Text("Apply", fontSize = 15.sp, fontWeight = FontWeight.Bold)
@@ -487,41 +542,186 @@ fun FilterMenuContent(
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
+            // 1. SEARCH RADIUS
             FilterSection(title = "SEARCH RADIUS", cardColor = iOSCardBackground, titleColor = iOSTextSecondary) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(16.dp)) {
-                    Text("Global Search (Everywhere)", color = iOSTextPrimary, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                    Switch(checked = isGlobalSearch, onCheckedChange = onGlobalSearchChange, colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = AppleBlue))
+                    Text(
+                        "Global Search (Everywhere)",
+                        color = iOSTextPrimary,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Switch(
+                        checked = isGlobalSearch,
+                        onCheckedChange = onGlobalSearchChange,
+                        colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = AppleBlue)
+                    )
                 }
                 if (!isGlobalSearch) {
                     HorizontalDivider(color = Color.LightGray.copy(alpha = 0.5f), modifier = Modifier.padding(start = 16.dp))
-                    Column(modifier = Modifier.padding(16.dp)) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("Distance:", color = iOSTextPrimary, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                            Text("${searchRadiusMiles.toInt()}", color = iOSTextPrimary, fontSize = 16.sp)
-                            Text(" mi", color = iOSTextSecondary, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                            Text(
+                                "Distance:",
+                                color = iOSTextPrimary,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.weight(1f)
+                            )
+                            OutlinedTextField(
+                                value = radiusText,
+                                onValueChange = { input ->
+                                    val digits = input.filter { it.isDigit() }.take(3)
+                                    radiusText = digits
+                                    digits.toFloatOrNull()?.let { parsed ->
+                                        onSearchRadiusChange(parsed.coerceIn(1f, 100f))
+                                    }
+                                },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                textStyle = TextStyle(
+                                    color = iOSTextPrimary,
+                                    fontSize = 15.sp,
+                                    textAlign = TextAlign.End,
+                                    fontWeight = FontWeight.SemiBold
+                                ),
+                                modifier = Modifier.width(76.dp).height(48.dp),
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text("mi", color = iOSTextSecondary, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                         }
                         Slider(
                             value = searchRadiusMiles,
-                            onValueChange = onSearchRadiusChange,
+                            onValueChange = { onSearchRadiusChange(it.roundToInt().toFloat()) },
                             valueRange = 1f..100f,
-                            colors = SliderDefaults.colors(thumbColor = AppleBlue, activeTrackColor = AppleBlue, inactiveTrackColor = Color.LightGray)
+                            steps = 98,
+                            colors = SliderDefaults.colors(
+                                thumbColor = AppleBlue,
+                                activeTrackColor = AppleBlue,
+                                inactiveTrackColor = Color.LightGray
+                            )
                         )
                     }
                 }
             }
 
+            // 2. VISIBILITY
             FilterSection(title = "VISIBILITY", cardColor = iOSCardBackground, titleColor = iOSTextSecondary) {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-                    Text("My Uploads Only", color = iOSTextPrimary, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                    Switch(checked = myUploadsOnly, onCheckedChange = onMyUploadsChange, colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = AppleBlue))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+                ) {
+                    Text(
+                        "My Uploads Only",
+                        color = iOSTextPrimary,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Switch(
+                        checked = myUploadsOnly,
+                        onCheckedChange = onMyUploadsChange,
+                        colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = AppleBlue)
+                    )
                 }
                 HorizontalDivider(color = Color.LightGray.copy(alpha = 0.5f), modifier = Modifier.padding(start = 16.dp))
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-                    Text("Promotions Only", color = iOSTextPrimary, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                    Switch(checked = promotedOnly, onCheckedChange = onPromotedChange, colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = Color.LightGray, uncheckedTrackColor = Color.LightGray))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+                ) {
+                    Text(
+                        "Promotions Only",
+                        color = iOSTextPrimary,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Switch(
+                        checked = promotedOnly,
+                        onCheckedChange = onPromotedChange,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = AppleOrange,
+                            uncheckedTrackColor = Color.LightGray
+                        )
+                    )
                 }
             }
 
+            // 3. FILTER BY CLUSTER (Ported from iOS LandmarkMapView.swift)
+            if (availableClusters.isNotEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "FILTER BY CLUSTER",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = iOSTextSecondary
+                        )
+                        if (selectedClusters.isNotEmpty()) {
+                            Text(
+                                "Clear",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = AppleOrange,
+                                modifier = Modifier.clickable {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    onClearClusters()
+                                }
+                            )
+                        }
+                    }
+
+                    Surface(
+                        color = iOSCardBackground,
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column {
+                            availableClusters.forEachIndexed { index, clusterId ->
+                                val isSelected = selectedClusters.contains(clusterId)
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            onToggleCluster(clusterId)
+                                        }
+                                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        "Cluster $clusterId",
+                                        fontSize = 16.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = iOSTextPrimary
+                                    )
+                                    Icon(
+                                        imageVector = if (isSelected) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                                        contentDescription = null,
+                                        tint = if (isSelected) AppleBlue else Color.Gray
+                                    )
+                                }
+                                if (index < availableClusters.size - 1) {
+                                    HorizontalDivider(
+                                        color = Color.LightGray.copy(alpha = 0.5f),
+                                        modifier = Modifier.padding(start = 16.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
 
             Spacer(modifier = Modifier.height(20.dp))
         }
@@ -529,9 +729,20 @@ fun FilterMenuContent(
 }
 
 @Composable
-fun FilterSection(title: String, cardColor: Color = Color.White.copy(alpha = 0.05f), titleColor: Color = Color.Gray, content: @Composable ColumnScope.() -> Unit) {
+fun FilterSection(
+    title: String,
+    cardColor: Color = Color.White.copy(alpha = 0.05f),
+    titleColor: Color = Color.Gray,
+    content: @Composable ColumnScope.() -> Unit
+) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(title.uppercase(), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = titleColor, modifier = Modifier.padding(horizontal = 16.dp))
+        Text(
+            title.uppercase(),
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = titleColor,
+            modifier = Modifier.padding(horizontal = 16.dp)
+        )
         Surface(
             color = cardColor,
             shape = RoundedCornerShape(16.dp),

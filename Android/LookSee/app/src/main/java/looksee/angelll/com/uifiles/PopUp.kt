@@ -4,11 +4,11 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
-import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -27,7 +27,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -41,8 +40,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.URL
 import looksee.angelll.com.models.*
-import looksee.angelll.com.viewmodels.*
-import looksee.angelll.com.services.*
 import looksee.angelll.com.ui.theme.AppleBlue
 
 @Composable
@@ -83,11 +80,8 @@ fun PopUp() {
             .pointerInput(Unit) { detectTapGestures { infoView.dismissLandmark() } },
         contentAlignment = Alignment.Center
     ) {
-        val maxWidthPx = maxWidth.value
-        val maxHeightPx = maxHeight.value
-
-        val popupWidth = minOf(maxOf(maxWidthPx - 56f, 1f), 620f).dp
-        val maximumPopupHeight = (maxHeightPx * 0.80f).dp
+        val popupWidth = (maxWidth - 56.dp).coerceAtLeast(1.dp).coerceAtMost(620.dp)
+        val maximumPopupHeight = maxHeight * 0.80f
 
         Surface(
             modifier = Modifier
@@ -212,7 +206,6 @@ fun PopUp() {
                         }
                     }
 
-                    // 🚀 THE FIX: Restored the Merchant Card
                     MerchantCardView()
 
                     if (infoView.isMapPin) {
@@ -260,7 +253,6 @@ fun PopUp() {
 
                 HorizontalDivider(color = Color.White.copy(alpha = 0.18f))
 
-                // Footer: Close Button
                 Box(modifier = Modifier.padding(start = 20.dp, top = 14.dp, end = 20.dp, bottom = 18.dp)) {
                     Button(
                         onClick = {
@@ -326,7 +318,7 @@ fun PromoImageLoader(url: String, contentScale: ContentScale = ContentScale.Fit)
                 val stream = URL(url).openStream()
                 bitmap = BitmapFactory.decodeStream(stream)
                 isLoading = false
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 isLoading = false
             }
         }

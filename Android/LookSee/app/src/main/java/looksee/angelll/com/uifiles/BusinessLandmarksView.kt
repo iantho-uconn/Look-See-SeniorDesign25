@@ -1,7 +1,6 @@
 package looksee.angelll.com.uifiles
 
 import android.content.Intent
-import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -17,8 +16,6 @@ import androidx.compose.material.icons.outlined.Circle
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -34,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.zIndex
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import looksee.angelll.com.models.OfflineMediaManager as ArchiveManager
 import looksee.angelll.com.models.AutoUploadManager as Uploader
@@ -60,6 +58,7 @@ fun BusinessLandmarksView(
     val primaryBlue = looksee.angelll.com.ui.theme.LookSeeBlue
     val secondaryGrouped = Color(0xFF1C1C1E)
 
+    val infoView = remember { VariableContainer.shared }
     val viewModel = remember { BusinessLandmarksViewModel() }
     val offlineManager = remember { ArchiveManager.shared(context) }
     val uploadManager = remember { Uploader.shared(context) }
@@ -96,14 +95,12 @@ fun BusinessLandmarksView(
 
     val cleanedSearchText = searchText.trim()
 
-    // Reconcile "Processing New Data" whenever landmarks list updates from backend
     LaunchedEffect(landmarks) {
         BusinessProcessingTracker.reconcileWithBackend(landmarks)
         val validIds = landmarks.map { it.landmarkId }.toSet()
         selectedLandmarkIds = selectedLandmarkIds.intersect(validIds)
     }
 
-    // Index promotion titles in the background so search matches both labels and promotion titles
     LaunchedEffect(landmarks.map { it.landmarkId }) {
         val missingIds = landmarks.map { it.landmarkId }.filter { !promotionTitlesIndex.containsLandmark(it) }
         if (missingIds.isEmpty()) return@LaunchedEffect
@@ -162,7 +159,6 @@ fun BusinessLandmarksView(
         setOf("NEEDS_MORE_MEDIA", "PREPARING_DATA", "PENDING_TRAINING", "TRAINING_MODEL", "OPTIMIZING_MODEL")
     }
 
-    // Granular sections matching iOS ordering
     val processingNewDataLandmarks = displayedLandmarks.filter { isProcessingNewData(it) }
     val actionNeededLandmarks = displayedLandmarks.filter { it.status == "NEEDS_MORE_MEDIA" && !isProcessingNewData(it) }
     val preparingDataLandmarks = displayedLandmarks.filter { it.status == "PREPARING_DATA" && !isProcessingNewData(it) }
@@ -195,7 +191,7 @@ fun BusinessLandmarksView(
     }
 
     fun previewLandmarkPopup(landmark: BusinessLandmark) {
-        VariableContainer.shared.presentNearbyLandmark(
+        infoView.presentNearbyLandmark(
             NearbyLandmark(
                 landmarkId = landmark.landmarkId,
                 label = landmark.label,
@@ -212,7 +208,6 @@ fun BusinessLandmarksView(
         )
     }
 
-    // Dynamic auto-refresh: 15s when a landmark is in "Processing New Data", 90s otherwise
     LaunchedEffect(processingTrackerState.isNotEmpty) {
         while (true) {
             val sleepMillis = if (processingTrackerState.isNotEmpty) 15_000L else 90_000L
@@ -231,437 +226,442 @@ fun BusinessLandmarksView(
         }
     }
 
-    Scaffold(
-        containerColor = Color.Black,
-        topBar = {
-            CenterAlignedTopAppBar(
-                title = { Text("My Landmarks", fontWeight = FontWeight.Bold, color = Color.White) },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Black),
-                navigationIcon = {
-                    IconButton(onClick = { onNavigate("back", null) }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
-                    }
-                },
-                actions = {
-                    if (isSelectionMode) {
-                        Box {
-                            IconButton(onClick = { showSelectionMenu = true }) {
-                                Icon(Icons.Default.MoreVert, contentDescription = "Selection actions", tint = primaryBlue)
+    Box(modifier = Modifier.fillMaxSize()) {
+        Scaffold(
+            containerColor = Color.Black,
+            topBar = {
+                CenterAlignedTopAppBar(
+                    title = { Text("My Landmarks", fontWeight = FontWeight.Bold, color = Color.White) },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Black),
+                    navigationIcon = {
+                        IconButton(onClick = { onNavigate("back", null) }) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+                        }
+                    },
+                    actions = {
+                        if (isSelectionMode) {
+                            Box {
+                                IconButton(onClick = { showSelectionMenu = true }) {
+                                    Icon(Icons.Default.MoreVert, contentDescription = "Selection actions", tint = primaryBlue)
+                                }
+                                DropdownMenu(
+                                    expanded = showSelectionMenu,
+                                    onDismissRequest = { showSelectionMenu = false },
+                                    containerColor = secondaryGrouped
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("Select Visible (${displayedLandmarks.size})", color = Color.White) },
+                                        onClick = {
+                                            showSelectionMenu = false
+                                            selectedLandmarkIds = selectedLandmarkIds.union(visibleLandmarkIds)
+                                        },
+                                        enabled = displayedLandmarks.isNotEmpty()
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Deselect Visible ($visibleSelectedCount)", color = Color.White) },
+                                        onClick = {
+                                            showSelectionMenu = false
+                                            selectedLandmarkIds = selectedLandmarkIds.subtract(visibleLandmarkIds)
+                                        },
+                                        enabled = visibleSelectedCount > 0
+                                    )
+                                    HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                                    DropdownMenuItem(
+                                        text = { Text("Clear All Selection", color = Color(0xFFFF453A)) },
+                                        onClick = {
+                                            showSelectionMenu = false
+                                            selectedLandmarkIds = emptySet()
+                                        },
+                                        enabled = selectedLandmarkIds.isNotEmpty()
+                                    )
+                                }
                             }
-                            DropdownMenu(
-                                expanded = showSelectionMenu,
-                                onDismissRequest = { showSelectionMenu = false },
-                                containerColor = secondaryGrouped
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text("Select Visible (${displayedLandmarks.size})", color = Color.White) },
-                                    onClick = {
-                                        showSelectionMenu = false
-                                        selectedLandmarkIds = selectedLandmarkIds.union(visibleLandmarkIds)
-                                    },
-                                    enabled = displayedLandmarks.isNotEmpty()
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Deselect Visible ($visibleSelectedCount)", color = Color.White) },
-                                    onClick = {
-                                        showSelectionMenu = false
-                                        selectedLandmarkIds = selectedLandmarkIds.subtract(visibleLandmarkIds)
-                                    },
-                                    enabled = visibleSelectedCount > 0
-                                )
-                                HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
-                                DropdownMenuItem(
-                                    text = { Text("Clear All Selection", color = Color(0xFFFF453A)) },
-                                    onClick = {
-                                        showSelectionMenu = false
-                                        selectedLandmarkIds = emptySet()
-                                    },
-                                    enabled = selectedLandmarkIds.isNotEmpty()
-                                )
+                            TextButton(onClick = { isSelectionMode = false; selectedLandmarkIds = emptySet() }) {
+                                Text("Done", color = primaryBlue, fontWeight = FontWeight.Bold)
                             }
-                        }
-                        TextButton(onClick = { isSelectionMode = false; selectedLandmarkIds = emptySet() }) {
-                            Text("Done", color = primaryBlue, fontWeight = FontWeight.Bold)
-                        }
-                    } else {
-                        IconButton(onClick = { refreshLandmarksAndSearchIndex() }, enabled = !isLoading) {
-                            Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = primaryBlue)
-                        }
-                        TextButton(onClick = { isSelectionMode = true }, enabled = landmarks.isNotEmpty()) {
-                            Text("Select", color = if (landmarks.isNotEmpty()) primaryBlue else Color.Gray, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                },
-            )
-        },
-        bottomBar = {
-            if (isSelectionMode) {
-                Surface(color = secondaryGrouped.copy(alpha = 0.96f), shadowElevation = 8.dp) {
-                    Column(modifier = Modifier.navigationBarsPadding().padding(horizontal = 20.dp, vertical = 12.dp).fillMaxWidth()) {
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            Column {
-                                Text(selectionCountText, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                                Text(
-                                    if (hiddenSelectedCount > 0) "$hiddenSelectedCount hidden by search"
-                                    else "Selection stays active while searching",
-                                    color = Color.Gray,
-                                    fontSize = 12.sp
-                                )
+                        } else {
+                            IconButton(onClick = { refreshLandmarksAndSearchIndex() }, enabled = !isLoading) {
+                                Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = primaryBlue)
                             }
-                            TextButton(onClick = { selectedLandmarkIds = emptySet() }, enabled = selectedLandmarkIds.isNotEmpty()) {
-                                Text("Clear", color = if (selectedLandmarkIds.isNotEmpty()) Color(0xFFFF453A) else Color.Gray, fontWeight = FontWeight.Bold)
+                            TextButton(onClick = { isSelectionMode = true }, enabled = landmarks.isNotEmpty()) {
+                                Text("Select", color = if (landmarks.isNotEmpty()) primaryBlue else Color.Gray, fontWeight = FontWeight.Bold)
                             }
                         }
-                        Spacer(Modifier.height(10.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Button(
-                                onClick = { showBulkPromotionSheet = true },
-                                modifier = Modifier.weight(1f).height(46.dp),
-                                enabled = selectedLandmarkIds.isNotEmpty(),
-                                shape = RoundedCornerShape(14.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = primaryBlue)
-                            ) {
-                                Icon(Icons.Default.LocalOffer, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text("Add Promotion", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    },
+                )
+            },
+            bottomBar = {
+                if (isSelectionMode) {
+                    Surface(color = secondaryGrouped.copy(alpha = 0.96f), shadowElevation = 8.dp) {
+                        Column(modifier = Modifier.navigationBarsPadding().padding(horizontal = 20.dp, vertical = 12.dp).fillMaxWidth()) {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Column {
+                                    Text(selectionCountText, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                                    Text(
+                                        if (hiddenSelectedCount > 0) "$hiddenSelectedCount hidden by search"
+                                        else "Selection stays active while searching",
+                                        color = Color.Gray,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                                TextButton(onClick = { selectedLandmarkIds = emptySet() }, enabled = selectedLandmarkIds.isNotEmpty()) {
+                                    Text("Clear", color = if (selectedLandmarkIds.isNotEmpty()) Color(0xFFFF453A) else Color.Gray, fontWeight = FontWeight.Bold)
+                                }
                             }
-                            Button(
-                                onClick = { showBulkDeleteSheet = true },
-                                modifier = Modifier.weight(1f).height(46.dp),
-                                enabled = selectedLandmarkIds.isNotEmpty(),
-                                shape = RoundedCornerShape(14.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(alpha = 0.12f), contentColor = Color.Red)
-                            ) {
-                                Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text("Delete", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            Spacer(Modifier.height(10.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Button(
+                                    onClick = { showBulkPromotionSheet = true },
+                                    modifier = Modifier.weight(1f).height(46.dp),
+                                    enabled = selectedLandmarkIds.isNotEmpty(),
+                                    shape = RoundedCornerShape(14.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = primaryBlue)
+                                ) {
+                                    Icon(Icons.Default.LocalOffer, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("Add Promotion", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                }
+                                Button(
+                                    onClick = { showBulkDeleteSheet = true },
+                                    modifier = Modifier.weight(1f).height(46.dp),
+                                    enabled = selectedLandmarkIds.isNotEmpty(),
+                                    shape = RoundedCornerShape(14.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(alpha = 0.12f), contentColor = Color.Red)
+                                ) {
+                                    Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("Delete", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                }
                             }
                         }
                     }
                 }
             }
-        }
-    ) { paddingValues ->
-        PullToRefreshBox(
-            isRefreshing = isLoading,
-            onRefresh = { refreshLandmarksAndSearchIndex() },
-            modifier = Modifier.fillMaxSize().padding(paddingValues).clickable { focusManager.clearFocus() }
-        ) {
-            LazyColumn(
-                contentPadding = PaddingValues(top = 12.dp, bottom = 80.dp),
-                verticalArrangement = Arrangement.spacedBy(20.dp)
+        ) { paddingValues ->
+            PullToRefreshBox(
+                isRefreshing = isLoading,
+                onRefresh = { refreshLandmarksAndSearchIndex() },
+                modifier = Modifier.fillMaxSize().padding(paddingValues).clickable { focusManager.clearFocus() }
             ) {
-                // Search Bar
-                item {
-                    OutlinedTextField(
-                        value = searchText,
-                        onValueChange = { searchText = it },
-                        placeholder = { Text("Search labels or promotion titles", color = Color.Gray) },
-                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color.Gray) },
-                        trailingIcon = {
-                            if (searchText.isNotEmpty()) {
-                                IconButton(onClick = { searchText = "" }) {
-                                    Icon(Icons.Default.Clear, contentDescription = "Clear search", tint = Color.Gray)
-                                }
-                            }
-                        },
-                        singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = secondaryGrouped,
-                            unfocusedContainerColor = secondaryGrouped,
-                            focusedBorderColor = Color.Transparent,
-                            unfocusedBorderColor = Color.Transparent,
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White
-                        ),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
-                    )
-                }
-
-                // Pending Uploads Card or Empty Queue Card
-                if (archivedItems.isNotEmpty()) {
+                LazyColumn(
+                    contentPadding = PaddingValues(top = 12.dp, bottom = 80.dp),
+                    verticalArrangement = Arrangement.spacedBy(20.dp)
+                ) {
                     item {
-                        Column(modifier = Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Text("PENDING UPLOADS", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray, modifier = Modifier.padding(horizontal = 4.dp))
-                            LookSeeCard(modifier = Modifier.fillMaxWidth()) {
-                                Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
-                                    SyncBannerRow(
-                                        isUploading = currentlyUploadingId != null,
-                                        isOffline = !isOnline,
-                                        itemCount = archivedItems.size,
-                                        primaryColor = primaryBlue
-                                    )
-                                    HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
-                                    archivedItems.forEachIndexed { index: Int, item: ArchivedMedia ->
-                                        PendingRow(
-                                            item = item,
-                                            isUploading = currentlyUploadingId == item.id,
-                                            progress = currentUploadProgress,
-                                            primaryColor = primaryBlue,
-                                            onNavigate = { draftToEdit = item },
-                                            onDelete = { coroutineScope.launch { offlineManager.deleteArchive(item) } }
+                        OutlinedTextField(
+                            value = searchText,
+                            onValueChange = { searchText = it },
+                            placeholder = { Text("Search labels or promotion titles", color = Color.Gray) },
+                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color.Gray) },
+                            trailingIcon = {
+                                if (searchText.isNotEmpty()) {
+                                    IconButton(onClick = { searchText = "" }) {
+                                        Icon(Icons.Default.Clear, contentDescription = "Clear search", tint = Color.Gray)
+                                    }
+                                }
+                            },
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedContainerColor = secondaryGrouped,
+                                unfocusedContainerColor = secondaryGrouped,
+                                focusedBorderColor = Color.Transparent,
+                                unfocusedBorderColor = Color.Transparent,
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
+                        )
+                    }
+
+                    if (archivedItems.isNotEmpty()) {
+                        item {
+                            Column(modifier = Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Text("PENDING UPLOADS", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray, modifier = Modifier.padding(horizontal = 4.dp))
+                                LookSeeCard(modifier = Modifier.fillMaxWidth()) {
+                                    Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
+                                        SyncBannerRow(
+                                            isUploading = currentlyUploadingId != null,
+                                            isOffline = !isOnline,
+                                            itemCount = archivedItems.size,
+                                            primaryColor = primaryBlue
                                         )
-                                        if (index < archivedItems.size - 1) {
-                                            HorizontalDivider(color = Color.White.copy(alpha = 0.05f), modifier = Modifier.padding(start = 64.dp))
+                                        HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                                        archivedItems.forEachIndexed { index: Int, item: ArchivedMedia ->
+                                            PendingRow(
+                                                item = item,
+                                                isUploading = currentlyUploadingId == item.id,
+                                                progress = currentUploadProgress,
+                                                primaryColor = primaryBlue,
+                                                onNavigate = { draftToEdit = item },
+                                                onDelete = { coroutineScope.launch { offlineManager.deleteArchive(item) } }
+                                            )
+                                            if (index < archivedItems.size - 1) {
+                                                HorizontalDivider(color = Color.White.copy(alpha = 0.05f), modifier = Modifier.padding(start = 64.dp))
+                                            }
                                         }
                                     }
                                 }
                             }
                         }
+                    } else if (landmarks.isNotEmpty()) {
+                        item { EmptyQueueCard() }
                     }
-                } else if (landmarks.isNotEmpty()) {
-                    item { EmptyQueueCard() }
-                }
 
-                // 1. PROCESSING NEW DATA (Pinned to the very top)
-                if (processingNewDataLandmarks.isNotEmpty()) {
-                    item {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 20.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text("PROCESSING NEW DATA", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF64D2FF))
-                            CircularProgressIndicator(modifier = Modifier.size(14.dp), color = Color(0xFF64D2FF), strokeWidth = 2.dp)
+                    if (processingNewDataLandmarks.isNotEmpty()) {
+                        item {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 20.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text("PROCESSING NEW DATA", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF64D2FF))
+                                CircularProgressIndicator(modifier = Modifier.size(14.dp), color = Color(0xFF64D2FF), strokeWidth = 2.dp)
+                            }
+                        }
+                        items(processingNewDataLandmarks, key = { "proc_${it.landmarkId}" }) { landmark: BusinessLandmark ->
+                            BusinessLandmarkRowWrapper(
+                                landmark = landmark,
+                                isProcessingNewData = true,
+                                isSelectionMode = isSelectionMode,
+                                isSelected = selectedLandmarkIds.contains(landmark.landmarkId),
+                                matchedPromotionTitle = matchedPromotionTitle(landmark),
+                                onCardClick = {
+                                    if (isSelectionMode) {
+                                        selectedLandmarkIds = if (selectedLandmarkIds.contains(landmark.landmarkId))
+                                            selectedLandmarkIds - landmark.landmarkId else selectedLandmarkIds + landmark.landmarkId
+                                    } else {
+                                        onNavigate("BusinessLandmarkDetailView", landmark)
+                                    }
+                                },
+                                onPreviewClick = { previewLandmarkPopup(landmark) },
+                                onDetailsClick = { landmarkNeedingMedia = landmark }
+                            )
                         }
                     }
-                    items(processingNewDataLandmarks, key = { "proc_${it.landmarkId}" }) { landmark: BusinessLandmark ->
-                        BusinessLandmarkRowWrapper(
-                            landmark = landmark,
-                            isProcessingNewData = true,
-                            isSelectionMode = isSelectionMode,
-                            isSelected = selectedLandmarkIds.contains(landmark.landmarkId),
-                            matchedPromotionTitle = matchedPromotionTitle(landmark),
-                            onCardClick = {
-                                if (isSelectionMode) {
-                                    selectedLandmarkIds = if (selectedLandmarkIds.contains(landmark.landmarkId))
-                                        selectedLandmarkIds - landmark.landmarkId else selectedLandmarkIds + landmark.landmarkId
-                                } else {
-                                    onNavigate("BusinessLandmarkDetailView", landmark)
-                                }
-                            },
-                            onPreviewClick = { previewLandmarkPopup(landmark) },
-                            onDetailsClick = { landmarkNeedingMedia = landmark }
-                        )
-                    }
-                }
 
-                // 2. NEEDS ATTENTION
-                if (actionNeededLandmarks.isNotEmpty()) {
+                    if (actionNeededLandmarks.isNotEmpty()) {
+                        item {
+                            Text("NEEDS ATTENTION", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFF453A), modifier = Modifier.padding(horizontal = 20.dp))
+                        }
+                        items(actionNeededLandmarks, key = { "attn_${it.landmarkId}" }) { landmark: BusinessLandmark ->
+                            BusinessLandmarkRowWrapper(
+                                landmark = landmark,
+                                isProcessingNewData = false,
+                                isSelectionMode = isSelectionMode,
+                                isSelected = selectedLandmarkIds.contains(landmark.landmarkId),
+                                matchedPromotionTitle = matchedPromotionTitle(landmark),
+                                onCardClick = {
+                                    if (isSelectionMode) {
+                                        selectedLandmarkIds = if (selectedLandmarkIds.contains(landmark.landmarkId))
+                                            selectedLandmarkIds - landmark.landmarkId else selectedLandmarkIds + landmark.landmarkId
+                                    } else {
+                                        onNavigate("BusinessLandmarkDetailView", landmark)
+                                    }
+                                },
+                                onPreviewClick = { previewLandmarkPopup(landmark) },
+                                onDetailsClick = { landmarkNeedingMedia = landmark }
+                            )
+                        }
+                    }
+
+                    if (preparingDataLandmarks.isNotEmpty()) {
+                        item {
+                            Text("PREPARING DATA", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFF9F0A), modifier = Modifier.padding(horizontal = 20.dp))
+                        }
+                        items(preparingDataLandmarks, key = { "prep_${it.landmarkId}" }) { landmark: BusinessLandmark ->
+                            BusinessLandmarkRowWrapper(
+                                landmark = landmark,
+                                isProcessingNewData = false,
+                                isSelectionMode = isSelectionMode,
+                                isSelected = selectedLandmarkIds.contains(landmark.landmarkId),
+                                matchedPromotionTitle = matchedPromotionTitle(landmark),
+                                onCardClick = {
+                                    if (isSelectionMode) {
+                                        selectedLandmarkIds = if (selectedLandmarkIds.contains(landmark.landmarkId))
+                                            selectedLandmarkIds - landmark.landmarkId else selectedLandmarkIds + landmark.landmarkId
+                                    } else {
+                                        onNavigate("BusinessLandmarkDetailView", landmark)
+                                    }
+                                },
+                                onPreviewClick = { previewLandmarkPopup(landmark) },
+                                onDetailsClick = {}
+                            )
+                        }
+                    }
+
+                    if (pendingTrainingLandmarks.isNotEmpty()) {
+                        item {
+                            Text("WAITING FOR TRAINING", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFFAF52DE), modifier = Modifier.padding(horizontal = 20.dp))
+                        }
+                        items(pendingTrainingLandmarks, key = { "pend_${it.landmarkId}" }) { landmark: BusinessLandmark ->
+                            BusinessLandmarkRowWrapper(
+                                landmark = landmark,
+                                isProcessingNewData = false,
+                                isSelectionMode = isSelectionMode,
+                                isSelected = selectedLandmarkIds.contains(landmark.landmarkId),
+                                matchedPromotionTitle = matchedPromotionTitle(landmark),
+                                onCardClick = {
+                                    if (isSelectionMode) {
+                                        selectedLandmarkIds = if (selectedLandmarkIds.contains(landmark.landmarkId))
+                                            selectedLandmarkIds - landmark.landmarkId else selectedLandmarkIds + landmark.landmarkId
+                                    } else {
+                                        onNavigate("BusinessLandmarkDetailView", landmark)
+                                    }
+                                },
+                                onPreviewClick = { previewLandmarkPopup(landmark) },
+                                onDetailsClick = {}
+                            )
+                        }
+                    }
+
+                    if (trainingModelLandmarks.isNotEmpty()) {
+                        item {
+                            Text("IN TRAINING", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFFD60A), modifier = Modifier.padding(horizontal = 20.dp))
+                        }
+                        items(trainingModelLandmarks, key = { "train_${it.landmarkId}" }) { landmark: BusinessLandmark ->
+                            BusinessLandmarkRowWrapper(
+                                landmark = landmark,
+                                isProcessingNewData = false,
+                                isSelectionMode = isSelectionMode,
+                                isSelected = selectedLandmarkIds.contains(landmark.landmarkId),
+                                matchedPromotionTitle = matchedPromotionTitle(landmark),
+                                onCardClick = {
+                                    if (isSelectionMode) {
+                                        selectedLandmarkIds = if (selectedLandmarkIds.contains(landmark.landmarkId))
+                                            selectedLandmarkIds - landmark.landmarkId else selectedLandmarkIds + landmark.landmarkId
+                                    } else {
+                                        onNavigate("BusinessLandmarkDetailView", landmark)
+                                    }
+                                },
+                                onPreviewClick = { previewLandmarkPopup(landmark) },
+                                onDetailsClick = {}
+                            )
+                        }
+                    }
+
+                    if (optimizingModelLandmarks.isNotEmpty()) {
+                        item {
+                            Text("OPTIMIZING FOR ANDROID", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0A84FF), modifier = Modifier.padding(horizontal = 20.dp))
+                        }
+                        items(optimizingModelLandmarks, key = { "opt_${it.landmarkId}" }) { landmark: BusinessLandmark ->
+                            BusinessLandmarkRowWrapper(
+                                landmark = landmark,
+                                isProcessingNewData = false,
+                                isSelectionMode = isSelectionMode,
+                                isSelected = selectedLandmarkIds.contains(landmark.landmarkId),
+                                matchedPromotionTitle = matchedPromotionTitle(landmark),
+                                onCardClick = {
+                                    if (isSelectionMode) {
+                                        selectedLandmarkIds = if (selectedLandmarkIds.contains(landmark.landmarkId))
+                                            selectedLandmarkIds - landmark.landmarkId else selectedLandmarkIds + landmark.landmarkId
+                                    } else {
+                                        onNavigate("BusinessLandmarkDetailView", landmark)
+                                    }
+                                },
+                                onPreviewClick = { previewLandmarkPopup(landmark) },
+                                onDetailsClick = {}
+                            )
+                        }
+                    }
+
                     item {
-                        Text("NEEDS ATTENTION", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFF453A), modifier = Modifier.padding(horizontal = 20.dp))
-                    }
-                    items(actionNeededLandmarks, key = { "attn_${it.landmarkId}" }) { landmark: BusinessLandmark ->
-                        BusinessLandmarkRowWrapper(
-                            landmark = landmark,
-                            isProcessingNewData = false,
-                            isSelectionMode = isSelectionMode,
-                            isSelected = selectedLandmarkIds.contains(landmark.landmarkId),
-                            matchedPromotionTitle = matchedPromotionTitle(landmark),
-                            onCardClick = {
-                                if (isSelectionMode) {
-                                    selectedLandmarkIds = if (selectedLandmarkIds.contains(landmark.landmarkId))
-                                        selectedLandmarkIds - landmark.landmarkId else selectedLandmarkIds + landmark.landmarkId
-                                } else {
-                                    onNavigate("BusinessLandmarkDetailView", landmark)
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("ACTIVE LANDMARKS", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF32D74B))
+                                if (landmarks.isNotEmpty()) {
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(activeLandmarkCountText(activeLandmarks.size), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
                                 }
-                            },
-                            onPreviewClick = { previewLandmarkPopup(landmark) },
-                            onDetailsClick = { landmarkNeedingMedia = landmark }
-                        )
-                    }
-                }
-
-                // 3. PREPARING DATA
-                if (preparingDataLandmarks.isNotEmpty()) {
-                    item {
-                        Text("PREPARING DATA", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFF9F0A), modifier = Modifier.padding(horizontal = 20.dp))
-                    }
-                    items(preparingDataLandmarks, key = { "prep_${it.landmarkId}" }) { landmark: BusinessLandmark ->
-                        BusinessLandmarkRowWrapper(
-                            landmark = landmark,
-                            isProcessingNewData = false,
-                            isSelectionMode = isSelectionMode,
-                            isSelected = selectedLandmarkIds.contains(landmark.landmarkId),
-                            matchedPromotionTitle = matchedPromotionTitle(landmark),
-                            onCardClick = {
-                                if (isSelectionMode) {
-                                    selectedLandmarkIds = if (selectedLandmarkIds.contains(landmark.landmarkId))
-                                        selectedLandmarkIds - landmark.landmarkId else selectedLandmarkIds + landmark.landmarkId
-                                } else {
-                                    onNavigate("BusinessLandmarkDetailView", landmark)
+                                Spacer(Modifier.weight(1f))
+                                if (isIndexingPromotionTitles && cleanedSearchText.isNotEmpty()) {
+                                    CircularProgressIndicator(modifier = Modifier.size(14.dp), color = primaryBlue, strokeWidth = 2.dp)
                                 }
-                            },
-                            onPreviewClick = { previewLandmarkPopup(landmark) },
-                            onDetailsClick = {}
-                        )
-                    }
-                }
-
-                // 4. WAITING FOR TRAINING
-                if (pendingTrainingLandmarks.isNotEmpty()) {
-                    item {
-                        Text("WAITING FOR TRAINING", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFFAF52DE), modifier = Modifier.padding(horizontal = 20.dp))
-                    }
-                    items(pendingTrainingLandmarks, key = { "pend_${it.landmarkId}" }) { landmark: BusinessLandmark ->
-                        BusinessLandmarkRowWrapper(
-                            landmark = landmark,
-                            isProcessingNewData = false,
-                            isSelectionMode = isSelectionMode,
-                            isSelected = selectedLandmarkIds.contains(landmark.landmarkId),
-                            matchedPromotionTitle = matchedPromotionTitle(landmark),
-                            onCardClick = {
-                                if (isSelectionMode) {
-                                    selectedLandmarkIds = if (selectedLandmarkIds.contains(landmark.landmarkId))
-                                        selectedLandmarkIds - landmark.landmarkId else selectedLandmarkIds + landmark.landmarkId
-                                } else {
-                                    onNavigate("BusinessLandmarkDetailView", landmark)
-                                }
-                            },
-                            onPreviewClick = { previewLandmarkPopup(landmark) },
-                            onDetailsClick = {}
-                        )
-                    }
-                }
-
-                // 5. IN TRAINING
-                if (trainingModelLandmarks.isNotEmpty()) {
-                    item {
-                        Text("IN TRAINING", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFFD60A), modifier = Modifier.padding(horizontal = 20.dp))
-                    }
-                    items(trainingModelLandmarks, key = { "train_${it.landmarkId}" }) { landmark: BusinessLandmark ->
-                        BusinessLandmarkRowWrapper(
-                            landmark = landmark,
-                            isProcessingNewData = false,
-                            isSelectionMode = isSelectionMode,
-                            isSelected = selectedLandmarkIds.contains(landmark.landmarkId),
-                            matchedPromotionTitle = matchedPromotionTitle(landmark),
-                            onCardClick = {
-                                if (isSelectionMode) {
-                                    selectedLandmarkIds = if (selectedLandmarkIds.contains(landmark.landmarkId))
-                                        selectedLandmarkIds - landmark.landmarkId else selectedLandmarkIds + landmark.landmarkId
-                                } else {
-                                    onNavigate("BusinessLandmarkDetailView", landmark)
-                                }
-                            },
-                            onPreviewClick = { previewLandmarkPopup(landmark) },
-                            onDetailsClick = {}
-                        )
-                    }
-                }
-
-                // 6. OPTIMIZING FOR ANDROID
-                if (optimizingModelLandmarks.isNotEmpty()) {
-                    item {
-                        Text("OPTIMIZING FOR ANDROID", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0A84FF), modifier = Modifier.padding(horizontal = 20.dp))
-                    }
-                    items(optimizingModelLandmarks, key = { "opt_${it.landmarkId}" }) { landmark: BusinessLandmark ->
-                        BusinessLandmarkRowWrapper(
-                            landmark = landmark,
-                            isProcessingNewData = false,
-                            isSelectionMode = isSelectionMode,
-                            isSelected = selectedLandmarkIds.contains(landmark.landmarkId),
-                            matchedPromotionTitle = matchedPromotionTitle(landmark),
-                            onCardClick = {
-                                if (isSelectionMode) {
-                                    selectedLandmarkIds = if (selectedLandmarkIds.contains(landmark.landmarkId))
-                                        selectedLandmarkIds - landmark.landmarkId else selectedLandmarkIds + landmark.landmarkId
-                                } else {
-                                    onNavigate("BusinessLandmarkDetailView", landmark)
-                                }
-                            },
-                            onPreviewClick = { previewLandmarkPopup(landmark) },
-                            onDetailsClick = {}
-                        )
-                    }
-                }
-
-                // 7. ACTIVE LANDMARKS HEADER + SELECTION SUMMARY
-                item {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("ACTIVE LANDMARKS", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF32D74B))
-                            if (landmarks.isNotEmpty()) {
-                                Spacer(Modifier.width(6.dp))
-                                Text(activeLandmarkCountText(activeLandmarks.size), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
                             }
-                            Spacer(Modifier.weight(1f))
+
                             if (isIndexingPromotionTitles && cleanedSearchText.isNotEmpty()) {
-                                CircularProgressIndicator(modifier = Modifier.size(14.dp), color = primaryBlue, strokeWidth = 2.dp)
+                                Text(
+                                    "Checking promotion titles...",
+                                    fontSize = 12.sp,
+                                    color = Color.Gray,
+                                    modifier = Modifier.padding(horizontal = 20.dp)
+                                )
+                            }
+
+                            if (isSelectionMode) {
+                                SelectionSummaryCard(
+                                    selectionCountText = selectionCountText,
+                                    isEmpty = selectedLandmarkIds.isEmpty(),
+                                    hiddenSelectedCount = hiddenSelectedCount,
+                                    visibleSelectedCount = visibleSelectedCount,
+                                    hasSearchQuery = cleanedSearchText.isNotEmpty(),
+                                    primaryColor = primaryBlue
+                                )
                             }
                         }
+                    }
 
-                        if (isIndexingPromotionTitles && cleanedSearchText.isNotEmpty()) {
+                    if (isLoading && landmarks.isEmpty()) {
+                        item {
+                            Column(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(14.dp)
+                            ) {
+                                CircularProgressIndicator(color = primaryBlue)
+                                Text("Loading your landmarks...", fontSize = 14.sp, color = Color.Gray)
+                            }
+                        }
+                    } else if (landmarks.isEmpty()) {
+                        item {
                             Text(
-                                "Checking promotion titles...",
-                                fontSize = 12.sp,
+                                "No active business landmarks.",
+                                fontSize = 15.sp,
                                 color = Color.Gray,
                                 modifier = Modifier.padding(horizontal = 20.dp)
                             )
                         }
-
-                        if (isSelectionMode) {
-                            SelectionSummaryCard(
-                                selectionCountText = selectionCountText,
-                                isEmpty = selectedLandmarkIds.isEmpty(),
-                                hiddenSelectedCount = hiddenSelectedCount,
-                                visibleSelectedCount = visibleSelectedCount,
-                                hasSearchQuery = cleanedSearchText.isNotEmpty(),
-                                primaryColor = primaryBlue
+                    } else if (displayedLandmarks.isEmpty()) {
+                        item {
+                            NoSearchResultsCard()
+                        }
+                    } else {
+                        items(activeLandmarks, key = { "active_${it.landmarkId}" }) { landmark: BusinessLandmark ->
+                            BusinessLandmarkRowWrapper(
+                                landmark = landmark,
+                                isProcessingNewData = false,
+                                isSelectionMode = isSelectionMode,
+                                isSelected = selectedLandmarkIds.contains(landmark.landmarkId),
+                                matchedPromotionTitle = matchedPromotionTitle(landmark),
+                                onCardClick = {
+                                    if (isSelectionMode) {
+                                        selectedLandmarkIds = if (selectedLandmarkIds.contains(landmark.landmarkId))
+                                            selectedLandmarkIds - landmark.landmarkId else selectedLandmarkIds + landmark.landmarkId
+                                    } else {
+                                        onNavigate("BusinessLandmarkDetailView", landmark)
+                                    }
+                                },
+                                onPreviewClick = { previewLandmarkPopup(landmark) },
+                                onDetailsClick = {}
                             )
                         }
                     }
                 }
+            }
+        }
 
-                if (isLoading && landmarks.isEmpty()) {
-                    item {
-                        Column(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(14.dp)
-                        ) {
-                            CircularProgressIndicator(color = primaryBlue)
-                            Text("Loading your landmarks...", fontSize = 14.sp, color = Color.Gray)
-                        }
-                    }
-                } else if (landmarks.isEmpty()) {
-                    item {
-                        Text(
-                            "No active business landmarks.",
-                            fontSize = 15.sp,
-                            color = Color.Gray,
-                            modifier = Modifier.padding(horizontal = 20.dp)
-                        )
-                    }
-                } else if (displayedLandmarks.isEmpty()) {
-                    item {
-                        NoSearchResultsCard()
-                    }
-                } else {
-                    items(activeLandmarks, key = { "active_${it.landmarkId}" }) { landmark: BusinessLandmark ->
-                        BusinessLandmarkRowWrapper(
-                            landmark = landmark,
-                            isProcessingNewData = false,
-                            isSelectionMode = isSelectionMode,
-                            isSelected = selectedLandmarkIds.contains(landmark.landmarkId),
-                            matchedPromotionTitle = matchedPromotionTitle(landmark),
-                            onCardClick = {
-                                if (isSelectionMode) {
-                                    selectedLandmarkIds = if (selectedLandmarkIds.contains(landmark.landmarkId))
-                                        selectedLandmarkIds - landmark.landmarkId else selectedLandmarkIds + landmark.landmarkId
-                                } else {
-                                    onNavigate("BusinessLandmarkDetailView", landmark)
-                                }
-                            },
-                            onPreviewClick = { previewLandmarkPopup(landmark) },
-                            onDetailsClick = {}
-                        )
-                    }
-                }
+        if (infoView.infoView) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.5f))
+                    .zIndex(200f),
+                contentAlignment = Alignment.Center
+            ) {
+                PopUp()
             }
         }
     }
@@ -725,7 +725,10 @@ fun BusinessLandmarksView(
     }
 
     if (showBulkPromotionSheet) {
-        Dialog(onDismissRequest = { showBulkPromotionSheet = false }) {
+        Dialog(
+            onDismissRequest = { showBulkPromotionSheet = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
             BusinessBulkPromotionEditor(
                 selectedLandmarks,
                 onCompleted = {
@@ -738,8 +741,12 @@ fun BusinessLandmarksView(
             )
         }
     }
+
     if (showBulkDeleteSheet) {
-        Dialog(onDismissRequest = { showBulkDeleteSheet = false }) {
+        Dialog(
+            onDismissRequest = { showBulkDeleteSheet = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
             BusinessBulkDeleteView(
                 selectedLandmarks,
                 onCompleted = {
@@ -821,7 +828,6 @@ private fun BusinessLandmarkRowWrapper(
                     )
                 }
 
-                // Left Info Column
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
                         text = landmark.label.ifEmpty { "Untitled Landmark" },
@@ -887,7 +893,6 @@ private fun BusinessLandmarkRowWrapper(
                     }
                 }
 
-                // Right Badge & Preview Button Column
                 Column(
                     horizontalAlignment = Alignment.End,
                     verticalArrangement = Arrangement.spacedBy(8.dp)

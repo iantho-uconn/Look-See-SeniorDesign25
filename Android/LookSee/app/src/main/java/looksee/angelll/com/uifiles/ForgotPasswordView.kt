@@ -132,7 +132,8 @@ fun ForgotPasswordView(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .padding(horizontal = 20.dp),
+                .padding(horizontal = 20.dp)
+                .imePadding(),
             verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
             item { Spacer(modifier = Modifier.height(8.dp)) }

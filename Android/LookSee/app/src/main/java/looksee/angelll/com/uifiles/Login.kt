@@ -67,6 +67,8 @@ fun LoginScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xFF0F0F1A))
+            .systemBarsPadding()
+            .imePadding()
             .pointerInput(Unit) { detectTapGestures(onTap = { focusManager.clearFocus() }) },
         contentAlignment = Alignment.Center
     ) {
@@ -76,22 +78,23 @@ fun LoginScreen(
                 .size(300.dp)
                 .offset(y = (-100).dp)
                 .background(Brush.radialGradient(listOf(Color(0xFF387DFF).copy(alpha = 0.12f), Color.Transparent)))
-                .blur(60.dp)
         )
 
         Column(
             modifier = Modifier
-                .fillMaxWidth()
+                .fillMaxSize()
                 .padding(horizontal = 28.dp)
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(0.dp)
+            verticalArrangement = Arrangement.Center
         ) {
             // Real LookSee Logo
             Image(
                 painter = painterResource(id = looksee.angelll.com.R.drawable.looksee_logo),
                 contentDescription = "LookSee Logo",
-                modifier = Modifier.size(350.dp) // Matched iOS frame width
+                modifier = Modifier
+                    .fillMaxWidth(0.85f)
+                    .aspectRatio(1f) // Ensures it scales beautifully on all screens without clipping
             )
             
             Text(
@@ -112,10 +115,10 @@ fun LoginScreen(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = Color(0xFF2D2D3D),
-                            unfocusedContainerColor = Color(0xFF2D2D3D),
-                            focusedBorderColor = Color(0xFF387DFF).copy(alpha = 0.3f),
-                            unfocusedBorderColor = Color(0xFF387DFF).copy(alpha = 0.3f),
+                            focusedContainerColor = Color.White.copy(alpha = 0.08f),
+                            unfocusedContainerColor = Color.White.copy(alpha = 0.08f),
+                            focusedBorderColor = Color(0xFF387DFF).copy(alpha = 0.5f),
+                            unfocusedBorderColor = Color.Transparent,
                             focusedTextColor = Color.White,
                             unfocusedTextColor = Color.White
                         ),
@@ -139,10 +142,10 @@ fun LoginScreen(
                             }
                         },
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = Color(0xFF2D2D3D),
-                            unfocusedContainerColor = Color(0xFF2D2D3D),
-                            focusedBorderColor = Color(0xFF387DFF).copy(alpha = 0.3f),
-                            unfocusedBorderColor = Color(0xFF387DFF).copy(alpha = 0.3f),
+                            focusedContainerColor = Color.White.copy(alpha = 0.08f),
+                            unfocusedContainerColor = Color.White.copy(alpha = 0.08f),
+                            focusedBorderColor = Color(0xFF387DFF).copy(alpha = 0.5f),
+                            unfocusedBorderColor = Color.Transparent,
                             focusedTextColor = Color.White,
                             unfocusedTextColor = Color.White
                         ),
@@ -152,8 +155,8 @@ fun LoginScreen(
 
                 Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
                     Text(
-                        "Forgot Password?",
-                        color = Color(0xFF387DFF),
+                        "Forgot password?",
+                        color = Color(0xFF007AFF),
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Medium,
                         modifier = Modifier.clickable { onNavigate("forgot_password") }
@@ -277,7 +280,7 @@ fun LoginScreen(
                 },
                 modifier = Modifier.fillMaxWidth().height(56.dp),
                 shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF387DFF)),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF007AFF), disabledContainerColor = Color(0xFF007AFF).copy(alpha = 0.5f)),
                 enabled = email.isNotEmpty() && password.isNotEmpty() && !isLoggingIn
             ) {
                 if (isLoggingIn) {
@@ -326,7 +329,7 @@ fun LoginScreen(
                 Text("Don't have an account? ", color = Color.White.copy(alpha = 0.4f), fontSize = 13.sp)
                 Text(
                     "Sign up",
-                    color = Color(0xFF387DFF),
+                    color = Color(0xFF007AFF),
                     fontSize = 13.sp,
                     modifier = Modifier.clickable { onNavigate("signup") }
                 )

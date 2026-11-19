@@ -8,7 +8,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -18,7 +17,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.unit.dp
 import kotlin.math.abs
 import kotlin.math.cos
@@ -26,7 +24,6 @@ import kotlin.math.sin
 
 @Composable
 fun AnimatedBackground(showLoadingUI: Boolean = false) {
-    // 1. TimelineView Equivalent (Continuous precise clock)
     val timeMillis by produceState(0L) {
         while (true) {
             withFrameMillis { value = it }
@@ -34,27 +31,44 @@ fun AnimatedBackground(showLoadingUI: Boolean = false) {
     }
     val t = timeMillis / 1000.0
 
-    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) { // Pure black base for iOS look
-
+    // 🚀 Exact iOS background color matching Color(red: 0.05, green: 0.06, blue: 0.09) -> #0D0F17
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF0D0F17))
+    ) {
         AnimatedGradient(time = t)
 
-        GlowBlob(color = Color(0xFF387DFF).copy(alpha = 0.15f), size = 400f, xOffset = (sin(t / 5) * 50).toFloat(), yOffset = (-200).toFloat())
-        GlowBlob(color = Color(0xFF6B4BFF).copy(alpha = 0.10f), size = 300f, xOffset = (-100).toFloat(), yOffset = (150).toFloat())
+        GlowBlob(
+            color = Color.Blue.copy(alpha = 0.20f),
+            size = 360f,
+            xOffset = (sin(t / 5) * 70).toFloat(),
+            yOffset = (-240f + cos(t / 4) * 30).toFloat()
+        )
+        GlowBlob(
+            color = Color.Cyan.copy(alpha = 0.10f),
+            size = 250f,
+            xOffset = (-120f + cos(t / 3) * 40).toFloat(),
+            yOffset = (180f + sin(t / 6) * 25).toFloat()
+        )
+        GlowBlob(
+            color = Color.Blue.copy(alpha = 0.08f),
+            size = 200f,
+            xOffset = (150f + sin(t / 7) * 30).toFloat(),
+            yOffset = (220f + cos(t / 5) * 20).toFloat()
+        )
 
         FogLayer(time = t)
 
-        // Skyline
-        Box(modifier = Modifier.fillMaxWidth().height(220.dp).align(Alignment.BottomCenter)) {
+        // Skyline container perfectly aligned to the bottom (Rogue white line removed)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(220.dp)
+                .align(Alignment.BottomCenter)
+        ) {
             SkylineView()
             LandmarkLights(time = t)
-
-            // Top highlight overlay
-            Box(modifier = Modifier
-                .fillMaxWidth()
-                .height(1.dp)
-                .align(Alignment.TopCenter)
-                .background(Brush.verticalGradient(colors = listOf(Color.White.copy(alpha = 0.12f), Color.Transparent)))
-            )
         }
     }
 }
@@ -82,9 +96,12 @@ fun GlowBlob(color: Color, size: Float, xOffset: Float, yOffset: Float) {
             modifier = Modifier
                 .offset(x = xOffset.dp, y = yOffset.dp)
                 .size(size.dp)
-                .blur(80.dp)
-                .clip(CircleShape)
-                .background(color)
+                .background(
+                    brush = Brush.radialGradient(
+                        colors = listOf(color, Color.Transparent)
+                    ),
+                    shape = CircleShape
+                )
         )
     }
 }
@@ -96,7 +113,6 @@ fun FogLayer(time: Double) {
             .fillMaxSize()
             .scale(1.8f)
             .offset(x = (sin(time / 14) * 35).toFloat().dp, y = (cos(time / 12) * 18).toFloat().dp)
-            .blur(45.dp)
             .background(
                 Brush.horizontalGradient(
                     colors = listOf(Color.Transparent, Color.White.copy(alpha = 0.025f), Color.Transparent)
@@ -105,7 +121,6 @@ fun FogLayer(time: Double) {
     )
 }
 
-// MARK: - Skyline Definition
 enum class BuildingStyle { GlassOffice, PlainOffice, Brick, ApartmentAC, Storefront, Church, Mall, Tower, Statue }
 
 data class BuildingSegment(
@@ -181,7 +196,7 @@ fun buildSkylinePath(segments: List<BuildingSegment>, size: Size): Path {
                 p.lineTo(x1, bodyTopY)
             }
             BuildingStyle.Mall -> {
-                p.quadraticTo((x0 + x1) / 2, bodyTopY - featureHeight, x1, bodyTopY) // 🚀 FIXED: Deprecated quadraticBezierTo
+                p.quadraticTo((x0 + x1) / 2, bodyTopY - featureHeight, x1, bodyTopY)
             }
             BuildingStyle.Tower -> {
                 val midX = (x0 + x1) / 2
@@ -220,17 +235,15 @@ fun SkylineView() {
     Canvas(modifier = Modifier.fillMaxSize()) {
         val skylinePath = buildSkylinePath(defaultSkylineSegments, size)
 
-        // Clean, simple silhouette matching iOS PICS.PDF
         drawPath(
             path = skylinePath,
             brush = Brush.verticalGradient(
-                colors = listOf(Color(0xFF111111), Color.Black)
+                colors = listOf(Color.Black.copy(alpha = 0.45f), Color.Black)
             )
         )
     }
 }
 
-// MARK: DrawScope Extensions for Canvas Detailing
 fun DrawScope.drawWindowGrid(frame: Rect, rows: Int, cols: Int, inset: Float, litProbability: Double, color: Color) {
     if (frame.height < 20f || frame.width < 10f) return
     val cellW = frame.width / cols
@@ -304,7 +317,7 @@ fun DrawScope.drawStorefront(frame: Rect) {
     val stripeW = frame.width / stripeCount
 
     for (i in 0 until stripeCount) {
-        val color = if (i % 2 == 0) Color(0xFFD94040) else Color.White.copy(alpha = 0.85f) // 🚀 FIXED: Alpha Channel Hex
+        val color = if (i % 2 == 0) Color(0xFFD94040) else Color.White.copy(alpha = 0.85f)
         drawRect(color = color, topLeft = Offset(frame.left + i * stripeW, frame.top), size = Size(stripeW, awningH))
     }
 

@@ -36,7 +36,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.amplifyframework.auth.cognito.AWSCognitoAuthSession
-import com.amplifyframework.kotlin.core.Amplify
 import com.google.gson.Gson
 import com.stripe.android.PaymentConfiguration
 import com.stripe.android.paymentsheet.PaymentSheet
@@ -309,15 +308,6 @@ class CheckoutService internal constructor(
                 headers["Authorization"] = "Bearer $idToken"
             }
         } catch (_: Exception) {}
-        
-        // Attest header for secure checkout mapping to iOS
-        try {
-            // Usually you'd pass a context in here, we'll try to get it if we can or pass empty payload
-            val emptyPayload = ByteArray(0) 
-            // In a real scenario you want to pass Context, but this class doesn't have it easily
-            // We will inject the app attest token if it's already generated and cached somewhere, 
-            // but for now we'll leave it as a TODO or bypass if not strictly required on Android yet
-        } catch (_: Exception) {}
 
         return headers
     }
@@ -355,7 +345,6 @@ class CheckoutService internal constructor(
 
     suspend fun confirm(request: CheckoutConfirmRequest): Boolean {
         var attempts = 0
-        // 🚀 THE FIX: Retry loop to handle Stripe Webhook race conditions
         while (attempts < 4) {
             val response = httpClient.execute(
                 BusinessHttpRequest(
@@ -371,7 +360,6 @@ class CheckoutService internal constructor(
             if (response.statusCode in 200..299) {
                 return true
             } else if (response.statusCode == 409) {
-                // Backend is currently locked by the Stripe Webhook. Wait 1.5 seconds and retry.
                 delay(1500)
                 attempts++
             } else {
@@ -429,6 +417,8 @@ private data class CheckoutResponse(
 )
 
 // --- StripePaymentSupport.kt ---
+private var lastInitializedStripeKey: String? = null
+
 @Composable
 internal fun rememberLookSeePaymentSheet(
     onResult: (PaymentSheetResult) -> Unit,
@@ -447,7 +437,10 @@ internal fun presentCheckoutSession(
     paymentSheet: PaymentSheet,
     session: CheckoutSession,
 ) {
-    PaymentConfiguration.init(context, session.publishableKey)
+    if (lastInitializedStripeKey != session.publishableKey) {
+        PaymentConfiguration.init(context.applicationContext, session.publishableKey)
+        lastInitializedStripeKey = session.publishableKey
+    }
 
     val environment =
         if (session.publishableKey.startsWith("pk_live_")) {

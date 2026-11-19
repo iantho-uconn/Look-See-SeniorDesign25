@@ -3,7 +3,6 @@ package looksee.angelll.com.subscription
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -25,9 +24,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.stripe.android.paymentsheet.PaymentSheetResult
 import java.util.*
 import kotlinx.coroutines.launch
-import looksee.angelll.com.models.*
 import looksee.angelll.com.ui.theme.LookSeeBlue
-
 
 private val LookSeeBackground = Color(0xFF0F0F1A)
 
@@ -64,8 +61,6 @@ fun SubscriptionPlans(
     // 🚀 THE FIX: Pre-warm Amplify, the TLS Handshake, and wake up the AWS Lambda safely!
     LaunchedEffect(Unit) {
         scope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            // This single lightweight call ensures the whole pipeline is fully loaded
-            // without leaking any TCP sockets.
             kotlin.runCatching { service.cancelPendingCheckout("warmup", "warmup") }
         }
     }
@@ -354,7 +349,7 @@ private fun PlanContent(account: SubscriptionAccountState, selectedPlanIndex: In
             HorizontalDivider(color = Color.White.copy(alpha = 0.12f), modifier = Modifier.padding(vertical = 14.dp))
         }
         item {
-            Text("OPTIONAL TOKEN ADD-ON", color = Color.Gray, fontSize = 12.sp, fontWeight = FontWeight.Bold);
+            Text("OPTIONAL TOKEN ADD-ON", color = Color.Gray, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(8.dp))
         }
         item {
@@ -458,7 +453,6 @@ private fun TokenContent(account: SubscriptionAccountState, isProcessing: Boolea
                 modifier = Modifier.fillMaxWidth().padding(vertical = 20.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Icon(Icons.Default.GeneratingTokens, null, tint = LookSeeBlue, modifier = Modifier.size(48.dp))
                 Text("${account.tokenBalance}", color = Color.White, fontSize = 42.sp, fontWeight = FontWeight.Black)
                 Text("TOKENS AVAILABLE", color = Color.Gray, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                 Text("What are tokens?", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.padding(top = 12.dp))
@@ -510,8 +504,6 @@ private fun TokenContent(account: SubscriptionAccountState, isProcessing: Boolea
     }
 }
 
-
-// --- Merged from SubscriptionModels.kt ---
 enum class SubscriptionTab {
     PLAN,
     TOKENS,
@@ -619,4 +611,4 @@ data class BusinessProfileInput(
     }
 }
 
-internal fun Int.asUsd(): String = "$" + String.format(java.util.Locale.US, "%.2f", this / 100.0)
+internal fun Int.asUsd(): String = "$" + String.format(Locale.US, "%.2f", this / 100.0)

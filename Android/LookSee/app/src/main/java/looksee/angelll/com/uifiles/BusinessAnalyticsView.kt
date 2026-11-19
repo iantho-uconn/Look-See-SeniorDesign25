@@ -1,5 +1,6 @@
 package looksee.angelll.com.uifiles
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -11,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -21,14 +23,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
@@ -42,12 +48,10 @@ import java.util.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import looksee.angelll.com.uifiles.AnalyticsResponse
-import looksee.angelll.com.uifiles.LandmarkAnalyticsData
 import looksee.angelll.com.viewmodels.AuthViewModel
+import kotlin.math.cos
+import kotlin.math.sin
 
-
-// Internal model for Time-Series
 data class TimeSeriesPoint(val date: Date, val clicks: Int)
 
 enum class AnalyticsChartMode { Trend, Distribution }
@@ -113,7 +117,7 @@ class BusinessAnalyticsViewModel : ViewModel() {
                             val decoded = Gson().fromJson(responseData, AnalyticsResponse::class.java)
                             data = decoded.analytics
                             isLoading = false
-                        } catch (e: Exception) {
+                        } catch (_: Exception) {
                             errorMessage = "AWS sent back: $responseData"
                             isLoading = false
                         }
@@ -157,6 +161,11 @@ fun BusinessAnalyticsView(
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
                     }
+                },
+                actions = {
+                    IconButton(onClick = { viewModel.fetchAnalytics(vm) }, enabled = !viewModel.isLoading) {
+                        Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = Color.White)
+                    }
                 }
             )
         },
@@ -199,7 +208,6 @@ fun BusinessAnalyticsView(
 @Composable
 private fun KpiGrid(viewModel: BusinessAnalyticsViewModel, primaryColor: Color, bg: Color) {
     Column(modifier = Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        // Total Views
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -235,7 +243,7 @@ private fun KpiCard(title: String, value: String, icon: androidx.compose.ui.grap
             Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(14.dp))
             Text(title, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
         }
-        Text(value, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 1)
+        Text(value, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -252,13 +260,23 @@ private fun ChartToggle(selectedMode: AnalyticsChartMode, onModeSelect: (Analyti
         val distBg = if (selectedMode == AnalyticsChartMode.Distribution) Color(0xFF3A3A3C) else Color.Transparent
 
         Box(
-            modifier = Modifier.weight(1f).clip(RoundedCornerShape(7.dp)).background(trendBg).clickable { onModeSelect(AnalyticsChartMode.Trend) }.padding(vertical = 6.dp),
+            modifier = Modifier
+                .weight(1f)
+                .clip(RoundedCornerShape(7.dp))
+                .background(trendBg)
+                .clickable { onModeSelect(AnalyticsChartMode.Trend) }
+                .padding(vertical = 6.dp),
             contentAlignment = Alignment.Center
         ) {
             Text("Over Time", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Color.White)
         }
         Box(
-            modifier = Modifier.weight(1f).clip(RoundedCornerShape(7.dp)).background(distBg).clickable { onModeSelect(AnalyticsChartMode.Distribution) }.padding(vertical = 6.dp),
+            modifier = Modifier
+                .weight(1f)
+                .clip(RoundedCornerShape(7.dp))
+                .background(distBg)
+                .clickable { onModeSelect(AnalyticsChartMode.Distribution) }
+                .padding(vertical = 6.dp),
             contentAlignment = Alignment.Center
         ) {
             Text("Breakdown", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Color.White)
@@ -269,7 +287,13 @@ private fun ChartToggle(selectedMode: AnalyticsChartMode, onModeSelect: (Analyti
 @Composable
 private fun TrendChartSection(viewModel: BusinessAnalyticsViewModel, primaryColor: Color, bg: Color) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text("Engagement Over Time (30 Days)", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White, modifier = Modifier.padding(horizontal = 20.dp))
+        Text(
+            "Engagement Over Time (30 Days)",
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color.White,
+            modifier = Modifier.padding(horizontal = 20.dp)
+        )
         Box(
             modifier = Modifier
                 .padding(horizontal = 20.dp)
@@ -290,7 +314,13 @@ private fun TrendChartSection(viewModel: BusinessAnalyticsViewModel, primaryColo
 @Composable
 private fun DistributionChartSection(viewModel: BusinessAnalyticsViewModel, bg: Color) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text("Views by Landmark", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White, modifier = Modifier.padding(horizontal = 20.dp))
+        Text(
+            "Views by Landmark",
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color.White,
+            modifier = Modifier.padding(horizontal = 20.dp)
+        )
         Box(
             modifier = Modifier
                 .padding(horizontal = 20.dp)
@@ -302,7 +332,10 @@ private fun DistributionChartSection(viewModel: BusinessAnalyticsViewModel, bg: 
             if (viewModel.activeLandmarksWithViews.isEmpty()) {
                 NoDataChartPlaceholder()
             } else {
-                SimpleBarChart(viewModel.activeLandmarksWithViews)
+                DonutChartWithLegend(
+                    landmarks = viewModel.activeLandmarksWithViews,
+                    totalViews = viewModel.totalViews
+                )
             }
         }
     }
@@ -311,51 +344,155 @@ private fun DistributionChartSection(viewModel: BusinessAnalyticsViewModel, bg: 
 @Composable
 private fun SimpleLineChart(data: List<TimeSeriesPoint>, color: Color) {
     if (data.isEmpty()) return
-    androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxWidth().height(220.dp)) {
-        val maxViews = data.maxOf { it.clicks }.coerceAtLeast(1)
-        val w = size.width
-        val h = size.height
+    val dateFormat = remember { SimpleDateFormat("MMM d", Locale.US) }
 
-        val path = Path()
-        val areaPath = Path()
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Canvas(modifier = Modifier.fillMaxWidth().height(195.dp)) {
+            val maxViews = data.maxOf { it.clicks }.coerceAtLeast(1)
+            val w = size.width
+            val h = size.height
 
-        data.forEachIndexed { i, point ->
-            val x = if (data.size > 1) (i.toFloat() / (data.size - 1)) * w else w / 2
-            val y = h - (point.clicks.toFloat() / maxViews) * h
-            if (i == 0) {
-                path.moveTo(x, y)
-                areaPath.moveTo(x, y)
-            } else {
-                path.lineTo(x, y)
-                areaPath.lineTo(x, y)
+            val path = Path()
+            val areaPath = Path()
+
+            data.forEachIndexed { i, point ->
+                val x = if (data.size > 1) (i.toFloat() / (data.size - 1)) * w else w / 2f
+                val y = h - (point.clicks.toFloat() / maxViews) * h
+                if (i == 0) {
+                    path.moveTo(x, y)
+                    areaPath.moveTo(x, y)
+                } else {
+                    path.lineTo(x, y)
+                    areaPath.lineTo(x, y)
+                }
             }
+
+            areaPath.lineTo(w, h)
+            areaPath.lineTo(0f, h)
+            areaPath.close()
+
+            drawPath(areaPath, Brush.verticalGradient(listOf(color.copy(alpha = 0.5f), Color.Transparent)))
+            drawPath(path, color, style = Stroke(width = 8f, cap = StrokeCap.Round, join = StrokeJoin.Round))
         }
 
-        areaPath.lineTo(w, h)
-        areaPath.lineTo(0f, h)
-        areaPath.close()
-
-        drawPath(areaPath, Brush.verticalGradient(listOf(color.copy(alpha = 0.5f), Color.Transparent)))
-        drawPath(path, color, style = Stroke(width = 8f, cap = StrokeCap.Round, join = StrokeJoin.Round))
+        // X-Axis Date Marks (5 desired marks matching iOS .chartXAxis)
+        if (data.size >= 2) {
+            val indices = remember(data.size) {
+                (0 until 5).map { step -> ((step / 4f) * (data.size - 1)).toInt() }.distinct()
+            }
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                indices.forEach { idx ->
+                    Text(
+                        text = dateFormat.format(data[idx].date),
+                        fontSize = 11.sp,
+                        color = Color.Gray
+                    )
+                }
+            }
+        }
     }
 }
 
+// Ported from iOS 17 SectorMark Donut Chart (innerRadius: 0.618, percentage labels > 10%, bottom legend)
 @Composable
-private fun SimpleBarChart(data: List<LandmarkAnalyticsData>) {
-    val maxViews = data.maxOf { it.totalClicks }.coerceAtLeast(1)
-    val colors = listOf(Color(0xFF387DFF), Color(0xFFAF52DE), Color(0xFFFF9F0A), Color(0xFF32D74B), Color(0xFFFF453A))
+private fun DonutChartWithLegend(
+    landmarks: List<LandmarkAnalyticsData>,
+    totalViews: Int
+) {
+    val palette = listOf(
+        Color(0xFF387DFF),
+        Color(0xFFAF52DE),
+        Color(0xFFFF9F0A),
+        Color(0xFF32D74B),
+        Color(0xFFFF453A),
+        Color(0xFF64D2FF),
+        Color(0xFFFFD60A)
+    )
 
-    Column(modifier = Modifier.fillMaxWidth().height(220.dp), verticalArrangement = Arrangement.SpaceEvenly) {
-        data.take(5).forEachIndexed { index, landmark ->
-            val fraction = landmark.totalClicks.toFloat() / maxViews.toFloat()
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(landmark.label.take(15), color = Color.White, fontSize = 12.sp, modifier = Modifier.width(100.dp), maxLines = 1)
-                Box(
-                    modifier = Modifier.weight(1f).height(16.dp)
-                ) {
-                    Box(modifier = Modifier.fillMaxHeight().fillMaxWidth(fraction).background(colors[index % colors.size], RoundedCornerShape(4.dp)))
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(20.dp)
+    ) {
+        Canvas(modifier = Modifier.size(190.dp)) {
+            val diameter = size.minDimension
+            val strokeWidth = diameter * (1f - 0.618f) / 2f
+            val arcDiameter = diameter - strokeWidth
+            val topLeft = Offset((size.width - arcDiameter) / 2f, (size.height - arcDiameter) / 2f)
+            val labelRadius = arcDiameter / 2f
+
+            var startAngle = -90f
+            val gapDegrees = if (landmarks.size > 1) 2f else 0f
+
+            val textPaint = android.graphics.Paint().apply {
+                color = android.graphics.Color.WHITE
+                textSize = 32f
+                isFakeBoldText = true
+                textAlign = android.graphics.Paint.Align.CENTER
+                isAntiAlias = true
+                setShadowLayer(4f, 0f, 2f, android.graphics.Color.BLACK)
+            }
+
+            landmarks.forEachIndexed { index, landmark ->
+                val fraction = landmark.totalClicks.toFloat() / totalViews.coerceAtLeast(1).toFloat()
+                val sweep = (fraction * 360f - gapDegrees).coerceAtLeast(1f)
+                val sliceColor = palette[index % palette.size]
+
+                drawArc(
+                    color = sliceColor,
+                    startAngle = startAngle + gapDegrees / 2f,
+                    sweepAngle = sweep,
+                    useCenter = false,
+                    topLeft = topLeft,
+                    size = Size(arcDiameter, arcDiameter),
+                    style = Stroke(width = strokeWidth, cap = StrokeCap.Butt)
+                )
+
+                if (fraction > 0.10f) {
+                    val midAngleRad = Math.toRadians((startAngle + gapDegrees / 2f + sweep / 2f).toDouble())
+                    val cx = center.x + (labelRadius * cos(midAngleRad)).toFloat()
+                    val cy = center.y + (labelRadius * sin(midAngleRad)).toFloat() - ((textPaint.descent() + textPaint.ascent()) / 2f)
+                    drawContext.canvas.nativeCanvas.drawText(
+                        "${(fraction * 100).toInt()}%",
+                        cx,
+                        cy,
+                        textPaint
+                    )
                 }
-                Text("${landmark.totalClicks}", color = Color.Gray, fontSize = 12.sp, modifier = Modifier.width(30.dp), textAlign = TextAlign.End)
+
+                startAngle += fraction * 360f
+            }
+        }
+
+        // Bottom Chart Legend
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            landmarks.chunked(2).forEach { rowItems ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    rowItems.forEach { item ->
+                        val colorIdx = landmarks.indexOf(item)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(10.dp)
+                                    .background(palette[colorIdx % palette.size], CircleShape)
+                            )
+                            Text(
+                                text = item.label.ifEmpty { "Untitled" },
+                                fontSize = 12.sp,
+                                color = Color.LightGray,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
             }
         }
     }
@@ -364,7 +501,10 @@ private fun SimpleBarChart(data: List<LandmarkAnalyticsData>) {
 @Composable
 private fun NoDataChartPlaceholder() {
     Box(
-        modifier = Modifier.fillMaxWidth().height(220.dp).background(Color(0xFF2C2C2E), RoundedCornerShape(16.dp)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(220.dp)
+            .background(Color(0xFF2C2C2E), RoundedCornerShape(16.dp)),
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -377,7 +517,13 @@ private fun NoDataChartPlaceholder() {
 @Composable
 private fun LeaderboardSection(viewModel: BusinessAnalyticsViewModel, primaryColor: Color, bg: Color) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("All Landmarks", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+        Text(
+            "All Landmarks",
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color.White,
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+        )
         Column(
             modifier = Modifier
                 .padding(horizontal = 20.dp)
@@ -391,14 +537,34 @@ private fun LeaderboardSection(viewModel: BusinessAnalyticsViewModel, primaryCol
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    Text("${index + 1}", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.Gray, modifier = Modifier.width(24.dp))
-                    Text(if (landmark.label.isEmpty()) "Untitled Landmark" else landmark.label, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Color.White, modifier = Modifier.weight(1f))
+                    Text(
+                        "${index + 1}",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.Gray,
+                        modifier = Modifier.width(24.dp)
+                    )
+                    Text(
+                        if (landmark.label.isEmpty()) "Untitled Landmark" else landmark.label,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White,
+                        modifier = Modifier.weight(1f)
+                    )
                     Box(
                         modifier = Modifier
-                            .background(if (landmark.totalClicks > 0) primaryColor.copy(alpha = 0.15f) else Color.Gray.copy(alpha = 0.15f), CircleShape)
+                            .background(
+                                if (landmark.totalClicks > 0) primaryColor.copy(alpha = 0.15f) else Color.Gray.copy(alpha = 0.15f),
+                                CircleShape
+                            )
                             .padding(horizontal = 12.dp, vertical = 6.dp)
                     ) {
-                        Text("${landmark.totalClicks}", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = if (landmark.totalClicks > 0) primaryColor else Color.Gray)
+                        Text(
+                            "${landmark.totalClicks}",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (landmark.totalClicks > 0) primaryColor else Color.Gray
+                        )
                     }
                 }
                 if (index < viewModel.sortedLandmarks.size - 1) {
@@ -411,23 +577,34 @@ private fun LeaderboardSection(viewModel: BusinessAnalyticsViewModel, primaryCol
 
 @Composable
 private fun ErrorStateView(message: String) {
-    Column(modifier = Modifier.fillMaxSize().padding(top = 40.dp, start = 32.dp, end = 32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Icon(Icons.Default.Warning, contentDescription = null, tint = Color.Red, modifier = Modifier.size(32.dp))
+    Column(
+        modifier = Modifier.fillMaxSize().padding(top = 40.dp, start = 32.dp, end = 32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFFFA500), modifier = Modifier.size(32.dp))
         Text(message, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.Gray, textAlign = TextAlign.Center)
     }
 }
 
 @Composable
 private fun AnalyticsEmptyStateView() {
-    Column(modifier = Modifier.fillMaxSize().padding(top = 60.dp, start = 32.dp, end = 32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(
+        modifier = Modifier.fillMaxSize().padding(top = 60.dp, start = 32.dp, end = 32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
         Icon(Icons.Default.BarChart, contentDescription = null, tint = Color.Gray.copy(alpha = 0.5f), modifier = Modifier.size(42.dp))
         Text("No landmarks found.", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
-        Text("Add landmarks to your business account to start tracking engagement.", fontSize = 14.sp, color = Color.Gray, textAlign = TextAlign.Center)
+        Text(
+            "Add landmarks to your business account to start tracking engagement.",
+            fontSize = 14.sp,
+            color = Color.Gray,
+            textAlign = TextAlign.Center
+        )
     }
 }
 
-
-// --- Merged from BusinessAnalyticsModels.kt ---
 data class AnalyticsResponse(
     @SerializedName("analytics") val analytics: List<LandmarkAnalyticsData> = emptyList()
 )

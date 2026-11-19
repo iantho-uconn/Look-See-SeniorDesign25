@@ -28,6 +28,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.SubcomposeAsyncImage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.URL
@@ -280,22 +281,18 @@ fun MerchantCard(
 // Native Generic Image Loader (Renamed to private to avoid overloads in other files)
 @Composable
 private fun MerchantCardRemoteImage(url: String, modifier: Modifier = Modifier, contentScale: ContentScale = ContentScale.Crop) {
-    var bitmap by remember { mutableStateOf<Bitmap?>(null) }
-
-    LaunchedEffect(url) {
-        withContext(Dispatchers.IO) {
-            try {
-                val stream = URL(url).openStream()
-                bitmap = BitmapFactory.decodeStream(stream)
-            } catch (e: Exception) { e.printStackTrace() }
+    SubcomposeAsyncImage(
+        model = url,
+        contentDescription = null,
+        modifier = modifier,
+        contentScale = contentScale,
+        loading = {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
+            }
+        },
+        error = {
+            Box(modifier = Modifier.fillMaxSize().background(Color.DarkGray))
         }
-    }
-
-    if (bitmap != null) {
-        androidx.compose.foundation.Image(bitmap = bitmap!!.asImageBitmap(), contentDescription = null, modifier = modifier, contentScale = contentScale)
-    } else {
-        Box(modifier = modifier.background(Color.DarkGray), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
-        }
-    }
+    )
 }

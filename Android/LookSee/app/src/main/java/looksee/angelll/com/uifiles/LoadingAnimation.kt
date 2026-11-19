@@ -10,17 +10,15 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.blur
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -73,12 +71,12 @@ fun LoadingAnimationScreen(
         }
 
         coroutineScope.launch {
-            delay(2800.milliseconds) // Fixed Legacy Long
+            delay(2800.milliseconds)
             glowOpacity.animateTo(0.8f, tween(600, easing = LinearEasing))
         }
 
         coroutineScope.launch {
-            delay(800.milliseconds) // Fixed Legacy Long
+            delay(800.milliseconds)
             breathing = true
         }
 
@@ -91,28 +89,34 @@ fun LoadingAnimationScreen(
         }
 
         coroutineScope.launch {
-            delay(450.milliseconds) // Fixed Legacy Long
+            delay(450.milliseconds)
             pulse2.animateTo(1f, tween(2100, easing = LinearOutSlowInEasing))
         }
 
         coroutineScope.launch {
-            delay(900.milliseconds) // Fixed Legacy Long
+            delay(900.milliseconds)
             pulse3.animateTo(1f, tween(1800, easing = LinearOutSlowInEasing))
         }
 
         coroutineScope.launch {
-            delay(350.milliseconds) // Fixed Legacy Long
+            delay(350.milliseconds)
             showParticles = true
         }
 
+        // 🚀 THE FIX: Dynamically wait for the intro to finish, then exit.
+        // No longer strictly bound to a 3-second delay if auth finishes earlier.
         coroutineScope.launch {
-            delay(3.seconds) // Fixed Legacy Long
+            delay(1200.milliseconds)
+            // Spin wait until the parent `RootView` says the auth payload is ready
+            while (!animationFinished) {
+                delay(100.milliseconds)
+            }
             onFinished?.invoke()
         }
     }
 
     Box(
-        modifier = Modifier.size(380.dp),
+        modifier = Modifier.fillMaxWidth().aspectRatio(1f),
         contentAlignment = Alignment.Center
     ) {
         Box(
@@ -140,11 +144,8 @@ fun LoadingAnimationScreen(
             painter = painterResource(id = looksee.angelll.com.R.drawable.looksee_logo),
             contentDescription = "LookSee Logo",
             modifier = Modifier
-                .size(340.dp) // Matched iOS width
-                .graphicsLayer(
-                    alpha = 1f,
-                    clip = true
-                )
+                .fillMaxWidth(0.9f)
+                .aspectRatio(1f)
                 .scale(if (breathing && !animationFinished) breathingScale else 1f)
                 .scale(logoScale.value)
         )
@@ -157,14 +158,15 @@ fun LoadingAnimationScreen(
 fun RadarPulse(progress: Float) {
     Box(
         modifier = Modifier
-            .size(260.dp)
-            .scale(0.2f + progress * 1.2f)
-            .alpha(1f - progress)
-            .blur((progress * 2).dp)
+            .size(320.dp)
+            .scale(0.2f + (progress * 1.2f))
+            .alpha((1f - progress).coerceIn(0f, 1f))
     ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
+            val radius = size.minDimension / 2.5f
             drawCircle(
                 color = Color(0xFF387DFF).copy(alpha = 0.45f),
+                radius = radius,
                 style = Stroke(width = 2.dp.toPx())
             )
         }
@@ -175,10 +177,10 @@ fun RadarPulse(progress: Float) {
 fun RadarSweep(rotation: Float) {
     Canvas(
         modifier = Modifier
-            .size(280.dp)
+            .size(320.dp)
             .rotate(rotation)
-            .blur(1.dp)
     ) {
+        val inset = 20.dp.toPx()
         drawArc(
             brush = Brush.sweepGradient(
                 colors = listOf(
@@ -190,6 +192,8 @@ fun RadarSweep(rotation: Float) {
             startAngle = 0f,
             sweepAngle = 50.4f,
             useCenter = false,
+            topLeft = Offset(inset, inset),
+            size = Size(size.width - inset * 2, size.height - inset * 2),
             style = Stroke(width = 5.dp.toPx(), cap = StrokeCap.Round)
         )
     }
@@ -236,14 +240,8 @@ fun Particle(index: Int, active: Boolean) {
     Box(
         modifier = Modifier
             .offset(x = offsetX.dp, y = offsetY.dp)
-            .alpha(opacity)
+            .alpha(opacity.coerceIn(0f, 1f))
             .size(5.dp)
             .background(Color.Blue, CircleShape)
     )
-}
-
-@Preview(showBackground = true, backgroundColor = 0xFF0D0F17)
-@Composable
-fun PreviewLoadingAnimation() {
-    LoadingAnimationScreen()
 }

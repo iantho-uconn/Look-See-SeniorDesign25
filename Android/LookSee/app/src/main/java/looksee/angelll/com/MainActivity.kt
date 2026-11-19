@@ -4,20 +4,13 @@ import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge // 🚀 Added Edge-to-Edge import
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import com.amplifyframework.AmplifyException
 import com.amplifyframework.auth.cognito.AWSCognitoAuthPlugin
 import com.amplifyframework.core.Amplify
@@ -36,16 +29,12 @@ class MainActivity : ComponentActivity() {
     private val authState: AuthState by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // 🚀 THE FIX: Forces Android Emulator networking to skip IPv6 lookups,
-        // instantly eliminating the 5-second timeout delay on AWS and Stripe requests.
         System.setProperty("java.net.preferIPv4Stack", "true")
-        
         super.onCreate(savedInstanceState)
 
-        // 🚀 THE FIX: Tell Android to stop blocking the status bars
         enableEdgeToEdge()
-
         androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
+
         configureAmplify()
         configureSentry()
 
@@ -115,10 +104,9 @@ enum class AppState {
 @Composable
 fun RootView(vm: AuthViewModel, authState: AuthState) {
     var appState by remember { mutableStateOf(AppState.LoadingModel) }
-    val coroutineScope = rememberCoroutineScope()
     val didSignOut by authState.didSignOut.collectAsState(initial = false)
-
     var selectedLandmark by remember { mutableStateOf<BusinessLandmark?>(null) }
+    val coroutineScope = rememberCoroutineScope()
 
     LaunchedEffect(didSignOut) {
         if (didSignOut) {
@@ -126,12 +114,12 @@ fun RootView(vm: AuthViewModel, authState: AuthState) {
         }
     }
 
-
     var isModelLoadingDone by remember { mutableStateOf(false) }
     var isAuthResolutionDone by remember { mutableStateOf(false) }
 
     fun advanceIfReady() {
         if (isModelLoadingDone && isAuthResolutionDone) {
+            Log.i("RootView", "✅ Both ready — advancing to .main")
             appState = AppState.Main
             isModelLoadingDone = false
             isAuthResolutionDone = false
@@ -143,16 +131,19 @@ fun RootView(vm: AuthViewModel, authState: AuthState) {
     when (appState) {
         AppState.LoadingModel -> {
             LaunchedEffect(Unit) {
-                vm.checkSession()
-                if (vm.isSignedIn) {
-                    authState.resolveTier()
+                coroutineScope.launch {
+                    vm.checkSession()
+                    if (vm.isSignedIn) {
+                        authState.resolveTier()
+                    }
+                    isAuthResolutionDone = true
+                    advanceIfReady()
                 }
-                isAuthResolutionDone = true
-                advanceIfReady()
             }
 
             ModelLoadingScreen(
                 onComplete = {
+                    Log.i("RootView", "🧠 Model loading finished")
                     isModelLoadingDone = true
                     advanceIfReady()
                 }
@@ -183,6 +174,7 @@ fun RootView(vm: AuthViewModel, authState: AuthState) {
         AppState.Settings -> {
             SettingsScreen(
                 vm = vm,
+                authState = authState,
                 startWithSubscriptions = settingsStartWithSubscriptions,
                 onDismiss = { appState = AppState.Main },
                 onNavigate = { route ->
@@ -265,12 +257,8 @@ fun RootView(vm: AuthViewModel, authState: AuthState) {
             GuestSignUpView(
                 vm = vm,
                 initialBusinessAccount = false,
-                onSignupSuccess = { email, wantsBusiness ->
-                    appState = AppState.LoadingModel
-                },
-                onGoToLogin = {
-                    appState = AppState.Login
-                },
+                onSignupSuccess = { _, _ -> appState = AppState.LoadingModel },
+                onGoToLogin = { appState = AppState.Login },
                 onDismiss = { appState = AppState.Main }
             )
         }
@@ -287,9 +275,7 @@ fun RootView(vm: AuthViewModel, authState: AuthState) {
         }
 
         AppState.ModelSelection -> {
-            ModelSelectionView(
-                onBack = { appState = AppState.DeepSettings }
-            )
+            ModelSelectionView(onBack = { appState = AppState.DeepSettings })
         }
 
         AppState.Archive -> {
@@ -341,21 +327,15 @@ fun RootView(vm: AuthViewModel, authState: AuthState) {
             SignupScreen(
                 vm = vm,
                 initialBusinessAccount = false,
-                onSignupSuccess = { email, wantsBusiness ->
-                    appState = AppState.LoadingModel
-                },
+                onSignupSuccess = { _, _ -> appState = AppState.LoadingModel },
                 onNavigate = { route ->
-                    if (route == "login") {
-                        appState = AppState.Login
-                    }
+                    if (route == "login") appState = AppState.Login
                 }
             )
         }
 
         AppState.ForgotPassword -> {
-            ForgotPasswordView(
-                onDismiss = { appState = AppState.Login }
-            )
+            ForgotPasswordView(onDismiss = { appState = AppState.Login })
         }
     }
 }

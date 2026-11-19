@@ -6,7 +6,6 @@ import looksee.angelll.com.subscription.SubscriptionTab
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.graphics.ImageDecoder
 import android.net.Uri
 import android.os.Build
@@ -14,9 +13,9 @@ import android.util.Base64
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.launch
 import androidx.compose.animation.*
 import androidx.compose.foundation.*
-import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -31,15 +30,10 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.Help
 import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.PhotoCamera
-import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
@@ -52,9 +46,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -62,48 +54,56 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.zIndex
+import coil.compose.AsyncImage
 import java.io.ByteArrayOutputStream
-import java.net.URL
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import looksee.angelll.com.BuildConfig
-import looksee.angelll.com.R
 import looksee.angelll.com.models.*
-import looksee.angelll.com.models.BundledTestModel
-import looksee.angelll.com.models.ModelSelector
 import looksee.angelll.com.services.*
 import looksee.angelll.com.subscription.SubscriptionPlans
 import looksee.angelll.com.ui.theme.*
-import looksee.angelll.com.ui.theme.AppleBlue
 import looksee.angelll.com.viewmodels.*
-import looksee.angelll.com.viewmodels.AuthState
-import looksee.angelll.com.viewmodels.AuthViewModel
-
 
 class SettingsPresenter {
     var showSubscriptionFlow by mutableStateOf(false)
     var subscriptionStartingTab by mutableIntStateOf(0)
+    var showLoginSheet by mutableStateOf(false)
+    var showSignUpSheet by mutableStateOf(false)
     var showUserProfileEditor by mutableStateOf(false)
     var signupStartsAsBusiness by mutableStateOf(false)
-    
+
+    var resumeCheckoutAction by mutableStateOf<String?>(null)
+    var savedAddOnIndex by mutableIntStateOf(0)
+    var savedTokenCount by mutableIntStateOf(0)
+    var savedTokenCents by mutableIntStateOf(0)
+    var justPurchased by mutableStateOf(false)
+
     var showGlobalNegativeCamera by mutableStateOf(false)
     var isReloadingModels by mutableStateOf(false)
     var showReloadSuccess by mutableStateOf(false)
     var isUploadingGlobalNegative by mutableStateOf(false)
 }
 
+fun normalizeCloudFrontUrl(rawUrl: String): String {
+    if (rawUrl.isBlank()) return ""
+    return rawUrl
+        .replace("looksee-app-uploads.s3.us-east-1.amazonaws.com", "d1fjsmhmay9z6x.cloudfront.net")
+        .replace("looksee-app-uploads.s3.amazonaws.com", "d1fjsmhmay9z6x.cloudfront.net")
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     vm: AuthViewModel,
+    authState: AuthState? = null,
     startWithSubscriptions: Boolean = false,
     onDismiss: () -> Unit,
     onNavigate: (String) -> Unit
 ) {
-    val presenter = remember { 
+    val presenter = remember {
         SettingsPresenter().apply {
             if (startWithSubscriptions) {
                 showSubscriptionFlow = true
@@ -114,12 +114,13 @@ fun SettingsScreen(
     val haptic = LocalHapticFeedback.current
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
-    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+    val focusManager = LocalFocusManager.current
     val prefs = context.getSharedPreferences("LookSeePrefs", Context.MODE_PRIVATE)
 
-    var showCancelAlert by remember { mutableStateOf(false) }
-    var isCancelling by remember { mutableStateOf(false) }
+    var showCancelScreen by remember { mutableStateOf(false) }
     var showSignOutAlert by remember { mutableStateOf(false) }
+    var isOpeningPrivacyOptions by remember { mutableStateOf(false) }
+    var showPrivacyOptionsError by remember { mutableStateOf(false) }
 
     val isFullyLoggedIn = vm.isSignedIn && vm.userEmail.isNotEmpty()
 
@@ -129,14 +130,52 @@ fun SettingsScreen(
         else "Verified Subscriber"
     }
 
-    Box(modifier = Modifier.fillMaxSize().background(Color.Black).pointerInput(Unit) { detectTapGestures(onTap = { focusManager.clearFocus() }) }) {
+    // Sync user session / details on appear (matches iOS .task)
+    LaunchedEffect(isFullyLoggedIn) {
+        if (!presenter.justPurchased) {
+            if (!isFullyLoggedIn) {
+                try { vm.checkSession() } catch (_: Exception) {}
+            } else {
+                try {
+                    vm.fetchUserDetails()
+                    vm.fetchUserUsageStats()
+                } catch (_: Exception) {}
+            }
+        }
+    }
+
+    // Auto-resume subscription flow after a guest finishes signing in/up
+    LaunchedEffect(isFullyLoggedIn) {
+        if (isFullyLoggedIn && presenter.resumeCheckoutAction != null) {
+            presenter.showLoginSheet = false
+            presenter.showSignUpSheet = false
+            delay(800)
+            presenter.showSubscriptionFlow = true
+        }
+    }
+
+    // Dismiss Settings if user signed out from DeepSettings
+    LaunchedEffect(authState) {
+        authState?.didSignOut?.collect { signedOut ->
+            if (signedOut) {
+                onDismiss()
+            }
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+            .pointerInput(Unit) { detectTapGestures(onTap = { focusManager.clearFocus() }) }
+    ) {
         Scaffold(
             containerColor = Color.Black,
             topBar = {
                 TopAppBar(
-                    title = { 
+                    title = {
                         Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                            Text("Menu", fontWeight = FontWeight.Black, color = Color.White, fontSize = 20.sp) 
+                            Text("Menu", fontWeight = FontWeight.Black, color = Color.White, fontSize = 20.sp)
                         }
                     },
                     navigationIcon = {
@@ -149,7 +188,7 @@ fun SettingsScreen(
                             )
                         }
                     },
-                    actions = { Spacer(Modifier.width(48.dp)) }, // Balance the back button
+                    actions = { Spacer(Modifier.width(48.dp)) },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Black)
                 )
             }
@@ -165,10 +204,13 @@ fun SettingsScreen(
                 LookSeeCard(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                     if (!isFullyLoggedIn) {
                         Row(
-                            modifier = Modifier.clickable {
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                onNavigate("login")
-                            }.padding(vertical = 8.dp).fillMaxWidth(),
+                            modifier = Modifier
+                                .clickable {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    onNavigate("login")
+                                }
+                                .padding(vertical = 8.dp)
+                                .fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
@@ -180,21 +222,27 @@ fun SettingsScreen(
                             )
                             Column(modifier = Modifier.weight(1f)) {
                                 Text("Guest User", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                        Text("Browsing anonymously", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Color.Gray)
+                                Text("Browsing anonymously", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Color.Gray)
                             }
                             Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(20.dp))
                         }
                     } else {
                         Row(
-                            modifier = Modifier.clickable {
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                presenter.showUserProfileEditor = true
-                            }.padding(vertical = 8.dp).fillMaxWidth(),
+                            modifier = Modifier
+                                .clickable {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    presenter.showUserProfileEditor = true
+                                }
+                                .padding(vertical = 8.dp)
+                                .fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
                             Box(
-                                modifier = Modifier.size(52.dp).clip(CircleShape).background(AppleBlue.copy(alpha = 0.15f)),
+                                modifier = Modifier
+                                    .size(52.dp)
+                                    .clip(CircleShape)
+                                    .background(AppleBlue.copy(alpha = 0.15f)),
                                 contentAlignment = Alignment.Center
                             ) {
                                 if (vm.profileImageUrl.isNotEmpty()) {
@@ -208,7 +256,9 @@ fun SettingsScreen(
                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                     Text(
                                         text = if (vm.username.isEmpty()) "Set Username" else "@${vm.username}",
-                                        fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White
+                                        fontSize = 20.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
                                     )
                                     if (vm.hasActiveSubscription) {
                                         Icon(Icons.Default.Verified, contentDescription = "Verified", tint = AppleBlue, modifier = Modifier.size(14.dp))
@@ -229,7 +279,7 @@ fun SettingsScreen(
                             TrialWarningCard()
                             Spacer(Modifier.height(16.dp))
                         }
-                        
+
                         LookSeeRow(
                             icon = Icons.Default.Business,
                             iconContainerColor = AppleBlue,
@@ -337,7 +387,12 @@ fun SettingsScreen(
                         Spacer(Modifier.height(12.dp))
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text("Status", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
-                            Text("Active", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color(0xFF4CAF50))
+                            Text(
+                                if (vm.hasActiveSubscription) "Active" else "Inactive",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (vm.hasActiveSubscription) Color(0xFF4CAF50) else Color.Red
+                            )
                         }
                         Spacer(Modifier.height(16.dp))
                         HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
@@ -353,12 +408,16 @@ fun SettingsScreen(
                                 colors = ButtonDefaults.buttonColors(containerColor = AppleBlue.copy(alpha = 0.1f)),
                                 shape = RoundedCornerShape(12.dp)
                             ) {
-                                Text("Manage Plan", color = AppleBlue, fontWeight = FontWeight.Bold)
+                                Text(
+                                    if (!vm.hasActiveSubscription) "Sign Up" else "Manage Plan",
+                                    color = AppleBlue,
+                                    fontWeight = FontWeight.Bold
+                                )
                             }
                             Button(
                                 onClick = {
                                     haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    showCancelAlert = true
+                                    showCancelScreen = true
                                 },
                                 modifier = Modifier.weight(1f).height(44.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
@@ -374,7 +433,7 @@ fun SettingsScreen(
                 // 5. GENERAL SETTINGS
                 LookSeeSectionHeader("General")
                 LookSeeCard(modifier = Modifier.padding(horizontal = 16.dp)) {
-                    LookSeeRow(icon = Icons.Default.BugReport, iconContainerColor = Color.Red, title = "Report a Bug") {
+                    LookSeeRow(icon = Icons.Default.BugReport, iconContainerColor = AppleBlue, title = "Report a Bug") {
                         onNavigate("ReportIssueView")
                     }
                     HorizontalDivider(modifier = Modifier.padding(start = 52.dp), color = Color.White.copy(alpha = 0.1f))
@@ -386,18 +445,31 @@ fun SettingsScreen(
                         onNavigate("PrivacyPolicy")
                     }
                     HorizontalDivider(modifier = Modifier.padding(start = 52.dp), color = Color.White.copy(alpha = 0.1f))
-                    
-                    val consentManager = remember { looksee.angelll.com.services.AdConsentManager(context) }
+
+                    val consentManager = remember { AdConsentManager(context) }
                     if (consentManager.isPrivacyOptionsRequired) {
-                        LookSeeRow(icon = Icons.Default.Tune, iconContainerColor = Color(0xFF3F51B5), title = "Privacy Options") {
-                            val activity = context as? android.app.Activity
-                            if (activity != null) {
-                                consentManager.showPrivacyOptions(activity)
+                        LookSeeRow(
+                            icon = Icons.Default.Tune,
+                            iconContainerColor = Color(0xFF3F51B5),
+                            title = "Privacy Options",
+                            subtitle = if (isOpeningPrivacyOptions) "Opening privacy options…" else "Manage your ad privacy choices."
+                        ) {
+                            if (!isOpeningPrivacyOptions) {
+                                isOpeningPrivacyOptions = true
+                                showPrivacyOptionsError = false
+                                val activity = context as? android.app.Activity
+                                if (activity != null) {
+                                    consentManager.showPrivacyOptions(activity)
+                                    isOpeningPrivacyOptions = false
+                                } else {
+                                    isOpeningPrivacyOptions = false
+                                    showPrivacyOptionsError = true
+                                }
                             }
                         }
                         HorizontalDivider(modifier = Modifier.padding(start = 52.dp), color = Color.White.copy(alpha = 0.1f))
                     }
-                    
+
                     LookSeeRow(icon = Icons.Default.Description, iconContainerColor = Color(0xFF4CAF50), title = "Terms of Service") {
                         onNavigate("TermsOfService")
                     }
@@ -411,11 +483,11 @@ fun SettingsScreen(
                     }
                 }
 
-                androidx.compose.material3.Text(
+                Text(
                     text = "Copyright © 1999-2026 Information Outpost, LLC.  All rights reserved.",
                     fontSize = 10.sp,
                     color = Color.White.copy(alpha = 0.5f),
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    textAlign = TextAlign.Center,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 24.dp)
@@ -424,11 +496,23 @@ fun SettingsScreen(
             }
         }
 
+        if (showPrivacyOptionsError) {
+            AlertDialog(
+                onDismissRequest = { showPrivacyOptionsError = false },
+                title = { Text("Privacy Options Unavailable", color = Color.White) },
+                text = { Text("We couldn't open your ad privacy options. Please check your connection and try again.", color = Color.LightGray) },
+                confirmButton = {
+                    TextButton(onClick = { showPrivacyOptionsError = false }) { Text("OK", color = AppleBlue) }
+                },
+                containerColor = Color(0xFF1C1C1E)
+            )
+        }
+
         if (showSignOutAlert) {
             AlertDialog(
                 onDismissRequest = { showSignOutAlert = false },
-                title = { Text("Sign Out") },
-                text = { Text("Are you sure you want to sign out?") },
+                title = { Text("Sign Out", color = Color.White) },
+                text = { Text("Are you sure you want to sign out?", color = Color.LightGray) },
                 confirmButton = {
                     TextButton(onClick = {
                         showSignOutAlert = false
@@ -441,7 +525,7 @@ fun SettingsScreen(
                 containerColor = Color(0xFF1C1C1E)
             )
         }
-        
+
         if (presenter.showGlobalNegativeCamera) {
             NegativeVideoCameraView(
                 uiTargetDuration = 10,
@@ -450,9 +534,8 @@ fun SettingsScreen(
                     coroutineScope.launch {
                         presenter.isUploadingGlobalNegative = true
                         try {
-                            looksee.angelll.com.models.BusinessLandmarkService().uploadGlobalNegativeVideo(video.file)
-                        } catch (e: Exception) {
-                            // Ignored for now
+                            BusinessLandmarkService().uploadGlobalNegativeVideo(video.file)
+                        } catch (_: Exception) {
                         } finally {
                             presenter.isUploadingGlobalNegative = false
                             video.deleteLocalFile()
@@ -462,73 +545,41 @@ fun SettingsScreen(
                 },
                 onDismiss = { presenter.showGlobalNegativeCamera = false }
             )
-            
+
             if (presenter.isUploadingGlobalNegative) {
                 Box(
                     modifier = Modifier.fillMaxSize().background(Color.Black.copy(0.6f)),
                     contentAlignment = Alignment.Center
                 ) {
                     LookSeeCard {
-                        Column(modifier = Modifier.padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        Column(
+                            modifier = Modifier.padding(32.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
                             CircularProgressIndicator(color = Color.White)
                             Text("Uploading Global Negative...", color = Color.White, fontWeight = FontWeight.Bold)
+                            Text("Please keep app open", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
                         }
-                    }
-                }
-            }
-        }
-
-        // Cancellation Overlay
-        if (isCancelling) {
-            Box(
-                modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.4f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Surface(color = Color.Black.copy(alpha = 0.8f), shape = RoundedCornerShape(16.dp)) {
-                    Column(modifier = Modifier.padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        CircularProgressIndicator(color = Color.White)
-                        Spacer(Modifier.height(16.dp))
-                        Text("Canceling Plan...", color = Color.White, fontWeight = FontWeight.Bold)
                     }
                 }
             }
         }
     }
 
-    if (showCancelAlert) {
-        AlertDialog(
-            onDismissRequest = { showCancelAlert = false },
-            title = { Text("Cancel Subscription?") },
-            text = { Text("Your business features will be disabled immediately.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    showCancelAlert = false
-                    isCancelling = true
-                    coroutineScope.launch {
-                        vm.cancelSubscription()
-                        try {
-                            com.amplifyframework.kotlin.core.Amplify.Auth.deleteUser()
-                        } catch (e: Exception) {
-                            println("Failed to delete user on cancel membership: ${e.message}")
-                        }
-                        isCancelling = false
-                        vm.signOut()
-                    }
-                }) { Text("Cancel Plan", color = Color.Red) }
-            },
-            dismissButton = {
-                TextButton(onClick = { showCancelAlert = false }) { Text("Keep Plan", color = Color.White) }
-            },
-            containerColor = CardBackground,
-            titleContentColor = Color.White,
-            textContentColor = Color.LightGray
+    // Full-Screen Safe Subscription Cancellation (Replaces destructive account deletion)
+    if (showCancelScreen) {
+        SubscriptionCancellationScreen(
+            vm = vm,
+            authState = authState,
+            onDismiss = { showCancelScreen = false }
         )
     }
 
     if (presenter.showUserProfileEditor) {
         UserProfileEditSheet(vm) { presenter.showUserProfileEditor = false }
     }
-    
+
     if (presenter.showSubscriptionFlow) {
         SubscriptionPlans(
             account = SubscriptionAccountState(
@@ -545,9 +596,13 @@ fun SettingsScreen(
             onClose = { presenter.showSubscriptionFlow = false },
             onRequireSignUp = {
                 presenter.showSubscriptionFlow = false
+                presenter.signupStartsAsBusiness = true
+                presenter.resumeCheckoutAction = "subscription"
                 onNavigate("guest_signup")
             },
             onAccountUpdated = { update ->
+                presenter.justPurchased = true
+                presenter.resumeCheckoutAction = null
                 vm.tokenBalance += update.addedTokens
                 if (update.subscriptionActivated) vm.hasActiveSubscription = true
                 if (update.planCents != null) vm.activePlanCents = update.planCents
@@ -555,6 +610,242 @@ fun SettingsScreen(
             },
             startingTab = if (presenter.subscriptionStartingTab == 1) SubscriptionTab.TOKENS else SubscriptionTab.PLAN
         )
+    }
+}
+
+// --- Full-Screen Subscription Cancellation Screen (Ported from iOS Settings.swift) ---
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SubscriptionCancellationScreen(
+    vm: AuthViewModel,
+    authState: AuthState? = null,
+    onDismiss: () -> Unit
+) {
+    var acknowledgement by remember { mutableStateOf("") }
+    var completed by remember { mutableStateOf(false) }
+    var isCancelling by remember { mutableStateOf(false) }
+    var cancellationError by remember { mutableStateOf("") }
+
+    val focusManager = LocalFocusManager.current
+    val coroutineScope = rememberCoroutineScope()
+
+    val canConfirm = acknowledgement == "I understand" && !isCancelling && vm.isSignedIn
+
+    LaunchedEffect(Unit) {
+        try { vm.fetchUserUsageStats() } catch (_: Exception) {}
+    }
+
+    Dialog(
+        onDismissRequest = { if (!isCancelling) onDismiss() },
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            dismissOnBackPress = !isCancelling,
+            dismissOnClickOutside = !isCancelling
+        )
+    ) {
+        Scaffold(
+            containerColor = Color(0xFF0F0F1A),
+            topBar = {
+                TopAppBar(
+                    title = { Text("Subscription", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold) },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF0F0F1A)),
+                    navigationIcon = {
+                        TextButton(onClick = onDismiss, enabled = !isCancelling) {
+                            Text("Close", color = Color.White.copy(alpha = 0.7f))
+                        }
+                    }
+                )
+            }
+        ) { paddingValues ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(Unit) { detectTapGestures(onTap = { focusManager.clearFocus() }) }
+                    .padding(paddingValues)
+                    .verticalScroll(rememberScrollState())
+                    .padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(22.dp)
+            ) {
+                Icon(
+                    imageVector = if (completed) Icons.Default.CheckCircle else Icons.Default.Warning,
+                    contentDescription = null,
+                    modifier = Modifier.size(44.dp),
+                    tint = if (completed) Color(0xFF4CAF50) else Color(0xFFFFA500)
+                )
+
+                Text(
+                    text = if (completed) "Renewal update confirmed" else "Before you cancel",
+                    fontSize = 30.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+
+                val expiresAtSeconds = 0L
+
+                if (completed) {
+                    val cancelMsg = ""
+                    if (cancelMsg.isNotEmpty()) {
+                        Text(cancelMsg, color = Color.White, fontSize = 15.sp)
+                    }
+                    Text(
+                        "You remain signed in. Your account will use the verified-user layout when paid access ends.",
+                        color = Color.White.copy(alpha = 0.85f),
+                        fontSize = 15.sp
+                    )
+                    if (expiresAtSeconds > 0L) {
+                        CancellationDateRow("Access ends", expiresAtSeconds)
+                    }
+                    Button(
+                        onClick = onDismiss,
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = AppleBlue),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Done", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.White)
+                    }
+                } else {
+                    Text(
+                        "Canceling stops automatic renewal. You keep your current access through its expiration date.",
+                        color = Color.White.copy(alpha = 0.85f),
+                        fontSize = 15.sp
+                    )
+
+                    if (expiresAtSeconds > 0L) {
+                        CancellationDateRow("Access ends", expiresAtSeconds)
+                        CancellationDateRow("Landmark exclusion begins", expiresAtSeconds + (15L * 86400L))
+                        CancellationDateRow("Permanent deletion becomes eligible", expiresAtSeconds + (30L * 86400L))
+                    } else {
+                        Text(
+                            "The schedule below starts when your paid access expires, not when you press this button. Your expiration date will be shown when billing confirms it.",
+                            color = Color.Gray,
+                            fontSize = 14.sp
+                        )
+                    }
+
+                    CancellationConsequenceRow(
+                        "Your account stays",
+                        "You stay signed in and can continue using the verified free account. Business features end when your paid access expires."
+                    )
+                    CancellationConsequenceRow(
+                        "Tokens",
+                        "Unused subscription tokens expire with their allowance period and do not return after a gap in paid access. Separately purchased tokens do not expire; they stay on your account but require an active paid plan to use. Trial tokens follow their trial expiration."
+                    )
+                    CancellationConsequenceRow(
+                        "First 14 days after expiry",
+                        "Your landmarks enter the subscription grace period, with expiration reminders."
+                    )
+                    CancellationConsequenceRow(
+                        "15 days after expiry",
+                        "Your landmarks are scheduled for exclusion from the app and models."
+                    )
+                    CancellationConsequenceRow(
+                        "30 days after expiry",
+                        "Your landmarks and uploaded media become eligible for permanent deletion. Do not rely on a delay in processing to recover them."
+                    )
+                    CancellationConsequenceRow(
+                        "If you return later",
+                        "Resubscribing before permanent deletion can stop subscription-related cleanup. It does not undo a separate deletion request. Once landmarks are permanently deleted, they cannot be restored: you must upload and create them again using tokens."
+                    )
+
+                    Text("Type I understand to confirm", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+
+                    OutlinedTextField(
+                        value = acknowledgement,
+                        onValueChange = { acknowledgement = it },
+                        placeholder = { Text("I understand", color = Color.Gray) },
+                        enabled = !isCancelling,
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = Color.White.copy(alpha = 0.05f),
+                            unfocusedContainerColor = Color.White.copy(alpha = 0.05f),
+                            focusedBorderColor = AppleBlue,
+                            unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White
+                        )
+                    )
+
+                    if (cancellationError.isNotEmpty()) {
+                        Text(cancellationError, color = Color.Red, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    }
+
+                    Button(
+                        onClick = {
+                            focusManager.clearFocus()
+                            isCancelling = true
+                            cancellationError = ""
+                            coroutineScope.launch {
+                                val success = try {
+                                    vm.cancelSubscription()
+                                } catch (e: Exception) {
+                                    cancellationError = e.localizedMessage ?: "Failed to cancel subscription."
+                                    false
+                                }
+                                isCancelling = false
+                                if (success) {
+                                    completed = true
+                                } else if (cancellationError.isEmpty()) {
+                                    val vmErr = ""
+                                    cancellationError = vmErr.ifEmpty { "Could not confirm cancellation. Please try again." }
+                                }
+                            }
+                        },
+                        enabled = canConfirm,
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color.Red,
+                            disabledContainerColor = Color.Red.copy(alpha = 0.3f)
+                        ),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (isCancelling) {
+                                CircularProgressIndicator(color = Color.White, modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                            }
+                            Text(
+                                if (isCancelling) "Confirming…" else "Confirm cancellation",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp
+                            )
+                        }
+                    }
+
+                    TextButton(
+                        onClick = onDismiss,
+                        enabled = !isCancelling,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Keep my plan", color = AppleBlue, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CancellationConsequenceRow(title: String, detail: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(title, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+        Text(detail, fontSize = 14.sp, color = Color.Gray, lineHeight = 20.sp)
+    }
+}
+
+@Composable
+private fun CancellationDateRow(title: String, timestampSecondsOrMs: Long) {
+    val millis = if (timestampSecondsOrMs < 10_000_000_000L) timestampSecondsOrMs * 1000L else timestampSecondsOrMs
+    val formatted = remember(millis) {
+        SimpleDateFormat("MMMM d, yyyy 'at' h:mm a", Locale.getDefault()).format(Date(millis))
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(title, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
+        Text(formatted, fontSize = 14.sp, color = Color.LightGray)
     }
 }
 
@@ -573,7 +864,8 @@ fun TrialWarningCard() {
             Text("Free Trial Active", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
             Text(
                 "Please subscribe before your 14-day trial ends to prevent your landmarks from being deactivated.",
-                fontSize = 13.sp, color = Color.Gray
+                fontSize = 13.sp,
+                color = Color.Gray
             )
         }
     }
@@ -586,25 +878,34 @@ fun GuestPromoCard(presenter: SettingsPresenter, isFullyLoggedIn: Boolean, onNav
         modifier = Modifier
             .padding(horizontal = 16.dp)
             .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .background(Color(0xFF0F172A)) // Match the solid dark blue from the screenshot
+            .clip(RoundedCornerShape(24.dp))
+            .background(
+                Brush.linearGradient(
+                    colors = listOf(Color(0xFF142659), Color(0xFF0D0D1F))
+                )
+            )
+            .border(
+                1.dp,
+                Brush.linearGradient(listOf(AppleBlue.copy(alpha = 0.5f), Color.Transparent)),
+                RoundedCornerShape(24.dp)
+            )
     ) {
         Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier
-                        .size(56.dp)
-                        .shadow(16.dp, CircleShape, ambientColor = AppleBlue, spotColor = AppleBlue)
+                        .size(48.dp)
+                        .shadow(8.dp, CircleShape, ambientColor = AppleBlue, spotColor = AppleBlue)
                         .clip(CircleShape)
                         .background(AppleBlue),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("👑", fontSize = 28.sp, color = Color.White) // Match iOS "crown.fill"
+                    Text("👑", fontSize = 20.sp, color = Color.White)
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(
                         if (isFullyLoggedIn) "Upgrade to Business" else "Join LookSee",
-                        fontSize = 19.sp,
+                        fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White
                     )
@@ -625,14 +926,20 @@ fun GuestPromoCard(presenter: SettingsPresenter, isFullyLoggedIn: Boolean, onNav
                             presenter.subscriptionStartingTab = 0
                             presenter.showSubscriptionFlow = true
                         } else {
+                            presenter.signupStartsAsBusiness = false
                             onNavigate("signup")
                         }
                     },
-                    modifier = Modifier.weight(1.3f).height(56.dp), // Matched iOS standard height
+                    modifier = Modifier.weight(1.3f).height(64.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = AppleBlue),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(14.dp)
                 ) {
-                    Text(if (isFullyLoggedIn) "View Business Plans" else "Create Free Account", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Text(
+                        if (isFullyLoggedIn) "View Business Plans" else "Create Free Account",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        color = Color.White
+                    )
                 }
                 if (!isFullyLoggedIn) {
                     Button(
@@ -640,9 +947,9 @@ fun GuestPromoCard(presenter: SettingsPresenter, isFullyLoggedIn: Boolean, onNav
                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             onNavigate("login")
                         },
-                        modifier = Modifier.weight(1f).height(56.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.12f)),
-                        shape = RoundedCornerShape(12.dp)
+                        modifier = Modifier.weight(1f).height(64.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.15f)),
+                        shape = RoundedCornerShape(14.dp)
                     ) {
                         Text("Log In", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.White)
                     }
@@ -664,56 +971,111 @@ fun UserProfileEditSheet(vm: AuthViewModel, onDismiss: () -> Unit) {
     var errorMessage by remember { mutableStateOf("") }
     var isSaving by remember { mutableStateOf(false) }
     var logoBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var showPhotoActionSheet by remember { mutableStateOf(false) }
 
     val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) logoBitmap = loadBitmapFromUri(context, uri)
     }
 
+    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()) { bitmap ->
+        if (bitmap != null) logoBitmap = bitmap
+    }
+
     Dialog(onDismissRequest = { if (!isSaving) onDismiss() }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Box(modifier = Modifier.fillMaxSize().background(Color(0xFF0F0F1A)).clickable { focusManager.clearFocus() }) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0xFF0F0F1A))
+                .pointerInput(Unit) { detectTapGestures(onTap = { focusManager.clearFocus() }) }
+        ) {
             Column(
-                modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(28.dp)
             ) {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
-                    TextButton(onClick = onDismiss) { Text("Cancel", color = Color.White.copy(alpha = 0.7f)) }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(onClick = { if (!isSaving) onDismiss() }, enabled = !isSaving) {
+                        Text("Cancel", color = Color.White.copy(alpha = 0.7f))
+                    }
+                    Text("Edit Profile", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                    Spacer(Modifier.width(64.dp))
                 }
 
-                // Avatar Section
-                Box(contentAlignment = Alignment.BottomEnd, modifier = Modifier.clickable {
-                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    galleryLauncher.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                }) {
+                // 1. Avatar Section with Camera Action Sheet Trigger
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Box(
-                        modifier = Modifier.size(114.dp).clip(CircleShape).border(2.dp, Brush.linearGradient(listOf(AppleBlue, Color.Magenta)), CircleShape).background(Color.DarkGray),
-                        contentAlignment = Alignment.Center
+                        contentAlignment = Alignment.BottomEnd,
+                        modifier = Modifier.clickable {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            showPhotoActionSheet = true
+                        }
                     ) {
-                        if (logoBitmap != null) {
-                            Image(bitmap = logoBitmap!!.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                        } else if (vm.profileImageUrl.isNotEmpty()) {
-                            RemoteImage(url = vm.profileImageUrl, modifier = Modifier.fillMaxSize())
-                        } else {
-                            Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.size(48.dp), tint = Color.White.copy(0.7f))
+                        Box(
+                            modifier = Modifier
+                                .size(114.dp)
+                                .clip(CircleShape)
+                                .border(2.dp, Brush.linearGradient(listOf(AppleBlue, Color(0xFF9C27B0))), CircleShape)
+                                .background(
+                                    Brush.linearGradient(
+                                        listOf(AppleBlue.copy(alpha = 0.3f), Color(0xFF9C27B0).copy(alpha = 0.2f))
+                                    )
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (logoBitmap != null) {
+                                Image(
+                                    bitmap = logoBitmap!!.asImageBitmap(),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(108.dp).clip(CircleShape),
+                                    contentScale = ContentScale.Crop
+                                )
+                            } else if (vm.profileImageUrl.isNotEmpty()) {
+                                RemoteImage(
+                                    url = vm.profileImageUrl,
+                                    modifier = Modifier.size(108.dp).clip(CircleShape)
+                                )
+                            } else {
+                                Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.size(48.dp), tint = Color.White.copy(0.7f))
+                            }
+                        }
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(AppleBlue)
+                                .border(3.dp, Color(0xFF0F0F1A), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.CameraAlt, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
                         }
                     }
-                    Box(modifier = Modifier.size(36.dp).clip(CircleShape).background(AppleBlue).border(3.dp, Color(0xFF0F0F1A), CircleShape), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Default.CameraAlt, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+
+                    TextButton(onClick = { showPhotoActionSheet = true }) {
+                        Text("Edit picture", color = AppleBlue, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                     }
                 }
 
-                // Username Input
+                // 2. Username Input
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("USERNAME", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                    Text("USERNAME", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.5f))
                     OutlinedTextField(
                         value = draftUsername,
-                        onValueChange = { draftUsername = it.lowercase(Locale.ROOT).filter { char -> char.isLetterOrDigit() || char == '_' } },
+                        onValueChange = {
+                            draftUsername = it.lowercase(Locale.ROOT).filter { ch -> ch in 'a'..'z' || ch in '0'..'9' || ch == '_' }
+                        },
                         leadingIcon = { Text("@", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = AppleBlue) },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedContainerColor = Color.White.copy(0.05f),
                             unfocusedContainerColor = Color.White.copy(0.05f),
                             focusedBorderColor = AppleBlue,
-                            unfocusedBorderColor = Color.Transparent,
+                            unfocusedBorderColor = Color.White.copy(alpha = 0.1f),
                             focusedTextColor = Color.White,
                             unfocusedTextColor = Color.White
                         ),
@@ -730,26 +1092,107 @@ fun UserProfileEditSheet(vm: AuthViewModel, onDismiss: () -> Unit) {
                     )
                 }
 
-                if (errorMessage.isNotEmpty()) Text(errorMessage, color = Color.Red)
+                if (errorMessage.isNotEmpty()) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Warning, contentDescription = null, tint = Color.Red, modifier = Modifier.size(16.dp))
+                        Text(errorMessage, color = Color.Red, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
 
+                // 3. Save Button
                 Button(
                     onClick = {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         isSaving = true
+                        errorMessage = ""
                         coroutineScope.launch {
                             val base64 = logoBitmap?.let { resizeAndConvertToBase64(it) }
-                            val result = vm.updateUserIdentity(newUsername = draftUsername, emailToSave = vm.userEmail, profileBase64 = base64)
+                            val result = vm.updateUserIdentity(
+                                newUsername = draftUsername,
+                                emailToSave = vm.userEmail,
+                                profileBase64 = base64
+                            )
                             isSaving = false
-                            if (result.first) onDismiss() else errorMessage = result.second ?: "Error updating profile."
+                            if (result.first) onDismiss() else errorMessage = result.second ?: "Failed to update profile."
                         }
                     },
                     modifier = Modifier.fillMaxWidth().height(56.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = AppleBlue),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = AppleBlue,
+                        disabledContainerColor = Color.Gray.copy(alpha = 0.3f)
+                    ),
                     shape = RoundedCornerShape(16.dp),
-                    enabled = !isSaving
+                    enabled = draftUsername.isNotEmpty() && !isSaving
                 ) {
                     if (isSaving) CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
-                    else Text("Save Changes", fontWeight = FontWeight.Bold)
+                    else Text("Save Changes", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.White)
+                }
+            }
+
+            // Bottom Sheet Action Menu (Matches iOS showPhotoActionSheet)
+            if (showPhotoActionSheet) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.5f))
+                        .zIndex(100f)
+                        .clickable { showPhotoActionSheet = false },
+                    contentAlignment = Alignment.BottomCenter
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .padding(horizontal = 20.dp, vertical = 30.dp)
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(24.dp))
+                            .background(Color(0xFF1F1F29))
+                            .clickable(enabled = false) {},
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            "Change Profile Picture",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.Gray,
+                            modifier = Modifier.padding(vertical = 16.dp)
+                        )
+                        HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                        TextButton(
+                            onClick = {
+                                showPhotoActionSheet = false
+                                cameraLauncher.launch()
+                            },
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                        ) {
+                            Text("Take Photo", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                        }
+                        HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                        TextButton(
+                            onClick = {
+                                showPhotoActionSheet = false
+                                galleryLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                            },
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                        ) {
+                            Text("Choose from Library", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                        }
+                        if (logoBitmap != null || vm.profileImageUrl.isNotEmpty()) {
+                            HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                            TextButton(
+                                onClick = {
+                                    showPhotoActionSheet = false
+                                    logoBitmap = null
+                                    vm.profileImageUrl = ""
+                                },
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                            ) {
+                                Text("Remove Photo", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.Red)
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -758,39 +1201,39 @@ fun UserProfileEditSheet(vm: AuthViewModel, onDismiss: () -> Unit) {
 
 @Composable
 fun RemoteImage(url: String, modifier: Modifier = Modifier, contentScale: ContentScale = ContentScale.Crop) {
-    var bitmap by remember { mutableStateOf<Bitmap?>(null) }
-    LaunchedEffect(url) {
-        withContext(Dispatchers.IO) {
-            try {
-                val stream = URL(url).openStream()
-                bitmap = BitmapFactory.decodeStream(stream)
-            } catch (e: Exception) { e.printStackTrace() }
-        }
-    }
-    if (bitmap != null) Image(bitmap = bitmap!!.asImageBitmap(), contentDescription = null, modifier = modifier, contentScale = contentScale)
-    else Box(modifier = modifier.background(Color.DarkGray))
+    val cloudFrontUrl = remember(url) { normalizeCloudFrontUrl(url) }
+    AsyncImage(
+        model = cloudFrontUrl,
+        contentDescription = null,
+        modifier = modifier,
+        contentScale = contentScale
+    )
 }
 
 fun loadBitmapFromUri(context: Context, uri: Uri): Bitmap? {
     return try {
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             ImageDecoder.decodeBitmap(ImageDecoder.createSource(context.contentResolver, uri))
         } else {
             @Suppress("DEPRECATION")
             android.provider.MediaStore.Images.Media.getBitmap(context.contentResolver, uri)
         }
-    } catch (e: Exception) { null }
+    } catch (_: Exception) { null }
 }
 
 fun resizeAndConvertToBase64(image: Bitmap): String {
     val maxDimension = 400f
-    val ratio = minOf(maxDimension / image.width, maxDimension / image.height)
-    val resized = Bitmap.createScaledBitmap(image, (image.width * ratio).toInt(), (image.height * ratio).toInt(), true)
+    val ratio = minOf(maxDimension / image.width, maxDimension / image.height, 1f)
+    val resized = Bitmap.createScaledBitmap(
+        image,
+        (image.width * ratio).toInt().coerceAtLeast(1),
+        (image.height * ratio).toInt().coerceAtLeast(1),
+        true
+    )
     val outputStream = ByteArrayOutputStream()
     resized.compress(Bitmap.CompressFormat.JPEG, 60, outputStream)
     return Base64.encodeToString(outputStream.toByteArray(), Base64.DEFAULT)
 }
-
 
 // --- Merged from DeepSettings.kt ---
 @OptIn(ExperimentalMaterial3Api::class)
@@ -804,24 +1247,24 @@ fun DeepSettingsView(
     val context = LocalContext.current
     val modelSelector = remember { ModelSelector.shared(context) }
     val activeRelease by modelSelector.activeRelease.collectAsState()
-    
+
     val coroutineScope = rememberCoroutineScope()
     var showAlertSignOut by remember { mutableStateOf(false) }
     var isReloading by remember { mutableStateOf(false) }
     var showReloadSuccess by remember { mutableStateOf(false) }
-    
+
     var showGlobalNegativeCamera by remember { mutableStateOf(false) }
     var isUploadingGlobalNegative by remember { mutableStateOf(false) }
 
     val isFullyLoggedIn = vm.isSignedIn && vm.userEmail.isNotEmpty()
 
     Scaffold(
-        containerColor = Color(0xFF000000),
+        containerColor = Color.Black,
         topBar = {
             TopAppBar(
                 title = { Text("Settings", fontSize = 18.sp, color = Color.White) },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color(0xFF000000),
+                    containerColor = Color.Black,
                     navigationIconContentColor = Color.White
                 ),
                 navigationIcon = {
@@ -840,19 +1283,13 @@ fun DeepSettingsView(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
-            // App Language (Placeholder/System Link)
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    "APP LANGUAGE",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.Gray
-                )
-                
+                Text("APP LANGUAGE", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+
                 Surface(
                     onClick = {
-                        val intent = android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                            data = android.net.Uri.fromParts("package", context.packageName, null)
+                        val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                            data = Uri.fromParts("package", context.packageName, null)
                         }
                         context.startActivity(intent)
                     },
@@ -873,9 +1310,12 @@ fun DeepSettingsView(
                 }
             }
 
-
-
-            val adminEmails = listOf("angelgabriel2828@icloud.com", "angelgabriel0846@gmail.com", "nisargdpatel04@gmail.com", "matt@informationoutpost.com")
+            val adminEmails = listOf(
+                "angelgabriel2828@icloud.com",
+                "angelgabriel0846@gmail.com",
+                "nisargdpatel04@gmail.com",
+                "matt@informationoutpost.com"
+            )
             if (vm.userEmail.lowercase() in adminEmails) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("ADMIN TOOLS", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
@@ -912,7 +1352,7 @@ fun DeepSettingsView(
                         isReloading = true
                         coroutineScope.launch {
                             delay(1500)
-                            looksee.angelll.com.models.ModelAutoRefreshService.shared(context).start()
+                            ModelAutoRefreshService.shared(context).start()
                             isReloading = false
                             showReloadSuccess = true
                             delay(2500)
@@ -939,7 +1379,7 @@ fun DeepSettingsView(
                         }
                     }
                 }
-                
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.Center,
@@ -957,7 +1397,6 @@ fun DeepSettingsView(
                 }
             }
 
-            // Sign Out Button
             if (isFullyLoggedIn) {
                 Spacer(Modifier.height(8.dp))
                 Button(
@@ -973,39 +1412,39 @@ fun DeepSettingsView(
                 }
             }
 
-            androidx.compose.material3.Text(
+            Text(
                 text = "Copyright © 1999-2026 Information Outpost, LLC.  All rights reserved.",
                 fontSize = 10.sp,
                 color = Color.White.copy(alpha = 0.5f),
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                textAlign = TextAlign.Center,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 24.dp)
                     .padding(top = 16.dp, bottom = 40.dp)
             )
         }
+
         if (showGlobalNegativeCamera) {
-            looksee.angelll.com.uifiles.NegativeVideoCameraView(
+            NegativeVideoCameraView(
                 uiTargetDuration = 10,
                 minTotalTimeLimit = 2,
-                maxTotalTimeLimit = 30,
+                maxTotalTimeLimit = 10,
                 onDone = { video ->
                     coroutineScope.launch {
                         isUploadingGlobalNegative = true
                         try {
-                            looksee.angelll.com.models.BusinessLandmarkService().uploadGlobalNegativeVideo(video.file)
-                        } catch (e: Exception) {
-                            // Ignored for now
+                            BusinessLandmarkService().uploadGlobalNegativeVideo(video.file)
+                        } catch (_: Exception) {
                         } finally {
                             isUploadingGlobalNegative = false
-                            try { video.file.delete() } catch(e:Exception){}
+                            try { video.file.delete() } catch (_: Exception) {}
                             showGlobalNegativeCamera = false
                         }
                     }
                 },
                 onDismiss = { showGlobalNegativeCamera = false }
             )
-            
+
             if (isUploadingGlobalNegative) {
                 Box(
                     modifier = Modifier.fillMaxSize().background(Color.Black.copy(0.6f)),
@@ -1017,6 +1456,7 @@ fun DeepSettingsView(
                     ) {
                         CircularProgressIndicator(color = Color.White)
                         Text("Uploading Global Negative...", color = Color.White, fontWeight = FontWeight.Bold)
+                        Text("Please keep app open", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
                     }
                 }
             }
@@ -1051,9 +1491,7 @@ fun DeepSettingsView(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ModelSelectionView(
-    onBack: () -> Unit
-) {
+fun ModelSelectionView(onBack: () -> Unit) {
     val context = LocalContext.current
     val modelSelector = remember { ModelSelector.shared(context) }
     val selectedTestModelID by modelSelector.selectedTestModelId.collectAsState()
@@ -1114,7 +1552,7 @@ fun ModelSelectionView(
                     )
                 }
             }
-            
+
             item {
                 Text(
                     "The selected model is applied immediately and remembered between launches.",
@@ -1122,6 +1560,23 @@ fun ModelSelectionView(
                     color = Color.Gray,
                     modifier = Modifier.padding(top = 8.dp)
                 )
+            }
+
+            if (availableModels.size != 3) {
+                item {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.padding(top = 8.dp)
+                    ) {
+                        Icon(Icons.Default.Build, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(16.dp))
+                        Text(
+                            "Expected 3 bundled models; found ${availableModels.size}.",
+                            fontSize = 12.sp,
+                            color = Color.Gray
+                        )
+                    }
+                }
             }
         }
     }
@@ -1131,7 +1586,7 @@ fun ModelSelectionView(
 fun ModelRow(
     title: String,
     detail: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: ImageVector,
     isSelected: Boolean,
     onClick: () -> Unit
 ) {
@@ -1161,8 +1616,6 @@ fun ModelRow(
                 Icon(Icons.Default.CheckCircle, contentDescription = "Selected", tint = AppleBlue, modifier = Modifier.size(20.dp))
             }
         }
-        
-
     }
 }
 
@@ -1211,7 +1664,7 @@ fun BusinessProfileScreen(
                     color = Color.Gray
                 )
                 Text(
-                    "This is exactly how your business will appear to users at the bottom of your AR Landmarks.",
+                    "This is how your business will appear to users at the bottom of your landmark popups.",
                     fontSize = 14.sp,
                     color = Color.Gray,
                     textAlign = TextAlign.Center,
@@ -1225,7 +1678,7 @@ fun BusinessProfileScreen(
 
             MerchantCard(
                 storeName = storeName,
-                logoUrl = vm.storeLogoUrl,
+                logoUrl = normalizeCloudFrontUrl(vm.storeLogoUrl),
                 bio = bio,
                 phone = phone,
                 website = vm.storeWebsite,
@@ -1263,6 +1716,7 @@ fun BusinessProfileEditSheet(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    val focusManager = LocalFocusManager.current
 
     var draftName by remember { mutableStateOf(vm.storeName) }
     var draftPhone by remember { mutableStateOf(vm.phoneNumber) }
@@ -1276,18 +1730,13 @@ fun BusinessProfileEditSheet(
 
     val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) {
-            logoBitmap = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                ImageDecoder.decodeBitmap(ImageDecoder.createSource(context.contentResolver, uri))
-            } else {
-                @Suppress("DEPRECATION")
-                android.provider.MediaStore.Images.Media.getBitmap(context.contentResolver, uri)
-            }
+            logoBitmap = loadBitmapFromUri(context, uri)
             draftLogoUrl = ""
         }
     }
 
     Dialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!isSaving) onDismiss() },
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
         Scaffold(
@@ -1297,7 +1746,9 @@ fun BusinessProfileEditSheet(
                     title = { Text("Edit Profile", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold) },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF0F0F1A)),
                     navigationIcon = {
-                        TextButton(onClick = onDismiss) { Text("Cancel", color = Color.White.copy(alpha = 0.7f)) }
+                        TextButton(onClick = onDismiss, enabled = !isSaving) {
+                            Text("Cancel", color = Color.White.copy(alpha = 0.7f))
+                        }
                     },
                     actions = {
                         TextButton(
@@ -1330,6 +1781,7 @@ fun BusinessProfileEditSheet(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
+                    .pointerInput(Unit) { detectTapGestures(onTap = { focusManager.clearFocus() }) }
                     .padding(paddingValues)
                     .verticalScroll(rememberScrollState())
                     .padding(16.dp),
@@ -1340,27 +1792,41 @@ fun BusinessProfileEditSheet(
                     Text("STORE LOGO", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         Box(
-                            modifier = Modifier.size(56.dp).clip(CircleShape).background(AppleBlue.copy(alpha = 0.15f)),
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(CircleShape)
+                                .background(AppleBlue.copy(alpha = 0.15f)),
                             contentAlignment = Alignment.Center
                         ) {
                             if (logoBitmap != null) {
-                                Image(bitmap = logoBitmap!!.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                                Image(
+                                    bitmap = logoBitmap!!.asImageBitmap(),
+                                    contentDescription = null,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop
+                                )
                             } else if (draftLogoUrl.isNotEmpty()) {
                                 RemoteImage(url = draftLogoUrl, modifier = Modifier.fillMaxSize())
                             } else {
                                 Icon(Icons.Default.Storefront, contentDescription = null, tint = AppleBlue)
                             }
                         }
-                        
+
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             TextButton(onClick = { galleryLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) {
                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                     Icon(Icons.Default.PhotoCamera, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    Text(if(draftLogoUrl.isEmpty() && logoBitmap == null) "Choose Photo" else "Change Logo", fontWeight = FontWeight.Bold)
+                                    Text(
+                                        if (draftLogoUrl.isEmpty() && logoBitmap == null) "Choose Photo" else "Change Logo",
+                                        fontWeight = FontWeight.Bold
+                                    )
                                 }
                             }
                             if (draftLogoUrl.isNotEmpty() || logoBitmap != null) {
-                                TextButton(onClick = { draftLogoUrl = ""; logoBitmap = null }, colors = ButtonDefaults.textButtonColors(contentColor = Color.Red)) {
+                                TextButton(
+                                    onClick = { draftLogoUrl = ""; logoBitmap = null },
+                                    colors = ButtonDefaults.textButtonColors(contentColor = Color.Red)
+                                ) {
                                     Text("Remove Logo", fontSize = 12.sp)
                                 }
                             }
@@ -1372,21 +1838,35 @@ fun BusinessProfileEditSheet(
                 EditField(label = "STORE NAME", value = draftName, onValueChange = { draftName = it })
                 EditField(label = "SHORT BIO", value = draftBio, onValueChange = { draftBio = it }, singleLine = false)
 
-                // Contact Info
-                EditField(label = "PHONE NUMBER", value = draftPhone, onValueChange = { draftPhone = it }, keyboardType = KeyboardType.Phone)
-                EditField(label = "WEBSITE", value = draftWebsite, onValueChange = { draftWebsite = it }, keyboardType = KeyboardType.Uri)
-                EditField(label = "ADDRESS", value = draftAddress, onValueChange = { draftAddress = it })
+                // Contact Info (10-digit phone filter matching iOS Settings.swift)
+                EditField(
+                    label = "PHONE NUMBER (OPTIONAL)",
+                    value = draftPhone,
+                    onValueChange = { newValue ->
+                        draftPhone = newValue.filter { it.isDigit() }.take(10)
+                    },
+                    keyboardType = KeyboardType.Phone
+                )
+                EditField(label = "WEBSITE (OPTIONAL)", value = draftWebsite, onValueChange = { draftWebsite = it }, keyboardType = KeyboardType.Uri)
+                EditField(label = "BUSINESS ADDRESS (OPTIONAL)", value = draftAddress, onValueChange = { draftAddress = it })
             }
         }
     }
 }
 
 @Composable
-fun EditField(label: String, value: String, onValueChange: (String) -> Unit, singleLine: Boolean = true, keyboardType: KeyboardType = KeyboardType.Text) {
+fun EditField(
+    label: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    singleLine: Boolean = true,
+    keyboardType: KeyboardType = KeyboardType.Text
+) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(label, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
         OutlinedTextField(
-            value = value, onValueChange = onValueChange,
+            value = value,
+            onValueChange = onValueChange,
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp),
             singleLine = singleLine,

@@ -1,5 +1,6 @@
 package looksee.angelll.com.uifiles
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.media.MediaMetadataRetriever
 import android.net.Uri
@@ -7,7 +8,6 @@ import android.util.Log
 import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
-import androidx.compose.animation.*
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -28,13 +28,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
@@ -56,9 +55,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.google.accompanist.permissions.ExperimentalPermissionsApi
+import com.google.accompanist.permissions.isGranted
+import com.google.accompanist.permissions.rememberPermissionState
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
@@ -72,7 +76,6 @@ import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
-import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -82,32 +85,37 @@ import looksee.angelll.com.models.*
 import looksee.angelll.com.ui.theme.*
 import looksee.angelll.com.viewmodels.*
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalPermissionsApi::class)
 @Composable
 fun TextScannerSheet(
     onTextScanned: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val haptic = LocalHapticFeedback.current
+    val cameraPermissionState = rememberPermissionState(Manifest.permission.CAMERA)
 
-    ModalBottomSheet(
+    Dialog(
         onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = Color(0xFF1C1C1E),
-        dragHandle = null,
-        contentWindowInsets = { WindowInsets(0.dp) },
-        modifier = Modifier.fillMaxSize()
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
+        )
     ) {
-        Column(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0xFF1C1C1E))
+        ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .statusBarsPadding()
                     .padding(horizontal = 16.dp, vertical = 14.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    "Point at text and tap to copy",
+                    "Tap highlighted text to copy",
                     fontSize = 17.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White
@@ -118,9 +126,36 @@ fun TextScannerSheet(
             }
 
             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                TextScannerCameraView { scannedText ->
-                    onTextScanned(scannedText)
-                    onDismiss()
+                if (cameraPermissionState.status.isGranted) {
+                    TextScannerCameraView(
+                        onTextTapped = { scannedText ->
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onTextScanned(scannedText)
+                            onDismiss()
+                        }
+                    )
+                } else {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(32.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            "Camera permission is required to scan text from signage.",
+                            color = Color.White,
+                            textAlign = TextAlign.Center,
+                            fontSize = 16.sp
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Button(
+                            onClick = { cameraPermissionState.launchPermissionRequest() },
+                            colors = ButtonDefaults.buttonColors(containerColor = AppleBlue)
+                        ) {
+                            Text("Grant Permission", fontWeight = FontWeight.Bold)
+                        }
+                    }
                 }
             }
         }
@@ -316,7 +351,7 @@ private fun TextScannerCameraView(onTextTapped: (String) -> Unit) {
                     color = Color(0xFFFFCC00).copy(alpha = 0.16f),
                     topLeft = Offset(left, top),
                     size = Size(right - left, bottom - top),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(10f, 10f)
+                    cornerRadius = CornerRadius(10f, 10f)
                 )
 
                 drawLine(bracketColor, Offset(left, top + bracketLen), Offset(left, top), strokeW)
@@ -341,8 +376,10 @@ private fun TextScannerCameraView(onTextTapped: (String) -> Unit) {
                             .lines()
                             .map { it.trim() }
                             .filter { it.isNotBlank() }
-                            .joinToString("\n")
-                        onTextTapped(cleanLines)
+                            .joinToString(" ")
+                        if (cleanLines.isNotBlank()) {
+                            onTextTapped(cleanLines)
+                        }
                     }
             )
         }
@@ -402,8 +439,6 @@ fun LandmarkRecordScreen(
 
     val isKeyboardVisible = WindowInsets.ime.getBottom(density) > 0
 
-    // Smoothly scroll the active text field into position when the keyboard opens or focus changes,
-    // without any scroll-interceptor that could prematurely close the keyboard.
     LaunchedEffect(isKeyboardVisible, isLabelFocused, isDescFocused) {
         if (isKeyboardVisible) {
             delay(150)
@@ -426,9 +461,6 @@ fun LandmarkRecordScreen(
 
     val isAdditionalMedia = existingLandmarkId != null
 
-    // Exact iOS duration limits:
-    // Positive: 30s min / 120s max (1s min for additional media)
-    // Negative: 10s min / 45s max (1s min for additional media)
     val maxPositiveVideoDuration = 120
     val maxNegativeVideoDuration = 45
     val minPositiveVideoDuration = if (existingLandmarkId != null) 1 else 30
@@ -478,7 +510,6 @@ fun LandmarkRecordScreen(
             if (fix != null) {
                 extractedLatitude = fix.latitude
                 extractedLongitude = fix.longitude
-                // Stop continuous GPS updates once coordinates are locked so the form doesn't recompose while typing
                 locationManager.stop()
             }
         }
@@ -551,7 +582,6 @@ fun LandmarkRecordScreen(
     fun startFullSubmission() {
         focusManager.clearFocus()
         keyboardController?.hide()
-        Log.d("LookSee_Debug_Record", "Starting full submission!")
         if (completedPositiveResult == null) {
             if (!vm.hasActiveSubscription) {
                 limitAlertTitle = "Subscription Required"
@@ -586,7 +616,6 @@ fun LandmarkRecordScreen(
                 }
             }
 
-            Log.d("LookSee_Debug_Record", "Queued successfully. Retrying AutoUploadManager.")
             AutoUploadManager.shared(context).forceRetry()
             showBackgroundUploadAlert = true
         }
@@ -650,7 +679,7 @@ fun LandmarkRecordScreen(
                         IconButton(onClick = {
                             focusManager.clearFocus()
                             keyboardController?.hide()
-                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             onDismiss()
                         }) {
                             Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
@@ -675,7 +704,7 @@ fun LandmarkRecordScreen(
                                                 .size(32.dp)
                                                 .background(Color.Black.copy(alpha = 0.6f), CircleShape)
                                                 .clickable {
-                                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                                     clearScreen()
                                                 },
                                             contentAlignment = Alignment.Center
@@ -709,7 +738,6 @@ fun LandmarkRecordScreen(
                     }
 
                     if (isFormVisible) {
-                        // LANDMARK LABEL SECTION
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -764,7 +792,6 @@ fun LandmarkRecordScreen(
 
                         Spacer(Modifier.height(10.dp))
 
-                        // SHORT DESCRIPTION SECTION
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -903,7 +930,6 @@ fun LandmarkRecordScreen(
                     }
                 }
 
-                // Keyboard accessory bar (stays anchored cleanly above the keyboard)
                 if (isKeyboardVisible) {
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
@@ -972,7 +998,7 @@ fun LandmarkRecordScreen(
         if (showTextScanner) {
             TextScannerSheet(
                 onTextScanned = { newText: String ->
-                    shortDescription = if (shortDescription.isBlank()) newText else "$shortDescription\n$newText"
+                    shortDescription = if (shortDescription.isBlank()) newText else "$shortDescription $newText"
                 },
                 onDismiss = { showTextScanner = false }
             )

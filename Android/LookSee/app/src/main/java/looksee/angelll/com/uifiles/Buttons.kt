@@ -10,24 +10,19 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -37,6 +32,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
@@ -44,19 +40,19 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.zIndex
-import androidx.core.app.ComponentActivity
-import androidx.localbroadcastmanager.content.LocalBroadcastManager
+import androidx.core.content.ContextCompat
+import androidx.core.content.edit
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.seconds
 import looksee.angelll.com.detection.LocationManager
 import looksee.angelll.com.models.*
-import looksee.angelll.com.models.ModelAutoRefreshService
 import looksee.angelll.com.ui.theme.AppleBlue
 import looksee.angelll.com.ui.theme.DarkBackground
 import looksee.angelll.com.viewmodels.AuthState
@@ -73,15 +69,11 @@ fun ButtonsScreen(
     val haptic = LocalHapticFeedback.current
     val coroutineScope = rememberCoroutineScope()
 
-    // ViewModels & Managers
     val infoView = remember { VariableContainer.shared }
-    val libraryService = remember { LibraryService.shared(context) }
-    val modelService = remember { ModelService.shared(context) }
     val locationManager = remember { LocationManager(context) }
     val nearbyService = remember { NearbyLandmarkService() }
     val prefs = context.getSharedPreferences("LookSeePrefs", Context.MODE_PRIVATE)
 
-    // State
     var showPromotion by remember { mutableStateOf(false) }
     var showBusinessAlert by remember { mutableStateOf(false) }
     var showSignUpPrompt by remember { mutableStateOf(false) }
@@ -91,9 +83,7 @@ fun ButtonsScreen(
 
     var pendingUploadLandmarkId by remember { mutableStateOf<String?>(null) }
     var showRecordSheet by remember { mutableStateOf(false) }
-    var isRecordSheetAnimating by remember { mutableStateOf(false) }
 
-    // Redo logic
     var redoLandmarkId by remember { mutableStateOf<String?>(null) }
     var redoLandmarkLabel by remember { mutableStateOf<String?>(null) }
     var redoLandmarkDesc by remember { mutableStateOf<String?>(null) }
@@ -103,8 +93,8 @@ fun ButtonsScreen(
     var chromeFadeJob by remember { mutableStateOf<Job?>(null) }
     var isDetecting by remember { mutableStateOf(false) }
     var showTutorial by remember { mutableStateOf(false) }
-    var isReticlePulsing by remember { mutableStateOf(false) }
     var hasPreloadedMap by remember { mutableStateOf(false) }
+    var isReticlePulsing by remember { mutableStateOf(false) } // 🚀 THE FIX: Restored missing variable
 
     var showGenericNotification by remember { mutableStateOf(false) }
     var hasShownNotificationThisSession by remember { mutableStateOf(false) }
@@ -169,7 +159,7 @@ fun ButtonsScreen(
         chromeFadeJob?.cancel()
         if (!isScanTab) return
         chromeFadeJob = coroutineScope.launch {
-            delay(3000)
+            delay(3.seconds) // 🚀 THE FIX: Kotlin Duration API
             if (!isDetecting) {
                 chromeVisible = false
             }
@@ -179,6 +169,12 @@ fun ButtonsScreen(
     fun revealChromeThenFade() {
         chromeVisible = true
         scheduleChromeFadeIfNeeded()
+    }
+
+    fun handleNavigation(route: String) {
+        chromeFadeJob?.cancel()
+        chromeVisible = true
+        onNavigate(route)
     }
 
     fun checkForGlobalNotifications() {
@@ -191,17 +187,20 @@ fun ButtonsScreen(
             val dismissedString = prefs.getString("dismissedGlobalNotifs_v4", "") ?: ""
             val dismissedSet = dismissedString.split(",").filter { it.isNotEmpty() }.toMutableSet()
 
-            val needsMediaLandmark = silentVM.landmarks.value.firstOrNull { it.status == "NEEDS_MORE_MEDIA" && !dismissedSet.contains(it.landmarkId) }
+            val needsMediaLandmark = silentVM.landmarks.value.firstOrNull {
+                it.status == "NEEDS_MORE_MEDIA" && !dismissedSet.contains(it.landmarkId)
+            }
 
             if (needsMediaLandmark != null) {
                 dismissedSet.add(needsMediaLandmark.landmarkId)
-                prefs.edit().putString("dismissedGlobalNotifs_v4", dismissedSet.joinToString(",")).apply()
+                // 🚀 THE FIX: Modern KTX SharedPreferences edit
+                prefs.edit { putString("dismissedGlobalNotifs_v4", dismissedSet.joinToString(",")) }
 
                 hasShownNotificationThisSession = true
                 showGenericNotification = true
                 chromeVisible = true
 
-                delay(3000)
+                delay(3.seconds) // 🚀 THE FIX: Kotlin Duration API
                 showGenericNotification = false
             }
         }
@@ -217,21 +216,19 @@ fun ButtonsScreen(
                         }
                     }
                     "TriggerRedoRecord" -> {
-                        Log.d("LookSee_Debug_Nav", "BROADCAST RECEIVED! TriggerRedoRecord captured.")
                         redoLandmarkId = intent.getStringExtra("id")
                         redoLandmarkLabel = intent.getStringExtra("label")
                         redoLandmarkDesc = intent.getStringExtra("description")
                         redoSecondsNeeded = intent.getDoubleExtra("secondsNeeded", 30.0).takeIf { it > 0 }
 
                         coroutineScope.launch {
-                            delay(400)
-                            Log.d("LookSee_Debug_Nav", "Opening LandmarkRecord Sheet for ID: $redoLandmarkId")
+                            delay(400.milliseconds) // 🚀 THE FIX: Kotlin Duration API
                             showRecordSheet = true
                         }
                     }
                     "looksee.action.NAVIGATE" -> {
                         intent.getStringExtra("DESTINATION")?.let {
-                            onNavigate(it)
+                            handleNavigation(it)
                         }
                     }
                 }
@@ -242,10 +239,17 @@ fun ButtonsScreen(
             addAction("TriggerRedoRecord")
             addAction("looksee.action.NAVIGATE")
         }
-        LocalBroadcastManager.getInstance(context).registerReceiver(receiver, filter)
+
+        // 🚀 THE FIX: Modern Android 13+ broadcast receiver instead of LocalBroadcastManager
+        ContextCompat.registerReceiver(
+            context,
+            receiver,
+            filter,
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
 
         onDispose {
-            LocalBroadcastManager.getInstance(context).unregisterReceiver(receiver)
+            context.unregisterReceiver(receiver)
         }
     }
 
@@ -261,7 +265,7 @@ fun ButtonsScreen(
     LaunchedEffect(Unit) {
         scheduleChromeFadeIfNeeded()
         isReticlePulsing = true
-        delay(500)
+        delay(500.milliseconds) // 🚀 THE FIX: Kotlin Duration API
         hasPreloadedMap = true
         checkForGlobalNotifications()
     }
@@ -279,8 +283,6 @@ fun ButtonsScreen(
     }
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
-
-        // BACKGROUND: The Pager (holds Camera or Map)
         HorizontalPager(
             state = pagerState,
             modifier = Modifier.fillMaxSize(),
@@ -315,7 +317,6 @@ fun ButtonsScreen(
             }
         }
 
-        // FOREGROUND TOP: Status Bar & Title Buttons
         AnimatedVisibility(
             visible = chromeVisible || !isScanTab,
             enter = fadeIn() + slideInVertically(initialOffsetY = { -it }),
@@ -325,7 +326,6 @@ fun ButtonsScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    // 🚀 THE FIX: Always transparent! The map draws fully behind the top row of buttons now.
                     .background(Color.Transparent)
                     .statusBarsPadding()
             ) {
@@ -336,7 +336,7 @@ fun ButtonsScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     NavButton(icon = Icons.Outlined.Info, label = "Info") {
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         showTutorial = true
                     }
 
@@ -348,7 +348,7 @@ fun ButtonsScreen(
                         modifier = Modifier
                             .weight(1f)
                             .clickable {
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 if (isBusinessMode) showPromotion = true else showBusinessAlert = true
                             }
                     ) { targetTitle ->
@@ -364,14 +364,13 @@ fun ButtonsScreen(
                     }
 
                     NavButton(icon = Icons.Default.Menu, label = "Menu") {
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        onNavigate("Settings")
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        handleNavigation("Settings")
                     }
                 }
             }
         }
 
-        // FOREGROUND BOTTOM: Navigation Tabs
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -456,7 +455,6 @@ fun ButtonsScreen(
             }
         }
 
-        // OVERLAYS (Notifications, Popups, Modals)
         AnimatedVisibility(
             visible = showGenericNotification && isScanTab,
             enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
@@ -472,7 +470,7 @@ fun ButtonsScreen(
                     .clickable {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         showGenericNotification = false
-                        onNavigate("BusinessLandmarksView")
+                        handleNavigation("BusinessLandmarksView")
                     }
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -528,13 +526,13 @@ fun ButtonsScreen(
                         }
                         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             Button(
-                                onClick = { 
+                                onClick = {
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                     showSignUpPrompt = false
                                     if (vm.isSignedIn) {
-                                        onNavigate("BusinessPlans")
+                                        handleNavigation("BusinessPlans")
                                     } else {
-                                        onNavigate("guest_signup")
+                                        handleNavigation("guest_signup")
                                     }
                                 },
                                 modifier = Modifier.fillMaxWidth().height(56.dp),
@@ -548,7 +546,7 @@ fun ButtonsScreen(
                             }
                             Button(
                                 onClick = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                     showSignUpPrompt = false
                                     coroutineScope.launch { pagerState.animateScrollToPage(0) }
                                 },
@@ -615,14 +613,11 @@ fun ButtonsScreen(
             onDismiss = { showRecordSheet = false }
         )
     }
-
-
-
 }
 
 @Composable
 fun NavButton(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: ImageVector,
     label: String,
     onClick: () -> Unit
 ) {
@@ -647,12 +642,12 @@ fun NavButton(
 }
 
 @Composable
-fun RowScope.TabButton(title: String, icon: androidx.compose.ui.graphics.vector.ImageVector, isSelected: Boolean, isLocked: Boolean, onClick: () -> Unit) {
+fun RowScope.TabButton(title: String, icon: ImageVector, isSelected: Boolean, isLocked: Boolean, onClick: () -> Unit) {
     val haptic = LocalHapticFeedback.current
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier.weight(1f).clickable {
-            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
             onClick()
         }
     ) {

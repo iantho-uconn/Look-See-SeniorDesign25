@@ -129,6 +129,8 @@ fun SignupScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xFF0F0F1A))
+            .systemBarsPadding()
+            .imePadding()
             .pointerInput(Unit) { detectTapGestures(onTap = { focusManager.clearFocus() }) },
         contentAlignment = Alignment.TopCenter
     ) {
@@ -138,7 +140,6 @@ fun SignupScreen(
                 .size(300.dp)
                 .offset(y = (-100).dp)
                 .background(Brush.radialGradient(listOf(Color(0xFF387DFF).copy(alpha = 0.12f), Color.Transparent)))
-                .blur(60.dp)
         )
 
         Column(
@@ -152,7 +153,9 @@ fun SignupScreen(
                 Image(
                     painter = painterResource(id = looksee.angelll.com.R.drawable.looksee_logo),
                     contentDescription = "LookSee Logo",
-                    modifier = Modifier.size(350.dp)
+                    modifier = Modifier
+                        .fillMaxWidth(0.85f)
+                        .aspectRatio(1f)
                 )
                 Text(
                     text = if (showVerification) "Check your email" else "Create your account",
@@ -179,10 +182,10 @@ fun SignupScreen(
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedTextColor = Color.White,
                                 unfocusedTextColor = Color.White,
-                                focusedContainerColor = Color(0xFF2D2D3D),
-                                unfocusedContainerColor = Color(0xFF2D2D3D),
-                                focusedBorderColor = Color(0xFF387DFF).copy(alpha = 0.3f),
-                                unfocusedBorderColor = Color(0xFF387DFF).copy(alpha = 0.3f)
+                                focusedContainerColor = Color.White.copy(alpha = 0.08f),
+                                unfocusedContainerColor = Color.White.copy(alpha = 0.08f),
+                                focusedBorderColor = Color(0xFF387DFF).copy(alpha = 0.5f),
+                                unfocusedBorderColor = Color.Transparent
                             )
                         )
                     }
@@ -199,10 +202,10 @@ fun SignupScreen(
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedTextColor = Color.White,
                                 unfocusedTextColor = Color.White,
-                                focusedContainerColor = Color(0xFF2D2D3D),
-                                unfocusedContainerColor = Color(0xFF2D2D3D),
-                                focusedBorderColor = Color(0xFF387DFF).copy(alpha = 0.3f),
-                                unfocusedBorderColor = Color(0xFF387DFF).copy(alpha = 0.3f)
+                                focusedContainerColor = Color.White.copy(alpha = 0.08f),
+                                unfocusedContainerColor = Color.White.copy(alpha = 0.08f),
+                                focusedBorderColor = Color(0xFF387DFF).copy(alpha = 0.5f),
+                                unfocusedBorderColor = Color.Transparent
                             )
                         )
                     }
@@ -226,10 +229,10 @@ fun SignupScreen(
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedTextColor = Color.White,
                                 unfocusedTextColor = Color.White,
-                                focusedContainerColor = Color(0xFF2D2D3D),
-                                unfocusedContainerColor = Color(0xFF2D2D3D),
-                                focusedBorderColor = Color(0xFF387DFF).copy(alpha = 0.3f),
-                                unfocusedBorderColor = Color(0xFF387DFF).copy(alpha = 0.3f)
+                                focusedContainerColor = Color.White.copy(alpha = 0.08f),
+                                unfocusedContainerColor = Color.White.copy(alpha = 0.08f),
+                                focusedBorderColor = Color(0xFF387DFF).copy(alpha = 0.5f),
+                                unfocusedBorderColor = Color.Transparent
                             )
                         )
                         if (password.isNotEmpty() && !isValidPassword(password)) {
@@ -261,10 +264,10 @@ fun SignupScreen(
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedTextColor = Color.White,
                                 unfocusedTextColor = Color.White,
-                                focusedContainerColor = Color(0xFF2D2D3D),
-                                unfocusedContainerColor = Color(0xFF2D2D3D),
-                                focusedBorderColor = Color(0xFF387DFF).copy(alpha = 0.3f),
-                                unfocusedBorderColor = Color(0xFF387DFF).copy(alpha = 0.3f)
+                                focusedContainerColor = Color.White.copy(alpha = 0.08f),
+                                unfocusedContainerColor = Color.White.copy(alpha = 0.08f),
+                                focusedBorderColor = Color(0xFF387DFF).copy(alpha = 0.5f),
+                                unfocusedBorderColor = Color.Transparent
                             )
                         )
                         if (confirmPassword.isNotEmpty() && password != confirmPassword) {
@@ -310,10 +313,10 @@ fun SignupScreen(
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = Color.White,
                             unfocusedTextColor = Color.White,
-                            focusedContainerColor = Color(0xFF2D2D3D),
-                            unfocusedContainerColor = Color(0xFF2D2D3D),
-                            focusedBorderColor = Color(0xFF387DFF).copy(alpha = 0.3f),
-                            unfocusedBorderColor = Color(0xFF387DFF).copy(alpha = 0.3f)
+                            focusedContainerColor = Color.White.copy(alpha = 0.08f),
+                            unfocusedContainerColor = Color.White.copy(alpha = 0.08f),
+                            focusedBorderColor = Color(0xFF387DFF).copy(alpha = 0.5f),
+                            unfocusedBorderColor = Color.Transparent
                         )
                     )
                 }

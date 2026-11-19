@@ -6,28 +6,32 @@ import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -57,6 +61,8 @@ fun BusinessLandmarkDetailView(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
 
     val primaryColor = AppleBlue
     val secondaryGrouped = Color(0xFF1C1C1E)
@@ -129,6 +135,11 @@ fun BusinessLandmarkDetailView(
 
     val deletionBlockedUploadMessage =
         "Upload blocked: deletion has been requested for this landmark. Additional media cannot be uploaded."
+
+    fun hideKeyboard() {
+        focusManager.clearFocus()
+        keyboardController?.hide()
+    }
 
     fun sanitizedErrorMessage(error: Throwable): String? {
         val raw = error.localizedMessage ?: error.message ?: return null
@@ -680,7 +691,7 @@ fun BusinessLandmarkDetailView(
 
                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                             Icon(
-                                imageVector = Icons.Default.LocalOffer,
+                                imageVector = if (displayedPromotionEnabled) Icons.Default.LocalOffer else Icons.Default.LocalOffer,
                                 contentDescription = null,
                                 tint = if (displayedPromotionEnabled) Color(0xFFFF9F0A) else Color.Gray,
                                 modifier = Modifier.size(24.dp)
@@ -864,7 +875,6 @@ fun BusinessLandmarkDetailView(
 
                         HorizontalDivider(color = Color.Gray.copy(alpha = 0.2f))
 
-                        // Positive Camera Button + Retry Controls
                         MediaUploadButton(
                             title = "Record Positive Video",
                             subtitle = if (pendingPositiveVideoUris.isEmpty())
@@ -895,7 +905,6 @@ fun BusinessLandmarkDetailView(
                             )
                         }
 
-                        // Positive Gallery Picker Button + Submit/Clear Controls
                         MediaUploadButton(
                             title = "Choose Positive Media",
                             subtitle = if (selectedPositiveMediaUris.isEmpty())
@@ -928,7 +937,6 @@ fun BusinessLandmarkDetailView(
 
                         HorizontalDivider(color = Color.Gray.copy(alpha = 0.2f))
 
-                        // Negative Camera Button + Retry Controls
                         MediaUploadButton(
                             title = "Record Negative Video",
                             subtitle = if (pendingNegativeVideoUri == null)
@@ -960,7 +968,6 @@ fun BusinessLandmarkDetailView(
                             )
                         }
 
-                        // Negative Gallery Picker Button + Submit/Clear Controls
                         MediaUploadButton(
                             title = "Choose Negative Examples",
                             subtitle = if (selectedNegativeMediaUris.isEmpty())
@@ -991,7 +998,6 @@ fun BusinessLandmarkDetailView(
                             )
                         }
 
-                        // Upload Status Area
                         if (isUploadingMedia) {
                             Spacer(Modifier.height(12.dp))
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1097,15 +1103,42 @@ fun BusinessLandmarkDetailView(
         var draft by remember { mutableStateOf(displayedShortDescription) }
         var error by remember { mutableStateOf(initialNullString) }
 
-        ModalBottomSheet(onDismissRequest = { if (!isSavingDescription) showEditDescriptionSheet = false }, containerColor = secondaryGrouped) {
-            Column(modifier = Modifier.padding(20.dp).fillMaxWidth()) {
-                Text("SHORT DESCRIPTION", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
-                Spacer(Modifier.height(16.dp))
+        ModalBottomSheet(
+            onDismissRequest = {
+                if (!isSavingDescription) {
+                    hideKeyboard()
+                    showEditDescriptionSheet = false
+                }
+            },
+            containerColor = secondaryGrouped
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .imePadding()
+                    .clickable(
+                        indication = null,
+                        interactionSource = remember { MutableInteractionSource() }
+                    ) { hideKeyboard() }
+                    .padding(horizontal = 20.dp, vertical = 16.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("SHORT DESCRIPTION", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                    TextButton(onClick = { hideKeyboard() }) {
+                        Text("Done", color = primaryColor, fontWeight = FontWeight.Bold)
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
                     value = draft,
                     onValueChange = { draft = it },
                     enabled = !isSavingDescription,
-                    modifier = Modifier.fillMaxWidth().height(160.dp),
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 140.dp, max = 220.dp),
                     colors = OutlinedTextFieldDefaults.colors(
                         unfocusedContainerColor = Color.Black,
                         focusedContainerColor = Color.Black,
@@ -1124,6 +1157,7 @@ fun BusinessLandmarkDetailView(
                             error = "Short description cannot be empty."
                             return@Button
                         }
+                        hideKeyboard()
                         coroutineScope.launch {
                             isSavingDescription = true
                             error = null
@@ -1155,7 +1189,7 @@ fun BusinessLandmarkDetailView(
                         Text(it, color = Color.Gray, fontSize = 12.sp)
                     }
                 }
-                Spacer(Modifier.height(40.dp))
+                Spacer(Modifier.height(24.dp))
             }
         }
     }
@@ -1164,17 +1198,64 @@ fun BusinessLandmarkDetailView(
         var draft by remember { mutableStateOf(displayedWebsiteUrl) }
         var error by remember { mutableStateOf(initialNullString) }
 
-        ModalBottomSheet(onDismissRequest = { if (!isSavingWebsiteUrl) showEditWebsiteSheet = false }, containerColor = secondaryGrouped) {
-            Column(modifier = Modifier.padding(20.dp).fillMaxWidth()) {
+        val submitWebsite: () -> Unit = {
+            val cleaned = draft.trim()
+            hideKeyboard()
+            coroutineScope.launch {
+                isSavingWebsiteUrl = true
+                error = null
+                websiteUrlErrorMessage = null
+                try {
+                    val updated = landmarkService.updateWebsiteUrl(landmark.landmarkId, cleaned)
+                    landmark = updated
+                    displayedWebsiteUrl = updated.websiteUrl?.trim() ?: cleaned
+                    updated.cleanFrameCount?.let { displayedCleanFrameCount = it }
+                    onLandmarkUpdated(updated)
+                    showEditWebsiteSheet = false
+                } catch (e: Exception) {
+                    val msg = sanitizedErrorMessage(e)
+                    error = msg
+                    websiteUrlErrorMessage = msg
+                } finally {
+                    isSavingWebsiteUrl = false
+                }
+            }
+        }
+
+        ModalBottomSheet(
+            onDismissRequest = {
+                if (!isSavingWebsiteUrl) {
+                    hideKeyboard()
+                    showEditWebsiteSheet = false
+                }
+            },
+            containerColor = secondaryGrouped
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .imePadding()
+                    .clickable(
+                        indication = null,
+                        interactionSource = remember { MutableInteractionSource() }
+                    ) { hideKeyboard() }
+                    .padding(horizontal = 20.dp, vertical = 16.dp)
+            ) {
                 Text("WEBSITE URL", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
                 Spacer(Modifier.height(16.dp))
                 OutlinedTextField(
                     value = draft,
                     onValueChange = { draft = it },
                     enabled = !isSavingWebsiteUrl,
+                    singleLine = true,
                     placeholder = { Text("example.com") },
                     modifier = Modifier.fillMaxWidth(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Uri,
+                        imeAction = ImeAction.Done
+                    ),
+                    keyboardActions = KeyboardActions(onDone = { submitWebsite() }),
                     colors = OutlinedTextFieldDefaults.colors(
                         unfocusedContainerColor = Color.Black,
                         focusedContainerColor = Color.Black,
@@ -1191,28 +1272,7 @@ fun BusinessLandmarkDetailView(
                 )
                 Spacer(Modifier.height(16.dp))
                 Button(
-                    onClick = {
-                        val cleaned = draft.trim()
-                        coroutineScope.launch {
-                            isSavingWebsiteUrl = true
-                            error = null
-                            websiteUrlErrorMessage = null
-                            try {
-                                val updated = landmarkService.updateWebsiteUrl(landmark.landmarkId, cleaned)
-                                landmark = updated
-                                displayedWebsiteUrl = updated.websiteUrl?.trim() ?: cleaned
-                                updated.cleanFrameCount?.let { displayedCleanFrameCount = it }
-                                onLandmarkUpdated(updated)
-                                showEditWebsiteSheet = false
-                            } catch (e: Exception) {
-                                val msg = sanitizedErrorMessage(e)
-                                error = msg
-                                websiteUrlErrorMessage = msg
-                            } finally {
-                                isSavingWebsiteUrl = false
-                            }
-                        }
-                    },
+                    onClick = submitWebsite,
                     modifier = Modifier.fillMaxWidth().height(56.dp),
                     enabled = !isSavingWebsiteUrl,
                     colors = ButtonDefaults.buttonColors(containerColor = primaryColor)
@@ -1227,15 +1287,53 @@ fun BusinessLandmarkDetailView(
                         Text(it, color = Color.Gray, fontSize = 12.sp)
                     }
                 }
-                Spacer(Modifier.height(40.dp))
+                Spacer(Modifier.height(24.dp))
             }
         }
     }
 
     if (showDeleteSheet) {
         val isDeleteConfirmationValid = deleteConfirmationText.trim() == "delete landmark"
-        ModalBottomSheet(onDismissRequest = { if (!isDeletingLandmark) showDeleteSheet = false }, containerColor = secondaryGrouped) {
-            Column(modifier = Modifier.padding(24.dp).fillMaxWidth()) {
+        val submitDelete: () -> Unit = {
+            if (isDeleteConfirmationValid && !isDeletingLandmark) {
+                hideKeyboard()
+                coroutineScope.launch {
+                    isDeletingLandmark = true
+                    deleteErrorMessage = null
+                    try {
+                        landmarkService.deleteLandmark(landmark.landmarkId, deleteConfirmationText.trim())
+                        isDeletingLandmark = false
+                        showDeleteSheet = false
+                        onLandmarkDeleted(landmark.landmarkId)
+                        onDismiss()
+                    } catch (e: Exception) {
+                        deleteErrorMessage = sanitizedErrorMessage(e)
+                        isDeletingLandmark = false
+                    }
+                }
+            }
+        }
+
+        ModalBottomSheet(
+            onDismissRequest = {
+                if (!isDeletingLandmark) {
+                    hideKeyboard()
+                    showDeleteSheet = false
+                }
+            },
+            containerColor = secondaryGrouped
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .imePadding()
+                    .clickable(
+                        indication = null,
+                        interactionSource = remember { MutableInteractionSource() }
+                    ) { hideKeyboard() }
+                    .padding(horizontal = 24.dp, vertical = 16.dp)
+            ) {
                 Text("CONFIRM LANDMARK DELETION", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
                 Spacer(Modifier.height(16.dp))
                 LookSeeCard {
@@ -1246,8 +1344,11 @@ fun BusinessLandmarkDetailView(
                         value = deleteConfirmationText,
                         onValueChange = { deleteConfirmationText = it },
                         enabled = !isDeletingLandmark,
+                        singleLine = true,
                         placeholder = { Text("delete landmark") },
                         modifier = Modifier.fillMaxWidth(),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { submitDelete() }),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = Color.White,
                             unfocusedTextColor = Color.White,
@@ -1260,22 +1361,7 @@ fun BusinessLandmarkDetailView(
                 Text("To confirm, type exactly: delete landmark", fontSize = 13.sp, color = Color.Gray)
                 Spacer(Modifier.height(24.dp))
                 Button(
-                    onClick = {
-                        coroutineScope.launch {
-                            isDeletingLandmark = true
-                            deleteErrorMessage = null
-                            try {
-                                landmarkService.deleteLandmark(landmark.landmarkId, deleteConfirmationText.trim())
-                                isDeletingLandmark = false
-                                showDeleteSheet = false
-                                onLandmarkDeleted(landmark.landmarkId)
-                                onDismiss()
-                            } catch (e: Exception) {
-                                deleteErrorMessage = sanitizedErrorMessage(e)
-                                isDeletingLandmark = false
-                            }
-                        }
-                    },
+                    onClick = submitDelete,
                     modifier = Modifier.fillMaxWidth().height(56.dp),
                     enabled = isDeleteConfirmationValid && !isDeletingLandmark,
                     colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
@@ -1290,7 +1376,7 @@ fun BusinessLandmarkDetailView(
                         Text(it, color = Color.Gray, fontSize = 12.sp)
                     }
                 }
-                Spacer(Modifier.height(40.dp))
+                Spacer(Modifier.height(24.dp))
             }
         }
     }
