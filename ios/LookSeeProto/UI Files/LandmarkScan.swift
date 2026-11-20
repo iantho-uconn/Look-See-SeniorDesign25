@@ -205,10 +205,17 @@ struct LandmarkScan: View {
 
         let landmarkId = entry.landmarkId.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        // 🚀 NEW: Block the popup if the landmark was explicitly marked inactive!
-        if let currentInfo = VariableContainer.shared.allLandmarks.first(where: { $0.id == landmarkId }) {
-            if currentInfo.isActive == false {
-                print("🚫 Blocked popup for inactive landmark: \(landmarkId)")
+        // Respect immediate local toggles first, then cached backend status
+        if !landmarkId.isEmpty {
+            if VariableContainer.isLandmarkInactive(landmarkId) {
+                print("🚫 Blocked popup for locally inactive landmark: \(landmarkId)")
+                return
+            }
+
+            if !infoView.isLocallyModified(landmarkId),
+               let currentInfo = infoView.allLandmarks.first(where: { $0.id == landmarkId }),
+               currentInfo.isActive == false {
+                print("🚫 Blocked popup for backend-inactive landmark: \(landmarkId)")
                 return
             }
         }
@@ -243,10 +250,6 @@ struct LandmarkScan: View {
                 )
             }
         }
-/*
-        let landmarkId = entry.landmarkId.trimmingCharacters(
-            in: .whitespacesAndNewlines
-        )*/
 
         if landmarkId.isEmpty {
             infoView.landmarkWebsiteUrl = ""
@@ -311,10 +314,13 @@ struct LandmarkScan: View {
 
         infoView.landmarkWebsiteUrl = liveWebsiteUrl
 
-        // 🚀 If the backend confirms it is inactive, immediately close the popup
+        // If backend confirms inactive and user didn't just reactivate it locally, close popup and sync cache
         if liveInfo.isActive == false {
-            infoView.infoView = false
-            return
+            if !infoView.isLocallyModified(landmarkId) || VariableContainer.isLandmarkInactive(landmarkId) {
+                infoView.setLandmarkState(landmarkId: landmarkId, isActive: false, isVisibleOnMap: false)
+                infoView.infoView = false
+                return
+            }
         }
 
         if let promotion = liveInfo.activePromotion {

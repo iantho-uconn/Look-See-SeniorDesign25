@@ -92,6 +92,7 @@ object BusinessProcessingTracker {
             val movedToPipeline = landmark.status in setOf(
                 "PREPARING_DATA",
                 "PENDING_TRAINING",
+                "TRAINING",
                 "TRAINING_MODEL",
                 "OPTIMIZING_MODEL",
                 "ACTIVE"
@@ -172,7 +173,13 @@ class BusinessLandmarkService internal constructor(
     internal constructor(
         tokenProvider: IdTokenProvider,
         httpClient: BusinessHttpClient,
-    ) : this(tokenProvider, httpClient, GsonBuilder().registerTypeAdapter(BusinessMediaUploadTarget::class.java, BusinessMediaUploadTargetDeserializer()).create())
+    ) : this(
+        tokenProvider,
+        httpClient,
+        GsonBuilder()
+            .registerTypeAdapter(BusinessMediaUploadTarget::class.java, BusinessMediaUploadTargetDeserializer())
+            .create()
+    )
 
     override suspend fun fetchBusinessLandmarks(): BusinessLandmarkListResponse =
         requestJson(
@@ -185,8 +192,18 @@ class BusinessLandmarkService internal constructor(
         landmarkId, BusinessLandmarkPatchBody(shortDescription = shortDescription),
     )
 
-    suspend fun updateLandmarkSettings(landmarkId: String, isActive: Boolean? = null, promotionEnabled: Boolean? = null): BusinessLandmark = patchBusinessLandmark(
-        landmarkId, BusinessLandmarkPatchBody(isActive = isActive, promotionEnabled = promotionEnabled),
+    suspend fun updateLandmarkSettings(
+        landmarkId: String,
+        isActive: Boolean? = null,
+        isVisibleOnMap: Boolean? = null,
+        promotionEnabled: Boolean? = null
+    ): BusinessLandmark = patchBusinessLandmark(
+        landmarkId,
+        BusinessLandmarkPatchBody(
+            isActive = isActive,
+            isVisibleOnMap = isVisibleOnMap,
+            promotionEnabled = promotionEnabled
+        ),
     )
 
     suspend fun updateWebsiteUrl(landmarkId: String, websiteUrl: String): BusinessLandmark = patchBusinessLandmark(
@@ -194,14 +211,34 @@ class BusinessLandmarkService internal constructor(
     )
 
     suspend fun deleteLandmark(landmarkId: String, confirmation: String): BusinessLandmarkDeleteResponse = requestJson(
-        method = "DELETE", url = businessLandmarkUrl(landmarkId), body = BusinessLandmarkDeleteBody(confirmation), responseType = BusinessLandmarkDeleteResponse::class.java,
+        method = "DELETE",
+        url = businessLandmarkUrl(landmarkId),
+        body = BusinessLandmarkDeleteBody(confirmation),
+        responseType = BusinessLandmarkDeleteResponse::class.java,
     )
 
     suspend fun uploadBusinessMedia(
-        landmarkId: String, datasetRole: BusinessDatasetRole, mediaKind: BusinessMediaKind, filename: String, contentType: String, data: ByteArray,
+        landmarkId: String,
+        datasetRole: BusinessDatasetRole,
+        mediaKind: BusinessMediaKind,
+        filename: String,
+        contentType: String,
+        data: ByteArray,
     ): BusinessMediaUploadCompleteResponse = when (datasetRole) {
-        BusinessDatasetRole.POSITIVE -> uploadPositiveBusinessMedia(landmarkId = landmarkId, datasetRole = datasetRole, mediaKind = mediaKind, filename = filename, contentType = contentType, data = data)
-        BusinessDatasetRole.HARD_NEGATIVE -> uploadHardNegativeMedia(landmarkId = landmarkId, filename = filename, contentType = contentType, data = data)
+        BusinessDatasetRole.POSITIVE -> uploadPositiveBusinessMedia(
+            landmarkId = landmarkId,
+            datasetRole = datasetRole,
+            mediaKind = mediaKind,
+            filename = filename,
+            contentType = contentType,
+            data = data
+        )
+        BusinessDatasetRole.HARD_NEGATIVE -> uploadHardNegativeMedia(
+            landmarkId = landmarkId,
+            filename = filename,
+            contentType = contentType,
+            data = data
+        )
     }
 
     suspend fun uploadGlobalNegativeVideo(file: java.io.File): BusinessMediaUploadCompleteResponse {
@@ -229,17 +266,30 @@ class BusinessLandmarkService internal constructor(
     }
 
     private suspend fun patchBusinessLandmark(landmarkId: String, body: BusinessLandmarkPatchBody): BusinessLandmark = requestJson(
-        method = "PATCH", url = businessLandmarkUrl(landmarkId), body = body, responseType = BusinessLandmarkUpdateResponse::class.java,
+        method = "PATCH",
+        url = businessLandmarkUrl(landmarkId),
+        body = body,
+        responseType = BusinessLandmarkUpdateResponse::class.java,
     ).item
 
     private suspend fun uploadPositiveBusinessMedia(
-        landmarkId: String, datasetRole: BusinessDatasetRole, mediaKind: BusinessMediaKind, filename: String, contentType: String, data: ByteArray,
+        landmarkId: String,
+        datasetRole: BusinessDatasetRole,
+        mediaKind: BusinessMediaKind,
+        filename: String,
+        contentType: String,
+        data: ByteArray,
     ): BusinessMediaUploadCompleteResponse {
         Log.d("LookSee_Debug_Upload", "Initiating POSITIVE upload for $filename")
         val init = requestJson(
             method = "POST",
             url = "${businessLandmarkUrl(landmarkId)}/uploads/init",
-            body = PositiveUploadInitBody(mediaKind = mediaKind.wireValue, datasetRole = datasetRole.wireValue, filename = filename, contentType = contentType),
+            body = PositiveUploadInitBody(
+                mediaKind = mediaKind.wireValue,
+                datasetRole = datasetRole.wireValue,
+                filename = filename,
+                contentType = contentType
+            ),
             responseType = BusinessMediaUploadInitResponse::class.java,
         )
 
@@ -256,7 +306,10 @@ class BusinessLandmarkService internal constructor(
     }
 
     private suspend fun uploadHardNegativeMedia(
-        landmarkId: String, filename: String, contentType: String, data: ByteArray,
+        landmarkId: String,
+        filename: String,
+        contentType: String,
+        data: ByteArray,
     ): BusinessMediaUploadCompleteResponse {
         Log.d("LookSee_Debug_Upload", "Initiating NEGATIVE upload for $filename")
 
@@ -299,7 +352,9 @@ class BusinessLandmarkService internal constructor(
             body = BusinessHardNegativeCompleteBody(batchId = batchId, negativeIds = listOf(negativeId), forceRetry = true),
             responseType = BusinessHardNegativeCompleteResponse::class.java,
         )
-        if (response.failedCount != 0 || response.processedCount != 1) { throw BusinessLandmarkServiceError.HardNegativeRetryFailed }
+        if (response.failedCount != 0 || response.processedCount != 1) {
+            throw BusinessLandmarkServiceError.HardNegativeRetryFailed
+        }
         return response
     }
 
@@ -436,6 +491,7 @@ class BusinessLandmarkService internal constructor(
         val shortDescription: String? = null,
         val websiteUrl: String? = null,
         val isActive: Boolean? = null,
+        val isVisibleOnMap: Boolean? = null,
         val promotionEnabled: Boolean? = null,
     )
 
@@ -482,8 +538,8 @@ data class BusinessLandmarkDeleteResponse(val ok: Boolean = false, val message: 
 data class BusinessLandmark(
     val landmarkId: String = "", val label: String = "", val shortDescription: String? = null, val websiteUrl: String? = null,
     val latitude: Double? = null, val longitude: Double? = null, val promotion: String? = null, val promotionEnabled: Boolean? = null,
-    val isActive: Boolean? = null, val userEmail: String? = null, val ownerUserId: String? = null, val createdByUserId: String? = null,
-    val createdAt: String? = null, val updatedAt: String? = null, val ownershipUpdatedAt: String? = null,
+    val isActive: Boolean? = null, val isVisibleOnMap: Boolean? = null, val userEmail: String? = null, val ownerUserId: String? = null,
+    val createdByUserId: String? = null, val createdAt: String? = null, val updatedAt: String? = null, val ownershipUpdatedAt: String? = null,
     val status: String? = null, val cleanFrameCount: Int? = null, val requiredFrames: Int? = null, val secondsNeeded: Int? = null,
 ) {
     val id: String get() = landmarkId
@@ -492,11 +548,11 @@ data class BusinessLandmark(
         "NEEDS_MORE_MEDIA" -> "Action Needed"
         "PREPARING_DATA" -> "Preparing Data"
         "PENDING_TRAINING" -> "Waiting for Training"
-        "TRAINING_MODEL" -> "In Training"
+        "TRAINING", "TRAINING_MODEL" -> "In Training"
         "OPTIMIZING_MODEL" -> "Optimizing for Android"
         else -> if (isActive == false) "Inactive" else "Active"
     }
-    val isProcessing: Boolean get() = status == "PREPARING_DATA" || status == "PENDING_TRAINING" || status == "TRAINING_MODEL" || status == "OPTIMIZING_MODEL"
+    val isProcessing: Boolean get() = status == "PREPARING_DATA" || status == "PENDING_TRAINING" || status == "TRAINING" || status == "TRAINING_MODEL" || status == "OPTIMIZING_MODEL"
 }
 
 data class BusinessPromotionListResponse(val items: List<BusinessPromotion> = emptyList(), val count: Int = 0)

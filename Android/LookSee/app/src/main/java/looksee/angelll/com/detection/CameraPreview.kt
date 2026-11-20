@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Paint
 import android.graphics.Typeface
-import android.util.Range
 import android.util.Size as AndroidSize
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -65,6 +64,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import looksee.angelll.com.uifiles.VariableContainer
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
@@ -112,7 +112,6 @@ internal class CameraSessionCoordinator(
                         val provider = providerFuture.get()
                         val displayRotation = previewView.display?.rotation ?: android.view.Surface.ROTATION_0
 
-                        // 🚀 FIXED: Allow the Preview to use the full screen 16:9/4:3 resolution so it looks crystal clear.
                         val previewResolutionSelector = ResolutionSelector.Builder()
                             .setAspectRatioStrategy(AspectRatioStrategy.RATIO_16_9_FALLBACK_AUTO_STRATEGY)
                             .build()
@@ -124,7 +123,6 @@ internal class CameraSessionCoordinator(
                                 useCase.surfaceProvider = previewView.surfaceProvider
                             }
 
-                        // 🚀 FIXED: Restrict ONLY the ImageAnalyzer to 640x480 for the TFLite Model.
                         val analysisResolutionSelector = ResolutionSelector.Builder()
                             .setResolutionStrategy(
                                 ResolutionStrategy(
@@ -269,6 +267,12 @@ internal class FrameRateGate(maxFramesPerSecond: Int) {
     }
 }
 
+private fun isDetectionSuppressed(detection: Detection): Boolean {
+    val landmarkId = detection.landmarkEntry()?.landmarkId?.trim().orEmpty()
+    if (landmarkId.isEmpty()) return false
+    return VariableContainer.isLandmarkInactive(landmarkId)
+}
+
 @Composable
 fun CameraPreview(
     detector: Detector,
@@ -381,8 +385,9 @@ fun CameraPreview(
                             currentOnTap()
 
                             if (!hideBoundingBoxes) {
+                                val activeDetections = detector.detections.value.filterNot(::isDetectionSuppressed)
                                 val mapped = mapDisplayDetections(
-                                    detections = detector.detections.value,
+                                    detections = activeDetections,
                                     imageDimensions = imageDimensions,
                                     overlayWidth = overlaySize.width.toFloat(),
                                     overlayHeight = overlaySize.height.toFloat(),
@@ -409,7 +414,7 @@ fun CameraPreview(
                                 currentOnZoomLevelChange(adjustedZoom)
                                 currentOnPinch()
                             }
-                            changes.forEach { it.consume() } // 🚀 FIXED: Consume touch events so HorizontalPager doesn't slide
+                            changes.forEach { it.consume() }
                         }
                     }
                 }
@@ -479,6 +484,7 @@ private fun DetectionOverlay(
     if (hideBoundingBoxes || imageDimensions == null || overlaySize == IntSize.Zero) return
 
     val visibleDetections by detector.detections.collectAsState()
+    val inactiveLandmarkIds = VariableContainer.shared.inactiveLandmarkIds
 
     val density = LocalDensity.current
     val horizontalMargin = remember { with(density) { 16.dp.toPx() } }
@@ -487,6 +493,7 @@ private fun DetectionOverlay(
 
     val displayDetections = remember(
         visibleDetections,
+        inactiveLandmarkIds,
         imageDimensions,
         overlaySize,
         showSafeZone,
@@ -495,8 +502,9 @@ private fun DetectionOverlay(
         verticalMargin,
         minimumBoxSize,
     ) {
+        val activeOnly = visibleDetections.filterNot(::isDetectionSuppressed)
         mapDisplayDetections(
-            detections = visibleDetections,
+            detections = activeOnly,
             imageDimensions = imageDimensions,
             overlayWidth = overlaySize.width.toFloat(),
             overlayHeight = overlaySize.height.toFloat(),

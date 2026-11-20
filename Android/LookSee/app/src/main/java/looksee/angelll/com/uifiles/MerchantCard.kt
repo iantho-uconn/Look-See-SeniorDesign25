@@ -4,6 +4,9 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.util.Log
+import android.util.LruCache
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -28,21 +31,29 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.SubcomposeAsyncImage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.net.HttpURLConnection
 import java.net.URL
+
+private object MerchantLogoMemoryCache {
+    private val cache = object : LruCache<String, Bitmap>(24) {}
+
+    fun get(url: String): Bitmap? = cache.get(url)
+    fun put(url: String, bitmap: Bitmap) {
+        cache.put(url, bitmap)
+    }
+}
 
 // MARK: - Modern state-driven card for the AR popup view
 @Composable
 fun MerchantCardView() {
-    val vm = remember { VariableContainer.shared } // Connects to your actual singleton state
+    val vm = remember { VariableContainer.shared }
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
 
     var showWebsiteAlert by remember { mutableStateOf(false) }
 
-    // Colors matching iOS Theme (Scoped inside to prevent package conflicts)
     val SecondaryGrouped = Color(0xFF1C1C1E)
     val cardBackground = Color.White.copy(alpha = 0.08f)
     val cardBorder = Color.White.copy(alpha = 0.10f)
@@ -87,13 +98,14 @@ fun MerchantCardView() {
 
             // MARK: - Logo & Business Info
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                if (vm.merchantLogoUrl.trim().isEmpty()) {
+                val logoUrl = vm.merchantLogoUrl.trim()
+                if (logoUrl.isEmpty()) {
                     Box(modifier = Modifier.size(52.dp).background(Color.White.copy(alpha = 0.10f), CircleShape), contentAlignment = Alignment.Center) {
                         Icon(Icons.Default.Storefront, contentDescription = null, tint = Color.White, modifier = Modifier.size(24.dp))
                     }
                 } else {
                     Box(modifier = Modifier.size(52.dp).clip(CircleShape).border(1.dp, Color.White.copy(alpha = 0.18f), CircleShape)) {
-                        MerchantCardRemoteImage(url = vm.merchantLogoUrl, modifier = Modifier.fillMaxSize())
+                        MerchantCardRemoteImage(url = logoUrl, modifier = Modifier.fillMaxSize())
                     }
                 }
 
@@ -186,7 +198,6 @@ fun MerchantCard(
     val haptic = LocalHapticFeedback.current
     var showWebsiteAlert by remember { mutableStateOf(false) }
 
-    // Scoped to prevent package conflicts
     val SecondaryGrouped = Color(0xFF1C1C1E)
 
     Column(
@@ -197,13 +208,14 @@ fun MerchantCard(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            if (logoUrl.trim().isEmpty()) {
+            val cleanedLogoUrl = logoUrl.trim()
+            if (cleanedLogoUrl.isEmpty()) {
                 Box(modifier = Modifier.size(50.dp).background(Color.Gray.copy(alpha = 0.3f), CircleShape), contentAlignment = Alignment.Center) {
                     Icon(Icons.Default.Storefront, contentDescription = null, tint = Color.White, modifier = Modifier.size(24.dp))
                 }
             } else {
                 Box(modifier = Modifier.size(50.dp).clip(CircleShape)) {
-                    MerchantCardRemoteImage(url = logoUrl, modifier = Modifier.fillMaxSize())
+                    MerchantCardRemoteImage(url = cleanedLogoUrl, modifier = Modifier.fillMaxSize())
                 }
             }
 
@@ -278,21 +290,95 @@ fun MerchantCard(
     }
 }
 
-// Native Generic Image Loader (Renamed to private to avoid overloads in other files)
-@Composable
-private fun MerchantCardRemoteImage(url: String, modifier: Modifier = Modifier, contentScale: ContentScale = ContentScale.Crop) {
-    SubcomposeAsyncImage(
-        model = url,
-        contentDescription = null,
-        modifier = modifier,
-        contentScale = contentScale,
-        loading = {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
-            }
-        },
-        error = {
-            Box(modifier = Modifier.fillMaxSize().background(Color.DarkGray))
+private fun loadRemoteLogoBitmap(rawUrl: String): Bitmap? {
+    val trimmed = rawUrl.trim()
+    if (trimmed.isEmpty()) return null
+    val normalized = if (trimmed.startsWith("http://", true) || trimmed.startsWith("https://", true)) {
+        trimmed
+    } else {
+        "https://$trimmed"
+    }
+
+    MerchantLogoMemoryCache.get(normalized)?.let { return it }
+
+    var connection: HttpURLConnection? = null
+    return try {
+        connection = (URL(normalized).openConnection() as HttpURLConnection).apply {
+            connectTimeout = 10_000
+            readTimeout = 10_000
+            instanceFollowRedirects = true
+            setRequestProperty("Accept", "image/*")
         }
-    )
+        val status = connection.responseCode
+        if (status !in 200..299) {
+            Log.e("MerchantLogoLoader", "HTTP $status loading logo: $normalized")
+            return null
+        }
+        val bytes = connection.inputStream.use { it.readBytes() }
+        if (bytes.isEmpty()) return null
+
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+
+        var sampleSize = 1
+        while (bounds.outWidth / sampleSize > 512 || bounds.outHeight / sampleSize > 512) {
+            sampleSize *= 2
+        }
+
+        val decodeOpts = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, decodeOpts)?.also { bmp ->
+            MerchantLogoMemoryCache.put(normalized, bmp)
+        }
+    } catch (e: Exception) {
+        Log.e("MerchantLogoLoader", "Failed loading logo $normalized: ${e.message}", e)
+        null
+    } finally {
+        connection?.disconnect()
+    }
+}
+
+@Composable
+private fun MerchantCardRemoteImage(
+    url: String,
+    modifier: Modifier = Modifier,
+    contentScale: ContentScale = ContentScale.Crop
+) {
+    val cleanedUrl = url.trim()
+    var bitmap by remember(cleanedUrl) { mutableStateOf(MerchantLogoMemoryCache.get(cleanedUrl)) }
+    var isLoading by remember(cleanedUrl) { mutableStateOf(bitmap == null && cleanedUrl.isNotEmpty()) }
+
+    LaunchedEffect(cleanedUrl) {
+        if (bitmap == null && cleanedUrl.isNotEmpty()) {
+            isLoading = true
+            bitmap = withContext(Dispatchers.IO) { loadRemoteLogoBitmap(cleanedUrl) }
+            isLoading = false
+        }
+    }
+
+    when {
+        bitmap != null -> {
+            Image(
+                bitmap = bitmap!!.asImageBitmap(),
+                contentDescription = "Business Logo",
+                modifier = modifier,
+                contentScale = contentScale
+            )
+        }
+        isLoading -> {
+            Box(
+                modifier = modifier.background(Color.White.copy(alpha = 0.08f)),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
+            }
+        }
+        else -> {
+            Box(
+                modifier = modifier.background(Color.White.copy(alpha = 0.10f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Default.Storefront, contentDescription = null, tint = Color.White, modifier = Modifier.size(24.dp))
+            }
+        }
+    }
 }

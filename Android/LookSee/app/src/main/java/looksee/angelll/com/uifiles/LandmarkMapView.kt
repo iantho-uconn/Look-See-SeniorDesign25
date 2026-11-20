@@ -53,6 +53,40 @@ import looksee.angelll.com.viewmodels.*
 import looksee.angelll.com.detection.*
 import kotlin.math.roundToInt
 
+private fun isTrainedAndActiveForMap(
+    landmark: NearbyLandmark,
+    inactiveIds: Set<String>,
+    hiddenIds: Set<String>,
+    infoView: VariableContainer
+): Boolean {
+    // 1. Must have a valid trained clusterId and not be processing
+    val cluster = landmark.clusterId?.trim().orEmpty()
+    if (cluster.isEmpty()) return false
+    if (landmark.isProcessing == true) return false
+
+    // 2. Strict allowlist: status must be "ACTIVE" (blocks "TRAINING", "NEEDS_MORE_MEDIA", etc.)
+    val normalizedStatus = landmark.status?.trim()?.uppercase().orEmpty()
+    if (normalizedStatus != "ACTIVE") return false
+
+    // 3. Must be active and visible on map (respecting immediate local toggles)
+    val isLocallyInactive = inactiveIds.contains(landmark.landmarkId) ||
+            VariableContainer.isLandmarkInactive(landmark.landmarkId)
+    val isLocallyHidden = hiddenIds.contains(landmark.landmarkId) ||
+            VariableContainer.isLandmarkHiddenOnMap(landmark.landmarkId)
+
+    val isActive: Boolean
+    val isVisible: Boolean
+    if (infoView.isLocallyModified(landmark.landmarkId)) {
+        isActive = !isLocallyInactive
+        isVisible = !isLocallyHidden
+    } else {
+        isActive = (landmark.isActive ?: true) && !isLocallyInactive
+        isVisible = (landmark.isVisibleOnMap ?: true) && !isLocallyHidden
+    }
+
+    return isActive && isVisible
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LandmarkMapScreen(
@@ -86,13 +120,10 @@ fun LandmarkMapScreen(
 
     val filterSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    val untrainedStatuses = setOf(
-        "NEEDS_MORE_MEDIA",
-        "PREPARING_DATA",
-        "PENDING_TRAINING",
-        "TRAINING_MODEL",
-        "OPTIMIZING_MODEL"
-    )
+    LaunchedEffect(rawLandmarks) {
+        VariableContainer.initialize(context)
+        infoView.allLandmarks = rawLandmarks
+    }
 
     val activeLandmarks = remember(
         rawLandmarks,
@@ -101,9 +132,9 @@ fun LandmarkMapScreen(
         promotedOnly,
         selectedClusters.toList(),
         infoView.inactiveLandmarkIds,
-        infoView.hiddenMapLandmarkIds
+        infoView.hiddenMapLandmarkIds,
+        vm.userEmail
     ) {
-        infoView.allLandmarks = rawLandmarks
         val prefs = context.getSharedPreferences("LookSeePrefs", android.content.Context.MODE_PRIVATE)
         if (vm.userEmail.isNotEmpty()) {
             prefs.edit().putString("lastKnownEmail", vm.userEmail).apply()
@@ -111,21 +142,11 @@ fun LandmarkMapScreen(
         val currentEmail = vm.userEmail.takeIf { it.isNotEmpty() } ?: prefs.getString("lastKnownEmail", "") ?: ""
 
         rawLandmarks.filter { landmark ->
-            val cluster = landmark.clusterId?.trim() ?: ""
-            if (cluster.isEmpty()) return@filter false
-
-            val status = landmark.status?.uppercase()
-            if (status != null && untrainedStatuses.contains(status)) return@filter false
-
-            val isLocallyInactive = infoView.inactiveLandmarkIds.contains(landmark.landmarkId) ||
-                    VariableContainer.isLandmarkInactive(landmark.landmarkId)
-            val isActive = if (infoView.isLocallyModified(landmark.landmarkId)) {
-                !isLocallyInactive
-            } else {
-                (landmark.isActive ?: true) && !isLocallyInactive
+            if (!isTrainedAndActiveForMap(landmark, infoView.inactiveLandmarkIds, infoView.hiddenMapLandmarkIds, infoView)) {
+                return@filter false
             }
-            if (!isActive) return@filter false
 
+            val cluster = landmark.clusterId?.trim().orEmpty()
             val matchesUser = if (myUploadsOnly) landmark.createdBy == currentEmail else true
             val matchesPromo = if (promotedOnly) landmark.promotionEnabled else true
             val matchesCluster = if (selectedClusters.isEmpty()) true else cluster in selectedClusters
@@ -136,13 +157,18 @@ fun LandmarkMapScreen(
     }
 
     LaunchedEffect(activeLandmarks) {
-        if (infoView.infoView && !activeLandmarks.any { it.landmarkId == infoView.landmarkId }) {
+        if (infoView.infoView && infoView.isMapPin && !activeLandmarks.any { it.landmarkId == infoView.landmarkId }) {
             infoView.dismissLandmark()
         }
     }
 
-    val availableClusters = remember(rawLandmarks) {
+    val availableClusters = remember(
+        rawLandmarks,
+        infoView.inactiveLandmarkIds,
+        infoView.hiddenMapLandmarkIds
+    ) {
         rawLandmarks
+            .filter { isTrainedAndActiveForMap(it, infoView.inactiveLandmarkIds, infoView.hiddenMapLandmarkIds, infoView) }
             .mapNotNull { it.clusterId?.trim()?.takeIf { c -> c.isNotEmpty() } }
             .distinct()
             .sortedWith { lhs, rhs ->
@@ -159,6 +185,7 @@ fun LandmarkMapScreen(
     var hasSetInitialCameraPosition by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
+        VariableContainer.initialize(context)
         val prefs = context.getSharedPreferences("LookSeePrefs", android.content.Context.MODE_PRIVATE)
         if (vm.userEmail.isNotEmpty()) {
             prefs.edit().putString("lastKnownEmail", vm.userEmail).apply()
@@ -212,13 +239,14 @@ fun LandmarkMapScreen(
             )
         ) {
             activeLandmarks.forEach { landmark ->
+                val isSelected = infoView.infoView && infoView.landmarkId == landmark.landmarkId
                 val state = rememberMarkerState(
                     key = landmark.landmarkId,
                     position = LatLng(landmark.latitude, landmark.longitude)
                 )
 
                 MarkerComposable(
-                    keys = arrayOf(landmark.landmarkId),
+                    keys = arrayOf<Any>(landmark.landmarkId, landmark.promotionEnabled, isSelected),
                     state = state,
                     onClick = {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -229,7 +257,7 @@ fun LandmarkMapScreen(
                 ) {
                     LandmarkMarker(
                         landmark = landmark,
-                        isSelected = infoView.infoView && infoView.landmarkId == landmark.landmarkId
+                        isSelected = isSelected
                     )
                 }
             }
@@ -650,7 +678,7 @@ fun FilterMenuContent(
                 }
             }
 
-            // 3. FILTER BY CLUSTER (Ported from iOS LandmarkMapView.swift)
+            // 3. FILTER BY CLUSTER
             if (availableClusters.isNotEmpty()) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(

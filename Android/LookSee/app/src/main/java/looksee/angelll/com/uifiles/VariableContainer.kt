@@ -1,44 +1,75 @@
-package looksee.angelll.com.uifiles // Added your requested package name
+package looksee.angelll.com.uifiles
 
-import looksee.angelll.com.models.LandmarkManifestEntry
-import looksee.angelll.com.models.NearbyLandmark
 import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import looksee.angelll.com.models.BusinessLandmark
+import looksee.angelll.com.models.LandmarkManifestEntry
+import looksee.angelll.com.models.NearbyLandmark
 
 /**
- * Shared display state used by the landmark information popup.
- *
- * The manifest-based detection flow resolves a `LandmarkManifestEntry`, then
- * calls `presentLandmark(...)` to populate the same fields already consumed by
- * `LandmarkInfo` and `PopUp`.
+ * Shared display state used by the landmark information popup, map filter, and AR scanner.
  */
 class VariableContainer private constructor() {
 
     companion object {
         val shared = VariableContainer()
 
+        @Volatile
         private var appContext: Context? = null
 
+        @Volatile
+        private var hasHydratedFromCache = false
+
         fun initialize(context: Context) {
-            appContext = context.applicationContext
+            val ctx = context.applicationContext
+            appContext = ctx
+            if (!hasHydratedFromCache) {
+                synchronized(this) {
+                    if (!hasHydratedFromCache) {
+                        shared.hydrateFromCache(ctx)
+                        hasHydratedFromCache = true
+                    }
+                }
+            }
         }
 
         fun isLandmarkInactive(landmarkId: String): Boolean {
-            val context = appContext ?: return false
-            return looksee.angelll.com.models.SuppressionCache.shared(context).isInactive(landmarkId)
+            val id = landmarkId.trim()
+            if (id.isEmpty()) return false
+            if (shared.isLocallyModified(id)) {
+                return shared.inactiveSnapshot.contains(id)
+            }
+            if (shared.inactiveSnapshot.contains(id)) return true
+            val context = appContext
+            if (context != null && looksee.angelll.com.models.SuppressionCache.shared(context).isInactive(id)) {
+                return true
+            }
+            return shared.allLandmarks.firstOrNull { it.landmarkId.trim() == id }?.isActive == false
         }
 
         fun isLandmarkHiddenOnMap(landmarkId: String): Boolean {
-            val context = appContext ?: return false
-            return looksee.angelll.com.models.SuppressionCache.shared(context).isHidden(landmarkId)
+            val id = landmarkId.trim()
+            if (id.isEmpty()) return false
+            if (shared.isLocallyModified(id)) {
+                return shared.hiddenSnapshot.contains(id)
+            }
+            if (shared.hiddenSnapshot.contains(id)) return true
+            val context = appContext
+            if (context != null && looksee.angelll.com.models.SuppressionCache.shared(context).isHidden(id)) {
+                return true
+            }
+            return shared.allLandmarks.firstOrNull { it.landmarkId.trim() == id }?.isVisibleOnMap == false
         }
     }
 
     fun isLocallyModified(landmarkId: String): Boolean {
+        val id = landmarkId.trim()
+        if (id.isEmpty()) return false
+        if (locallyModifiedSnapshot.contains(id)) return true
         val context = appContext ?: return false
-        return looksee.angelll.com.models.SuppressionCache.shared(context).isLocallyModified(landmarkId)
+        return looksee.angelll.com.models.SuppressionCache.shared(context).isLocallyModified(id)
     }
 
     var infoView by mutableStateOf(false)
@@ -51,8 +82,6 @@ class VariableContainer private constructor() {
     var landmarkURL by mutableStateOf("")
     var landmarkWebsiteUrl by mutableStateOf("")
 
-    // Manifest/debugging identity. These are useful when confirming that a
-    // popup was resolved from the same cluster release as the active model.
     var landmarkId by mutableStateOf("")
     var landmarkClassIndex by mutableStateOf<Int?>(null)
     var landmarkClusterId by mutableStateOf<Int?>(null)
@@ -63,7 +92,6 @@ class VariableContainer private constructor() {
     var promoDescription by mutableStateOf("")
     var promoImageUrl by mutableStateOf("")
 
-    // 🚀 NEW: Enterprise Merchant Profile Fields
     var merchantName by mutableStateOf("")
     var merchantBio by mutableStateOf("")
     var merchantPhone by mutableStateOf("")
@@ -71,45 +99,78 @@ class VariableContainer private constructor() {
     var merchantAddress by mutableStateOf("")
     var merchantLogoUrl by mutableStateOf("")
 
-    // Map Routing & Reporting Fields
     var isMapPin by mutableStateOf(false)
     var mapLatitude by mutableStateOf<Double?>(null)
     var mapLongitude by mutableStateOf<Double?>(null)
     var reportedOwnerId by mutableStateOf<String?>(null)
 
-    var allLandmarks = emptyList<NearbyLandmark>()
+    private var isUpdatingNearbyLocally = false
+
+    @Volatile
+    private var inactiveSnapshot: Set<String> = emptySet()
+
+    @Volatile
+    private var hiddenSnapshot: Set<String> = emptySet()
+
+    @Volatile
+    private var locallyModifiedSnapshot: Set<String> = emptySet()
+
+    var allLandmarks: List<NearbyLandmark> = emptyList()
         set(value) {
             field = value
-            syncSuppressionSetsFromNearby()
+            if (!isUpdatingNearbyLocally) {
+                syncSuppressionSetsFromNearby()
+            }
         }
-        
+
     var inactiveLandmarkIds by mutableStateOf<Set<String>>(emptySet())
     var hiddenMapLandmarkIds by mutableStateOf<Set<String>>(emptySet())
     private var locallyModifiedIds = mutableSetOf<String>()
 
     init {
-        appContext?.let { ctx ->
-            val cache = looksee.angelll.com.models.SuppressionCache.shared(ctx)
-            inactiveLandmarkIds = cache.getInitialInactive()
-            hiddenMapLandmarkIds = cache.getInitialHidden()
-            locallyModifiedIds.addAll(cache.getInitialModified())
-        }
         resetLandmarkDisplay()
     }
 
+    private fun hydrateFromCache(ctx: Context) {
+        val cache = looksee.angelll.com.models.SuppressionCache.shared(ctx)
+        val cachedInactive = cache.getInitialInactive()
+        val cachedHidden = cache.getInitialHidden()
+        val cachedModified = cache.getInitialModified()
+
+        val mergedModified = (cachedModified + locallyModifiedIds).toMutableSet()
+        val mergedInactive = cachedInactive.toMutableSet()
+        val mergedHidden = cachedHidden.toMutableSet()
+
+        for (id in locallyModifiedIds) {
+            if (inactiveLandmarkIds.contains(id)) mergedInactive.add(id) else mergedInactive.remove(id)
+            if (hiddenMapLandmarkIds.contains(id)) mergedHidden.add(id) else mergedHidden.remove(id)
+        }
+
+        locallyModifiedIds = mergedModified
+        inactiveLandmarkIds = mergedInactive
+        hiddenMapLandmarkIds = mergedHidden
+        inactiveSnapshot = mergedInactive.toSet()
+        hiddenSnapshot = mergedHidden.toSet()
+        locallyModifiedSnapshot = mergedModified.toSet()
+    }
+
     private fun persistSuppressionSets() {
+        inactiveSnapshot = inactiveLandmarkIds.toSet()
+        hiddenSnapshot = hiddenMapLandmarkIds.toSet()
+        locallyModifiedSnapshot = locallyModifiedIds.toSet()
+
         val context = appContext ?: return
         looksee.angelll.com.models.SuppressionCache.shared(context).update(
-            inactive = inactiveLandmarkIds,
-            hidden = hiddenMapLandmarkIds,
-            modified = locallyModifiedIds
+            inactive = inactiveSnapshot,
+            hidden = hiddenSnapshot,
+            modified = locallyModifiedSnapshot
         )
     }
 
     fun syncSuppressionSetsFromNearby() {
-        var updatedInactive = inactiveLandmarkIds.toMutableSet()
-        var updatedHidden = hiddenMapLandmarkIds.toMutableSet()
-        var updatedModified = locallyModifiedIds.toMutableSet()
+        val updatedInactive = inactiveLandmarkIds.toMutableSet()
+        val updatedHidden = hiddenMapLandmarkIds.toMutableSet()
+        val updatedModified = locallyModifiedIds.toMutableSet()
 
         for (item in allLandmarks) {
             val id = item.landmarkId.trim()
@@ -117,7 +178,8 @@ class VariableContainer private constructor() {
 
             if (updatedModified.contains(id)) {
                 val localIsActive = !updatedInactive.contains(id)
-                if (item.isActive == localIsActive) {
+                val localIsVisible = !updatedHidden.contains(id)
+                if (item.isActive == localIsActive && (item.isVisibleOnMap == null || item.isVisibleOnMap == localIsVisible)) {
                     updatedModified.remove(id)
                 } else {
                     continue
@@ -133,6 +195,48 @@ class VariableContainer private constructor() {
             if (item.isVisibleOnMap == false) {
                 updatedHidden.add(id)
             } else if (item.isVisibleOnMap == true) {
+                updatedHidden.remove(id)
+            }
+        }
+
+        inactiveLandmarkIds = updatedInactive
+        hiddenMapLandmarkIds = updatedHidden
+        locallyModifiedIds = updatedModified
+        persistSuppressionSets()
+    }
+
+    fun syncFromBusinessLandmarks(landmarks: List<BusinessLandmark>) {
+        if (landmarks.isEmpty()) return
+
+        val updatedInactive = inactiveLandmarkIds.toMutableSet()
+        val updatedHidden = hiddenMapLandmarkIds.toMutableSet()
+        val updatedModified = locallyModifiedIds.toMutableSet()
+
+        for (item in landmarks) {
+            val id = item.landmarkId.trim()
+            if (id.isEmpty()) continue
+
+            val backendActive = item.isActive ?: true
+            val backendVisible = item.isVisibleOnMap ?: backendActive
+
+            if (updatedModified.contains(id)) {
+                val localIsActive = !updatedInactive.contains(id)
+                if (backendActive == localIsActive) {
+                    updatedModified.remove(id)
+                } else {
+                    continue
+                }
+            }
+
+            if (!backendActive) {
+                updatedInactive.add(id)
+            } else {
+                updatedInactive.remove(id)
+            }
+
+            if (!backendVisible) {
+                updatedHidden.add(id)
+            } else {
                 updatedHidden.remove(id)
             }
         }
@@ -168,18 +272,24 @@ class VariableContainer private constructor() {
         }
         hiddenMapLandmarkIds = updatedHidden
 
+        if (allLandmarks.any { it.landmarkId == id }) {
+            isUpdatingNearbyLocally = true
+            try {
+                allLandmarks = allLandmarks.map { item ->
+                    if (item.landmarkId == id) {
+                        item.copy(isActive = isActive, isVisibleOnMap = isVisibleOnMap)
+                    } else {
+                        item
+                    }
+                }
+            } finally {
+                isUpdatingNearbyLocally = false
+            }
+        }
+
         persistSuppressionSets()
     }
 
-    /**
-     * Populates and opens the popup using information resolved from a local
-     * cluster landmark manifest.
-     *
-     * @param entry The manifest entry associated with the detected class index.
-     * @param clusterId Cluster whose model produced the detection.
-     * @param trainingRunId Immutable release identifier paired with the model.
-     * @param detectionConfidence Raw model confidence in the range 0...1.
-     */
     fun presentLandmark(
         entry: LandmarkManifestEntry,
         clusterId: Int,
@@ -187,7 +297,9 @@ class VariableContainer private constructor() {
         detectionConfidence: Float
     ) {
         if (isLandmarkInactive(entry.landmarkId)) return
-        
+
+        resetLandmarkDisplay()
+
         landmarkId = entry.landmarkId
         landmarkClassIndex = entry.classIndex
         landmarkClusterId = clusterId
@@ -204,23 +316,11 @@ class VariableContainer private constructor() {
             trimmedDescription
         }
 
-        // Keep the existing UI field populated without exposing the S3 folder
-        // formatting directly to the user.
         landmarkCategory = entry.datasetClassName.replace("_", " ")
 
         val clampedConfidence = detectionConfidence.coerceIn(0f, 1f)
         landmarkConfidence = clampedConfidence * 100
 
-        // Live website/promotion data is fetched from the backend after the
-        // popup opens. Reset these so a previous landmark cannot leak into the
-        // newly displayed popup.
-        landmarkWebsiteUrl = ""
-        promoName = "No active promotion"
-        promoDescription = ""
-        promoImageUrl = ""
-        landmarkURL = ""
-
-        // 🚀 INSTANT CACHE LOAD: Load cached merchant details immediately to eliminate delay
         appContext?.let { context ->
             val prefs = context.getSharedPreferences("LookSeeMerchantCache", Context.MODE_PRIVATE)
             val cacheKeyPrefix = "cached_merchant_${entry.landmarkId}_"
@@ -231,38 +331,37 @@ class VariableContainer private constructor() {
             merchantWebsite = prefs.getString("${cacheKeyPrefix}merchantWebsite", "") ?: ""
             merchantAddress = prefs.getString("${cacheKeyPrefix}merchantAddress", "") ?: ""
             merchantLogoUrl = prefs.getString("${cacheKeyPrefix}merchantLogoUrl", "") ?: ""
-        } ?: run {
-            merchantName = ""
-            merchantBio = ""
-            merchantPhone = ""
-            merchantWebsite = ""
-            merchantAddress = ""
-            merchantLogoUrl = ""
         }
 
         infoView = true
 
-        println("""
-        ✅ [Local Manifest Popup] Presenting landmark
-            clusterId: $clusterId
-            trainingRunId: $trainingRunId
-            classIndex: ${entry.classIndex}
-            landmarkId: ${entry.landmarkId}
-            label: ${entry.label}
-            confidence: ${String.format("%.1f", landmarkConfidence)}%
-        """.trimIndent())
+        println(
+            """
+            ✅ [Local Manifest Popup] Presenting landmark
+                clusterId: $clusterId
+                trainingRunId: $trainingRunId
+                classIndex: ${entry.classIndex}
+                landmarkId: ${entry.landmarkId}
+                label: ${entry.label}
+                confidence: ${String.format("%.1f", landmarkConfidence)}%
+            """.trimIndent()
+        )
     }
 
-    /**
-     * Populates and opens the popup using a NearbyLandmark (e.g. from the map).
-     */
-    fun presentNearbyLandmark(landmark: NearbyLandmark) {
+    fun presentNearbyLandmark(
+        landmark: NearbyLandmark,
+        allowInactivePreview: Boolean = false
+    ) {
+        if (!allowInactivePreview && isLandmarkInactive(landmark.landmarkId)) {
+            return
+        }
+
         resetLandmarkDisplay()
-        
+
         landmarkId = landmark.landmarkId
         landmarkName = landmark.label
         landmarkDescription = landmark.shortDescription.ifEmpty { "No description is available for this landmark." }
-        
+
         isMapPin = true
         mapLatitude = landmark.latitude
         mapLongitude = landmark.longitude
@@ -270,34 +369,54 @@ class VariableContainer private constructor() {
 
         landmarkWebsiteUrl = landmark.websiteUrl ?: ""
 
-        promoName = landmark.promoName ?: landmark.promotion ?: "No active promotion"
-        promoDescription = landmark.promoDescription ?: ""
-        promoImageUrl = landmark.promoImageUrl ?: ""
+        promoName = if (landmark.promotionEnabled) {
+            landmark.promoName ?: landmark.promotion ?: "Special Promotion Available!"
+        } else {
+            "No active promotion"
+        }
+        promoDescription = if (landmark.promotionEnabled) landmark.promoDescription ?: "" else ""
+        promoImageUrl = if (landmark.promotionEnabled) landmark.promoImageUrl ?: "" else ""
 
-        merchantName = landmark.merchantName ?: ""
-        merchantBio = landmark.merchantBio ?: ""
-        merchantPhone = landmark.merchantPhone ?: ""
-        merchantAddress = landmark.merchantAddress ?: ""
-        merchantLogoUrl = landmark.merchantLogoUrl ?: ""
-        
+        val prefs = appContext?.getSharedPreferences("LookSeeMerchantCache", Context.MODE_PRIVATE)
+        val cacheKeyPrefix = "cached_merchant_${landmark.landmarkId}_"
+
+        val resolvedName = landmark.merchantName?.trim()?.takeIf { it.isNotEmpty() }
+            ?: prefs?.getString("${cacheKeyPrefix}merchantName", "")?.trim().orEmpty()
+        val resolvedBio = landmark.merchantBio?.trim()?.takeIf { it.isNotEmpty() }
+            ?: prefs?.getString("${cacheKeyPrefix}merchantBio", "")?.trim().orEmpty()
+        val resolvedPhone = landmark.merchantPhone?.trim()?.takeIf { it.isNotEmpty() }
+            ?: prefs?.getString("${cacheKeyPrefix}merchantPhone", "")?.trim().orEmpty()
+        val resolvedAddress = landmark.merchantAddress?.trim()?.takeIf { it.isNotEmpty() }
+            ?: prefs?.getString("${cacheKeyPrefix}merchantAddress", "")?.trim().orEmpty()
+        val resolvedLogo = landmark.merchantLogoUrl?.trim()?.takeIf { it.isNotEmpty() }
+            ?: prefs?.getString("${cacheKeyPrefix}merchantLogoUrl", "")?.trim().orEmpty()
+
+        merchantName = resolvedName
+        merchantBio = resolvedBio
+        merchantPhone = resolvedPhone
+        merchantAddress = resolvedAddress
+        merchantLogoUrl = resolvedLogo
+
+        if (prefs != null && (resolvedName.isNotEmpty() || resolvedLogo.isNotEmpty())) {
+            prefs.edit()
+                .putString("${cacheKeyPrefix}merchantName", resolvedName)
+                .putString("${cacheKeyPrefix}merchantBio", resolvedBio)
+                .putString("${cacheKeyPrefix}merchantPhone", resolvedPhone)
+                .putString("${cacheKeyPrefix}merchantAddress", resolvedAddress)
+                .putString("${cacheKeyPrefix}merchantLogoUrl", resolvedLogo)
+                .apply()
+        }
+
         infoView = true
-        
-        println("✅ [Nearby Landmark Popup] Presenting landmark: ${landmark.label}")
+
+        println("✅ [Nearby Landmark Popup] Presenting landmark: ${landmark.label} (logo=$resolvedLogo)")
     }
 
-    /**
-     * Closes the popup while retaining the most recently displayed landmark
-     * values for diagnostics.
-     */
     fun dismissLandmark() {
         infoView = false
         landmarkURL = ""
     }
 
-    /**
-     * Clears all landmark-specific state. This can be used when changing
-     * active cluster releases or resetting the scan screen.
-     */
     fun resetLandmarkDisplay() {
         infoView = false
         bboxCounter = 0
@@ -325,6 +444,10 @@ class VariableContainer private constructor() {
         merchantWebsite = ""
         merchantAddress = ""
         merchantLogoUrl = ""
+
+        isMapPin = false
+        mapLatitude = null
+        mapLongitude = null
+        reportedOwnerId = null
     }
 }
-

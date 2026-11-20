@@ -169,9 +169,13 @@ final class VariableContainer: ObservableObject {
     @Published var mapLongitude: Double?
     @Published var reportedOwnerId: String?
 
+    private var isUpdatingNearbyLocally = false
+
     @Published var allLandmarks: [NearbyLandmark] = [] {
         didSet {
-            syncSuppressionSetsFromNearby()
+            if !isUpdatingNearbyLocally {
+                syncSuppressionSetsFromNearby()
+            }
         }
     }
     @Published var inactiveLandmarkIds: Set<String> = []
@@ -267,12 +271,10 @@ final class VariableContainer: ObservableObject {
         let id = landmark.landmarkId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !id.isEmpty else { return false }
 
-        // If the backend has already moved it into a training pipeline stage, let that stage take over
         if landmark.isProcessing {
             return false
         }
 
-        // 1. Check if there is an active (unfailed) upload in the local queue for this landmark
         let hasActiveQueuedUpload = OfflineMediaManager.shared.archivedItems.contains { item in
             let matchesId = (item.landmarkId == id || item.queueLandmarkId == id)
             let isHealthy = (item.lastUploadError == nil && item.deletionBlocked != true)
@@ -282,7 +284,6 @@ final class VariableContainer: ObservableObject {
             return true
         }
 
-        // 2. Check if we are waiting for the Lambda to finish calculating the new frame count
         guard let state = processingNewDataById[id] else {
             return false
         }
@@ -295,7 +296,6 @@ final class VariableContainer: ObservableObject {
             return false
         }
 
-        // If the backend frame count or secondsNeeded changed since the upload started, Lambda is done!
         if let baseFrames = state.baselineFrameCount,
            let currentFrames = landmark.cleanFrameCount,
            currentFrames != baseFrames {
@@ -324,7 +324,6 @@ final class VariableContainer: ObservableObject {
         var didChange = false
 
         for (id, state) in updated {
-            // Never clear while still actively sitting in the upload queue
             if queuedIds.contains(id) { continue }
 
             if let completedAt = state.uploadCompletedAt, now - completedAt > postUploadProcessingTimeout {
@@ -340,13 +339,11 @@ final class VariableContainer: ObservableObject {
 
             if let landmark = landmarks.first(where: { $0.landmarkId == id }) {
                 let status = landmark.status ?? ""
-                // Lambda moved it out of NEEDS_MORE_MEDIA (e.g. into PREPARING_DATA or ACTIVE)
                 if status != "NEEDS_MORE_MEDIA" {
                     updated.removeValue(forKey: id)
                     didChange = true
                     continue
                 }
-                // Lambda finished extracting frames and updated the count/seconds, even if still NEEDS_MORE_MEDIA
                 if let baseFrames = state.baselineFrameCount,
                    let currentFrames = landmark.cleanFrameCount,
                    currentFrames != baseFrames {
@@ -436,6 +433,16 @@ final class VariableContainer: ObservableObject {
             hiddenMapLandmarkIds.remove(id)
         } else {
             hiddenMapLandmarkIds.insert(id)
+        }
+
+        // Keep cached allLandmarks in sync immediately so reactivation works before the next map fetch
+        if let index = allLandmarks.firstIndex(where: { $0.landmarkId == id }) {
+            isUpdatingNearbyLocally = true
+            defer { isUpdatingNearbyLocally = false }
+            allLandmarks[index] = allLandmarks[index].withState(
+                isActive: isActive,
+                isVisibleOnMap: isVisibleOnMap
+            )
         }
 
         persistSuppressionSets()

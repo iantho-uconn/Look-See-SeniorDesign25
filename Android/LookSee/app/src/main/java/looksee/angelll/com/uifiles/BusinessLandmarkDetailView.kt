@@ -37,16 +37,24 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import looksee.angelll.com.detection.Detector
 import looksee.angelll.com.models.*
 import looksee.angelll.com.ui.theme.AppleBlue
 import looksee.angelll.com.viewmodels.AuthViewModel
 import java.io.File
 import java.util.*
+
+// Process-scoped coroutine scope so navigating back never cancels an in-flight Active/Inactive PATCH
+private val landmarkManagementScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+private val pendingManagementJobs = mutableMapOf<String, Job>()
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -93,13 +101,19 @@ fun BusinessLandmarkDetailView(
     var websiteUrlErrorMessage by remember { mutableStateOf(initialNullString) }
 
     // Management State
-    var displayedIsActive by remember { mutableStateOf(landmark.isActive ?: true) }
+    var displayedIsActive by remember {
+        val id = initialLandmark.landmarkId.trim()
+        val initialActive = if (id.isNotEmpty() && VariableContainer.shared.isLocallyModified(id)) {
+            !VariableContainer.isLandmarkInactive(id)
+        } else {
+            initialLandmark.isActive ?: true
+        }
+        mutableStateOf(initialActive)
+    }
     var displayedPromotionEnabled by remember { mutableStateOf(landmark.promotionEnabled ?: false) }
     var displayedCleanFrameCount by remember { mutableStateOf(landmark.cleanFrameCount ?: 0) }
     var isSavingManagement by remember { mutableStateOf(false) }
     var managementErrorMessage by remember { mutableStateOf(initialNullString) }
-    val initialNullJob: Job? = null
-    var managementUpdateJob by remember { mutableStateOf(initialNullJob) }
 
     // Media State
     var pendingPositiveVideoUris by remember { mutableStateOf(emptyList<Uri>()) }
@@ -136,6 +150,12 @@ fun BusinessLandmarkDetailView(
     val deletionBlockedUploadMessage =
         "Upload blocked: deletion has been requested for this landmark. Additional media cannot be uploaded."
 
+    LaunchedEffect(landmark.landmarkId) {
+        VariableContainer.initialize(context)
+        VariableContainer.shared.syncFromBusinessLandmarks(listOf(landmark))
+        Detector.shared(context).pruneInactiveDetections()
+    }
+
     fun hideKeyboard() {
         focusManager.clearFocus()
         keyboardController?.hide()
@@ -167,36 +187,76 @@ fun BusinessLandmarkDetailView(
     }
 
     fun scheduleManagementUpdate() {
-        managementUpdateJob?.cancel()
+        val targetId = landmark.landmarkId
+        val appCtx = context.applicationContext
         managementErrorMessage = null
         val targetActive = displayedIsActive
         val targetPromo = displayedPromotionEnabled
 
-        managementUpdateJob = coroutineScope.launch {
-            delay(600)
-            isSavingManagement = true
-            try {
-                val updated = landmarkService.updateLandmarkSettings(
-                    landmarkId = landmark.landmarkId,
-                    isActive = targetActive,
-                    promotionEnabled = targetPromo
-                )
-                landmark = updated
-                displayedIsActive = updated.isActive ?: targetActive
-                displayedPromotionEnabled = updated.promotionEnabled ?: targetPromo
-                updated.cleanFrameCount?.let { displayedCleanFrameCount = it }
-                onLandmarkUpdated(updated)
-            } catch (e: Exception) {
-                managementErrorMessage = sanitizedErrorMessage(e)
-            } finally {
-                isSavingManagement = false
+        // Immediately sync map & AR scanner state before the network PATCH finishes
+        VariableContainer.initialize(appCtx)
+        VariableContainer.shared.setLandmarkState(
+            landmarkId = targetId,
+            isActive = targetActive,
+            isVisibleOnMap = targetActive
+        )
+        Detector.shared(appCtx).pruneInactiveDetections()
+
+        synchronized(pendingManagementJobs) {
+            pendingManagementJobs[targetId]?.cancel()
+            pendingManagementJobs[targetId] = landmarkManagementScope.launch {
+                delay(300)
+                withContext(Dispatchers.Main) { isSavingManagement = true }
+                try {
+                    val updated = landmarkService.updateLandmarkSettings(
+                        landmarkId = targetId,
+                        isActive = targetActive,
+                        isVisibleOnMap = targetActive,
+                        promotionEnabled = targetPromo
+                    )
+                    val confirmedActive = updated.isActive ?: targetActive
+                    val confirmedVisible = updated.isVisibleOnMap ?: confirmedActive
+
+                    withContext(Dispatchers.Main) {
+                        landmark = updated
+                        displayedIsActive = confirmedActive
+                        displayedPromotionEnabled = updated.promotionEnabled ?: targetPromo
+                        updated.cleanFrameCount?.let { displayedCleanFrameCount = it }
+
+                        VariableContainer.shared.setLandmarkState(
+                            landmarkId = updated.landmarkId,
+                            isActive = confirmedActive,
+                            isVisibleOnMap = confirmedVisible
+                        )
+                        Detector.shared(appCtx).pruneInactiveDetections()
+                        onLandmarkUpdated(updated)
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    val fallbackActive = landmark.isActive ?: true
+                    val fallbackVisible = landmark.isVisibleOnMap ?: fallbackActive
+                    withContext(Dispatchers.Main) {
+                        displayedIsActive = fallbackActive
+                        displayedPromotionEnabled = landmark.promotionEnabled ?: false
+                        VariableContainer.shared.setLandmarkState(
+                            landmarkId = targetId,
+                            isActive = fallbackActive,
+                            isVisibleOnMap = fallbackVisible
+                        )
+                        Detector.shared(appCtx).pruneInactiveDetections()
+                        managementErrorMessage = sanitizedErrorMessage(e)
+                    }
+                } finally {
+                    withContext(Dispatchers.Main) { isSavingManagement = false }
+                }
             }
         }
     }
 
     fun previewLandmarkPopup() {
         VariableContainer.shared.presentNearbyLandmark(
-            NearbyLandmark(
+            landmark = NearbyLandmark(
                 landmarkId = landmark.landmarkId,
                 label = landmark.label,
                 shortDescription = displayedShortDescription,
@@ -208,7 +268,8 @@ fun BusinessLandmarkDetailView(
                 websiteUrl = displayedWebsiteUrl.ifEmpty { null },
                 isActive = displayedIsActive,
                 isVisibleOnMap = displayedIsActive
-            )
+            ),
+            allowInactivePreview = true
         )
     }
 
@@ -508,11 +569,11 @@ fun BusinessLandmarkDetailView(
                         bannerTitle = landmark.displayStatus.uppercase()
                         bannerMessage = "Not enough video data to train. Please record more media below."
                     }
-                    isProcessing || listOf("PREPARING_DATA", "PENDING_TRAINING", "TRAINING_MODEL", "OPTIMIZING_MODEL").contains(status) -> {
+                    isProcessing || listOf("PREPARING_DATA", "PENDING_TRAINING", "TRAINING", "TRAINING_MODEL", "OPTIMIZING_MODEL").contains(status) -> {
                         bannerColor = when (status) {
                             "PREPARING_DATA" -> Color(0xFFFF9F0A)
                             "PENDING_TRAINING" -> Color(0xFFAF52DE)
-                            "TRAINING_MODEL" -> Color(0xFFFFD60A)
+                            "TRAINING", "TRAINING_MODEL" -> Color(0xFFFFD60A)
                             "OPTIMIZING_MODEL" -> Color(0xFF0A84FF)
                             else -> Color(0xFFFF9F0A)
                         }
@@ -691,7 +752,7 @@ fun BusinessLandmarkDetailView(
 
                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                             Icon(
-                                imageVector = if (displayedPromotionEnabled) Icons.Default.LocalOffer else Icons.Default.LocalOffer,
+                                imageVector = Icons.Default.LocalOffer,
                                 contentDescription = null,
                                 tint = if (displayedPromotionEnabled) Color(0xFFFF9F0A) else Color.Gray,
                                 modifier = Modifier.size(24.dp)
@@ -1302,6 +1363,12 @@ fun BusinessLandmarkDetailView(
                     deleteErrorMessage = null
                     try {
                         landmarkService.deleteLandmark(landmark.landmarkId, deleteConfirmationText.trim())
+                        VariableContainer.shared.setLandmarkState(
+                            landmarkId = landmark.landmarkId,
+                            isActive = false,
+                            isVisibleOnMap = false
+                        )
+                        Detector.shared(context).pruneInactiveDetections()
                         isDeletingLandmark = false
                         showDeleteSheet = false
                         onLandmarkDeleted(landmark.landmarkId)

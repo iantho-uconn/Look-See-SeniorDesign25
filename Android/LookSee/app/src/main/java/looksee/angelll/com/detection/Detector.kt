@@ -26,9 +26,9 @@ import looksee.angelll.com.models.ClusterLandmarkManifest
 import looksee.angelll.com.models.LandmarkManifestEntry
 import looksee.angelll.com.models.LandmarkManifestStore
 import looksee.angelll.com.models.ModelSelector
+import looksee.angelll.com.uifiles.VariableContainer
 import org.tensorflow.lite.DataType
 import org.tensorflow.lite.Interpreter
-import org.tensorflow.lite.gpu.CompatibilityList
 import org.tensorflow.lite.gpu.GpuDelegate
 
 import java.io.Closeable
@@ -68,7 +68,6 @@ data class Detection(
     val id: String = UUID.randomUUID().toString(),
     val displayLabelOverride: String? = null,
 ) {
-    // THIS is where the "1" came from! It is fully dynamic based on AWS.
     val releaseIdentifier: String get() = "$clusterId|$modelVersion"
     val label: String get() = classIndex.toString()
 
@@ -246,6 +245,7 @@ class Detector internal constructor(
     @Volatile private var userLocation: DetectorLocation? = null
 
     init {
+        context?.let { VariableContainer.initialize(it) }
         Log.e("LOOKSEE_DEBUG", "🚀 Detector initialized. observeActiveReleases = $observeActiveReleases")
         locationManager?.start()
 
@@ -308,6 +308,25 @@ class Detector internal constructor(
         _newlyDetectedLandmark.value = null
     }
 
+    fun pruneInactiveDetections() {
+        val manifest = loadedRelease.get()?.manifest
+        synchronized(engineLock) {
+            val iterator = trackers.entries.iterator()
+            while (iterator.hasNext()) {
+                val entry = iterator.next()
+                val last = entry.value.lastDetection
+                if (last != null && isDetectionInactive(last, manifest)) {
+                    entry.value.reset()
+                    iterator.remove()
+                }
+            }
+        }
+        val remaining = _detections.value.filterNot { isDetectionInactive(it, manifest) }
+        _detections.value = remaining
+        val strongest = remaining.maxByOrNull(Detection::confidence)
+        _currentLabel.value = strongest?.displayLabel(manifestStore)
+    }
+
     suspend fun process(frame: DetectorFrame) {
         if (_isPaused.value || !inferenceMutex.tryLock()) return
 
@@ -338,7 +357,6 @@ class Detector internal constructor(
                 _lastInferenceMs.value = (System.nanoTime() - startedAt) / NANOS_PER_MILLISECOND
             }
         } catch (error: Exception) {
-            // 🚀 FIXED: Ignore coroutine cancellations when CameraX drops a frame, so it stops spamming errors!
             if (error is kotlinx.coroutines.CancellationException) throw error
 
             val releaseId = loadedRelease.get()?.release?.releaseIdentifier ?: "none"
@@ -399,6 +417,16 @@ class Detector internal constructor(
         resetEngine()
     }
 
+    private fun isDetectionInactive(
+        detection: Detection,
+        manifest: ClusterLandmarkManifest?,
+    ): Boolean {
+        val entry = manifest?.landmark(detection.classIndex) ?: detection.landmarkEntry(manifestStore)
+        val landmarkId = entry?.landmarkId?.trim().orEmpty()
+        if (landmarkId.isEmpty()) return false
+        return VariableContainer.isLandmarkInactive(landmarkId)
+    }
+
     private fun publishOutput(
         output: DetectorModelOutput,
         metadata: LetterboxMetadata,
@@ -410,8 +438,9 @@ class Detector internal constructor(
             is DetectorModelOutput.Split -> parseSplitDetections(output, metadata, loaded.release)
             is DetectorModelOutput.RawYolo -> parseRawYoloDetections(output, metadata, loaded.release)
         }
-        val nearby = proximityFilter(parsed, loaded.manifest)
-        val tracked = finalizeTracking(nearby)
+        val activeOnly = parsed.filterNot { isDetectionInactive(it, loaded.manifest) }
+        val nearby = proximityFilter(activeOnly, loaded.manifest)
+        val tracked = finalizeTracking(nearby, loaded.manifest)
         val strongest = tracked.maxByOrNull(Detection::confidence)
 
         _detections.value = if (_hideBoundingBoxes.value) emptyList() else tracked
@@ -435,8 +464,6 @@ class Detector internal constructor(
         val shape = output.shape
         if (shape.size != 3 || shape[0] != 1) return emptyList()
 
-        // 🚀 FIXED: Dynamically detect YOLO26s shape instead of hardcoding 8400 boxes
-        // Typically boxes > channels, so the larger dimension is the number of boxes
         val isTransposed = shape[1] > shape[2]
         val numBoxes = if (isTransposed) shape[1] else shape[2]
         val numChannels = if (isTransposed) shape[2] else shape[1]
@@ -607,7 +634,7 @@ class Detector internal constructor(
 
         return detections.filter { detection ->
             val objectInfo = manifest.landmark(detection.classIndex) ?: return@filter true
-            
+
             val results = FloatArray(1)
             android.location.Location.distanceBetween(
                 userLoc.latitude, userLoc.longitude,
@@ -616,16 +643,19 @@ class Detector internal constructor(
             )
             val distanceMeters = results[0]
             val isNearby = distanceMeters <= proximityThresholdMeters
-            
+
             if (!isNearby) {
                 Log.d("LOOKSEE_DEBUG", "${objectInfo.label} suppressed because object is not nearby (distance: ${distanceMeters}m)")
             }
-            
+
             isNearby
         }
     }
 
-    private fun finalizeTracking(detections: List<Detection>): List<Detection> = synchronized(engineLock) {
+    private fun finalizeTracking(
+        detections: List<Detection>,
+        manifest: ClusterLandmarkManifest?
+    ): List<Detection> = synchronized(engineLock) {
         val strongestByTrack = mutableMapOf<String, Detection>()
         detections.forEach { detection ->
             val key = trackingKey(detection)
@@ -640,8 +670,19 @@ class Detector internal constructor(
 
         val lostKeys = trackers.keys.filterNot(activeKeys::contains)
         lostKeys.forEach { key ->
-            val coasted = trackers[key]?.update(null, trackingAlpha)
-            if (coasted != null) results += coasted else trackers.remove(key)
+            val tracker = trackers[key]
+            val previous = tracker?.lastDetection
+            if (previous != null && isDetectionInactive(previous, manifest)) {
+                tracker.reset()
+                trackers.remove(key)
+            } else {
+                val coasted = tracker?.update(null, trackingAlpha)
+                if (coasted != null && !isDetectionInactive(coasted, manifest)) {
+                    results += coasted
+                } else {
+                    trackers.remove(key)
+                }
+            }
         }
         results
     }
@@ -760,22 +801,16 @@ class LiteRtDetectorModelFactory : DetectorModelFactory {
     override fun load(release: ActiveModelRelease): DetectorModel {
         var interpreter: Interpreter? = null
 
-        // 1. Force Hardware GPU (Bypass CompatibilityList)
         try {
-            // CompatibilityList is outdated for modern devices (like Pixel 9 Pro). 
-            // We force the GPU Delegate and catch any Throwables to prevent crashes.
             val gpuOptions = Interpreter.Options().apply {
                 addDelegate(GpuDelegate())
             }
             interpreter = Interpreter(release.modelFile, gpuOptions)
             Log.e("LOOKSEE_DEBUG", "🚀 ✅ TFLite is running on HARDWARE GPU!")
         } catch (t: Throwable) {
-            // Catching Throwable (not just Exception) safely traps underlying Java LinkageErrors
             Log.e("LOOKSEE_DEBUG", "⚠️ GPU rejected model: ${t.message}")
         }
 
-        // 2. Max-Power CPU Fallback (All available cores)
-        // We completely skip NNAPI, as it is deprecated by Google and crashes during inference on Tensor chips.
         val finalInterpreter = interpreter ?: Interpreter(release.modelFile, Interpreter.Options().apply {
             val maxCores = Runtime.getRuntime().availableProcessors()
             setNumThreads(maxCores)
@@ -864,7 +899,6 @@ private class LiteRtDetectorModel(
         }
 
         val rawIndex = outputTensors.indexOfFirst {
-            // 🚀 FIXED: Dynamically find the output tensor for YOLO26s
             it.shape().size == 3 && (it.shape()[1] > 1000 || it.shape()[2] > 1000)
         }
 

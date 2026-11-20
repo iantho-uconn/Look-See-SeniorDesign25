@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import com.amplifyframework.AmplifyException
 import com.amplifyframework.auth.cognito.AWSCognitoAuthPlugin
@@ -27,6 +28,14 @@ class MainActivity : ComponentActivity() {
 
     private val authViewModel: AuthViewModel by viewModels()
     private val authState: AuthState by viewModels()
+
+    companion object {
+        @Volatile
+        private var isAmplifyConfigured = false
+
+        @Volatile
+        private var isSentryConfigured = false
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         System.setProperty("java.net.preferIPv4Stack", "true")
@@ -51,12 +60,15 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun configureAmplify() {
+        if (isAmplifyConfigured) return
         try {
             Amplify.addPlugin(AWSCognitoAuthPlugin())
             Amplify.addPlugin(AWSS3StoragePlugin())
             Amplify.configure(applicationContext)
+            isAmplifyConfigured = true
             Log.i("AmplifyEngine", "✅ Amplify configured")
         } catch (error: AmplifyException) {
+            isAmplifyConfigured = true
             Log.i("AmplifyEngine", "ℹ️ Amplify was already configured.")
         } catch (error: Exception) {
             Log.e("AmplifyEngine", "❌ Failed to configure Amplify", error)
@@ -64,12 +76,14 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun configureSentry() {
+        if (isSentryConfigured) return
         try {
-            SentryAndroid.init(this) { options ->
+            SentryAndroid.init(applicationContext) { options ->
                 options.dsn = BuildConfig.SENTRY_DSN
                 options.tracesSampleRate = 1.0
                 options.profilesSampleRate = 1.0
             }
+            isSentryConfigured = true
             Log.i("SentryEngine", "✅ Sentry configured")
         } catch (error: Exception) {
             Log.e("SentryEngine", "❌ Failed to configure Sentry", error)
@@ -103,7 +117,7 @@ enum class AppState {
 
 @Composable
 fun RootView(vm: AuthViewModel, authState: AuthState) {
-    var appState by remember { mutableStateOf(AppState.LoadingModel) }
+    var appState by rememberSaveable { mutableStateOf(AppState.LoadingModel) }
     val didSignOut by authState.didSignOut.collectAsState(initial = false)
     var selectedLandmark by remember { mutableStateOf<BusinessLandmark?>(null) }
     val coroutineScope = rememberCoroutineScope()
@@ -126,7 +140,7 @@ fun RootView(vm: AuthViewModel, authState: AuthState) {
         }
     }
 
-    var settingsStartWithSubscriptions by remember { mutableStateOf(false) }
+    var settingsStartWithSubscriptions by rememberSaveable { mutableStateOf(false) }
 
     when (appState) {
         AppState.LoadingModel -> {
@@ -213,7 +227,8 @@ fun RootView(vm: AuthViewModel, authState: AuthState) {
         }
 
         AppState.BusinessLandmarkDetail -> {
-            selectedLandmark?.let { landmark ->
+            val landmark = selectedLandmark
+            if (landmark != null) {
                 BusinessLandmarkDetailView(
                     vm = vm,
                     initialLandmark = landmark,
@@ -225,16 +240,25 @@ fun RootView(vm: AuthViewModel, authState: AuthState) {
                     onLandmarkDeleted = { appState = AppState.BusinessLandmarks },
                     onDismiss = { appState = AppState.BusinessLandmarks }
                 )
+            } else {
+                LaunchedEffect(Unit) {
+                    appState = AppState.BusinessLandmarks
+                }
             }
         }
 
         AppState.BusinessMediaHistory -> {
-            selectedLandmark?.let { landmark ->
+            val landmark = selectedLandmark
+            if (landmark != null) {
                 BusinessMediaHistoryView(
                     landmarkId = landmark.landmarkId,
                     landmarkLabel = landmark.label,
                     onBack = { appState = AppState.BusinessLandmarkDetail }
                 )
+            } else {
+                LaunchedEffect(Unit) {
+                    appState = AppState.BusinessLandmarks
+                }
             }
         }
 

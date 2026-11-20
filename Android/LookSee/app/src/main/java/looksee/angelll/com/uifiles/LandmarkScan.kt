@@ -7,16 +7,11 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.filled.CenterFocusStrong
 import androidx.compose.material3.*
-import androidx.compose.material3.Icon
 import androidx.compose.runtime.*
-import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -37,7 +32,6 @@ import kotlinx.coroutines.withContext
 import looksee.angelll.com.detection.*
 import looksee.angelll.com.models.*
 import looksee.angelll.com.services.*
-
 
 private suspend fun getCityName(context: Context, lat: Double, lon: Double): String? = withContext(Dispatchers.IO) {
     try {
@@ -69,31 +63,35 @@ fun LandmarkScan(
     val haptic = LocalHapticFeedback.current
     val coroutineScope = rememberCoroutineScope()
     val infoView = remember { VariableContainer.shared }
-    val detector = remember { 
+    val statusSyncService = remember { NearbyLandmarkService() }
+    val detector = remember {
+        VariableContainer.initialize(context)
         Detector.shared(context).apply {
             confidenceThreshold = 0.10f
             trackingThresholdMultiplier = 0.10f
         }
     }
 
-    var isPopupOpen by remember { mutableStateOf(infoView.infoView) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            if (isPopupOpen != infoView.infoView) {
-                isPopupOpen = infoView.infoView
-            }
-            delay(100)
-        }
-    }
+    val isPopupOpen = infoView.infoView
 
     var zoomLevel by remember { mutableStateOf(1f) }
     var zoomIndicatorVisible by remember { mutableStateOf(false) }
     var zoomFadeJob by remember { mutableStateOf<Job?>(null) }
 
     var isCameraPaused by remember { mutableStateOf(false) }
-    var isWarmingUp by remember { mutableStateOf(true) } // 🚀 NEW: Masks the camera snap
+    var isWarmingUp by remember { mutableStateOf(true) }
 
     var liveInfoFetchJob by remember { mutableStateOf<Job?>(null) }
+    var lastStatusSyncMillis by remember { mutableLongStateOf(0L) }
+
+    LaunchedEffect(Unit) {
+        VariableContainer.initialize(context)
+    }
+
+    // Immediately drop any on-screen bounding boxes/tracks when a landmark is toggled inactive
+    LaunchedEffect(infoView.inactiveLandmarkIds) {
+        detector.pruneInactiveDetections()
+    }
 
     fun updatePauseState() {
         isCameraPaused = !isActive
@@ -115,7 +113,11 @@ fun LandmarkScan(
             try {
                 val liveInfo = LiveLandmarkInfoService(context).fetchLiveInfo(landmarkId, 2.5)
                 if (infoView.landmarkId == landmarkId) {
-                    applyLiveInfo(liveInfo, infoView)
+                    val remainsActive = applyLiveInfo(liveInfo, landmarkId, infoView)
+                    if (!remainsActive) {
+                        detector.pruneInactiveDetections()
+                        return@launch
+                    }
 
                     val realAddress = liveInfo.merchantAddress?.takeIf { it.isNotBlank() }
                     if (realAddress != null && vm != null && vm.hasActiveSubscription) {
@@ -145,17 +147,28 @@ fun LandmarkScan(
             infoView.landmarkConfidence = detection.confidence * 100
             infoView.landmarkDescription = "Discover more about this location."
             infoView.infoView = true
-            isPopupOpen = true
             return
         }
 
-        if (VariableContainer.isLandmarkInactive(entry.landmarkId)) {
-            Log.d("LookSee_Debug_Popup", "\uD83D\uDEAB Blocked popup for inactive landmark: ${entry.landmarkId}")
-            return
-        }
+        val landmarkId = entry.landmarkId.trim()
 
-        infoView.infoView = true
-        isPopupOpen = true
+        // Respect immediate local toggles first, then cached backend status
+        if (landmarkId.isNotEmpty()) {
+            if (VariableContainer.isLandmarkInactive(landmarkId)) {
+                Log.d("LookSee_Debug_Popup", "🚫 Blocked popup for locally inactive landmark: $landmarkId")
+                detector.pruneInactiveDetections()
+                return
+            }
+
+            if (!infoView.isLocallyModified(landmarkId)) {
+                val currentInfo = infoView.allLandmarks.firstOrNull { it.landmarkId == landmarkId }
+                if (currentInfo?.isActive == false) {
+                    Log.d("LookSee_Debug_Popup", "🚫 Blocked popup for backend-inactive landmark: $landmarkId")
+                    detector.pruneInactiveDetections()
+                    return
+                }
+            }
+        }
 
         infoView.presentLandmark(
             entry = entry,
@@ -163,6 +176,8 @@ fun LandmarkScan(
             trainingRunId = detection.modelVersion,
             detectionConfidence = detection.confidence
         )
+
+        if (!infoView.infoView) return
 
         val lat = entry.latitude
         val lon = entry.longitude
@@ -185,15 +200,34 @@ fun LandmarkScan(
             }
         }
 
-        if (entry.landmarkId.isNotBlank()) {
-            fetchLiveLandmarkInfo(entry.landmarkId, lat, lon, displayLabel)
+        if (landmarkId.isNotEmpty()) {
+            fetchLiveLandmarkInfo(landmarkId, lat, lon, displayLabel)
         }
     }
 
     LaunchedEffect(isActive) {
         updatePauseState()
-        
+
         if (isActive) {
+            detector.pruneInactiveDetections()
+
+            // Sync live isActive flags from backend even if user hasn't opened Map or My Landmarks
+            val now = System.currentTimeMillis()
+            if (now - lastStatusSyncMillis > 15_000L) {
+                lastStatusSyncMillis = now
+                coroutineScope.launch {
+                    runCatching {
+                        statusSyncService.fetchNearby(
+                            latitude = 41.1809,
+                            longitude = -73.1568,
+                            radiusMeters = 50_000_000.0,
+                            limit = 200
+                        )
+                        detector.pruneInactiveDetections()
+                    }
+                }
+            }
+
             isWarmingUp = true
             delay(650.milliseconds)
             isWarmingUp = false
@@ -245,7 +279,7 @@ fun LandmarkScan(
                 modifier = Modifier.fillMaxSize()
             )
 
-            if (infoView.infoView) {
+            if (isPopupOpen) {
                 Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.5f)).zIndex(1f))
             }
 
@@ -260,7 +294,6 @@ fun LandmarkScan(
             ) {
                 Box(modifier = Modifier.fillMaxSize().background(Color.Black).zIndex(3f))
             }
-
 
             if (isActive && !isPopupOpen && zoomIndicatorVisible) {
                 Box(modifier = Modifier.fillMaxSize().padding(bottom = 110.dp), contentAlignment = Alignment.BottomCenter) {
@@ -292,23 +325,40 @@ fun LandmarkScan(
     }
 }
 
-private fun applyLiveInfo(liveInfo: LiveLandmarkInfoResponse, infoView: VariableContainer) {
+private fun applyLiveInfo(
+    liveInfo: LiveLandmarkInfoResponse,
+    landmarkId: String,
+    infoView: VariableContainer
+): Boolean {
     if (liveInfo.label.isNotBlank()) infoView.landmarkName = liveInfo.label
     if (liveInfo.shortDescription.isNotBlank()) infoView.landmarkDescription = liveInfo.shortDescription
     infoView.landmarkWebsiteUrl = liveInfo.websiteUrl ?: ""
 
     if (liveInfo.isActive == false) {
-        infoView.promoName = "No active promotion"
-        return
+        if (!infoView.isLocallyModified(landmarkId) || VariableContainer.isLandmarkInactive(landmarkId)) {
+            infoView.setLandmarkState(landmarkId = landmarkId, isActive = false, isVisibleOnMap = false)
+            infoView.dismissLandmark()
+            return false
+        }
     }
 
     liveInfo.activePromotion?.let { promo ->
-        infoView.promoName = promo.name
-        infoView.promoDescription = promo.description
-        infoView.promoImageUrl = promo.imageUrl ?: ""
+        if (promo.name.isNotBlank()) {
+            infoView.promoName = promo.name
+            infoView.promoDescription = promo.description
+            infoView.promoImageUrl = promo.imageUrl ?: ""
+        } else {
+            infoView.promoName = "No active promotion"
+            infoView.promoDescription = ""
+            infoView.promoImageUrl = ""
+        }
     } ?: run {
         infoView.promoName = "No active promotion"
+        infoView.promoDescription = ""
+        infoView.promoImageUrl = ""
     }
+
+    return true
 }
 
 @Composable
@@ -321,12 +371,6 @@ fun ZStack(
 }
 
 // --- Merged from DetectionUiState.kt ---
-/**
- * Stable UI projection of Detector's lower-level flows.
- *
- * Keeping this mapper free of Android and Compose types lets us verify every
- * model state with ordinary JVM unit tests, including the no-model path.
- */
 data class DetectionHudState(
     val title: String,
     val detail: String,

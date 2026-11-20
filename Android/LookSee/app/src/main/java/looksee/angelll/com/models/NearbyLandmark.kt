@@ -23,7 +23,8 @@ data class NearbyLandmark(
     val merchantLogoUrl: String? = null,
     val isActive: Boolean? = true,
     val isVisibleOnMap: Boolean? = true,
-    val status: String? = null
+    val status: String? = null,
+    val isProcessing: Boolean? = null
 ) {
     val id: String
         get() = landmarkId
@@ -40,4 +41,5 @@ data class NearbyLandmarksResponse(
     val items: List<NearbyLandmark> = emptyList(),
     val count: Int = items.size,
     val radiusMeters: Double = 0.0,
+    val skippedInactiveCount: Int? = null,
 )

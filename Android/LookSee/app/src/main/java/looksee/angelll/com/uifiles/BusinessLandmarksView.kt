@@ -33,6 +33,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.zIndex
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
+import looksee.angelll.com.detection.Detector
 import looksee.angelll.com.models.OfflineMediaManager as ArchiveManager
 import looksee.angelll.com.models.AutoUploadManager as Uploader
 import looksee.angelll.com.detection.NetworkMonitor as Monitor
@@ -96,6 +97,9 @@ fun BusinessLandmarksView(
     val cleanedSearchText = searchText.trim()
 
     LaunchedEffect(landmarks) {
+        VariableContainer.initialize(context)
+        VariableContainer.shared.syncFromBusinessLandmarks(landmarks)
+        Detector.shared(context).pruneInactiveDetections()
         BusinessProcessingTracker.reconcileWithBackend(landmarks)
         val validIds = landmarks.map { it.landmarkId }.toSet()
         selectedLandmarkIds = selectedLandmarkIds.intersect(validIds)
@@ -156,14 +160,14 @@ fun BusinessLandmarksView(
     }
 
     val pipelineStates = remember {
-        setOf("NEEDS_MORE_MEDIA", "PREPARING_DATA", "PENDING_TRAINING", "TRAINING_MODEL", "OPTIMIZING_MODEL")
+        setOf("NEEDS_MORE_MEDIA", "PREPARING_DATA", "PENDING_TRAINING", "TRAINING", "TRAINING_MODEL", "OPTIMIZING_MODEL")
     }
 
     val processingNewDataLandmarks = displayedLandmarks.filter { isProcessingNewData(it) }
     val actionNeededLandmarks = displayedLandmarks.filter { it.status == "NEEDS_MORE_MEDIA" && !isProcessingNewData(it) }
     val preparingDataLandmarks = displayedLandmarks.filter { it.status == "PREPARING_DATA" && !isProcessingNewData(it) }
     val pendingTrainingLandmarks = displayedLandmarks.filter { it.status == "PENDING_TRAINING" && !isProcessingNewData(it) }
-    val trainingModelLandmarks = displayedLandmarks.filter { it.status == "TRAINING_MODEL" && !isProcessingNewData(it) }
+    val trainingModelLandmarks = displayedLandmarks.filter { (it.status == "TRAINING" || it.status == "TRAINING_MODEL") && !isProcessingNewData(it) }
     val optimizingModelLandmarks = displayedLandmarks.filter { it.status == "OPTIMIZING_MODEL" && !isProcessingNewData(it) }
     val activeLandmarks = displayedLandmarks.filter {
         !pipelineStates.contains(it.status ?: "") && !it.isProcessing && !isProcessingNewData(it)
@@ -192,7 +196,7 @@ fun BusinessLandmarksView(
 
     fun previewLandmarkPopup(landmark: BusinessLandmark) {
         infoView.presentNearbyLandmark(
-            NearbyLandmark(
+            landmark = NearbyLandmark(
                 landmarkId = landmark.landmarkId,
                 label = landmark.label,
                 shortDescription = landmark.shortDescription ?: "",
@@ -204,7 +208,8 @@ fun BusinessLandmarksView(
                 websiteUrl = landmark.websiteUrl,
                 isActive = landmark.isActive ?: true,
                 isVisibleOnMap = true
-            )
+            ),
+            allowInactivePreview = true
         )
     }
 
@@ -781,7 +786,7 @@ private fun BusinessLandmarkRowWrapper(
         landmark.status == "NEEDS_MORE_MEDIA" -> Color(0xFFFF453A)
         landmark.status == "PREPARING_DATA" -> Color(0xFFFF9F0A)
         landmark.status == "PENDING_TRAINING" -> Color(0xFFAF52DE)
-        landmark.status == "TRAINING_MODEL" -> Color(0xFFFFD60A)
+        landmark.status == "TRAINING" || landmark.status == "TRAINING_MODEL" -> Color(0xFFFFD60A)
         landmark.status == "OPTIMIZING_MODEL" -> Color(0xFF0A84FF)
         landmark.isActive == false -> Color.Gray
         else -> Color(0xFF32D74B)
@@ -790,7 +795,7 @@ private fun BusinessLandmarkRowWrapper(
     val badgeText = when {
         isProcessingNewData -> "PROCESSING NEW DATA"
         landmark.status == "NEEDS_MORE_MEDIA" -> "NEEDS MEDIA"
-        landmark.status in setOf("PREPARING_DATA", "PENDING_TRAINING", "TRAINING_MODEL", "OPTIMIZING_MODEL") ->
+        landmark.status in setOf("PREPARING_DATA", "PENDING_TRAINING", "TRAINING", "TRAINING_MODEL", "OPTIMIZING_MODEL") ->
             landmark.displayStatus.uppercase()
         landmark.isActive == false -> "INACTIVE"
         else -> "ACTIVE"

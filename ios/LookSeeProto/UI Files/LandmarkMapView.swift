@@ -38,19 +38,48 @@ struct LandmarkMapView: View {
     private let promoColor = Color.orange
     private let mapBottomReservedHeight: CGFloat = 50
 
-    private let untrainedStatuses: Set<String> = [
-        "NEEDS_MORE_MEDIA",
-        "PREPARING_DATA",
-        "PENDING_TRAINING",
-        "TRAINING_MODEL",
-        "OPTIMIZING_MODEL"
-    ]
+    private func isTrainedAndActiveForMap(_ landmark: NearbyLandmark) -> Bool {
+        // 1. Must have a valid trained clusterId and not be processing
+        guard let cluster = landmark.clusterId?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !cluster.isEmpty else {
+            return false
+        }
+        if landmark.isProcessing == true {
+            return false
+        }
+
+        // 2. Strict allowlist: status must be "ACTIVE" (blocks "TRAINING", "NEEDS_MORE_MEDIA", etc.)
+        let normalizedStatus = landmark.status?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() ?? ""
+        guard normalizedStatus == "ACTIVE" else {
+            return false
+        }
+
+        // 3. Must be active and visible on map (respecting immediate local toggles)
+        let isLocallyInactive = container.inactiveLandmarkIds.contains(landmark.landmarkId)
+            || VariableContainer.isLandmarkInactive(landmark.landmarkId)
+        let isLocallyHidden = container.hiddenMapLandmarkIds.contains(landmark.landmarkId)
+            || VariableContainer.isLandmarkHiddenOnMap(landmark.landmarkId)
+
+        let isActive: Bool
+        let isVisible: Bool
+        if container.isLocallyModified(landmark.landmarkId) {
+            isActive = !isLocallyInactive
+            isVisible = !isLocallyHidden
+        } else {
+            isActive = (landmark.isActive ?? true) && !isLocallyInactive
+            isVisible = (landmark.isVisibleOnMap ?? true) && !isLocallyHidden
+        }
+
+        return isActive && isVisible
+    }
 
     private var availableClusters: [String] {
-        let clusters = nearbyService.items.compactMap { item -> String? in
-            guard let c = item.clusterId?.trimmingCharacters(in: .whitespacesAndNewlines), !c.isEmpty else { return nil }
-            return c
-        }
+        let clusters = nearbyService.items
+            .filter { isTrainedAndActiveForMap($0) }
+            .compactMap { item -> String? in
+                guard let c = item.clusterId?.trimmingCharacters(in: .whitespacesAndNewlines), !c.isEmpty else { return nil }
+                return c
+            }
         let unique = Array(Set(clusters))
 
         return unique.sorted { lhs, rhs in
@@ -188,6 +217,7 @@ struct LandmarkMapView: View {
         }
         .onChange(of: nearbyService.items) { _, _ in applyFilters() }
         .onChange(of: container.inactiveLandmarkIds) { _, _ in applyFilters() }
+        .onChange(of: container.hiddenMapLandmarkIds) { _, _ in applyFilters() }
         .onChange(of: searchText) { _, _ in applyFilters() }
         .onChange(of: selectedClusters) { _, _ in applyFilters() }
         .onChange(of: myUploadsOnly) { _, _ in applyFilters() }
@@ -209,7 +239,6 @@ struct LandmarkMapView: View {
                                     .keyboardType(.decimalPad).textFieldStyle(.roundedBorder).frame(width: 80).multilineTextAlignment(.trailing); Text("mi").font(.system(size: 16, weight: .bold)).foregroundStyle(.gray) }
                             Slider(value: $searchRadiusMiles, in: 1...100, step: 1).tint(primaryColor)
                         }
-
                     }
                     .contentShape(Rectangle())
                     .simultaneousGesture(
@@ -268,26 +297,9 @@ struct LandmarkMapView: View {
         let currentEmail = !vm.userEmail.isEmpty ? vm.userEmail : lastKnownEmail
 
         filteredLandmarks = nearbyService.items.filter { landmark in
-            // 1. Exclude untrained landmarks: must have a valid trained clusterId and not be in a training status
-            guard let cluster = landmark.clusterId?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !cluster.isEmpty else {
-                return false
-            }
-            if let status = landmark.status?.uppercased(), untrainedStatuses.contains(status) {
-                return false
-            }
+            guard isTrainedAndActiveForMap(landmark) else { return false }
 
-            // 2. Exclude inactive landmarks for everyone (including owner) so toggling Active/Inactive removes/restores only that pin
-            let isLocallyInactive = container.inactiveLandmarkIds.contains(landmark.landmarkId) || VariableContainer.isLandmarkInactive(landmark.landmarkId)
-            let isActive: Bool
-            if container.isLocallyModified(landmark.landmarkId) {
-                isActive = !isLocallyInactive
-            } else {
-                isActive = (landmark.isActive ?? true) && !isLocallyInactive
-            }
-            guard isActive else { return false }
-
-            // 3. Apply user search & filter selections
+            let cluster = landmark.clusterId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             let matchesUser = myUploadsOnly ? (landmark.createdBy == currentEmail) : true
             let matchesPromo = promotedOnly ? landmark.promotionEnabled : true
             let matchesCluster = selectedClusters.isEmpty ? true : selectedClusters.contains(cluster)
