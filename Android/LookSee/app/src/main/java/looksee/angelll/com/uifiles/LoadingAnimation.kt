@@ -81,21 +81,33 @@ fun LoadingAnimationScreen(
         }
 
         coroutineScope.launch {
-            sweepRotation.animateTo(270f, tween(2600, easing = LinearEasing))
+            while (true) {
+                sweepRotation.snapTo(-90f)
+                sweepRotation.animateTo(270f, tween(2600, easing = LinearEasing))
+            }
         }
 
         coroutineScope.launch {
-            pulse1.animateTo(1f, tween(2400, easing = LinearOutSlowInEasing))
+            while (true) {
+                pulse1.snapTo(0f)
+                pulse1.animateTo(1f, tween(2400, easing = LinearOutSlowInEasing))
+            }
         }
 
         coroutineScope.launch {
             delay(450.milliseconds)
-            pulse2.animateTo(1f, tween(2100, easing = LinearOutSlowInEasing))
+            while (true) {
+                pulse2.snapTo(0f)
+                pulse2.animateTo(1f, tween(2100, easing = LinearOutSlowInEasing))
+            }
         }
 
         coroutineScope.launch {
             delay(900.milliseconds)
-            pulse3.animateTo(1f, tween(1800, easing = LinearOutSlowInEasing))
+            while (true) {
+                pulse3.snapTo(0f)
+                pulse3.animateTo(1f, tween(1800, easing = LinearOutSlowInEasing))
+            }
         }
 
         coroutineScope.launch {
@@ -146,7 +158,7 @@ fun LoadingAnimationScreen(
             modifier = Modifier
                 .fillMaxWidth(0.9f)
                 .aspectRatio(1f)
-                .scale(if (breathing && !animationFinished) breathingScale else 1f)
+                .scale(if (breathing) breathingScale else 1f)
                 .scale(logoScale.value)
         )
 

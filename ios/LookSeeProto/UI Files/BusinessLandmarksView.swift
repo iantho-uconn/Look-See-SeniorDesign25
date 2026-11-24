@@ -94,7 +94,7 @@ struct BusinessLandmarksView: View {
             .searchable(
                 text: $searchText,
                 placement: .navigationBarDrawer(displayMode: .always),
-                prompt: String(localized: "Search labels or promotion titles")
+                prompt: String(localized: "Search landmarks or promotion titles")
             )
             .task {
                 if !hasLoadedOnce {
@@ -163,6 +163,7 @@ struct BusinessLandmarksView: View {
                 landmarkNeedingMedia = nil
                 let targetId = landmark.landmarkId
                 let targetLabel = landmark.label
+                let targetDisplayName = landmark.effectiveDisplayName
                 let targetDesc = landmark.shortDescription ?? ""
                 let targetSeconds: Int = landmark.secondsNeeded ?? 30
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
@@ -172,6 +173,7 @@ struct BusinessLandmarksView: View {
                         userInfo: [
                             "id": targetId,
                             "label": targetLabel,
+                            "displayName": targetDisplayName,
                             "description": targetDesc,
                             "secondsNeeded": targetSeconds
                         ]
@@ -421,7 +423,7 @@ struct BusinessLandmarksView: View {
 
         if isSelectionMode {
             let isSelected = selectedLandmarkIds.contains(landmark.landmarkId)
-            let accessibilityText = isSelected ? "Deselect \(landmark.label)" : "Select \(landmark.label)"
+            let accessibilityText = isSelected ? "Deselect \(landmark.effectiveDisplayName)" : "Select \(landmark.effectiveDisplayName)"
 
             Button {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -521,15 +523,20 @@ struct BusinessLandmarksView: View {
         guard !query.isEmpty else { return viewModel.landmarks }
 
         let matches: [(landmark: BusinessLandmark, priority: Int)] = viewModel.landmarks.compactMap { landmark in
-            if landmark.label.localizedCaseInsensitiveContains(query) { return (landmark, 0) }
-            if searchablePromotionTitles(for: landmark).contains(where: { $0.localizedCaseInsensitiveContains(query) }) { return (landmark, 1) }
+            if landmark.effectiveDisplayName.localizedCaseInsensitiveContains(query) ||
+               landmark.label.localizedCaseInsensitiveContains(query) {
+                return (landmark, 0)
+            }
+            if searchablePromotionTitles(for: landmark).contains(where: { $0.localizedCaseInsensitiveContains(query) }) {
+                return (landmark, 1)
+            }
             return nil
         }
 
         return matches
             .sorted { lhs, rhs in
                 if lhs.priority != rhs.priority { return lhs.priority < rhs.priority }
-                return lhs.landmark.label.localizedCaseInsensitiveCompare(rhs.landmark.label) == .orderedAscending
+                return lhs.landmark.effectiveDisplayName.localizedCaseInsensitiveCompare(rhs.landmark.effectiveDisplayName) == .orderedAscending
             }
             .map { $0.landmark }
     }
@@ -538,7 +545,7 @@ struct BusinessLandmarksView: View {
         VStack(spacing: 10) {
             Image(systemName: "magnifyingglass").font(.system(size: 28, weight: .semibold)).foregroundStyle(.secondary)
             Text("No landmarks found").font(.system(size: 17, weight: .bold, design: .rounded)).foregroundStyle(.primary)
-            Text("Try a landmark label or promotion title.").font(.system(size: 14, weight: .medium)).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            Text("Try a landmark name or promotion title.").font(.system(size: 14, weight: .medium)).foregroundStyle(.secondary).multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity).padding(.vertical, 28).padding(.horizontal, 20)
         .background(Color(uiColor: .secondarySystemGroupedBackground)).clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous)).padding(.horizontal)
@@ -654,7 +661,9 @@ struct BusinessLandmarksView: View {
 
     private func matchedPromotionTitle(for landmark: BusinessLandmark) -> String? {
         let query = cleanedSearchText
-        guard !query.isEmpty, !landmark.label.localizedCaseInsensitiveContains(query) else { return nil }
+        guard !query.isEmpty,
+              !landmark.effectiveDisplayName.localizedCaseInsensitiveContains(query),
+              !landmark.label.localizedCaseInsensitiveContains(query) else { return nil }
         return searchablePromotionTitles(for: landmark).first { $0.localizedCaseInsensitiveContains(query) }
     }
 
@@ -943,7 +952,7 @@ private struct BusinessLandmarkRow: View {
 
     private var landmarkInfoContent: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(landmark.label.isEmpty ? "Untitled Landmark" : landmark.label)
+            Text(landmark.effectiveDisplayName)
                 .font(.system(size: 18, weight: .bold, design: .rounded))
                 .foregroundColor(.primary)
 
@@ -1031,7 +1040,7 @@ private struct BusinessLandmarkRow: View {
                                 .background(selectionColor.opacity(0.10), in: Capsule())
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel("Preview popup for \(landmark.label)")
+                        .accessibilityLabel("Preview popup for \(landmark.effectiveDisplayName)")
                         .accessibilityHint("Shows the landmark details, active promotion, and business card")
                     }
                 }
@@ -1110,7 +1119,7 @@ struct NeedsMoreMediaSheet: View {
             Text("More Media Required")
                 .font(.system(size: 24, weight: .bold, design: .rounded))
 
-            Text("We couldn't extract enough unique frames of \(landmark.label) to train a reliable model.")
+            Text("We couldn't extract enough unique frames of \(landmark.effectiveDisplayName) to train a reliable model.")
                 .font(.system(size: 15))
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)

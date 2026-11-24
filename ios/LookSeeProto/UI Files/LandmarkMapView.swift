@@ -39,7 +39,6 @@ struct LandmarkMapView: View {
     private let mapBottomReservedHeight: CGFloat = 50
 
     private func isTrainedAndActiveForMap(_ landmark: NearbyLandmark) -> Bool {
-        // 1. Must have a valid trained clusterId and not be processing
         guard let cluster = landmark.clusterId?.trimmingCharacters(in: .whitespacesAndNewlines),
               !cluster.isEmpty else {
             return false
@@ -48,13 +47,11 @@ struct LandmarkMapView: View {
             return false
         }
 
-        // 2. Strict allowlist: status must be "ACTIVE" (blocks "TRAINING", "NEEDS_MORE_MEDIA", etc.)
         let normalizedStatus = landmark.status?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() ?? ""
         guard normalizedStatus == "ACTIVE" else {
             return false
         }
 
-        // 3. Must be active and visible on map (respecting immediate local toggles)
         let isLocallyInactive = container.inactiveLandmarkIds.contains(landmark.landmarkId)
             || VariableContainer.isLandmarkInactive(landmark.landmarkId)
         let isLocallyHidden = container.hiddenMapLandmarkIds.contains(landmark.landmarkId)
@@ -97,7 +94,7 @@ struct LandmarkMapView: View {
                     UserAnnotation()
 
                     ForEach(filteredLandmarks) { landmark in
-                        Annotation(landmark.label, coordinate: CLLocationCoordinate2D(latitude: landmark.latitude, longitude: landmark.longitude)) {
+                        Annotation(landmark.effectiveDisplayName, coordinate: CLLocationCoordinate2D(latitude: landmark.latitude, longitude: landmark.longitude)) {
                             VStack(spacing: 0) {
                                 if landmark.promotionEnabled {
                                     Image(systemName: "crown.fill").font(.title3).foregroundStyle(.white).padding(8).background(Circle().fill(promoColor)).shadow(color: promoColor.opacity(0.8), radius: 6, x: 0, y: 2)
@@ -115,7 +112,7 @@ struct LandmarkMapView: View {
 
                                 VariableContainer.shared.presentMapLandmark(
                                     id: landmark.id,
-                                    name: landmark.label,
+                                    name: landmark.effectiveDisplayName,
                                     description: landmark.shortDescription,
                                     latitude: landmark.latitude,
                                     longitude: landmark.longitude,
@@ -303,12 +300,14 @@ struct LandmarkMapView: View {
             let matchesUser = myUploadsOnly ? (landmark.createdBy == currentEmail) : true
             let matchesPromo = promotedOnly ? landmark.promotionEnabled : true
             let matchesCluster = selectedClusters.isEmpty ? true : selectedClusters.contains(cluster)
-            let matchesSearch = searchText.isEmpty ? true : landmark.label.localizedCaseInsensitiveContains(searchText)
+            let matchesSearch = searchText.isEmpty ? true : (
+                landmark.effectiveDisplayName.localizedCaseInsensitiveContains(searchText) ||
+                landmark.label.localizedCaseInsensitiveContains(searchText)
+            )
 
             return matchesUser && matchesPromo && matchesCluster && matchesSearch
         }
 
-        // If the currently selected map pin was just deactivated, close its popup
         if let selected = selectedLandmark, !filteredLandmarks.contains(where: { $0.id == selected.id }) {
             selectedLandmark = nil
             container.dismissLandmark()

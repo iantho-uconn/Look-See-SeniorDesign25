@@ -1112,15 +1112,19 @@ fun BusinessLandmarkDetailView(
                                 showDeleteSheet = true
                             },
                             enabled = !isDeletingLandmark,
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(alpha = 0.1f), contentColor = Color.Red),
-                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth().height(56.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color.Red,
+                                disabledContainerColor = Color.Gray.copy(alpha = 0.3f),
+                                contentColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(16.dp),
                             contentPadding = PaddingValues(16.dp)
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                                Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(20.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center, modifier = Modifier.fillMaxWidth()) {
+                                Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(20.dp), tint = Color.White)
                                 Spacer(Modifier.width(12.dp))
-                                Text("Delete Landmark", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                                Text("Delete Landmark", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.White)
                             }
                         }
                         Spacer(Modifier.height(12.dp))
@@ -1413,7 +1417,7 @@ fun BusinessLandmarkDetailView(
                         enabled = !isDeletingLandmark,
                         singleLine = true,
                         placeholder = { Text("delete landmark") },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                         keyboardActions = KeyboardActions(onDone = { submitDelete() }),
                         colors = OutlinedTextFieldDefaults.colors(
@@ -1431,10 +1435,15 @@ fun BusinessLandmarkDetailView(
                     onClick = submitDelete,
                     modifier = Modifier.fillMaxWidth().height(56.dp),
                     enabled = isDeleteConfirmationValid && !isDeletingLandmark,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red, disabledContainerColor = Color.Gray.copy(alpha = 0.35f))
                 ) {
                     if (isDeletingLandmark) CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
-                    else Text("Confirm Delete Landmark", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                    else {
+                        Icon(Icons.Default.Delete, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Delete Landmark", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = Color.White)
+                    }
                 }
                 deleteErrorMessage?.let {
                     Spacer(Modifier.height(8.dp))

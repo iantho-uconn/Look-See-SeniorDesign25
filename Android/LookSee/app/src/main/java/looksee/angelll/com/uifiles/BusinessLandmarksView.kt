@@ -1093,8 +1093,10 @@ private fun PendingRow(
                     Text("Uploading...", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = primaryColor)
                     LinearProgressIndicator(
                         progress = { progress.toFloat() },
-                        modifier = Modifier.fillMaxWidth().height(2.dp),
-                        color = primaryColor
+                        modifier = Modifier.fillMaxWidth().height(4.dp),
+                        color = primaryColor,
+                        trackColor = Color.White.copy(alpha = 0.1f),
+                        strokeCap = androidx.compose.ui.graphics.StrokeCap.Round
                     )
                 }
             } else {

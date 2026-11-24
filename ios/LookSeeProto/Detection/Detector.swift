@@ -40,6 +40,11 @@ struct Detection: Identifiable, Equatable {
     }
 
     var displayLabel: String {
+        if let landmarkId = landmarkEntry?.landmarkId,
+           let liveDisplayName = VariableContainer.displayName(for: landmarkId),
+           !liveDisplayName.isEmpty {
+            return liveDisplayName
+        }
         if let overrideLabel, !overrideLabel.isEmpty {
             return overrideLabel
         }
@@ -49,7 +54,7 @@ struct Detection: Identifiable, Equatable {
     var label: String {
         String(classIndex)
     }
-    
+
     static func == (lhs: Detection, rhs: Detection) -> Bool {
         lhs.id == rhs.id
     }
@@ -62,7 +67,7 @@ class DetectionTracker {
     private var framesSinceLastSeen = 0
     private let maxCoastFrames = 5      // Hold box for ~0.4s during motion blur/cutoffs
 
-    // 🚀 Uses your dynamic alpha for Speed vs Smoothness
+    // Uses dynamic alpha for Speed vs Smoothness
     func update(with newDetection: Detection?, alpha: CGFloat) -> Detection? {
         if let newDet = newDetection {
             framesSinceLastSeen = 0
@@ -74,10 +79,10 @@ class DetectionTracker {
                     width: last.bbox.width + alpha * (newDet.bbox.width - last.bbox.width),
                     height: last.bbox.height + alpha * (newDet.bbox.height - last.bbox.height)
                 )
-                
+
                 // Smooth confidence transition
                 let smoothedConf = last.confidence + Float(alpha) * (newDet.confidence - last.confidence)
-                
+
                 let smoothed = Detection(
                     clusterID: newDet.clusterID, modelVersion: newDet.modelVersion,
                     modelIdentifier: newDet.modelIdentifier, classIndex: newDet.classIndex,
@@ -128,7 +133,7 @@ final class Detector: NSObject, ObservableObject {
     @Published var bufferSize: CGSize = .zero
     @Published var isPaused: Bool = false
     @Published var classLabels: [String] = []
-    
+
     // Controls whether bounding boxes are visually passed to the UI
     @Published var hideBoundingBoxes: Bool = false
 
@@ -143,7 +148,7 @@ final class Detector: NSObject, ObservableObject {
     private var model: MLModel?
     private let queue = DispatchQueue(label: "yolo.queue")
     private let ciContext = CIContext()
-    
+
     // Tracks active detections across frames
     private var trackers: [String: DetectionTracker] = [:]
 
@@ -160,18 +165,17 @@ final class Detector: NSObject, ObservableObject {
     private var lastDetectionLogKey: String?
     private var lastDetectionLogDate = Date.distantPast
     private let detectionLogInterval: TimeInterval = 2.0
-    
+
     // Cooldown state for notification debouncing
     private var notificationCooldowns: [String: Date] = [:]
-    private let cooldownInterval: TimeInterval = 12.0 // 🚀 Extended to 12 seconds to stop popup spam
+    private let cooldownInterval: TimeInterval = 12.0
 
     private let inputSize = CGSize(width: 640, height: 640)
     @Published var confidenceThreshold: Float = 0.65
     @Published var ThresholdRangemultiplier: Float = 0.35
-    
-    // 🚀 Your adjustable slider!
+
     @Published var trackingAlpha: CGFloat = 0.65
-    
+
     private let iouThreshold: Float = 0.45
 
     // MARK: Self-contained location tracking
@@ -200,7 +204,7 @@ final class Detector: NSObject, ObservableObject {
         queue.async {
             do {
                 let config = MLModelConfiguration()
-                // 🚀 Safely avoids the Apple GPU crash
+                // Safely avoids the Apple GPU crash
                 config.computeUnits = .cpuAndNeuralEngine
 
                 let loaded = try MLModel(
@@ -329,7 +333,6 @@ final class Detector: NSObject, ObservableObject {
         if let connection = output.connection(with: .video), connection.isVideoOrientationSupported {
             connection.videoOrientation = .portrait
         }
-        // 🚀 Ensures smooth camera feed without backing up the buffer
         output.alwaysDiscardsLateVideoFrames = true
         output.setSampleBufferDelegate(self, queue: queue)
     }
@@ -359,7 +362,7 @@ final class Detector: NSObject, ObservableObject {
         // DYNAMIC INPUT MAPPER
         var inputDict: [String: Any] = ["image": MLFeatureValue(pixelBuffer: inputBuffer)]
         let inputDescriptions = model.modelDescription.inputDescriptionsByName
-        
+
         if inputDescriptions.keys.contains("iouThreshold") {
             inputDict["iouThreshold"] = NSNumber(value: iouThreshold)
         }
@@ -376,20 +379,19 @@ final class Detector: NSObject, ObservableObject {
         do {
             let result = try model.prediction(from: input)
             let outputKeys = result.featureNames
-            
+
             var newDetections: [Detection] = []
             var diagConfShape: [Int] = []
             var diagCoordShape: [Int] = []
 
             // DYNAMIC OUTPUT PARSER
             if outputKeys.contains("confidence") && outputKeys.contains("coordinates") {
-                // OLD YOLO STYLE (Separate Arrays)
                 let conf = result.featureValue(for: "confidence")!.multiArrayValue!
                 let coord = result.featureValue(for: "coordinates")!.multiArrayValue!
-                
+
                 diagConfShape = conf.shape.map { $0.intValue }
                 diagCoordShape = coord.shape.map { $0.intValue }
-                
+
                 newDetections = parseDetections(
                     confArray: conf, coordArray: coord,
                     scale: scale, padX: padX, padY: padY, originalSize: CGSize(width: originalWidth, height: originalHeight),
@@ -398,11 +400,10 @@ final class Detector: NSObject, ObservableObject {
                     expectedClassCount: expectedClassCount,
                     classLabels: classLabels
                 )
-                
+
             } else if let firstKey = outputKeys.first, let combinedArray = result.featureValue(for: firstKey)?.multiArrayValue {
-                // NEW YOLO26 E2E STYLE (Combined Array)
                 diagConfShape = combinedArray.shape.map { $0.intValue }
-                
+
                 newDetections = parseEndToEndDetections(
                     combinedArray: combinedArray,
                     scale: scale,
@@ -425,15 +426,16 @@ final class Detector: NSObject, ObservableObject {
             logPhaseTwoDiagnostics(newDetections, expectedClassCount: expectedClassCount, confidenceShape: diagConfShape, coordinatesShape: diagCoordShape)
 
             let end = CFAbsoluteTimeGetCurrent()
-            
+
             // Check cooldowns for the notification stack
             var triggerNotification: Detection? = nil
             if let best = newDetections.max(by: { $0.confidence < $1.confidence }) {
                 let now = Date()
-                let lastNotified = notificationCooldowns[best.displayLabel] ?? Date.distantPast
-                
+                let cooldownKey = best.landmarkEntry?.landmarkId ?? best.displayLabel
+                let lastNotified = notificationCooldowns[cooldownKey] ?? Date.distantPast
+
                 if now.timeIntervalSince(lastNotified) > cooldownInterval {
-                    notificationCooldowns[best.displayLabel] = now
+                    notificationCooldowns[cooldownKey] = now
                     triggerNotification = best
                 }
             }
@@ -442,11 +444,11 @@ final class Detector: NSObject, ObservableObject {
                 self.detections = self.hideBoundingBoxes ? [] : newDetections
                 self.lastInferenceMS = (end - start) * 1000
                 self.currentLabel = newDetections.max(by: { $0.confidence < $1.confidence })?.displayLabel
-                
+
                 if let trigger = triggerNotification {
                     self.newlyDetectedLandmark = trigger
                 }
-                
+
                 self.throttling = false
             }
         } catch {
@@ -482,7 +484,7 @@ final class Detector: NSObject, ObservableObject {
 
         return (output!, scale, padX, padY)
     }
-    
+
     // END-TO-END PARSER FOR YOLO26
     private func parseEndToEndDetections(
         combinedArray: MLMultiArray,
@@ -498,12 +500,12 @@ final class Detector: NSObject, ObservableObject {
     ) -> [Detection] {
         let ptr = combinedArray.dataPointer.bindMemory(to: Float.self, capacity: combinedArray.count)
         let shape = combinedArray.shape.map { $0.intValue }
-        
+
         let numBoxes = shape.count == 3 ? shape[1] : shape[0]
         let boxSize = shape.last ?? 6
-        
+
         guard boxSize == 6 else { return [] }
-        
+
         let screenWidth = UIScreen.main.bounds.width
         let screenHeight = UIScreen.main.bounds.height
         let screenScale = max(screenWidth / originalSize.width, screenHeight / originalSize.height)
@@ -523,7 +525,7 @@ final class Detector: NSObject, ObservableObject {
             let classIdx = Int(ptr[offset + 5])
 
             guard classIdx >= 0, classIdx < expectedClassCount else { continue }
-            
+
             // HYSTERESIS: Lower threshold if object is already being tracked
             let isTracked = trackers[String(classIdx)]?.lastDetection != nil
             let requiredScore = isTracked ? (confidenceThreshold * ThresholdRangemultiplier) : confidenceThreshold
@@ -597,7 +599,7 @@ final class Detector: NSObject, ObservableObject {
                 if score > bestScore { bestScore = score; bestClass = c }
             }
             guard bestClass >= 0, bestClass < expectedClassCount else { continue }
-            
+
             // HYSTERESIS
             let isTracked = trackers[String(bestClass)]?.lastDetection != nil
             let requiredScore = isTracked ? (confidenceThreshold * ThresholdRangemultiplier) : confidenceThreshold
@@ -634,7 +636,7 @@ final class Detector: NSObject, ObservableObject {
     // Tracks and updates coasting frames universally
     private func finalizeTracking(rawDetections: [Detection]) -> [Detection] {
         let nearbyDetections = proximityFilter(rawDetections)
-        
+
         // Filter out duplicate overlapping boxes before tracking!
         var strongestByLabel: [String: Detection] = [:]
         for det in nearbyDetections {
@@ -643,10 +645,10 @@ final class Detector: NSObject, ObservableObject {
                 strongestByLabel[det.label] = det
             }
         }
-        
+
         let currentLabels = Set(strongestByLabel.keys)
         var finalResults: [Detection] = []
-        
+
         // 1. Update trackers with active detections
         for (label, det) in strongestByLabel {
             if trackers[label] == nil { trackers[label] = DetectionTracker() }
@@ -654,11 +656,10 @@ final class Detector: NSObject, ObservableObject {
                 finalResults.append(smoothedDet)
             }
         }
-        
+
         // 2. Handle lost detections (coasting / persistence)
         let lostLabels = trackers.keys.filter { !currentLabels.contains($0) }
         for label in lostLabels {
-            // 🚀 If a coasting detection was just toggled to Inactive, drop its tracker immediately
             if let lastDet = trackers[label]?.lastDetection,
                let landmarkId = manifest?.landmark(for: lastDet.classIndex)?.landmarkId ?? lastDet.landmarkEntry?.landmarkId,
                VariableContainer.isLandmarkInactive(landmarkId) {
@@ -672,7 +673,7 @@ final class Detector: NSObject, ObservableObject {
                 trackers.removeValue(forKey: label)
             }
         }
-        
+
         return finalResults
     }
 
@@ -683,22 +684,35 @@ final class Detector: NSObject, ObservableObject {
             let landmarkId = manifestObj?.landmarkId ?? entryObj?.landmarkId
             let label = manifestObj?.label ?? entryObj?.label ?? detection.displayLabel
 
-            // 🚀 1. Individual Inactive Suppression (runs even before GPS lock; does NOT suppress Hidden-from-Map items!)
+            // 1. Individual Inactive Suppression
             if let landmarkId, VariableContainer.isLandmarkInactive(landmarkId) {
                 print("🚫 \(label) (\(landmarkId)) suppressed because landmark is INACTIVE")
                 return false
             }
 
-            // 2. Proximity / Radius Suppression
-            guard let object = manifestObj, let userLocation = userLocation else { return true }
-            let objectLocation = CLLocation(latitude: object.latitude, longitude: object.longitude)
+            // 2. Proximity / Radius Suppression (prefers live updated coordinates over frozen manifest)
+            guard let userLocation = userLocation else { return true }
+
+            let targetLatitude: Double
+            let targetLongitude: Double
+            if let landmarkId, let liveCoord = VariableContainer.coordinates(for: landmarkId) {
+                targetLatitude = liveCoord.latitude
+                targetLongitude = liveCoord.longitude
+            } else if let object = manifestObj {
+                targetLatitude = object.latitude
+                targetLongitude = object.longitude
+            } else {
+                return true
+            }
+
+            let objectLocation = CLLocation(latitude: targetLatitude, longitude: targetLongitude)
             let distanceMeters = userLocation.distance(from: objectLocation)
             let isNearby = distanceMeters <= proximityThresholdMeters
-            
+
             if !isNearby {
-                print(object.label, "suppressed because object is not nearby (distance: \(distanceMeters)m)")
+                print(label, "suppressed because object is not nearby (distance: \(distanceMeters)m)")
             }
-            
+
             return isNearby
         }
     }

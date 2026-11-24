@@ -446,7 +446,7 @@ fun ChangePasswordView(onBack: () -> Unit) {
             item {
                 SettingsSection(header = "Password", footer = "The new password must satisfy the password policy configured in your Cognito user pool.") {
                     OutlinedTextField(
-                        value = currentPassword, onValueChange = { currentPassword = it },
+                        value = currentPassword, onValueChange = { currentPassword = it.trimEnd() },
                         placeholder = { Text("Current password", color = Color.Gray) },
                         visualTransformation = if (currentPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                         trailingIcon = {
@@ -466,7 +466,7 @@ fun ChangePasswordView(onBack: () -> Unit) {
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
                     )
                     OutlinedTextField(
-                        value = newPassword, onValueChange = { newPassword = it },
+                        value = newPassword, onValueChange = { newPassword = it.trimEnd() },
                         placeholder = { Text("New password", color = Color.Gray) },
                         visualTransformation = if (newPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                         trailingIcon = {
@@ -486,7 +486,7 @@ fun ChangePasswordView(onBack: () -> Unit) {
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
                     )
                     OutlinedTextField(
-                        value = confirmedPassword, onValueChange = { confirmedPassword = it },
+                        value = confirmedPassword, onValueChange = { confirmedPassword = it.trimEnd() },
                         placeholder = { Text("Confirm new password", color = Color.Gray) },
                         visualTransformation = if (confirmedPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                         trailingIcon = {

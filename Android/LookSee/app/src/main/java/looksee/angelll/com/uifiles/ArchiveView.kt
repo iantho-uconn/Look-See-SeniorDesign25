@@ -33,6 +33,9 @@ import looksee.angelll.com.models.ArchivedMedia
 import looksee.angelll.com.models.AutoUploadManager
 import looksee.angelll.com.models.OfflineMediaManager
 import looksee.angelll.com.viewmodels.AuthViewModel
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import looksee.angelll.com.ui.theme.AppleBlue
 
 // We extract your color palette constants
 private val backgroundColor = Color(0xFF14141F)
@@ -248,7 +251,7 @@ fun QueueItemCard(media: ArchivedMedia, onClick: () -> Unit) {
     val isCurrentlyUploading = currentlyUploadingId == media.id
     val coroutineScope = rememberCoroutineScope()
 
-    val borderColor = if (isCurrentlyUploading) Color.Blue.copy(alpha = 0.5f) else Color.White.copy(alpha = 0.1f)
+    val borderColor = if (isCurrentlyUploading) Color.Transparent else Color.White.copy(alpha = 0.05f)
 
     Row(
         modifier = Modifier
@@ -256,7 +259,10 @@ fun QueueItemCard(media: ArchivedMedia, onClick: () -> Unit) {
             .clip(RoundedCornerShape(16.dp))
             .background(cardColor)
             .border(1.dp, borderColor, RoundedCornerShape(16.dp))
-            .clickable { onClick() }
+            .clickable(
+                indication = null,
+                interactionSource = remember { MutableInteractionSource() }
+            ) { onClick() }
             .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -302,12 +308,14 @@ fun QueueItemCard(media: ArchivedMedia, onClick: () -> Unit) {
             )
             Spacer(modifier = Modifier.height(6.dp))
             if (isCurrentlyUploading) {
-                Text("Uploading...", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.Blue)
-                Spacer(modifier = Modifier.height(4.dp))
+                Text("Syncing...", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = AppleBlue)
+                Spacer(modifier = Modifier.height(6.dp))
                 LinearProgressIndicator(
-                    progress = progress.toFloat(),
-                    color = Color.Blue,
-                    modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp))
+                    progress = { progress.toFloat() },
+                    color = AppleBlue,
+                    trackColor = Color.White.copy(alpha = 0.1f),
+                    strokeCap = StrokeCap.Round,
+                    modifier = Modifier.fillMaxWidth().height(4.dp)
                 )
             } else {
                 Row(verticalAlignment = Alignment.CenterVertically) {

@@ -29,8 +29,8 @@ class AuthViewModel: ObservableObject {
     @Published private var sessionChecksInProgress = 0
     @Published private var hasCheckedSession = false
     private var isAttesting = false
-    
-    // 🚀 NEW: Hard cooldown lock to prevent CloudFront 403 WAF Bans
+
+    // Hard cooldown lock to prevent CloudFront 403 WAF Bans
     private var lastStatsFetchTime: Date = .distantPast
 
     var isEligibleForBannerAds: Bool {
@@ -40,9 +40,9 @@ class AuthViewModel: ObservableObject {
             && subscriptionStatusUserId == userId
             && !hasActiveSubscription
     }
-    
+
     @Published var requiresNewPassword = false
-    
+
     // TOKEN / SUB / PROFILE TRACKERS
     @Published var tokenBalance: Int = 0
     @Published var activeLandmarksCount: Int = 0
@@ -65,18 +65,18 @@ class AuthViewModel: ObservableObject {
         renewalCancellationConfirmed = false
     }
 
-    
+
     @Published var activePlanCents: Int = 0
     @Published var activePlanYears: Int = 0
-    
+
     // History Trackers
     @Published var tier: String = ""
     @Published var scanHistory: [ScanHistoryItem] = []
-    
+
     // Personal User Identity
     @Published var username: String = ""
     @Published var profileImageUrl: String = ""
-    
+
     // Memory variable to carry the username from Signup to Login
     @Published var pendingUsernameToSave: String = ""
 
@@ -84,7 +84,7 @@ class AuthViewModel: ObservableObject {
         guard isSignedIn else { return .guest }
         return hasActiveSubscription ? .business : .authenticated
     }
-    
+
     // Website and Address properties
     @Published var storeName: String = ""
     @Published var phoneNumber: String = ""
@@ -92,7 +92,7 @@ class AuthViewModel: ObservableObject {
     @Published var storeAddress: String = ""
     @Published var storeBio: String = ""
     @Published var storeLogoUrl: String = ""
-    
+
     func checkSession() async {
         sessionChecksInProgress += 1
         defer {
@@ -102,7 +102,7 @@ class AuthViewModel: ObservableObject {
         do {
             let session = try await Amplify.Auth.fetchAuthSession()
             isSignedIn = session.isSignedIn
-            
+
             if isSignedIn {
                 await fetchUserDetails()
                 if isSignedIn {
@@ -114,7 +114,7 @@ class AuthViewModel: ObservableObject {
             isSignedIn = false
         }
     }
-    
+
     func signIn(username: String, password: String) {
         Task {
             _ = await signInAndLoad(username: username, password: password)
@@ -168,7 +168,6 @@ class AuthViewModel: ObservableObject {
             }
 
             await fetchUserDetails()
-            // 🚀 Bypass cooldown lock on manual login
             await fetchUserUsageStats(force: true)
             return true
         } catch let error as AuthError {
@@ -190,15 +189,14 @@ class AuthViewModel: ObservableObject {
                     isSignedIn = true
                     requiresNewPassword = false
                     errorMessage = ""
-                    
+
                     if let user = try? await Amplify.Auth.getCurrentUser() {
                         self.userId = user.userId
                     }
-                    
+
                     await performAppAttest()
                     await initDatabaseRow(emailToSave: self.userEmail)
                     await fetchUserDetails()
-                    // 🚀 Bypass cooldown lock on manual login
                     await fetchUserUsageStats(force: true)
                 } else {
                     errorMessage = String(localized: "Additional steps required to sign in.")
@@ -210,12 +208,12 @@ class AuthViewModel: ObservableObject {
             }
         }
     }
-    
+
     func signOut(authState: AuthState) {
         Task {
             await AuthService.shared.signOut()
             await authState.signOut()
-            
+
             await MainActor.run {
                 self.isSignedIn = false
                 self.requiresNewPassword = false
@@ -270,7 +268,7 @@ class AuthViewModel: ObservableObject {
             }
         }
     }
-    
+
     func fetchUserEmail() async {
         await fetchUserDetails()
     }
@@ -296,7 +294,7 @@ class AuthViewModel: ObservableObject {
         if let bodyData = body {
             request.httpBody = bodyData
         }
-        
+
         let idToken = await fetchIdToken()
         request.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
         await request.signWithAppAttest(idToken: idToken)
@@ -304,11 +302,9 @@ class AuthViewModel: ObservableObject {
         return request
     }
 
-    // 🚀 NEW: Added an optional force parameter and a 30-second cooldown lock
     func fetchUserUsageStats(force: Bool = false) async {
         guard !userId.isEmpty else { return }
-        
-        // 🚀 Hard cooldown lock: Swallow requests if they are firing faster than 30 seconds
+
         if !force {
             let now = Date()
             guard now.timeIntervalSince(lastStatsFetchTime) > 30 else { return }
@@ -318,13 +314,13 @@ class AuthViewModel: ObservableObject {
         }
 
         guard let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/LookSeeGetUserStats") else { return }
-        
+
         let requestedUserId = userId
         let bodyPayload: [String: String] = ["userId": requestedUserId]
         guard let bodyData = try? JSONSerialization.data(withJSONObject: bodyPayload) else { return }
-        
+
         let request = await authorizedJSONRequest(url: url, body: bodyData)
-        
+
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
             if let http = response as? HTTPURLResponse {
@@ -358,14 +354,14 @@ class AuthViewModel: ObservableObject {
                         let fetchedSub = json["hasActiveSubscription"] as? Bool
                         let fetchedTier = json["tier"] as? String ?? ""
                         let fetchedStripeId = json["stripeSubscriptionId"] as? String ?? ""
-                        
+
                         let fetchedPlanCents = json["activePlanCents"] as? Int ?? 0
                         let fetchedPlanYears = json["activePlanYears"] as? Int ?? 0
-                        
+
                         self.tokenBalance = fetchedBalance
                         self.activeLandmarksCount = fetchedLandmarks
                         self.tier = fetchedTier
-                        
+
                         if let fetchedSub {
                             self.hasActiveSubscription = fetchedSub
                             self.subscriptionStatusUserId = requestedUserId
@@ -373,7 +369,7 @@ class AuthViewModel: ObservableObject {
                             self.hasActiveSubscription = fetchedTier == "business" || !fetchedStripeId.isEmpty
                             self.subscriptionStatusUserId = nil
                         }
-                        
+
                         if let expiry = json["subscriptionExpiresAt"] as? NSNumber {
                             self.subscriptionExpiresAt = expiry.doubleValue
                         }
@@ -382,20 +378,20 @@ class AuthViewModel: ObservableObject {
                         }
                         self.activePlanCents = fetchedPlanCents
                         self.activePlanYears = fetchedPlanYears
-                        
+
                         if !fetchedStripeId.isEmpty {
                             self.stripeSubscriptionId = fetchedStripeId
                         }
-                        
+
                         if let fetchedUsername = json["username"] as? String, !fetchedUsername.isEmpty { self.username = fetchedUsername }
                         if let fetchedProfileImg = json["profileImageUrl"] as? String, !fetchedProfileImg.isEmpty { self.profileImageUrl = fetchedProfileImg }
-                        
+
                         if let fetchedStore = json["storeName"] as? String, !fetchedStore.isEmpty { self.storeName = fetchedStore }
                         if let fetchedPhone = json["phoneNumber"] as? String, !fetchedPhone.isEmpty { self.phoneNumber = fetchedPhone }
-                        
+
                         if let fetchedWebsite = json["storeWebsite"] as? String, !fetchedWebsite.isEmpty { self.storeWebsite = fetchedWebsite }
                         if let fetchedAddress = json["storeAddress"] as? String, !fetchedAddress.isEmpty { self.storeAddress = fetchedAddress }
-                        
+
                         if let fetchedBio = json["storeBio"] as? String, !fetchedBio.isEmpty { self.storeBio = fetchedBio }
                         if let fetchedLogo = json["storeLogoUrl"] as? String, !fetchedLogo.isEmpty { self.storeLogoUrl = fetchedLogo }
                     }
@@ -406,23 +402,45 @@ class AuthViewModel: ObservableObject {
         }
     }
 
-    func logScanHistory(landmarkId: String, label: String, location: String, latitude: Double, longitude: Double, imageUrl: String) async {
+    func logScanHistory(
+        landmarkId: String,
+        label: String,
+        displayName: String? = nil,
+        location: String,
+        latitude: Double,
+        longitude: Double,
+        imageUrl: String
+    ) async {
         guard !userId.isEmpty else { return }
         guard let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/history") else { return }
+
+        let cleanedDisplayName = displayName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let resolvedDisplayName = cleanedDisplayName.isEmpty ? label : cleanedDisplayName
 
         let bodyPayload: [String: Any] = [
             "userId": userId,
             "landmarkId": landmarkId,
             "label": label,
+            "displayName": resolvedDisplayName,
             "location": location,
             "latitude": latitude,
             "longitude": longitude,
             "imageUrl": imageUrl
         ]
-        
+
         guard let bodyData = try? JSONSerialization.data(withJSONObject: bodyPayload) else { return }
         let request = await authorizedJSONRequest(url: url, body: bodyData)
-        _ = try? await URLSession.shared.data(for: request)
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
+            if statusCode != 200 {
+                let responseBody = String(data: data, encoding: .utf8) ?? ""
+                print("❌ Failed to log scan history (HTTP \(statusCode)): \(responseBody)")
+            }
+        } catch {
+            print("❌ Failed to log scan history: \(error)")
+        }
     }
 
     func fetchScanHistory() async {
@@ -431,39 +449,58 @@ class AuthViewModel: ObservableObject {
 
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let idToken = await fetchIdToken()
+        if !idToken.isEmpty {
+            request.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
+        }
+        await request.signWithAppAttest(idToken: idToken)
 
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
-            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
+            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
+            if statusCode == 200 {
                 let items = try JSONDecoder().decode([ScanHistoryItem].self, from: data)
                 await MainActor.run {
                     self.scanHistory = items
                 }
+            } else {
+                let responseBody = String(data: data, encoding: .utf8) ?? ""
+                print("❌ Failed to fetch scan history (HTTP \(statusCode)): \(responseBody)")
             }
         } catch {
             print("❌ Failed to fetch scan history: \(error)")
         }
     }
-    
+
     func deleteScanHistory(scannedAt: String) async {
         guard !userId.isEmpty else { return }
-        
+
         await MainActor.run {
             self.scanHistory.removeAll { $0.scannedAt == scannedAt }
         }
 
         guard let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/history") else { return }
-        var request = URLRequest(url: url)
-        request.httpMethod = "DELETE"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
         let body: [String: Any] = [
             "userId": userId,
             "scannedAt": scannedAt
         ]
+        guard let bodyData = try? JSONSerialization.data(withJSONObject: body) else { return }
 
-        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        _ = try? await URLSession.shared.data(for: request)
+        var request = await authorizedJSONRequest(url: url, body: bodyData)
+        request.httpMethod = "DELETE"
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
+            if statusCode != 200 {
+                let responseBody = String(data: data, encoding: .utf8) ?? ""
+                print("❌ Failed to delete scan history (HTTP \(statusCode)): \(responseBody)")
+            }
+        } catch {
+            print("❌ Failed to delete scan history: \(error)")
+        }
     }
 
     func cancelSubscription() async -> Bool {
@@ -509,8 +546,7 @@ class AuthViewModel: ObservableObject {
             subscriptionExpiresAt = expiry.doubleValue
             renewalCancellationConfirmed = cancelAtPeriodEnd
             cancellationMessage = message
-            
-            // 🚀 Bypass cooldown lock on cancellation
+
             await fetchUserUsageStats(force: true)
             guard isSignedIn, userId == requestedUserId else { return false }
             return true
@@ -523,23 +559,23 @@ class AuthViewModel: ObservableObject {
 
     private func uploadImageToS3(imageData: Data, role: String) async throws -> String {
         guard let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/checkout") else { throw URLError(.badURL) }
-        
+
         let initPayload: [String: Any] = [
             "purchaseType": "init_image_upload",
             "userId": userId,
             "role": role,
             "contentType": "image/jpeg"
         ]
-        
+
         guard let initData = try? JSONSerialization.data(withJSONObject: initPayload) else { throw URLError(.cannotParseResponse) }
         let initRequest = await authorizedJSONRequest(url: url, body: initData)
-        
+
         let (responseData, response) = try await URLSession.shared.data(for: initRequest)
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
             print("❌ API Gateway Initialization Failed: \(String(data: responseData, encoding: .utf8) ?? "Unknown Error")")
             throw URLError(.badServerResponse)
         }
-        
+
         guard let json = try JSONSerialization.jsonObject(with: responseData) as? [String: Any],
               let uploadUrlDict = json["uploadUrl"] as? [String: Any],
               let urlString = uploadUrlDict["url"] as? String,
@@ -547,11 +583,11 @@ class AuthViewModel: ObservableObject {
               let finalImageUrl = json["finalImageUrl"] as? String else {
             throw URLError(.cannotParseResponse)
         }
-        
+
         guard let s3Url = URL(string: urlString) else { throw URLError(.badURL) }
         var s3Request = URLRequest(url: s3Url)
         s3Request.httpMethod = "POST"
-        
+
         let boundary = "Boundary-\(UUID().uuidString)"
         s3Request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
 
@@ -569,14 +605,14 @@ class AuthViewModel: ObservableObject {
         body.append("--\(boundary)--\r\n".data(using: .utf8)!)
 
         let (s3Data, s3Response) = try await URLSession.shared.upload(for: s3Request, from: body)
-        
+
         guard let s3HttpResp = s3Response as? HTTPURLResponse, (200...299).contains(s3HttpResp.statusCode) else {
             let errorXML = String(data: s3Data, encoding: .utf8) ?? "No XML provided"
             let statusCode = (s3Response as? HTTPURLResponse)?.statusCode ?? 0
             print("❌ S3 UPLOAD DIRECTLY FAILED! Status: \(statusCode)\nXML Error: \(errorXML)")
             throw URLError(.badServerResponse)
         }
-        
+
         print("✅ S3 Image Upload Successful: \(finalImageUrl)")
         return finalImageUrl
     }
@@ -584,12 +620,12 @@ class AuthViewModel: ObservableObject {
     func updateUserIdentity(newUsername: String, emailToSave: String, profileBase64: String? = nil) async -> (success: Bool, error: String?) {
         guard !userId.isEmpty else { return (false, "User not found") }
         guard let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/checkout") else { return (false, "Invalid URL") }
-        
+
         var uploadedImageUrl: String? = nil
-        
+
         if let base64 = profileBase64 {
             let cleanBase64 = base64.contains(",") ? String(base64.split(separator: ",")[1]) : base64
-            
+
             if let imageData = Data(base64Encoded: cleanBase64, options: .ignoreUnknownCharacters) {
                 do {
                     uploadedImageUrl = try await uploadImageToS3(imageData: imageData, role: "user_profile")
@@ -601,7 +637,7 @@ class AuthViewModel: ObservableObject {
                 print("❌ ERROR: Could not decode Base64 string into Image Data. The string may be corrupted.")
             }
         }
-        
+
         let bodyPayload: [String: Any] = [
             "purchaseType": "update_user_identity",
             "userId": userId,
@@ -610,10 +646,10 @@ class AuthViewModel: ObservableObject {
             "currentUsername": self.username,
             "profileImageUrl": uploadedImageUrl ?? self.profileImageUrl
         ]
-        
+
         guard let bodyData = try? JSONSerialization.data(withJSONObject: bodyPayload) else { return (false, "Payload Error") }
         let request = await authorizedJSONRequest(url: url, body: bodyData)
-        
+
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
             if let httpResponse = response as? HTTPURLResponse {
@@ -633,7 +669,7 @@ class AuthViewModel: ObservableObject {
                 } else {
                     let err = String(data: data, encoding: .utf8) ?? "Unknown Error"
                     print("❌ LAMBDA REJECTED SAVE (\(httpResponse.statusCode)): \(err)")
-                    
+
                     if err.contains("ERR_USERNAME_TAKEN") {
                         return (false, "That username is already taken.")
                     }
@@ -650,15 +686,15 @@ class AuthViewModel: ObservableObject {
     func forceTrainLandmark(landmarkId: String) async -> Bool {
         guard !userId.isEmpty else { return false }
         guard let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/business/landmarks/\(landmarkId)") else { return false }
-        
+
         let bodyPayload: [String: Any] = [
             "forceTrainEnabled": true
         ]
         guard let bodyData = try? JSONSerialization.data(withJSONObject: bodyPayload) else { return false }
-        
+
         var request = await authorizedJSONRequest(url: url, body: bodyData)
         request.httpMethod = "PATCH"
-        
+
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
             if let httpResponse = response as? HTTPURLResponse {
@@ -680,12 +716,12 @@ class AuthViewModel: ObservableObject {
     func updateBusinessProfile(storeName: String, phoneNumber: String, storeWebsite: String, storeAddress: String, storeBio: String, storeLogoUrl: String, storeLogoBase64: String? = nil) async -> Bool {
         guard !userId.isEmpty else { return false }
         guard let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/checkout") else { return false }
-        
+
         var uploadedLogoUrl: String? = nil
-        
+
         if let base64 = storeLogoBase64 {
             let cleanBase64 = base64.contains(",") ? String(base64.split(separator: ",")[1]) : base64
-            
+
             if let imageData = Data(base64Encoded: cleanBase64, options: .ignoreUnknownCharacters) {
                 do {
                     uploadedLogoUrl = try await uploadImageToS3(imageData: imageData, role: "business_logo")
@@ -697,7 +733,7 @@ class AuthViewModel: ObservableObject {
                 print("❌ ERROR: Could not decode Business Logo Base64 string into Data.")
             }
         }
-        
+
         let bodyPayload: [String: Any] = [
             "purchaseType": "update_profile",
             "userId": userId,
@@ -708,10 +744,10 @@ class AuthViewModel: ObservableObject {
             "storeBio": storeBio,
             "storeLogoUrl": uploadedLogoUrl ?? storeLogoUrl
         ]
-        
+
         guard let bodyData = try? JSONSerialization.data(withJSONObject: bodyPayload) else { return false }
         let request = await authorizedJSONRequest(url: url, body: bodyData)
-        
+
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
             if let httpResponse = response as? HTTPURLResponse {
@@ -748,17 +784,17 @@ class AuthViewModel: ObservableObject {
         }
         return false
     }
-    
+
     func initDatabaseRow(emailToSave: String) async {
         guard !userId.isEmpty else { return }
         guard let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/checkout") else { return }
-        
+
         let bodyPayload: [String: Any] = [
             "purchaseType": "init_user",
             "userId": userId,
             "userEmail": emailToSave
         ]
-        
+
         guard let bodyData = try? JSONSerialization.data(withJSONObject: bodyPayload) else { return }
         let request = await authorizedJSONRequest(url: url, body: bodyData)
         _ = try? await URLSession.shared.data(for: request)
@@ -775,23 +811,23 @@ class AuthViewModel: ObservableObject {
         default: return String(localized: "Something went wrong. Please try again.")
         }
     }
-    
+
     // MARK: - App Attest Registration
     private func performAppAttest() async {
         guard !isAttesting else { return }
         let syncKey = "AppAttestSyncedV6_\(self.userId)"
-        
+
         if AppAttestService.shared.currentKeyId == nil || !UserDefaults.standard.bool(forKey: syncKey) {
             isAttesting = true
             defer { isAttesting = false }
-            
+
             do {
                 let challenge = self.userId.isEmpty ? UUID().uuidString : self.userId
                 let (keyId, attestation) = try await AppAttestService.shared.attestDevice(challenge: challenge)
                 print("✅ App Attest Phase 1 Successful! KeyId: \(keyId)")
-                
+
                 guard let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/checkout") else { return }
-                
+
                 let bodyPayload: [String: Any] = [
                     "purchaseType": "register_device",
                     "userId": self.userId,
@@ -799,13 +835,13 @@ class AuthViewModel: ObservableObject {
                     "attestation": attestation,
                     "challenge": challenge
                 ]
-                
+
                 guard let bodyData = try? JSONSerialization.data(withJSONObject: bodyPayload) else { return }
                 let request = await authorizedJSONRequest(url: url, body: bodyData)
-                
+
                 let (data, response) = try await URLSession.shared.data(for: request)
                 let httpResponse = response as? HTTPURLResponse
-                
+
                 if httpResponse?.statusCode == 200 {
                     UserDefaults.standard.set(true, forKey: syncKey)
                     print("✅ Backend successfully saved the App Attest Public Key!")
@@ -814,7 +850,7 @@ class AuthViewModel: ObservableObject {
                     let status = httpResponse?.statusCode ?? 0
                     print("❌ Backend rejected the App Attest Key. Status: \(status) \(err)")
                 }
-                
+
             } catch {
                 print("❌ App Attest Phase 1 Failed: \(error.localizedDescription)")
             }
@@ -827,16 +863,26 @@ struct ScanHistoryItem: Identifiable, Decodable {
     let scannedAt: String
     let landmarkId: String
     let landmarkLabel: String
+    let displayName: String?
     let locationString: String
     let latitude: String?
     let longitude: String?
     let imageUrl: String?
-    
+
+    var effectiveDisplayName: String {
+        let preferred = displayName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !preferred.isEmpty {
+            return preferred
+        }
+        let fallback = landmarkLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+        return fallback.isEmpty ? "Unknown Landmark" : fallback
+    }
+
     var latAsDouble: Double? {
         if let latStr = latitude, let val = Double(latStr) { return val }
         return nil
     }
-    
+
     var lonAsDouble: Double? {
         if let lonStr = longitude, let val = Double(lonStr) { return val }
         return nil

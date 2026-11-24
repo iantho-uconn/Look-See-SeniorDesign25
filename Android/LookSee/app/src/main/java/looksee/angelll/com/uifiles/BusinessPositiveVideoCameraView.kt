@@ -257,7 +257,7 @@ fun BusinessPositiveVideoCameraScreen(
             )
         }
 
-        AnimatedVisibility(visible = showZoomIndicator, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 160.dp)) {
+        AnimatedVisibility(visible = showZoomIndicator, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 260.dp)) {
             Text(
                 String.format("%.1fx", zoomLevel),
                 color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace,
@@ -457,7 +457,7 @@ fun BusinessPositiveVideoCameraScreen(
                                                 }
                                             }
                                         },
-                                        modifier = Modifier.fillMaxWidth().height(56.dp), colors = ButtonDefaults.buttonColors(containerColor = Color.White), shape = RoundedCornerShape(16.dp), enabled = !isFinishing
+                                        modifier = Modifier.fillMaxWidth().height(56.dp), colors = ButtonDefaults.buttonColors(containerColor = Color.White, disabledContainerColor = Color.White.copy(alpha = 0.8f)), shape = RoundedCornerShape(16.dp), enabled = !isFinishing
                                     ) {
                                         if (isFinishing) CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(24.dp))
                                         else Text(completionButtonTitle, color = Color.Black, fontSize = 15.sp, fontWeight = FontWeight.Bold)

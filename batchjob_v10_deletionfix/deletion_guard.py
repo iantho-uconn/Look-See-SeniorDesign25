@@ -35,9 +35,20 @@ class DeletionGuard:
         self.last_check = time.monotonic()
 
     def update(self, landmark_id, expression, names, values):
-        self.check(landmark_id)
+        observed = self.check(landmark_id)
+        # Preserve existing availability while recording retraining progress.
+        names = dict(names)
+        if observed.get('status') == 'ACTIVE' and values.get(':s') in ('TRAINING', 'NEEDS_MORE_MEDIA'):
+            if '#st = :s' not in expression:
+                raise ValueError('Unexpected status update expression')
+            expression = expression.replace('#st = :s', 'trainingStatus = :s', 1)
+            names.pop('#st', None)
         names = dict(names, **{'#guardStatus': 'status'})
         values = dict(values, **{':guardDeleting': 'DELETING', ':guardDeleted': 'DELETED'})
+        status_fence = ' AND attribute_not_exists(#guardStatus)'
+        if 'status' in observed:
+            values[':observedStatus'] = observed['status']
+            status_fence = ' AND #guardStatus = :observedStatus'
         # The resource client's transaction serializer accepts native Python values.
         self.db.meta.client.transact_write_items(TransactItems=[
             {'ConditionCheck': {'TableName': self.marker_name, 'Key': {'landmarkId': landmark_id},
@@ -45,5 +56,5 @@ class DeletionGuard:
             {'Update': {'TableName': self.main_name, 'Key': {'landmarkId': landmark_id},
                 'UpdateExpression': expression, 'ExpressionAttributeNames': names,
                 'ExpressionAttributeValues': values,
-                'ConditionExpression': 'attribute_exists(landmarkId) AND attribute_not_exists(deletionStatus) AND (attribute_not_exists(#guardStatus) OR (#guardStatus <> :guardDeleting AND #guardStatus <> :guardDeleted))'}}
+                'ConditionExpression': 'attribute_exists(landmarkId) AND attribute_not_exists(deletionStatus) AND (attribute_not_exists(#guardStatus) OR (#guardStatus <> :guardDeleting AND #guardStatus <> :guardDeleted))' + status_fence}}
         ])

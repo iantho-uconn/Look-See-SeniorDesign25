@@ -98,7 +98,7 @@ fun QuickUploadView(
                 ) {
                     LinearProgressIndicator(
                         progress = { progress },
-                        modifier = Modifier.fillMaxWidth().height(8.dp),
+                        modifier = Modifier.fillMaxWidth().height(4.dp),
                         color = Color(0xFF007AFF),
                         trackColor = Color.LightGray.copy(alpha = 0.3f),
                         strokeCap = androidx.compose.ui.graphics.StrokeCap.Round

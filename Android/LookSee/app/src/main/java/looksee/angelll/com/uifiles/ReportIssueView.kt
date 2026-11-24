@@ -214,7 +214,7 @@ fun ReportIssueView(
                             columns = GridCells.Fixed(2),
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp),
-                            modifier = Modifier.height(180.dp)
+                            modifier = Modifier.height(280.dp)
                         ) {
                             items(ReportCategory.entries) { cat ->
                                 CategoryChip(

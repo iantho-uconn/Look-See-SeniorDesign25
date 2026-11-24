@@ -9,25 +9,33 @@ struct LiveLandmarkInfoResponse: Decodable {
     let ok: Bool?
     let landmarkId: String
     let label: String
+    let displayName: String?
     let shortDescription: String
     let websiteUrl: String?
+    let latitude: Double?
+    let longitude: Double?
     let isActive: Bool
     let promotionEnabled: Bool
     let activePromotion: LiveLandmarkPromotion?
     let activePromotions: [LiveLandmarkPromotion]?
     let activePromotionCount: Int?
     let reason: String?
-    
-    // 🚀 Added merchant profile fields from Lambda response
+
     let merchantName: String?
     let merchantBio: String?
     let merchantPhone: String?
-    
-    // 🚀 THE FIX: Catch the new website and address fields!
     let merchantWebsite: String?
     let merchantAddress: String?
-    
     let merchantLogoUrl: String?
+
+    var effectiveDisplayName: String {
+        let preferred = displayName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !preferred.isEmpty {
+            return preferred
+        }
+        let fallback = label.trimmingCharacters(in: .whitespacesAndNewlines)
+        return fallback.isEmpty ? "Unknown Landmark" : fallback
+    }
 }
 
 struct LiveLandmarkPromotion: Decodable, Identifiable, Hashable {
@@ -97,29 +105,31 @@ final class LiveLandmarkInfoService {
 
         let decoded = try JSONDecoder().decode(LiveLandmarkInfoResponse.self, from: data)
 
-        // 🚀 Save to local cache so future scans are instant (0ms delay)
+        if let lat = decoded.latitude, let lon = decoded.longitude {
+            SuppressionCache.shared.setCoordinates(
+                latitude: lat,
+                longitude: lon,
+                for: decoded.landmarkId
+            )
+        }
+
         let cacheKey = "cached_merchant_\(decoded.landmarkId)"
         let merchantDict: [String: Any] = [
             "merchantName": decoded.merchantName ?? "",
             "merchantBio": decoded.merchantBio ?? "",
             "merchantPhone": decoded.merchantPhone ?? "",
             "merchantLogoUrl": decoded.merchantLogoUrl ?? "",
-            
-            // 🚀 THE FIX: Cache the new fields so they load instantly next time
             "merchantWebsite": decoded.merchantWebsite ?? "",
             "merchantAddress": decoded.merchantAddress ?? ""
         ]
         UserDefaults.standard.set(merchantDict, forKey: cacheKey)
 
-        // Automatically inject merchant data into VariableContainer for the UI popup
         if updateSharedMerchant {
             Task { @MainActor in
                 VariableContainer.shared.merchantName = decoded.merchantName ?? ""
                 VariableContainer.shared.merchantBio = decoded.merchantBio ?? ""
                 VariableContainer.shared.merchantPhone = decoded.merchantPhone ?? ""
                 VariableContainer.shared.merchantLogoUrl = decoded.merchantLogoUrl ?? ""
-                
-                // 🚀 THE FIX: Send the new fields right to your AR pop-up UI
                 VariableContainer.shared.merchantWebsite = decoded.merchantWebsite ?? ""
                 VariableContainer.shared.merchantAddress = decoded.merchantAddress ?? ""
             }
@@ -128,6 +138,7 @@ final class LiveLandmarkInfoService {
         print("""
         ✅ decoded live-info
           landmarkId: \(decoded.landmarkId)
+          displayName: \(decoded.effectiveDisplayName)
           websiteUrl: \(decoded.websiteUrl ?? "")
           activePromotion: \(decoded.activePromotion?.name ?? "none")
           promoImageUrl: \(decoded.activePromotion?.imageUrl ?? "")

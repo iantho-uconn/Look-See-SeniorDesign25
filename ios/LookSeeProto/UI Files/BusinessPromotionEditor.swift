@@ -93,7 +93,7 @@ struct BusinessPromotionEditor: View {
             Form {
                 Section(header: Text("Landmark")) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(landmark.label.isEmpty ? "Untitled Landmark" : landmark.label)
+                        Text(landmark.effectiveDisplayName)
                             .font(.headline)
 
                         Text(landmark.landmarkId)

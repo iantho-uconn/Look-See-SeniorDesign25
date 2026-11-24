@@ -294,7 +294,7 @@ struct LandmarkScan: View {
         _ liveInfo: LiveLandmarkInfoResponse,
         landmarkId: String
     ) {
-        let liveLabel = liveInfo.label.trimmingCharacters(
+        let liveName = liveInfo.effectiveDisplayName.trimmingCharacters(
             in: .whitespacesAndNewlines
         )
         let liveDescription = liveInfo.shortDescription.trimmingCharacters(
@@ -304,8 +304,9 @@ struct LandmarkScan: View {
             in: .whitespacesAndNewlines
         ) ?? ""
 
-        if !liveLabel.isEmpty {
-            infoView.landmarkName = liveLabel
+        if !liveName.isEmpty {
+            infoView.landmarkName = liveName
+            infoView.setDisplayName(landmarkId: landmarkId, displayName: liveName)
         }
 
         if !liveDescription.isEmpty {

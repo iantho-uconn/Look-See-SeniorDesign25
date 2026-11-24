@@ -213,7 +213,7 @@ fun SignupScreen(
                     VStackLabel(label = "Password") {
                         OutlinedTextField(
                             value = password,
-                            onValueChange = { password = it },
+                            onValueChange = { password = it.trimEnd() },
                             placeholder = { Text("••••••••", color = Color.Gray) },
                             modifier = Modifier.fillMaxWidth(),
                             visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
@@ -248,7 +248,7 @@ fun SignupScreen(
                     VStackLabel(label = "Confirm Password") {
                         OutlinedTextField(
                             value = confirmPassword,
-                            onValueChange = { confirmPassword = it },
+                            onValueChange = { confirmPassword = it.trimEnd() },
                             placeholder = { Text("••••••••", color = Color.Gray) },
                             modifier = Modifier.fillMaxWidth(),
                             visualTransformation = if (confirmPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),

@@ -127,7 +127,7 @@ fun LandmarkScan(
                             location = realAddress,
                             latitude = lat,
                             longitude = lon,
-                            imageUrl = liveInfo.merchantLogoUrl ?: infoView.merchantLogoUrl
+                            imageUrl = liveInfo.merchantLogoUrl?.takeIf { it.isNotBlank() } ?: infoView.merchantLogoUrl.takeIf { it.isNotBlank() } ?: liveInfo.activePromotion?.imageUrl?.takeIf { it.isNotBlank() } ?: infoView.promoImageUrl.takeIf { it.isNotBlank() } ?: ""
                         )
                     }
                 }
@@ -195,7 +195,7 @@ fun LandmarkScan(
                     location = locationFallback,
                     latitude = lat,
                     longitude = lon,
-                    imageUrl = cachedImg
+                    imageUrl = cachedImg.takeIf { it.isNotBlank() } ?: infoView.promoImageUrl.takeIf { it.isNotBlank() } ?: ""
                 )
             }
         }
@@ -243,6 +243,21 @@ fun LandmarkScan(
     LaunchedEffect(newlyDetectedLandmark) {
         if (newlyDetectedLandmark != null) {
             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            val landmarkId = newlyDetectedLandmark?.landmarkEntry()?.landmarkId?.trim().orEmpty()
+            if (landmarkId.isNotEmpty() && !infoView.isLocallyModified(landmarkId)) {
+                // Silently verify status in background to prune inactive landmarks immediately
+                launch {
+                    try {
+                        val liveInfo = LiveLandmarkInfoService(context).fetchLiveInfo(landmarkId, 2.5)
+                        if (liveInfo.isActive == false) {
+                            infoView.setLandmarkState(landmarkId = landmarkId, isActive = false, isVisibleOnMap = false)
+                            detector.pruneInactiveDetections()
+                        }
+                    } catch (e: Exception) {
+                        Log.e("LookSee_Debug_Scan", "Background live info fetch failed", e)
+                    }
+                }
+            }
         }
     }
 

@@ -347,7 +347,10 @@ fun ButtonsScreen(
                         },
                         modifier = Modifier
                             .weight(1f)
-                            .clickable {
+                            .clickable(
+                                indication = null,
+                                interactionSource = remember { MutableInteractionSource() }
+                            ) {
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 if (isBusinessMode) showPromotion = true else showBusinessAlert = true
                             }

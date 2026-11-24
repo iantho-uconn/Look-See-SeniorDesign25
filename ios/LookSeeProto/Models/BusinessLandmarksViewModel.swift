@@ -55,8 +55,7 @@ final class BusinessLandmarksViewModel: ObservableObject {
         do {
             let response = try await service.fetchBusinessLandmarks()
             let sorted = response.items.sorted {
-                let comparison = $0.label.localizedCaseInsensitiveCompare($1.label)
-                return comparison == .orderedAscending
+                $0.effectiveDisplayName.localizedCaseInsensitiveCompare($1.effectiveDisplayName) == .orderedAscending
             }
             landmarks = sorted
             saveToCache(sorted)
@@ -72,7 +71,7 @@ final class BusinessLandmarksViewModel: ObservableObject {
     func refresh() async {
         await loadLandmarks()
     }
-    
+
     func replaceLandmark(_ updatedLandmark: BusinessLandmark) {
         guard let index = landmarks.firstIndex(where: { $0.landmarkId == updatedLandmark.landmarkId }) else {
             return
@@ -81,8 +80,7 @@ final class BusinessLandmarksViewModel: ObservableObject {
         landmarks[index] = updatedLandmark
 
         landmarks.sort {
-            let comparison = $0.label.localizedCaseInsensitiveCompare($1.label)
-            return comparison == .orderedAscending
+            $0.effectiveDisplayName.localizedCaseInsensitiveCompare($1.effectiveDisplayName) == .orderedAscending
         }
         saveToCache(landmarks)
         VariableContainer.shared.reconcileProcessingNewData(with: landmarks)
@@ -104,7 +102,7 @@ final class BusinessLandmarksViewModel: ObservableObject {
         }
 
         landmarks.sort {
-            $0.label.localizedCaseInsensitiveCompare($1.label) == .orderedAscending
+            $0.effectiveDisplayName.localizedCaseInsensitiveCompare($1.effectiveDisplayName) == .orderedAscending
         }
 
         saveToCache(landmarks)

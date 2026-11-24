@@ -20,8 +20,18 @@ struct LandmarkAnalyticsData: Decodable, Identifiable {
     var id: String { landmarkId }
     let landmarkId: String
     let label: String
+    let displayName: String?
     let totalClicks: Int
     let dailyData: [DailyClickPoint]
+
+    var effectiveDisplayName: String {
+        let preferred = displayName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !preferred.isEmpty {
+            return preferred
+        }
+        let fallback = label.trimmingCharacters(in: .whitespacesAndNewlines)
+        return fallback.isEmpty ? "Untitled Landmark" : fallback
+    }
 }
 
 struct DailyClickPoint: Decodable, Identifiable {
@@ -53,41 +63,41 @@ class BusinessAnalyticsViewModel: ObservableObject {
     var totalViews: Int {
         data.reduce(0) { $0 + $1.totalClicks }
     }
-    
+
     var topLandmark: String {
         guard totalViews > 0 else { return "N/A" }
-        return data.max(by: { $0.totalClicks < $1.totalClicks })?.label ?? "N/A"
+        return data.max(by: { $0.totalClicks < $1.totalClicks })?.effectiveDisplayName ?? "N/A"
     }
-    
+
     var activeLandmarksWithViews: [LandmarkAnalyticsData] {
         data.filter { $0.totalClicks > 0 }
             .sorted { $0.totalClicks > $1.totalClicks }
     }
-    
+
     var sortedLandmarks: [LandmarkAnalyticsData] {
         data.sorted {
             if $0.totalClicks == $1.totalClicks {
-                return $0.label < $1.label
+                return $0.effectiveDisplayName.localizedCaseInsensitiveCompare($1.effectiveDisplayName) == .orderedAscending
             }
             return $0.totalClicks > $1.totalClicks
         }
     }
-    
+
     // Converts the string dates ("09/08") into actual Date objects so SwiftUI Charts can draw a proper X-Axis
     var timeSeriesData: [TimeSeriesPoint] {
         guard let template = data.first?.dailyData else { return [] }
         var merged = [String: Int]()
-         
+
         for item in data {
             for point in item.dailyData {
                 merged[point.date, default: 0] += point.clicks
             }
         }
-         
+
         let currentYear = Calendar.current.component(.year, from: Date())
         let formatter = DateFormatter()
         formatter.dateFormat = "MM/dd/yyyy"
-         
+
         return template.compactMap { point in
             let dateString = "\(point.date)/\(currentYear)"
             guard let exactDate = formatter.date(from: dateString) else { return nil }
@@ -97,23 +107,23 @@ class BusinessAnalyticsViewModel: ObservableObject {
 
     func fetchAnalytics(vm: AuthViewModel) async {
         guard !vm.userId.isEmpty else { return }
-         
+
         guard let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/analytics") else { return }
-         
+
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
-         
+
         let idToken = await vm.fetchIdToken()
         if !idToken.isEmpty {
             request.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
         }
 
-        // 🚀 ADDED: Attaches App Attest and Cognito token headers automatically
+        // Attaches App Attest and Cognito token headers automatically
         await request.signWithAppAttest(idToken: idToken)
 
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
-             
+
             if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
                 do {
                     let decoded = try JSONDecoder().decode(AnalyticsResponse.self, from: data)
@@ -140,7 +150,7 @@ class BusinessAnalyticsViewModel: ObservableObject {
 struct BusinessAnalyticsView: View {
     @EnvironmentObject var vm: AuthViewModel
     @StateObject private var viewModel = BusinessAnalyticsViewModel()
-    
+
     @State private var chartMode: AnalyticsChartMode = .trend
 
     private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00)
@@ -158,15 +168,15 @@ struct BusinessAnalyticsView: View {
                     emptyStateView
                 } else {
                     kpiGrid
-                     
+
                     chartToggle
-                     
+
                     if chartMode == .trend {
                         trendChartSection
                     } else {
                         distributionChartSection
                     }
-                     
+
                     leaderboardSection
                 }
             }
@@ -182,9 +192,9 @@ struct BusinessAnalyticsView: View {
             await viewModel.fetchAnalytics(vm: vm)
         }
     }
-    
+
     // MARK: - Dashboard Components
-    
+
     private var kpiGrid: some View {
         VStack(spacing: 12) {
             HStack {
@@ -193,7 +203,7 @@ struct BusinessAnalyticsView: View {
                         .font(.system(size: 13, weight: .bold, design: .rounded))
                         .foregroundStyle(.secondary)
                         .textCase(.uppercase)
-                    
+
                     Text("\(viewModel.totalViews)")
                         .font(.system(size: 42, weight: .heavy, design: .rounded))
                         .foregroundStyle(.primary)
@@ -207,7 +217,7 @@ struct BusinessAnalyticsView: View {
             .background(Color(uiColor: .secondarySystemGroupedBackground))
             .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
             .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2)
-             
+
             HStack(spacing: 12) {
                 kpiCard(title: "Landmarks", value: "\(viewModel.data.count)", icon: "mappin.and.ellipse", color: .purple)
                 kpiCard(title: "Top Performer", value: viewModel.topLandmark, icon: "star.fill", color: .orange)
@@ -215,7 +225,7 @@ struct BusinessAnalyticsView: View {
         }
         .padding(.horizontal, 20)
     }
-    
+
     private func kpiCard(title: String, value: String, icon: String, color: Color) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
@@ -227,7 +237,7 @@ struct BusinessAnalyticsView: View {
                     .textCase(.uppercase)
                 Spacer()
             }
-             
+
             Text(value)
                 .font(.system(size: 18, weight: .bold, design: .rounded))
                 .foregroundStyle(.primary)
@@ -239,7 +249,7 @@ struct BusinessAnalyticsView: View {
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2)
     }
-    
+
     private var chartToggle: some View {
         Picker("Chart Mode", selection: $chartMode) {
             Text("Over Time").tag(AnalyticsChartMode.trend)
@@ -248,13 +258,13 @@ struct BusinessAnalyticsView: View {
         .pickerStyle(.segmented)
         .padding(.horizontal, 20)
     }
-    
+
     private var trendChartSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Engagement Over Time (30 Days)")
                 .font(.system(size: 16, weight: .bold, design: .rounded))
                 .padding(.horizontal, 20)
-             
+
             VStack {
                 if viewModel.totalViews == 0 {
                     noDataChartPlaceholder
@@ -271,7 +281,7 @@ struct BusinessAnalyticsView: View {
                                 endPoint: .bottom
                             )
                         )
-                         
+
                         LineMark(
                             x: .value("Date", item.date),
                             y: .value("Views", item.clicks)
@@ -296,13 +306,13 @@ struct BusinessAnalyticsView: View {
         }
         .transition(.opacity.combined(with: .scale(scale: 0.98)))
     }
-    
+
     private var distributionChartSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Views by Landmark")
                 .font(.system(size: 16, weight: .bold, design: .rounded))
                 .padding(.horizontal, 20)
-             
+
             VStack {
                 if viewModel.activeLandmarksWithViews.isEmpty {
                     noDataChartPlaceholder
@@ -315,7 +325,7 @@ struct BusinessAnalyticsView: View {
                                 angularInset: 2.0
                             )
                             .cornerRadius(6)
-                            .foregroundStyle(by: .value("Landmark", landmark.label))
+                            .foregroundStyle(by: .value("Landmark", landmark.effectiveDisplayName))
                             .annotation(position: .overlay) {
                                 // Only show percentage on large slices
                                 let percentage = Double(landmark.totalClicks) / Double(viewModel.totalViews)
@@ -334,9 +344,9 @@ struct BusinessAnalyticsView: View {
                         Chart(viewModel.activeLandmarksWithViews) { landmark in
                             BarMark(
                                 x: .value("Views", landmark.totalClicks),
-                                y: .value("Landmark", landmark.label)
+                                y: .value("Landmark", landmark.effectiveDisplayName)
                             )
-                            .foregroundStyle(by: .value("Landmark", landmark.label))
+                            .foregroundStyle(by: .value("Landmark", landmark.effectiveDisplayName))
                             .cornerRadius(4)
                         }
                         .frame(height: 220)
@@ -352,7 +362,7 @@ struct BusinessAnalyticsView: View {
         }
         .transition(.opacity.combined(with: .scale(scale: 0.98)))
     }
-    
+
     private var noDataChartPlaceholder: some View {
         ZStack {
             Color(uiColor: .tertiarySystemGroupedBackground)
@@ -368,30 +378,30 @@ struct BusinessAnalyticsView: View {
         .frame(height: 220)
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
-    
+
     private var leaderboardSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("All Landmarks")
                 .font(.system(size: 16, weight: .bold, design: .rounded))
                 .padding(.horizontal, 20)
                 .padding(.top, 8)
-             
+
             VStack(spacing: 0) {
                 ForEach(Array(viewModel.sortedLandmarks.enumerated()), id: \.element.id) { index, landmark in
                     HStack(spacing: 16) {
-                         
+
                         // Rank Number
                         Text("\(index + 1)")
                             .font(.system(size: 14, weight: .bold, design: .monospaced))
                             .foregroundStyle(.tertiary)
                             .frame(width: 24, alignment: .leading)
-                         
-                        Text(landmark.label.isEmpty ? "Untitled Landmark" : landmark.label)
+
+                        Text(landmark.effectiveDisplayName)
                             .font(.system(size: 16, weight: .semibold, design: .rounded))
                             .foregroundStyle(.primary)
-                         
+
                         Spacer()
-                         
+
                         Text("\(landmark.totalClicks)")
                             .font(.system(size: 16, weight: .bold, design: .rounded))
                             .padding(.horizontal, 12)
@@ -402,7 +412,7 @@ struct BusinessAnalyticsView: View {
                     }
                     .padding(.horizontal, 20)
                     .padding(.vertical, 14)
-                     
+
                     if landmark.landmarkId != viewModel.sortedLandmarks.last?.landmarkId {
                         Divider().padding(.leading, 60)
                     }
@@ -414,7 +424,7 @@ struct BusinessAnalyticsView: View {
             .padding(.horizontal, 20)
         }
     }
-    
+
     // MARK: - Empty / Error States
     private func errorStateView(message: String) -> some View {
         VStack(spacing: 12) {
@@ -429,7 +439,7 @@ struct BusinessAnalyticsView: View {
         .padding(.top, 40)
         .padding(.horizontal, 32)
     }
-    
+
     private var emptyStateView: some View {
         VStack(spacing: 12) {
             Image(systemName: "chart.bar.xaxis")

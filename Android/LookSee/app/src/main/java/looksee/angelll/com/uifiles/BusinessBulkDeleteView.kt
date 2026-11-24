@@ -8,6 +8,10 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -134,51 +138,60 @@ fun BusinessBulkDeleteView(
             verticalArrangement = Arrangement.spacedBy(24.dp),
             contentPadding = PaddingValues(bottom = 32.dp)
         ) {
-            // Section 1: Selected Landmarks
             item {
-                SettingsSection(
-                    footer = "Deleting a landmark begins backend cleanup for its promotions, dataset files, and cluster mappings. This cannot be undone."
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Delete, contentDescription = null, tint = Color.Red, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "${landmarks.size} landmark${if (landmarks.size == 1) "" else "s"}",
-                                color = Color.Red,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(16.dp))
+                    Icon(Icons.Default.Warning, contentDescription = null, tint = Color.Red, modifier = Modifier.size(48.dp))
+                    Spacer(Modifier.height(16.dp))
+                    Text("Delete ${landmarks.size} Landmark${if (landmarks.size == 1) "" else "s"}", fontWeight = FontWeight.Bold, fontSize = 22.sp, color = Color.White)
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "This action cannot be undone. All data, dataset files, and cluster mappings for these landmarks will be permanently removed.",
+                        fontSize = 14.sp,
+                        color = Color.Gray,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
 
-                        landmarks.forEach { landmark ->
-                            Column(modifier = Modifier.padding(vertical = 4.dp)) {
-                                Text(
-                                    text = displayLabel(landmark),
-                                    color = Color.White,
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontSize = 15.sp
-                                )
-                                Text(
-                                    text = landmark.landmarkId,
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 11.sp,
-                                    color = Color.Gray
-                                )
-                            }
+            item {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Color(0xFF2C1010))
+                        .border(1.dp, Color.Red.copy(alpha = 0.4f), RoundedCornerShape(16.dp))
+                        .padding(16.dp)
+                ) {
+                    landmarks.forEach { landmark ->
+                        Column(modifier = Modifier.padding(vertical = 6.dp)) {
+                            Text(
+                                text = displayLabel(landmark),
+                                color = Color.White,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 15.sp
+                            )
+                            Text(
+                                text = landmark.landmarkId,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp,
+                                color = Color.Red.copy(alpha = 0.7f)
+                            )
                         }
                     }
                 }
             }
 
-            // Section 2: Confirmation Input
             if (completedResult == null) {
                 item {
-                    SettingsSection(header = "Confirmation", footer = "Type exactly: $requiredConfirmationText") {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("CONFIRM DELETION", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
                         OutlinedTextField(
                             value = confirmationText,
                             onValueChange = { confirmationText = it },
-                            placeholder = { Text(requiredConfirmationText, color = Color.Gray) },
+                            placeholder = { Text("Type '$requiredConfirmationText' to confirm", color = Color.Gray) },
                             enabled = !isDeleting,
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(
@@ -195,13 +208,16 @@ fun BusinessBulkDeleteView(
                                     }
                                 }
                             ),
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                            modifier = Modifier.fillMaxWidth(),
                             colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = Color.Transparent,
-                                unfocusedBorderColor = Color.Transparent,
                                 focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White
-                            )
+                                unfocusedTextColor = Color.White,
+                                focusedBorderColor = Color.Red.copy(alpha = 0.8f),
+                                unfocusedBorderColor = Color.Gray.copy(alpha = 0.3f),
+                                focusedContainerColor = Color.Black.copy(alpha = 0.2f),
+                                unfocusedContainerColor = Color.Black.copy(alpha = 0.2f)
+                            ),
+                            shape = RoundedCornerShape(12.dp)
                         )
                     }
                 }
@@ -218,8 +234,8 @@ fun BusinessBulkDeleteView(
                             containerColor = Color.Red,
                             disabledContainerColor = Color.Gray.copy(alpha = 0.35f)
                         ),
-                        modifier = Modifier.fillMaxWidth().height(50.dp),
-                        shape = RoundedCornerShape(12.dp)
+                        modifier = Modifier.fillMaxWidth().height(56.dp),
+                        shape = RoundedCornerShape(16.dp)
                     ) {
                         if (isDeleting) {
                             CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))

@@ -227,7 +227,7 @@ fun PositiveVideoCameraView(
             Text("Slowly pan across the landmark while pinching to zoom in and out", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.background(Color(0xFF387DFF).copy(alpha = 0.9f), CircleShape).padding(horizontal = 14.dp, vertical = 8.dp))
         }
 
-        AnimatedVisibility(visible = showZoomIndicator, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 160.dp)) {
+        AnimatedVisibility(visible = showZoomIndicator, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 260.dp)) {
             Text(
                 String.format(Locale.US, "%.1fx", zoomLevel),
                 color = Color.White,
@@ -327,7 +327,7 @@ fun PositiveVideoCameraView(
                             if (nextMandatory != null) { Button(onClick = { currentPhase = nextMandatory; flowState = CameraFlowState.INSTRUCTION }, modifier = Modifier.fillMaxWidth().height(56.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF387DFF)), shape = RoundedCornerShape(16.dp)) { Text("Record Next Angle", fontSize = 17.sp, fontWeight = FontWeight.Bold) } }
                             else {
                                 if (timeRemaining > 0) { Button(onClick = { currentPhase = CameraPhase.Optional(recordedClips.size + 1); flowState = CameraFlowState.INSTRUCTION }, modifier = Modifier.fillMaxWidth().height(56.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF387DFF)), shape = RoundedCornerShape(16.dp)) { Text("Add Extra Clip", fontSize = 17.sp, fontWeight = FontWeight.Bold) } }
-                                if (totalDurationElapsedInt >= actualMinTotalTimeLimit) { Button(onClick = { isFinishing = true; onDone(recordedClips.map { it.uri }) }, modifier = Modifier.fillMaxWidth().height(56.dp), colors = ButtonDefaults.buttonColors(containerColor = Color.White), shape = RoundedCornerShape(16.dp), enabled = !isFinishing) { if (isFinishing) CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(24.dp)) else Text(completionButtonTitle, color = Color.Black, fontSize = 17.sp, fontWeight = FontWeight.Bold) } }
+                                if (totalDurationElapsedInt >= actualMinTotalTimeLimit) { Button(onClick = { isFinishing = true; onDone(recordedClips.map { it.uri }) }, modifier = Modifier.fillMaxWidth().height(56.dp), colors = ButtonDefaults.buttonColors(containerColor = Color.White, disabledContainerColor = Color.White.copy(alpha = 0.8f)), shape = RoundedCornerShape(16.dp), enabled = !isFinishing) { if (isFinishing) CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(24.dp)) else Text(completionButtonTitle, color = Color.Black, fontSize = 17.sp, fontWeight = FontWeight.Bold) } }
                                 else { Text("Total video must be at least $actualMinTotalTimeLimit seconds", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp)) }
                             }
                         }
@@ -348,7 +348,7 @@ fun PositiveSafeVideoPlayer(uri: Uri, modifier: Modifier = Modifier) {
         factory = { ctx ->
             PlayerView(ctx).apply {
                 player = exoPlayer
-                useController = true
+                useController = false
                 layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
             }
         },

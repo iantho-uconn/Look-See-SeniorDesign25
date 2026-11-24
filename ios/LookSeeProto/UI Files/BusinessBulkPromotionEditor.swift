@@ -214,12 +214,8 @@ struct BusinessBulkPromotionEditor: View {
 
             ForEach(landmarks) { landmark in
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(
-                        landmark.label.isEmpty
-                            ? "Untitled Landmark"
-                            : landmark.label
-                    )
-                    .font(.system(size: 15, weight: .semibold))
+                    Text(displayLabel(for: landmark))
+                        .font(.system(size: 15, weight: .semibold))
 
                     Text(landmark.landmarkId)
                         .font(.system(size: 11, weight: .medium, design: .monospaced))
@@ -376,9 +372,7 @@ struct BusinessBulkPromotionEditor: View {
     }
 
     private func displayLabel(for landmark: BusinessLandmark) -> String {
-        landmark.label.isEmpty
-            ? "Untitled Landmark"
-            : landmark.label
+        landmark.effectiveDisplayName
     }
 
     private static let dateFormatter: DateFormatter = {

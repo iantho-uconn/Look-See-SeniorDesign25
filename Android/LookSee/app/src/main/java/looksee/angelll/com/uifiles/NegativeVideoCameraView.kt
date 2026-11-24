@@ -211,7 +211,7 @@ fun NegativeVideoCameraView(
             Text("Slowly pan the area and background while pinching to zoom in and out", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.background(Color(0xFF387DFF).copy(alpha = 0.9f), CircleShape).padding(horizontal = 14.dp, vertical = 6.dp))
         }
 
-        AnimatedVisibility(visible = showZoomIndicator, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 160.dp)) {
+        AnimatedVisibility(visible = showZoomIndicator, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 260.dp)) {
             Text(
                 String.format(Locale.US, "%.1fx", zoomLevel),
                 color = Color.White,
@@ -329,7 +329,7 @@ fun NegativeVideoCameraView(
                                                 }
                                             }
                                         }
-                                    }, modifier = Modifier.fillMaxWidth().height(56.dp), colors = ButtonDefaults.buttonColors(containerColor = Color.White), shape = RoundedCornerShape(16.dp), enabled = !isFinishing) { if (isFinishing) CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(24.dp)) else Text("Finish Submission", color = Color.Black, fontSize = 17.sp, fontWeight = FontWeight.Bold) }
+                                    }, modifier = Modifier.fillMaxWidth().height(56.dp), colors = ButtonDefaults.buttonColors(containerColor = Color.White, disabledContainerColor = Color.White.copy(alpha = 0.8f)), shape = RoundedCornerShape(16.dp), enabled = !isFinishing) { if (isFinishing) CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(24.dp)) else Text("Finish Submission", color = Color.Black, fontSize = 17.sp, fontWeight = FontWeight.Bold) }
                                 } else { Text("Total video must be between $minTotalTimeLimit and $maxTotalTimeLimit seconds", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp)) }
                             }
                         }
@@ -350,7 +350,7 @@ fun NegativeSafeVideoPlayer(uri: Uri, modifier: Modifier = Modifier) {
         factory = { ctx ->
             PlayerView(ctx).apply {
                 player = exoPlayer
-                useController = true
+                useController = false
                 layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
             }
         },

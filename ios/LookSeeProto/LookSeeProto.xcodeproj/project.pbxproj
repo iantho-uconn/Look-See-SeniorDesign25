@@ -138,6 +138,8 @@
 		B0DC9CA92F4F84B2004A9452 /* AuthViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0DC9CA72F4F84B2004A9452 /* AuthViewModel.swift */; };
 		B0DE8C0D2F516FDD008E1512 /* Signup.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0DE8C0C2F516FD3008E1512 /* Signup.swift */; };
 		B0DE8C0F2F517138008E1512 /* ConfirmSignup.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0DE8C0E2F51712F008E1512 /* ConfirmSignup.swift */; };
+		D03728AE30B5B3A100403364 /* LandmarkLocationPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D03728AD30B5B39C00403364 /* LandmarkLocationPickerView.swift */; };
+		D03728AF30B5B3A100403364 /* LandmarkLocationPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D03728AD30B5B39C00403364 /* LandmarkLocationPickerView.swift */; };
 		D079C5EA303844D2000A1237 /* BusinessNegativeVideoCameraView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D079C5E9303844CE000A1237 /* BusinessNegativeVideoCameraView.swift */; };
 		D079C5EB303844D2000A1237 /* BusinessNegativeVideoCameraView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D079C5E9303844CE000A1237 /* BusinessNegativeVideoCameraView.swift */; };
 		D079C5ED3038457E000A1237 /* BusinessPositiveVideoCameraView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D079C5EC3038457A000A1237 /* BusinessPositiveVideoCameraView.swift */; };
@@ -245,6 +247,7 @@
 		B0DC9CA72F4F84B2004A9452 /* AuthViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthViewModel.swift; sourceTree = "<group>"; };
 		B0DE8C0C2F516FD3008E1512 /* Signup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Signup.swift; sourceTree = "<group>"; };
 		B0DE8C0E2F51712F008E1512 /* ConfirmSignup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfirmSignup.swift; sourceTree = "<group>"; };
+		D03728AD30B5B39C00403364 /* LandmarkLocationPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LandmarkLocationPickerView.swift; sourceTree = "<group>"; };
 		D079C5E9303844CE000A1237 /* BusinessNegativeVideoCameraView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BusinessNegativeVideoCameraView.swift; sourceTree = "<group>"; };
 		D079C5EC3038457A000A1237 /* BusinessPositiveVideoCameraView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BusinessPositiveVideoCameraView.swift; sourceTree = "<group>"; };
 		D079CA49304A68A3000A1237 /* Historyview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Historyview.swift; sourceTree = "<group>"; };
@@ -447,6 +450,7 @@
 		56C3FA072EA6CA3100EA6153 /* UI Files */ = {
 			isa = PBXGroup;
 			children = (
+				D03728AD30B5B39C00403364 /* LandmarkLocationPickerView.swift */,
 				3C14A9123051B35800907E77 /* AdBannerView.swift */,
 				D079CAEA305185FD000A1237 /* BusinessAnalyticsView.swift */,
 				D079CA49304A68A3000A1237 /* Historyview.swift */,
@@ -796,6 +800,7 @@
 				3C5BC5BE301E356400953451 /* BusinessPromotionEditor.swift in Sources */,
 				3C5BC5C0301E356400953451 /* Settings.swift in Sources */,
 				3C5BC5C1301E356400953451 /* VideoPicker.swift in Sources */,
+				D03728AF30B5B3A100403364 /* LandmarkLocationPickerView.swift in Sources */,
 				378CB4B2302C094F00805E32 /* termsofservice.swift in Sources */,
 				3C5BC5C2301E356400953451 /* BusinessLandmarksView.swift in Sources */,
 				3C5BC5C3301E356400953451 /* Tier2LandmarkRecord.swift in Sources */,
@@ -838,6 +843,7 @@
 				D0E78BCD3006A63A00E5FE00 /* GuidedCaptureOverlay.swift in Sources */,
 				D0E78BE23008FF9100E5FE00 /* GuestSignUpView.swift in Sources */,
 				D0E78BCF3006F92800E5FE00 /* PositiveVideoCameraView.swift in Sources */,
+				D03728AE30B5B3A100403364 /* LandmarkLocationPickerView.swift in Sources */,
 				3C7452BD301187DB0016E21D /* BusinessMediaHistoryNavigationRow.swift in Sources */,
 				562DAAB32F2A89600083A71E /* LandmarkScan.swift in Sources */,
 				3C63C8A82F91875E0006C5DD /* VariableContainer.swift in Sources */,

@@ -130,7 +130,7 @@ fun LoginScreen(
                     Text("Password", color = Color.White.copy(alpha = 0.5f), fontSize = 12.sp)
                     OutlinedTextField(
                         value = password,
-                        onValueChange = { password = it },
+                        onValueChange = { password = it.trimEnd() },
                         placeholder = { Text("••••••••", color = Color.Gray) },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),

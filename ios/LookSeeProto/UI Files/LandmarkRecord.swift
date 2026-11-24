@@ -18,13 +18,12 @@ struct LandmarkRecord: View {
 
     private let onAddMoreMedia: (String) -> Void
     var archivedMedia: ArchivedMedia?
-    
+
     var existingLandmarkId: String?
     var existingLabel: String?
     var existingDescription: String?
     var existingSecondsNeeded: Double?
 
-    // 🚀 NEW: Hardcoded dynamic limits for initial upload UI flow
     private let maxPositiveVideoDuration: Int = 120
     private let maxNegativeVideoDuration: Int = 45
 
@@ -46,7 +45,7 @@ struct LandmarkRecord: View {
         self.existingDescription = existingDescription
         self.existingSecondsNeeded = existingSecondsNeeded
         self.onAddMoreMedia = onAddMoreMedia
-        
+
         self._businessLandmarkId = State(initialValue: existingLandmarkId)
         self._labelText = State(initialValue: existingLabel ?? "")
         self._shortDescription = State(initialValue: existingDescription ?? "")
@@ -59,38 +58,51 @@ struct LandmarkRecord: View {
     @State private var pickedVideoURLs: [URL] = []
     @State private var pickedImage: UIImage?
     @State private var clipDurations: [URL: Double] = [:]
-    
+
     @State private var extractedLatitude: Double? = nil
     @State private var extractedLongitude: Double? = nil
+    @State private var hasAdjustedLocation = false
+    @State private var showLocationPicker = false
+
     @State private var statusText = String(localized: "No landmark media selected.")
     @State private var showDiscardAlert = false
-    
+
     @State private var showLimitAlert = false
     @State private var limitAlertTitle = ""
     @State private var limitAlertMessage = ""
-    
+
     @State private var pendingArchiveURLs: [URL] = []
     @State private var isStitchingVideos = false
     @State private var startrecording = false
-    
+
     @State private var showBackgroundUploadAlert = false
     @State private var capturedNegativeVideo: CapturedNegativeVideo? = nil
     @State private var showNegativeCamera = false
-    
+
     @State private var completedPositiveResult: PositiveSubmissionResult?
     @State private var completedLandmarkId: String?
     @State private var isFullSubmissionComplete = false
-    
+
     @State private var isFormVisible = false
 
     @StateObject private var uploadService = UploadService()
     @StateObject private var hardNegativeUploadService = HardNegativeUploadService()
     @StateObject private var locationManager = LocationManager()
-    
+
     @FocusState private var IsKeyboard: Bool
 
     private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00)
-    
+
+    private var effectiveLatitude: Double? {
+        if let lat = extractedLatitude, lat != 0 { return lat }
+        return locationManager.latitude
+    }
+
+    private var effectiveLongitude: Double? {
+        if let lon = extractedLongitude, lon != 0 { return lon }
+        return locationManager.longitude
+    }
+
     private var uiTargetDuration: Int {
         if let needed = existingSecondsNeeded {
             return Int(ceil(needed))
@@ -99,12 +111,12 @@ struct LandmarkRecord: View {
         }
         return 30
     }
-    
+
     private var negativeTargetDuration: Int {
         if existingLandmarkId != nil { return 1 }
         return 10
     }
-    
+
     private var minimumCombinedVideoDuration: Double {
         return 1.0
     }
@@ -112,16 +124,16 @@ struct LandmarkRecord: View {
     private var hasPositiveMedia: Bool { !pickedVideoURLs.isEmpty || pickedImage != nil }
     private var hasLabel: Bool { !labelText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     private var hasRequiredShortDescription: Bool { !shortDescription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-    
+
     private var hasRequiredNegativeVideo: Bool {
         if existingLandmarkId != nil { return true }
         return capturedNegativeVideo != nil
     }
-    
+
     private var totalClipDuration: Double { pickedVideoURLs.reduce(0) { $0 + (clipDurations[$1] ?? 0) } }
     private var hasMinimumClipDuration: Bool { pickedImage != nil || totalClipDuration >= minimumCombinedVideoDuration }
     private var isSubmissionRunning: Bool { uploadService.isUploading || hardNegativeUploadService.isUploading || isStitchingVideos }
-    
+
     private var canUpload: Bool {
         guard !isSubmissionRunning, !isFullSubmissionComplete else { return false }
         if completedPositiveResult != nil { return hasRequiredNegativeVideo }
@@ -136,7 +148,6 @@ struct LandmarkRecord: View {
                 PositiveVideoCameraView(
                     isActive: isActive,
                     isNavVisible: $isNavVisible,
-                    // 🚀 UPDATED: Max duration passed down dynamically
                     uiTargetDuration: maxPositiveVideoDuration,
                     minTotalTimeLimit: uiTargetDuration
                 ) { urls in
@@ -149,19 +160,19 @@ struct LandmarkRecord: View {
                 .transition(.opacity)
             } else {
                 Color(uiColor: .systemGroupedBackground).ignoresSafeArea()
-                
+
                 ScrollView {
                     VStack(spacing: 20) {
                         positiveMediaPreview
-                        
+
                         if !statusText.isEmpty {
                             HStack {
                                 Text(statusText)
                                     .font(.system(size: 13, weight: .semibold, design: .rounded))
                                     .foregroundStyle(.secondary)
-                                
+
                                 Spacer()
-                                
+
                                 if statusText.contains("Outbox") || statusText.contains("queued") {
                                     Button {
                                         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
@@ -182,9 +193,9 @@ struct LandmarkRecord: View {
                             }
                             .padding(.horizontal)
                         }
-                        
+
                         locationSection
-                        
+
                         if isFormVisible {
                             landmarkForm
                             uploadButtonRow
@@ -192,7 +203,7 @@ struct LandmarkRecord: View {
                             negativeUploadStatusCard
                             overallCompletionCard
                         }
-                        
+
                         Spacer(minLength: 40)
                     }
                     .padding(.top, 16)
@@ -202,7 +213,7 @@ struct LandmarkRecord: View {
                 .safeAreaInset(edge: .top) { Color.clear.frame(height: 50) }
                 .safeAreaInset(edge: .bottom) { Color.clear.frame(height: 90) }
             }
-            
+
             if isStitchingVideos { processingOverlay }
         }
         .animation(.easeInOut(duration: 0.3), value: isFormVisible)
@@ -242,10 +253,35 @@ struct LandmarkRecord: View {
                 }
             }
         }
+        .onChange(of: locationManager.latitude) { _, newLat in
+            if !hasAdjustedLocation, extractedLatitude == nil, let newLat {
+                extractedLatitude = newLat
+            }
+        }
+        .onChange(of: locationManager.longitude) { _, newLon in
+            if !hasAdjustedLocation, extractedLongitude == nil, let newLon {
+                extractedLongitude = newLon
+            }
+        }
         .sheet(isPresented: $showTextScanner) { ScannerSheet(scannedText: $shortDescription) }
+        .sheet(isPresented: $showLocationPicker) {
+            LandmarkLocationPickerSheet(
+                initialLatitude: effectiveLatitude,
+                initialLongitude: effectiveLongitude,
+                userLatitude: locationManager.latitude,
+                userLongitude: locationManager.longitude,
+                mode: .upload,
+                navigationTitle: "Confirm Location",
+                confirmButtonTitle: "Confirm Pin Location"
+            ) { newLat, newLon, _ in
+                extractedLatitude = newLat
+                extractedLongitude = newLon
+                hasAdjustedLocation = true
+                showLocationPicker = false
+            }
+        }
         .fullScreenCover(isPresented: $showNegativeCamera) {
             NegativeVideoCameraView(
-                // 🚀 UPDATED: Max duration passed down dynamically
                 uiTargetDuration: maxNegativeVideoDuration,
                 minTotalTimeLimit: negativeTargetDuration,
                 maxTotalTimeLimit: maxNegativeVideoDuration
@@ -255,7 +291,7 @@ struct LandmarkRecord: View {
             }
         }
         .alert("Discard this upload?", isPresented: $showDiscardAlert) { Button("Discard", role: .destructive) { clearScreen() }; Button("Cancel", role: .cancel) { } } message: { Text("This will remove the media and clear the form.") }
-        
+
         .alert("Upload Queued!", isPresented: $showBackgroundUploadAlert) {
             Button("Done", role: .cancel) {
                 clearScreen()
@@ -267,7 +303,7 @@ struct LandmarkRecord: View {
         } message: {
             Text("Your landmark has been securely queued! It will upload in the background. Feel free to keep using the app, but please make sure to leave it open until the upload finishes.")
         }
-        
+
         .alert(limitAlertTitle, isPresented: $showLimitAlert) {
             Button("OK", role: .cancel) { }
         } message: {
@@ -277,7 +313,7 @@ struct LandmarkRecord: View {
             updateIdleTimer(recording: startrecording)
         }
     }
-    
+
     var processingOverlay: some View {
         ZStack {
             Color.black.opacity(0.6).ignoresSafeArea()
@@ -305,7 +341,7 @@ struct LandmarkRecord: View {
         if !pickedVideoURLs.isEmpty {
             VStack(spacing: 16) {
                 durationSummaryBanner
-                
+
                 ForEach(pickedVideoURLs.indices, id: \.self) { index in
                     let url = pickedVideoURLs[index]
                     ZStack(alignment: .topTrailing) {
@@ -317,7 +353,7 @@ struct LandmarkRecord: View {
                             .clipped()
                             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                             .ignoresSafeArea(.keyboard)
-                        
+
                         if !arePositiveDetailsLocked {
                             Button {
                                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -377,7 +413,7 @@ struct LandmarkRecord: View {
         if let duration = clipDurations[url] { return String(localized: "Clip \(index + 1) · \(String(format: "%.1f", duration))s") }
         return String(localized: "Clip \(index + 1) · loading…")
     }
-    
+
     private func updateIdleTimer(recording: Bool) {
         let shouldDisableAutoLock = startrecording
         if shouldDisableAutoLock {
@@ -391,50 +427,58 @@ struct LandmarkRecord: View {
         }
     }
 
+    @ViewBuilder
     private var locationSection: some View {
-        HStack {
-            Image(systemName: "location.fill")
-                .font(.system(size: 16))
-                .foregroundStyle(primaryColor)
-            
-            VStack(alignment: .leading, spacing: 2) {
-                if locationManager.isAuthorized, let lat = locationManager.latitude, let lon = locationManager.longitude {
-                    Text("\(lat), \(lon)")
-                        .font(.system(size: 14, weight: .bold, design: .monospaced))
-                        .foregroundStyle(.primary)
-                    Text("Accuracy: ±\(Int(locationManager.horizontalAccuracy ?? 0))m")
-                        .font(.system(size: 13, weight: .regular))
-                        .foregroundStyle(.secondary)
-                } else if locationManager.authorizationStatus == .denied || locationManager.authorizationStatus == .restricted {
-                    Text("Location Denied")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(.red)
-                } else {
-                    Text("Requesting location…")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(.secondary)
-                }
-            }
-            Spacer()
-            
-            if !locationManager.isAuthorized {
-                Button("Enable") {
-                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        if existingLandmarkId == nil {
+            LandmarkLocationPreviewCard(
+                latitude: effectiveLatitude,
+                longitude: effectiveLongitude,
+                title: "Does this location look right?",
+                subtitle: hasAdjustedLocation
+                    ? "Custom pin confirmed. Tap to fine-tune again."
+                    : "Captured from GPS. Drag the pin if you walked away or recorded indoors.",
+                buttonTitle: "Adjust Pin",
+                badgeText: hasAdjustedLocation ? "Pin Adjusted" : nil,
+                badgeColor: .green,
+                accuracyMeters: hasAdjustedLocation ? nil : locationManager.horizontalAccuracy,
+                showEnableLocationButton: !locationManager.isAuthorized,
+                isDisabled: arePositiveDetailsLocked,
+                onEnableLocation: {
                     locationManager.requestPermissionIfNeeded()
+                },
+                onAdjustTapped: {
+                    IsKeyboard = false
+                    showLocationPicker = true
                 }
-                .font(.system(size: 14, weight: .bold, design: .rounded))
-                .foregroundStyle(.white)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                .background(primaryColor)
-                .clipShape(Capsule())
-                .disabled(arePositiveDetailsLocked)
+            )
+            .padding(.horizontal)
+        } else {
+            HStack {
+                Image(systemName: "location.fill")
+                    .font(.system(size: 16))
+                    .foregroundStyle(primaryColor)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    if let lat = effectiveLatitude, let lon = effectiveLongitude {
+                        Text(String(format: "%.6f, %.6f", lat, lon))
+                            .font(.system(size: 14, weight: .bold, design: .monospaced))
+                            .foregroundStyle(.primary)
+                        Text("Using existing landmark location")
+                            .font(.system(size: 13, weight: .regular))
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text("Using existing landmark location")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Spacer()
             }
+            .padding(16)
+            .background(Color(uiColor: .secondarySystemGroupedBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .padding(.horizontal)
         }
-        .padding(16)
-        .background(Color(uiColor: .secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .padding(.horizontal)
     }
 
     private var landmarkForm: some View {
@@ -444,7 +488,7 @@ struct LandmarkRecord: View {
                     .font(.system(size: 13, weight: .bold, design: .rounded))
                     .foregroundStyle(.secondary)
                     .textCase(.uppercase)
-                
+
                 TextField("e.g., Gampel Pavilion", text: $labelText)
                     .focused($IsKeyboard)
                     .font(.system(size: 16, weight: .medium))
@@ -452,7 +496,7 @@ struct LandmarkRecord: View {
                     .background(Color(uiColor: .secondarySystemGroupedBackground))
                     .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                     .disabled(arePositiveDetailsLocked || existingLandmarkId != nil)
-                
+
                 if let businessLandmarkId {
                     Text("ID: \(businessLandmarkId)")
                         .font(.system(size: 12, weight: .medium, design: .monospaced))
@@ -467,7 +511,7 @@ struct LandmarkRecord: View {
                     .font(.system(size: 13, weight: .bold, design: .rounded))
                     .foregroundStyle(.secondary)
                     .textCase(.uppercase)
-                
+
                 ZStack(alignment: .bottomTrailing) {
                     TextField("e.g., Front entrance", text: $shortDescription, axis: .vertical)
                         .focused($IsKeyboard)
@@ -478,7 +522,7 @@ struct LandmarkRecord: View {
                         .background(Color(uiColor: .secondarySystemGroupedBackground))
                         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                         .disabled(arePositiveDetailsLocked || existingLandmarkId != nil)
-                    
+
                     Button {
                         UIImpactFeedbackGenerator(style: .light).impactOccurred()
                         showTextScanner = true
@@ -498,7 +542,7 @@ struct LandmarkRecord: View {
             .padding(.horizontal)
 
             if completedPositiveResult != nil && !isFullSubmissionComplete { positiveAlreadySavedCard }
-            
+
             if existingLandmarkId == nil {
                 negativePhotoSection
             }
@@ -508,13 +552,13 @@ struct LandmarkRecord: View {
             IsKeyboard = false
         }
     }
-    
+
     private var positiveAlreadySavedCard: some View {
         HStack(alignment: .top, spacing: 16) {
             Image(systemName: "checkmark.seal.fill")
                 .foregroundStyle(.green)
                 .font(.system(size: 24))
-            
+
             VStack(alignment: .leading, spacing: 4) {
                 Text("Landmark Saved")
                     .font(.system(size: 16, weight: .bold, design: .rounded))
@@ -549,7 +593,7 @@ struct LandmarkRecord: View {
                     .font(.system(size: 22))
                     .foregroundStyle(hasRequiredNegativeVideo ? Color.green : Color.orange)
             }
-            
+
             Button {
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 showNegativeCamera = true
@@ -567,7 +611,7 @@ struct LandmarkRecord: View {
             }
             .disabled(areNegativePhotosLocked)
             .opacity(areNegativePhotosLocked ? 0.6 : 1)
-            
+
             if let video = capturedNegativeVideo {
                 ZStack(alignment: .topTrailing) {
                     UploadFormVideoPlayer(url: video.fileURL)
@@ -578,15 +622,14 @@ struct LandmarkRecord: View {
                         .clipped()
                         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                         .ignoresSafeArea(.keyboard)
-                    
+
                     Button {
                         UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                        
-                        // Only delete the negative video if it's a temporary camera file!
+
                         if archivedMedia == nil {
                             video.deleteLocalFile()
                         }
-                        
+
                         capturedNegativeVideo = nil
                     } label: {
                         Image(systemName: "xmark")
@@ -622,7 +665,7 @@ struct LandmarkRecord: View {
                         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }
             }
-            
+
             if hasPositiveMedia || completedPositiveResult != nil {
                 Button {
                     UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
@@ -643,7 +686,7 @@ struct LandmarkRecord: View {
             } else if archivedMedia != nil {
                 Spacer()
             }
-            
+
             if archivedMedia == nil {
                 Button(role: .destructive) {
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
@@ -676,13 +719,20 @@ struct LandmarkRecord: View {
                 return
             }
         }
-        
+
         if let archive = archivedMedia {
-            OfflineMediaManager.shared.updateDraft(media: archive, label: labelText, shortDesc: shortDescription, userDesc: nil)
+            OfflineMediaManager.shared.updateDraft(
+                media: archive,
+                label: labelText,
+                shortDesc: shortDescription,
+                userDesc: nil,
+                latitude: effectiveLatitude,
+                longitude: effectiveLongitude
+            )
         } else {
             if businessLandmarkId == nil { businessLandmarkId = makeBusinessLandmarkId() }
             saveToArchiveFromForm()
-            
+
             if existingLandmarkId == nil {
                 Task { @MainActor in
                     vm.tokenBalance -= 1
@@ -690,7 +740,7 @@ struct LandmarkRecord: View {
                 }
             }
         }
-        
+
         AutoUploadManager.shared.forceRetry()
         showBackgroundUploadAlert = true
     }
@@ -701,7 +751,7 @@ struct LandmarkRecord: View {
                 HStack(alignment: .top, spacing: 16) {
                     if uploadService.isUploading { ProgressView().padding(.top, 2) }
                     else { Image(systemName: uploadService.stage.systemImage).font(.system(size: 24)).foregroundStyle(uploadService.stage == .complete ? .green : (uploadService.stage == .failed ? .red : primaryColor)) }
-                    
+
                     VStack(alignment: .leading, spacing: 4) {
                         Text(uploadService.status).font(.system(size: 16, weight: .bold, design: .rounded)).foregroundStyle(.primary)
                         Text(uploadService.detail).font(.system(size: 14, weight: .medium)).foregroundStyle(.secondary)
@@ -728,7 +778,7 @@ struct LandmarkRecord: View {
                 HStack(alignment: .top, spacing: 16) {
                     if hardNegativeUploadService.isUploading { ProgressView().padding(.top, 2) }
                     else { Image(systemName: "video.fill").font(.system(size: 24)).foregroundStyle(primaryColor) }
-                    
+
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Reference Video").font(.system(size: 16, weight: .bold, design: .rounded)).foregroundStyle(.primary)
                         Text(hardNegativeUploadService.status).font(.system(size: 14, weight: .medium)).foregroundStyle(.secondary)
@@ -797,7 +847,7 @@ struct LandmarkRecord: View {
                 if self.extractedLongitude == nil { self.extractedLongitude = self.locationManager.longitude }
                 if self.businessLandmarkId == nil { self.businessLandmarkId = self.makeBusinessLandmarkId() }
                 self.uploadService.reset(); self.pendingArchiveURLs = []; self.isStitchingVideos = false
-                
+
                 withAnimation(.easeInOut(duration: 0.4)) {
                     self.isFormVisible = true
                 }
@@ -806,17 +856,17 @@ struct LandmarkRecord: View {
     }
 
     private func saveToArchiveFromForm() {
-        let lat = extractedLatitude ?? locationManager.latitude ?? 0.0
-        let lon = extractedLongitude ?? locationManager.longitude ?? 0.0
+        let lat = effectiveLatitude ?? 0.0
+        let lon = effectiveLongitude ?? 0.0
         let idToSave = businessLandmarkId ?? makeBusinessLandmarkId()
-        
+
         Task.detached {
             let firstURL = await MainActor.run { pickedVideoURLs.first }
             let img = await MainActor.run { pickedImage }
             let lbl = await MainActor.run { labelText }
             let desc = await MainActor.run { shortDescription }
             let negURL = await MainActor.run { capturedNegativeVideo?.fileURL }
-            
+
             if let firstURL = firstURL {
                 _ = await OfflineMediaManager.shared.archiveVideo(tempURL: firstURL, lat: lat, lon: lon, landmarkId: idToSave, label: lbl, shortDesc: desc, userDesc: nil, negativeVideoURL: negURL, isTier2: false)
             } else if let img = img {
@@ -826,7 +876,16 @@ struct LandmarkRecord: View {
     }
 
     private func saveDraftAndDismiss() {
-        if let archive = archivedMedia { OfflineMediaManager.shared.updateDraft(media: archive, label: labelText, shortDesc: shortDescription, userDesc: nil) }
+        if let archive = archivedMedia {
+            OfflineMediaManager.shared.updateDraft(
+                media: archive,
+                label: labelText,
+                shortDesc: shortDescription,
+                userDesc: nil,
+                latitude: effectiveLatitude,
+                longitude: effectiveLongitude
+            )
+        }
         dismiss()
     }
 
@@ -834,16 +893,16 @@ struct LandmarkRecord: View {
 
     private func clearScreen() {
         deleteAllTemporaryVideos(pickedVideoURLs)
-        
-        // Only delete the negative video if it's a temporary camera file!
+
         deleteTemporaryVideoIfNeeded(capturedNegativeVideo?.fileURL)
-        
+
         pickedVideoURLs = []
         clipDurations = [:]
         pickedImage = nil
         extractedLatitude = nil
         extractedLongitude = nil
-        
+        hasAdjustedLocation = false
+
         if existingLandmarkId == nil {
             businessLandmarkId = nil
             labelText = ""
@@ -853,7 +912,7 @@ struct LandmarkRecord: View {
             labelText = existingLabel ?? ""
             shortDescription = existingDescription ?? ""
         }
-        
+
         capturedNegativeVideo = nil
         completedPositiveResult = nil
         completedLandmarkId = nil
@@ -863,24 +922,24 @@ struct LandmarkRecord: View {
         uploadService.reset()
         hardNegativeUploadService.reset()
     }
-    
+
     private func resetForAnotherLandmark() { clearScreen() }
 
     private func makeBusinessLandmarkId() -> String { "landmark_\(UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(8))" }
-    
+
     private func removeClip(url: URL) {
         guard let index = pickedVideoURLs.firstIndex(of: url) else { return }
         deleteTemporaryVideoIfNeeded(url); clipDurations.removeValue(forKey: url); pickedVideoURLs.remove(at: index)
         statusText = pickedVideoURLs.isEmpty ? String(localized: "No media selected.") : String(localized: "Removed clip. \(pickedVideoURLs.count) remaining.")
     }
-    
+
     private func deleteTemporaryVideoIfNeeded(_ videoURL: URL?) {
         guard let url = videoURL, archivedMedia == nil else { return }
         if url.standardizedFileURL.path.hasPrefix(FileManager.default.temporaryDirectory.standardizedFileURL.path) {
             try? FileManager.default.removeItem(at: url)
         }
     }
-    
+
     private func deleteAllTemporaryVideos(_ urls: [URL]) { urls.forEach { deleteTemporaryVideoIfNeeded($0) } }
 }
 

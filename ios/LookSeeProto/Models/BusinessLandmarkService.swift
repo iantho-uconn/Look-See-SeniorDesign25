@@ -32,6 +32,7 @@ struct BusinessLandmarkDeleteResponse: Decodable {
 struct BusinessLandmark: Codable, Identifiable, Hashable {
     let landmarkId: String
     let label: String
+    let displayName: String?
     let shortDescription: String?
     let websiteUrl: String?
     let latitude: Double?
@@ -40,20 +41,78 @@ struct BusinessLandmark: Codable, Identifiable, Hashable {
     let promotionEnabled: Bool?
     let isActive: Bool?
     let isVisibleOnMap: Bool?
+    let isTrained: Bool?
     let userEmail: String?
     let ownerUserId: String?
     let createdByUserId: String?
     let createdAt: String?
     let updatedAt: String?
     let ownershipUpdatedAt: String?
-    
+
     // Status and Media Requirement Fields
     let status: String?
     let cleanFrameCount: Int?
     let requiredFrames: Int?
     let secondsNeeded: Int?
 
+    init(
+        landmarkId: String,
+        label: String,
+        displayName: String? = nil,
+        shortDescription: String?,
+        websiteUrl: String?,
+        latitude: Double?,
+        longitude: Double?,
+        promotion: String?,
+        promotionEnabled: Bool?,
+        isActive: Bool?,
+        isVisibleOnMap: Bool?,
+        isTrained: Bool? = nil,
+        userEmail: String?,
+        ownerUserId: String?,
+        createdByUserId: String?,
+        createdAt: String?,
+        updatedAt: String?,
+        ownershipUpdatedAt: String?,
+        status: String?,
+        cleanFrameCount: Int?,
+        requiredFrames: Int?,
+        secondsNeeded: Int?
+    ) {
+        self.landmarkId = landmarkId
+        self.label = label
+        self.displayName = displayName
+        self.shortDescription = shortDescription
+        self.websiteUrl = websiteUrl
+        self.latitude = latitude
+        self.longitude = longitude
+        self.promotion = promotion
+        self.promotionEnabled = promotionEnabled
+        self.isActive = isActive
+        self.isVisibleOnMap = isVisibleOnMap
+        self.isTrained = isTrained
+        self.userEmail = userEmail
+        self.ownerUserId = ownerUserId
+        self.createdByUserId = createdByUserId
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.ownershipUpdatedAt = ownershipUpdatedAt
+        self.status = status
+        self.cleanFrameCount = cleanFrameCount
+        self.requiredFrames = requiredFrames
+        self.secondsNeeded = secondsNeeded
+    }
+
     var id: String { landmarkId }
+
+    var effectiveDisplayName: String {
+        let preferred = displayName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !preferred.isEmpty {
+            return preferred
+        }
+        let fallback = label.trimmingCharacters(in: .whitespacesAndNewlines)
+        return fallback.isEmpty ? "Untitled Landmark" : fallback
+    }
 
     var displayDescription: String {
         let value = shortDescription?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -73,6 +132,12 @@ struct BusinessLandmark: Codable, Identifiable, Hashable {
 
     var isProcessing: Bool {
         return status == "PREPARING_DATA" || status == "PENDING_TRAINING" || status == "TRAINING_MODEL" || status == "OPTIMIZING_MODEL"
+    }
+
+    var isAlreadyTrained: Bool {
+        if isTrained == true { return true }
+        let normalized = status?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() ?? ""
+        return normalized == "ACTIVE" || normalized == "INACTIVE"
     }
 
     var displayPromotionStatus: String {
@@ -191,18 +256,21 @@ private struct PositiveUploadInitBody: Encodable {
     let datasetRole: String
     let filename: String
     let contentType: String
-    let nonce: String // 🚀 FIX: App Attest Nonce
+    let nonce: String
 }
 
 private struct PositiveUploadCompleteBody: Encodable {
     let submissionId: String
     let s3Key: String
-    let nonce: String // 🚀 FIX: App Attest Nonce
+    let nonce: String
 }
 
 private struct BusinessLandmarkPatchBody: Encodable {
+    let displayName: String?
     let shortDescription: String?
     let websiteUrl: String?
+    let latitude: Double?
+    let longitude: Double?
     let isActive: Bool?
     let isVisibleOnMap: Bool?
     let promotionEnabled: Bool?
@@ -219,14 +287,14 @@ private struct BusinessHardNegativeFileBody: Encodable {
 
 private struct BusinessHardNegativeInitBody: Encodable {
     let files: [BusinessHardNegativeFileBody]
-    let nonce: String // 🚀 FIX: App Attest Nonce
+    let nonce: String
 }
 
 private struct BusinessHardNegativeCompleteBody: Encodable {
     let batchId: String
     let negativeIds: [String]
     let forceRetry: Bool?
-    let nonce: String // 🚀 FIX: App Attest Nonce
+    let nonce: String
 }
 
 // MARK: - Errors
@@ -259,7 +327,7 @@ final class BusinessLandmarkService {
     private let baseURL = URL(string: "https://d11vl3v9w133rh.cloudfront.net")!
 
     static let shared = BusinessLandmarkService()
-    
+
     private func getCognitoIDToken() async throws -> String {
         let session = try await Amplify.Auth.fetchAuthSession()
 
@@ -281,14 +349,13 @@ final class BusinessLandmarkService {
         let idToken = try await getCognitoIDToken()
         request.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        
+
         let payload = body ?? Data()
         if body != nil {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = body
         }
-        
-        // Inject App Attest signature
+
         do {
             let assertionToken = try await AppAttestService.shared.generateAssertion(for: payload)
             let payloadHash = Data(SHA256.hash(data: payload)).base64EncodedString()
@@ -297,7 +364,7 @@ final class BusinessLandmarkService {
         } catch {
             print("⚠️ App Attest bypassed or failed: \(error.localizedDescription)")
         }
-        
+
         return request
     }
 
@@ -321,6 +388,25 @@ final class BusinessLandmarkService {
 
     // MARK: - Landmark Editing / Settings
 
+    func updateDisplayName(
+        landmarkId: String,
+        displayName: String
+    ) async throws -> BusinessLandmark {
+        return try await patchBusinessLandmark(
+            landmarkId: landmarkId,
+            body: BusinessLandmarkPatchBody(
+                displayName: displayName,
+                shortDescription: nil,
+                websiteUrl: nil,
+                latitude: nil,
+                longitude: nil,
+                isActive: nil,
+                isVisibleOnMap: nil,
+                promotionEnabled: nil
+            )
+        )
+    }
+
     func updateShortDescription(
         landmarkId: String,
         shortDescription: String
@@ -328,10 +414,34 @@ final class BusinessLandmarkService {
         return try await patchBusinessLandmark(
             landmarkId: landmarkId,
             body: BusinessLandmarkPatchBody(
+                displayName: nil,
                 shortDescription: shortDescription,
                 websiteUrl: nil,
+                latitude: nil,
+                longitude: nil,
                 isActive: nil,
                 isVisibleOnMap: nil,
+                promotionEnabled: nil
+            )
+        )
+    }
+
+    func updateLocation(
+        landmarkId: String,
+        latitude: Double,
+        longitude: Double,
+        isVisibleOnMap: Bool? = nil
+    ) async throws -> BusinessLandmark {
+        return try await patchBusinessLandmark(
+            landmarkId: landmarkId,
+            body: BusinessLandmarkPatchBody(
+                displayName: nil,
+                shortDescription: nil,
+                websiteUrl: nil,
+                latitude: latitude,
+                longitude: longitude,
+                isActive: nil,
+                isVisibleOnMap: isVisibleOnMap,
                 promotionEnabled: nil
             )
         )
@@ -346,15 +456,18 @@ final class BusinessLandmarkService {
         return try await patchBusinessLandmark(
             landmarkId: landmarkId,
             body: BusinessLandmarkPatchBody(
+                displayName: nil,
                 shortDescription: nil,
                 websiteUrl: nil,
+                latitude: nil,
+                longitude: nil,
                 isActive: isActive,
                 isVisibleOnMap: isVisibleOnMap,
                 promotionEnabled: promotionEnabled
             )
         )
     }
-    
+
     func updateWebsiteUrl(
         landmarkId: String,
         websiteUrl: String
@@ -362,8 +475,11 @@ final class BusinessLandmarkService {
         return try await patchBusinessLandmark(
             landmarkId: landmarkId,
             body: BusinessLandmarkPatchBody(
+                displayName: nil,
                 shortDescription: nil,
                 websiteUrl: websiteUrl,
+                latitude: nil,
+                longitude: nil,
                 isActive: nil,
                 isVisibleOnMap: nil,
                 promotionEnabled: nil
@@ -418,12 +534,12 @@ final class BusinessLandmarkService {
         }
 
         let decoded = try JSONDecoder().decode(BusinessLandmarkDeleteResponse.self, from: data)
-        
+
         if !decoded.ok {
             let errorMsg = decoded.message ?? "Backend refused to delete landmark."
             throw BusinessLandmarkServiceError.backendRejected(errorMsg)
         }
-        
+
         return decoded
     }
 
@@ -509,7 +625,7 @@ final class BusinessLandmarkService {
             datasetRole: datasetRole.rawValue,
             filename: filename,
             contentType: contentType,
-            nonce: UUID().uuidString // 🚀 FIX
+            nonce: UUID().uuidString
         )
 
         let requestBody = try JSONEncoder().encode(body)
@@ -542,7 +658,7 @@ final class BusinessLandmarkService {
         let body = PositiveUploadCompleteBody(
             submissionId: submissionId,
             s3Key: s3Key,
-            nonce: UUID().uuidString // 🚀 FIX
+            nonce: UUID().uuidString
         )
 
         let requestBody = try JSONEncoder().encode(body)
@@ -559,36 +675,36 @@ final class BusinessLandmarkService {
 
         return try JSONDecoder().decode(BusinessMediaUploadCompleteResponse.self, from: data)
     }
-    
+
     // MARK: - Global Negatives Uploader
     func uploadGlobalNegativeVideo(fileURL: URL) async throws {
         print("🚀 [GLOBAL NEGATIVE] Initiating network request for: \(fileURL.lastPathComponent)")
         let fileName = fileURL.lastPathComponent
-        
+
         let initUrl = baseURL
             .appendingPathComponent("submissions")
             .appendingPathComponent("init")
-        
+
         let initPayload: [String: Any] = [
             "filename": fileName,
             "mediaKind": "video",
             "contentType": "video/quicktime",
             "datasetRole": "global_negative",
             "label": "Global Negative Admin",
-            "nonce": UUID().uuidString // 🚀 FIX
+            "nonce": UUID().uuidString
         ]
-        
+
         let requestBody = try JSONSerialization.data(withJSONObject: initPayload)
         let initRequest = try await authorizedRequest(url: initUrl, method: "POST", body: requestBody)
-        
+
         let (initData, initResponse) = try await URLSession.shared.data(for: initRequest)
         let initStatusCode = (initResponse as? HTTPURLResponse)?.statusCode ?? -1
         let initBody = String(data: initData, encoding: .utf8) ?? ""
-        
+
         guard (200...299).contains(initStatusCode) else {
             throw BusinessLandmarkServiceError.badStatus(initStatusCode, initBody)
         }
-        
+
         guard let json = try JSONSerialization.jsonObject(with: initData) as? [String: Any],
               let uploadUrlDict = json["uploadUrl"] as? [String: Any],
               let urlString = uploadUrlDict["url"] as? String,
@@ -598,37 +714,37 @@ final class BusinessLandmarkService {
             print("❌ [GLOBAL NEGATIVE] Failed to parse S3 URL from JSON.")
             throw BusinessLandmarkServiceError.invalidUploadURL
         }
-        
+
         print("🚀 [GLOBAL NEGATIVE] S3 URL Received. Uploading video data...")
-        
+
         let presignedPost = S3PresignedPost(url: urlString, fields: fields)
         let videoData = try Data(contentsOf: fileURL)
-        
+
         try await uploadToPresignedURL(
             uploadUrl: presignedPost,
             contentType: "video/quicktime",
             filename: fileName,
             data: videoData
         )
-        
+
         print("🚀 [GLOBAL NEGATIVE] S3 Upload Finished! Notifying API to complete...")
         let completeUrl = baseURL
             .appendingPathComponent("submissions")
             .appendingPathComponent("complete")
-            
+
         let completePayload: [String: Any] = [
             "submissionId": submissionId,
             "s3Key": s3Key,
             "datasetRole": "global_negative",
-            "nonce": UUID().uuidString // 🚀 FIX
+            "nonce": UUID().uuidString
         ]
-        
+
         let completeReqBody = try JSONSerialization.data(withJSONObject: completePayload)
         let completeRequest = try await authorizedRequest(url: completeUrl, method: "POST", body: completeReqBody)
-        
+
         let (completeData, completeNetResponse) = try await URLSession.shared.data(for: completeRequest)
         let completeStatusCode = (completeNetResponse as? HTTPURLResponse)?.statusCode ?? -1
-        
+
         guard (200...299).contains(completeStatusCode) else {
             throw BusinessLandmarkServiceError.badStatus(completeStatusCode, String(data: completeData, encoding: .utf8) ?? "")
         }
@@ -696,7 +812,7 @@ final class BusinessLandmarkService {
                     contentType: contentType
                 )
             ],
-            nonce: UUID().uuidString // 🚀 FIX
+            nonce: UUID().uuidString
         )
 
         let requestBody = try JSONEncoder().encode(body)
@@ -727,7 +843,7 @@ final class BusinessLandmarkService {
         )
 
         guard response.failedCount == 0,
-            response.processedCount == 1 else {
+              response.processedCount == 1 else {
             throw BusinessLandmarkServiceError.hardNegativeRetryFailed
         }
 
@@ -750,7 +866,7 @@ final class BusinessLandmarkService {
             batchId: batchId,
             negativeIds: negativeIds,
             forceRetry: forceRetry ? true : nil,
-            nonce: UUID().uuidString // 🚀 FIX
+            nonce: UUID().uuidString
         )
 
         let requestBody = try JSONEncoder().encode(body)
@@ -819,12 +935,12 @@ final class BusinessLandmarkService {
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        
+
         let boundary = "Boundary-\(UUID().uuidString)"
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
 
         var body = Data()
-        
+
         for (key, value) in uploadUrl.fields {
             body.append("--\(boundary)\r\n".data(using: .utf8)!)
             body.append("Content-Disposition: form-data; name=\"\(key)\"\r\n\r\n".data(using: .utf8)!)

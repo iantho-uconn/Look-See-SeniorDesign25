@@ -18,6 +18,14 @@ struct BusinessLandmarkDetailView: View {
 
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var container = VariableContainer.shared
+    @StateObject private var locationManager = LocationManager()
+
+    @State private var currentLandmark: BusinessLandmark
+    @State private var displayedName: String
+    @State private var draftDisplayName: String
+    @State private var isEditingDisplayName = false
+    @State private var isSavingDisplayName = false
+    @State private var displayNameErrorMessage: String?
 
     @State private var displayedShortDescription: String
     @State private var draftShortDescription: String
@@ -25,6 +33,12 @@ struct BusinessLandmarkDetailView: View {
     @State private var isShowingPopupPreview = false
     @State private var isSavingDescription = false
     @State private var saveErrorMessage: String?
+
+    @State private var displayedLatitude: Double?
+    @State private var displayedLongitude: Double?
+    @State private var isEditingLocation = false
+    @State private var isSavingLocation = false
+    @State private var locationErrorMessage: String?
 
     @State private var displayedIsActive: Bool
     @State private var displayedIsVisibleOnMap: Bool
@@ -73,6 +87,7 @@ struct BusinessLandmarkDetailView: View {
     private let service = BusinessLandmarkService()
     private let promotionService = BusinessPromotionService()
     private let maxSelectionCount = 10
+    private let maxDisplayNameLength = 80
 
     private let maxPositiveVideoDuration: TimeInterval = 120
     private let maxNegativeVideoDuration: TimeInterval = 45
@@ -90,6 +105,8 @@ struct BusinessLandmarkDetailView: View {
         self.onLandmarkDeleted = onLandmarkDeleted
         self.onPromotionTitlesChanged = onPromotionTitlesChanged
 
+        let initialDisplayName = landmark.effectiveDisplayName
+
         let initialDescription = landmark.shortDescription?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
 
@@ -97,17 +114,26 @@ struct BusinessLandmarkDetailView: View {
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
 
         let cachedInactive = VariableContainer.isLandmarkInactive(landmark.landmarkId)
+        let cachedHidden = VariableContainer.isLandmarkHiddenOnMap(landmark.landmarkId)
         let initialActive: Bool
+        let initialVisibleOnMap: Bool
         if VariableContainer.shared.isLocallyModified(landmark.landmarkId) {
             initialActive = !cachedInactive
+            initialVisibleOnMap = initialActive && !cachedHidden
         } else {
             initialActive = (landmark.isActive ?? true) && !cachedInactive
+            initialVisibleOnMap = initialActive && (landmark.isVisibleOnMap ?? true) && !cachedHidden
         }
 
+        _currentLandmark = State(initialValue: landmark)
+        _displayedName = State(initialValue: initialDisplayName)
+        _draftDisplayName = State(initialValue: initialDisplayName)
         _displayedShortDescription = State(initialValue: initialDescription)
         _draftShortDescription = State(initialValue: initialDescription)
+        _displayedLatitude = State(initialValue: landmark.latitude)
+        _displayedLongitude = State(initialValue: landmark.longitude)
         _displayedIsActive = State(initialValue: initialActive)
-        _displayedIsVisibleOnMap = State(initialValue: initialActive)
+        _displayedIsVisibleOnMap = State(initialValue: initialVisibleOnMap)
         _displayedPromotionEnabled = State(initialValue: landmark.promotionEnabled ?? false)
         _displayedCleanFrameCount = State(initialValue: landmark.cleanFrameCount ?? 0)
         _displayedWebsiteUrl = State(initialValue: initialWebsiteUrl)
@@ -133,7 +159,7 @@ struct BusinessLandmarkDetailView: View {
 
                 // MARK: - Header
                 VStack(alignment: .leading, spacing: 12) {
-                    Text(landmark.label.isEmpty ? "Untitled Landmark" : landmark.label)
+                    Text(displayedName.isEmpty ? "Untitled Landmark" : displayedName)
                         .font(.system(size: 26, weight: .bold, design: .rounded))
                         .foregroundStyle(.primary)
 
@@ -141,23 +167,44 @@ struct BusinessLandmarkDetailView: View {
                         .font(.system(size: 16, weight: .medium))
                         .foregroundColor(.secondary)
 
-                    Button {
-                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                        draftShortDescription = displayedShortDescription
-                        saveErrorMessage = nil
-                        isEditingDescription = true
-                    } label: {
-                        HStack {
-                            Image(systemName: "square.and.pencil")
-                            Text("Edit Description")
-                                .fontWeight(.bold)
+                    HStack(spacing: 10) {
+                        Button {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            draftDisplayName = displayedName
+                            displayNameErrorMessage = nil
+                            isEditingDisplayName = true
+                        } label: {
+                            HStack {
+                                Image(systemName: "textformat")
+                                Text("Edit Name")
+                                    .fontWeight(.bold)
+                            }
+                            .font(.system(size: 14, design: .rounded))
+                            .foregroundStyle(primaryColor)
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 16)
+                            .background(primaryColor.opacity(0.1))
+                            .clipShape(Capsule())
                         }
-                        .font(.system(size: 14, design: .rounded))
-                        .foregroundStyle(primaryColor)
-                        .padding(.vertical, 8)
-                        .padding(.horizontal, 16)
-                        .background(primaryColor.opacity(0.1))
-                        .clipShape(Capsule())
+
+                        Button {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            draftShortDescription = displayedShortDescription
+                            saveErrorMessage = nil
+                            isEditingDescription = true
+                        } label: {
+                            HStack {
+                                Image(systemName: "square.and.pencil")
+                                Text("Edit Description")
+                                    .fontWeight(.bold)
+                            }
+                            .font(.system(size: 14, design: .rounded))
+                            .foregroundStyle(primaryColor)
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 16)
+                            .background(primaryColor.opacity(0.1))
+                            .clipShape(Capsule())
+                        }
                     }
                     .padding(.top, 4)
 
@@ -299,6 +346,28 @@ struct BusinessLandmarkDetailView: View {
 
                         Toggle(
                             isOn: Binding(
+                                get: { displayedIsActive && displayedIsVisibleOnMap },
+                                set: { newValue in
+                                    displayedIsVisibleOnMap = newValue
+                                    scheduleManagementUpdate()
+                                }
+                            )
+                        ) {
+                            Label(
+                                (displayedIsActive && displayedIsVisibleOnMap) ? "Visible on Map" : "Hidden on Map",
+                                systemImage: (displayedIsActive && displayedIsVisibleOnMap) ? "map.fill" : "eye.slash.fill"
+                            )
+                            .foregroundStyle((displayedIsActive && displayedIsVisibleOnMap) ? primaryColor : .secondary)
+                            .font(.system(size: 16, weight: .semibold))
+                        }
+                        .disabled(!displayedIsActive)
+                        .opacity(displayedIsActive ? 1 : 0.5)
+                        .padding(16)
+
+                        Divider().padding(.leading, 50)
+
+                        Toggle(
+                            isOn: Binding(
                                 get: { displayedPromotionEnabled },
                                 set: { newValue in
                                     displayedPromotionEnabled = newValue
@@ -416,23 +485,19 @@ struct BusinessLandmarkDetailView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     sectionTitle("Location")
 
-                    VStack(spacing: 12) {
-                        detailRow(
-                            title: "Latitude",
-                            value: formattedCoordinate(landmark.latitude)
-                        )
-
-                        Divider()
-
-                        detailRow(
-                            title: "Longitude",
-                            value: formattedCoordinate(landmark.longitude)
-                        )
+                    LandmarkLocationPreviewCard(
+                        latitude: displayedLatitude,
+                        longitude: displayedLongitude,
+                        title: "Landmark Pin",
+                        subtitle: "Tap to adjust the exact storefront or relocate this landmark.",
+                        buttonTitle: "Move Pin",
+                        badgeText: (displayedIsActive && !displayedIsVisibleOnMap) ? "Pin Hidden" : nil,
+                        badgeColor: .orange,
+                        isDisabled: isSavingLocation
+                    ) {
+                        locationErrorMessage = nil
+                        isEditingLocation = true
                     }
-                    .padding(20)
-                    .background(Color(uiColor: .secondarySystemGroupedBackground))
-                    .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                    .shadow(color: .black.opacity(0.03), radius: 8, x: 0, y: 2)
                     .padding(.horizontal)
                 }
 
@@ -460,7 +525,7 @@ struct BusinessLandmarkDetailView: View {
                     VStack(spacing: 16) {
                         BusinessMediaHistoryNavigationRow(
                             landmarkId: landmark.landmarkId,
-                            landmarkLabel: landmark.label
+                            landmarkLabel: displayedName
                         )
 
                         Divider()
@@ -587,25 +652,47 @@ struct BusinessLandmarkDetailView: View {
                 } label: {
                     Label("Preview Popup", systemImage: "eye")
                 }
-                .disabled(isSavingDescription || isSavingWebsiteUrl || isSavingManagement || !savingPromotionIds.isEmpty)
+                .disabled(isSavingDisplayName || isSavingDescription || isSavingWebsiteUrl || isSavingLocation || isSavingManagement || !savingPromotionIds.isEmpty)
             }
         }
         .sheet(isPresented: $isShowingPopupPreview) {
-            BusinessLandmarkPopupPreview(landmark: landmark)
+            BusinessLandmarkPopupPreview(landmark: currentLandmark)
         }
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $isEditingDisplayName) {
+            editDisplayNameSheet
+        }
         .sheet(isPresented: $isEditingDescription) {
             editDescriptionSheet
         }
         .sheet(isPresented: $isEditingWebsiteUrl) {
             editWebsiteUrlSheet
         }
+        .sheet(isPresented: $isEditingLocation) {
+            LandmarkLocationPickerSheet(
+                initialLatitude: displayedLatitude,
+                initialLongitude: displayedLongitude,
+                userLatitude: locationManager.latitude,
+                userLongitude: locationManager.longitude,
+                mode: .editExisting(isTrained: currentLandmark.isAlreadyTrained),
+                navigationTitle: "Edit Location",
+                confirmButtonTitle: "Save New Location",
+                isSaving: isSavingLocation,
+                saveErrorMessage: locationErrorMessage
+            ) { newLat, newLon, overrideVisibleOnMap in
+                saveLocation(
+                    latitude: newLat,
+                    longitude: newLon,
+                    overrideVisibleOnMap: overrideVisibleOnMap
+                )
+            }
+        }
         .sheet(isPresented: $isShowingDeleteLandmarkSheet) {
             deleteLandmarkSheet
         }
         .sheet(item: $promotionEditorContext) { context in
             BusinessPromotionEditor(
-                landmark: landmark,
+                landmark: currentLandmark,
                 context: context
             ) {
                 Task {
@@ -1091,6 +1178,186 @@ struct BusinessLandmarkDetailView: View {
         return cleaned.isEmpty ? "No description available." : cleaned
     }
 
+    // MARK: - Location Editing
+
+    private func saveLocation(
+        latitude: Double,
+        longitude: Double,
+        overrideVisibleOnMap: Bool?
+    ) {
+        guard !isSavingLocation else { return }
+        isSavingLocation = true
+        locationErrorMessage = nil
+
+        Task {
+            do {
+                let updatedLandmark = try await service.updateLocation(
+                    landmarkId: landmark.landmarkId,
+                    latitude: latitude,
+                    longitude: longitude,
+                    isVisibleOnMap: overrideVisibleOnMap
+                )
+
+                await MainActor.run {
+                    currentLandmark = updatedLandmark
+                    displayedLatitude = updatedLandmark.latitude ?? latitude
+                    displayedLongitude = updatedLandmark.longitude ?? longitude
+                    if let updatedVisible = updatedLandmark.isVisibleOnMap {
+                        displayedIsVisibleOnMap = updatedVisible
+                    } else if let overrideVisibleOnMap {
+                        displayedIsVisibleOnMap = overrideVisibleOnMap
+                    }
+
+                    VariableContainer.shared.setCoordinates(
+                        landmarkId: landmark.landmarkId,
+                        latitude: displayedLatitude ?? latitude,
+                        longitude: displayedLongitude ?? longitude
+                    )
+
+                    if overrideVisibleOnMap != nil {
+                        VariableContainer.shared.setLandmarkState(
+                            landmarkId: landmark.landmarkId,
+                            isActive: displayedIsActive,
+                            isVisibleOnMap: displayedIsActive && displayedIsVisibleOnMap
+                        )
+                    }
+
+                    onLandmarkUpdated(updatedLandmark)
+                    isSavingLocation = false
+                    isEditingLocation = false
+                }
+            } catch {
+                await MainActor.run {
+                    locationErrorMessage = sanitizedErrorMessage(error) ?? "Could not update location. Please try again."
+                    isSavingLocation = false
+                }
+            }
+        }
+    }
+
+    // MARK: - Display Name Editing
+
+    private var editDisplayNameSheet: some View {
+        let trimmedDraft = draftDisplayName
+            .split(whereSeparator: { $0.isWhitespace })
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let isTooLong = trimmedDraft.count > maxDisplayNameLength
+
+        return NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack {
+                        Text("Landmark Name")
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .foregroundStyle(.secondary)
+                            .textCase(.uppercase)
+
+                        Spacer()
+
+                        Text("\(trimmedDraft.count)/\(maxDisplayNameLength)")
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                            .foregroundStyle(isTooLong ? .red : .secondary)
+                    }
+                    .padding(.horizontal, 20)
+
+                    TextField("Enter landmark name", text: $draftDisplayName)
+                        .font(.system(size: 16, weight: .medium))
+                        .focused($IsKeyboard)
+                        .padding(16)
+                        .background(Color(uiColor: .secondarySystemGroupedBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .padding(.horizontal)
+                        .disabled(isSavingDisplayName)
+
+                    Text("This updates how the landmark's name appears across LookSee without affecting its AI training data.")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 20)
+
+                    if let displayNameErrorMessage {
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(.orange)
+                            Text(displayNameErrorMessage)
+                                .font(.footnote.bold())
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.horizontal, 20)
+                    }
+                }
+                .padding(.top, 24)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                IsKeyboard = false
+            }
+            .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
+            .navigationTitle("Edit Name")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { isEditingDisplayName = false }
+                        .disabled(isSavingDisplayName)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button { saveDisplayName() } label: {
+                        if isSavingDisplayName { ProgressView() }
+                        else { Text("Save").fontWeight(.bold) }
+                    }
+                    .disabled(isSavingDisplayName || trimmedDraft.isEmpty || isTooLong)
+                }
+            }
+        }
+    }
+
+    private func saveDisplayName() {
+        guard !isSavingDisplayName else { return }
+        let cleanedName = draftDisplayName
+            .split(whereSeparator: { $0.isWhitespace })
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !cleanedName.isEmpty else {
+            displayNameErrorMessage = "Landmark name cannot be empty."
+            return
+        }
+        guard cleanedName.count <= maxDisplayNameLength else {
+            displayNameErrorMessage = "Landmark name cannot exceed \(maxDisplayNameLength) characters."
+            return
+        }
+
+        isSavingDisplayName = true
+        displayNameErrorMessage = nil
+
+        Task {
+            do {
+                let updatedLandmark = try await service.updateDisplayName(
+                    landmarkId: landmark.landmarkId,
+                    displayName: cleanedName
+                )
+                await MainActor.run {
+                    currentLandmark = updatedLandmark
+                    displayedName = updatedLandmark.effectiveDisplayName
+                    draftDisplayName = displayedName
+                    if let frames = updatedLandmark.cleanFrameCount {
+                        displayedCleanFrameCount = frames
+                    }
+                    onLandmarkUpdated(updatedLandmark)
+                    isSavingDisplayName = false
+                    isEditingDisplayName = false
+                }
+            } catch {
+                await MainActor.run {
+                    displayNameErrorMessage = sanitizedErrorMessage(error)
+                    isSavingDisplayName = false
+                }
+            }
+        }
+    }
+
+    // MARK: - Description Editing
+
     private var editDescriptionSheet: some View {
         NavigationStack {
             ScrollView {
@@ -1147,6 +1414,7 @@ struct BusinessLandmarkDetailView: View {
             do {
                 let updatedLandmark = try await service.updateShortDescription(landmarkId: landmark.landmarkId, shortDescription: cleanedDescription)
                 await MainActor.run {
+                    currentLandmark = updatedLandmark
                     displayedShortDescription = updatedLandmark.shortDescription ?? cleanedDescription
                     draftShortDescription = displayedShortDescription
                     if let frames = updatedLandmark.cleanFrameCount {
@@ -1244,6 +1512,7 @@ struct BusinessLandmarkDetailView: View {
                 )
 
                 await MainActor.run {
+                    currentLandmark = updatedLandmark
                     displayedWebsiteUrl = updatedLandmark.websiteUrl?
                         .trimmingCharacters(in: .whitespacesAndNewlines) ?? cleanedWebsiteUrl
 
@@ -1265,16 +1534,18 @@ struct BusinessLandmarkDetailView: View {
     }
 
     private func scheduleManagementUpdate() {
+        let effectiveVisibleOnMap = displayedIsActive && displayedIsVisibleOnMap
         VariableContainer.shared.setLandmarkState(
             landmarkId: landmark.landmarkId,
             isActive: displayedIsActive,
-            isVisibleOnMap: displayedIsActive
+            isVisibleOnMap: effectiveVisibleOnMap
         )
 
         managementUpdateTask?.cancel()
         managementErrorMessage = nil
 
         let targetActive = displayedIsActive
+        let targetVisibleOnMap = effectiveVisibleOnMap
         let targetPromo = displayedPromotionEnabled
 
         managementUpdateTask = Task {
@@ -1285,24 +1556,30 @@ struct BusinessLandmarkDetailView: View {
             }
             await performManagementUpdate(
                 targetActive: targetActive,
+                targetVisibleOnMap: targetVisibleOnMap,
                 targetPromo: targetPromo
             )
         }
     }
 
     @MainActor
-    private func performManagementUpdate(targetActive: Bool, targetPromo: Bool) async {
+    private func performManagementUpdate(
+        targetActive: Bool,
+        targetVisibleOnMap: Bool,
+        targetPromo: Bool
+    ) async {
         isSavingManagement = true
 
         do {
             let updatedLandmark = try await service.updateLandmarkSettings(
                 landmarkId: landmark.landmarkId,
                 isActive: targetActive,
-                isVisibleOnMap: targetActive,
+                isVisibleOnMap: targetVisibleOnMap,
                 promotionEnabled: targetPromo
             )
+            currentLandmark = updatedLandmark
             displayedIsActive = updatedLandmark.isActive ?? targetActive
-            displayedIsVisibleOnMap = displayedIsActive
+            displayedIsVisibleOnMap = displayedIsActive && (updatedLandmark.isVisibleOnMap ?? targetVisibleOnMap)
             displayedPromotionEnabled = updatedLandmark.promotionEnabled ?? targetPromo
             if let frames = updatedLandmark.cleanFrameCount {
                 displayedCleanFrameCount = frames
@@ -1310,7 +1587,7 @@ struct BusinessLandmarkDetailView: View {
             VariableContainer.shared.setLandmarkState(
                 landmarkId: landmark.landmarkId,
                 isActive: displayedIsActive,
-                isVisibleOnMap: displayedIsActive
+                isVisibleOnMap: displayedIsVisibleOnMap
             )
             onLandmarkUpdated(updatedLandmark)
             isSavingManagement = false
@@ -1381,8 +1658,6 @@ struct BusinessLandmarkDetailView: View {
                 deleteLocalFiles([mergedTemporaryURL])
             }
 
-            // 🚀 FIX 3: Removed `markLandmarkUploadCompleted` here so the state stays in
-            // "Processing New Data" until AWS successfully extracts frames and updates DynamoDB.
             await MainActor.run {
                 pendingPositiveVideoURLs.removeAll()
                 NotificationCenter.default.post(name: Notification.Name("RefreshBusinessLandmarks"), object: nil)
@@ -1593,7 +1868,6 @@ struct BusinessLandmarkDetailView: View {
             isUploadingMedia = false; activeUploadRole = nil; uploadProgressText = nil
             if datasetRole == .positive {
                 if completedCount > 0 {
-                    // 🚀 FIX 3: Removed `markLandmarkUploadCompleted` here as well!
                     NotificationCenter.default.post(name: Notification.Name("RefreshBusinessLandmarks"), object: nil)
                 } else {
                     VariableContainer.shared.clearLandmarkProcessingNewData(landmarkId: landmark.landmarkId)
@@ -1730,7 +2004,7 @@ struct BusinessLandmarkDetailView: View {
                             .padding(.horizontal, 20)
 
                         VStack(alignment: .leading, spacing: 8) {
-                            Text(landmark.label.isEmpty ? "Untitled Landmark" : landmark.label)
+                            Text(displayedName.isEmpty ? "Untitled Landmark" : displayedName)
                                 .font(.system(size: 18, weight: .bold, design: .rounded))
 
                             Text(landmark.landmarkId)
@@ -1821,14 +2095,6 @@ struct BusinessLandmarkDetailView: View {
             Image(systemName: "chevron.right").font(.system(size: 14, weight: .bold)).foregroundColor(Color(uiColor: .tertiaryLabel))
         }
         .contentShape(Rectangle())
-    }
-
-    private func formattedCoordinate(_ value: Double?) -> String {
-        guard let value else {
-            return "Not available"
-        }
-
-        return String(format: "%.6f", value)
     }
 
     private func detailRow(title: String, value: String) -> some View {

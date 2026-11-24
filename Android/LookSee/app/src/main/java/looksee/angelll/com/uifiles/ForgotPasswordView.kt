@@ -209,7 +209,7 @@ fun ForgotPasswordView(
                                 Spacer(modifier = Modifier.height(12.dp))
                                 OutlinedTextField(
                                     value = newPassword,
-                                    onValueChange = { newPassword = it },
+                                    onValueChange = { newPassword = it.trimEnd() },
                                     placeholder = { Text("New password", color = Color.Gray) },
                                     visualTransformation = if (newPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                                     trailingIcon = {
@@ -233,7 +233,7 @@ fun ForgotPasswordView(
                                 Spacer(modifier = Modifier.height(12.dp))
                                 OutlinedTextField(
                                     value = confirmedPassword,
-                                    onValueChange = { confirmedPassword = it },
+                                    onValueChange = { confirmedPassword = it.trimEnd() },
                                     placeholder = { Text("Confirm new password", color = Color.Gray) },
                                     visualTransformation = if (confirmedPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                                     trailingIcon = {

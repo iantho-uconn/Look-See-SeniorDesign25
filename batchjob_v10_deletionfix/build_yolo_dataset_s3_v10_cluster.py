@@ -3,11 +3,12 @@ import json
 import hashlib
 import math
 from datetime import datetime, timezone
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from typing import Dict, List, Optional, Tuple
 from collections import defaultdict
 
 from deletion_guard import DeletionGuard, DeletionBlocked
+from training_progress import packaging_progress, validate_run
 import boto3
 from boto3.dynamodb.conditions import Key
 
@@ -23,6 +24,7 @@ BUCKET = os.environ.get("BUCKET", "looksee-models")
 SRC_PREFIX = os.environ.get("SRC_PREFIX", "dataset/")
 DEST_PREFIX = os.environ.get("DEST_PREFIX", "dataset-yolo/")
 TRAINING_RUN_ID = os.environ.get("TRAINING_RUN_ID", "")
+TRAINING_RUN_STARTED_AT = os.environ.get("TRAINING_RUN_STARTED_AT", "")
 TRAIN_SPLIT = float(os.environ.get("TRAIN_SPLIT", "0.8"))
 CLEAR_DEST = os.environ.get("CLEAR_DEST", "true").lower() == "true"
 
@@ -40,7 +42,7 @@ HARD_NEG_MAX_PER_LANDMARK = int(os.environ.get("HARD_NEG_MAX_PER_LANDMARK", "25"
 
 BALANCE_STRATEGY = os.environ.get("BALANCE_STRATEGY", "none").lower()
 MAX_IMAGES_PER_CLASS = int(os.environ.get("MAX_IMAGES_PER_CLASS", "2200"))
-MIN_IMAGES_PER_CLASS = int(os.environ.get("MIN_IMAGES_PER_CLASS", "2000"))
+MIN_IMAGES_PER_CLASS = int(os.environ.get("MIN_IMAGES_PER_CLASS", "1500"))
 
 LANDMARKS_TABLE = os.environ.get("LANDMARKS_TABLE", "LookSeeLandmarks")
 PUBLISHED_CLUSTER_MAPPINGS_TABLE = os.environ.get("PUBLISHED_CLUSTER_MAPPINGS_TABLE", "LookSeePublishedClusterMappings")
@@ -101,7 +103,7 @@ def write_text(bucket: str, key: str, text: str, content_type: str = "text/plain
 # ---------------------------------------------------------------------------
 
 def label_to_s3_folder(label: str) -> str:
-    return label.replace(" ", "_")
+    return str(label or "").strip().replace("/", "_").replace("\\", "_").replace(" ", "_")
 
 def scan_all(table, scan_kwargs: dict) -> List[dict]:
     items = []
@@ -152,9 +154,43 @@ def query_published_mapping_snapshot(mapping_version: str) -> Tuple[List[dict], 
     metadata = next((i for i in items if i.get("landmarkId") == SNAPSHOT_METADATA_LANDMARK_ID), None)
     if not metadata:
         raise ValueError("No metadata record.")
-    
-    mapping_items = [i for i in items if i.get("landmarkId") != SNAPSHOT_METADATA_LANDMARK_ID and i.get("recordType") in (None, "LANDMARK_MAPPING")]
+
+    mapping_items = [
+        i for i in items
+        if i.get("landmarkId") != SNAPSHOT_METADATA_LANDMARK_ID and i.get("recordType") in (None, "LANDMARK_MAPPING")
+    ]
     return mapping_items, metadata
+
+def account_for_deleted_members(mapping_items):
+    """Only durable markers can resolve a fully excluded snapshot cluster."""
+    members = defaultdict(set)
+    excluded = defaultdict(set)
+    remaining = []
+    exclusions = []
+    for row in mapping_items:
+        cid, lid = int(row["clusterId"]), str(row["landmarkId"])
+        members[cid].add(lid)
+        marker = guard.db.Table(guard.marker_name).get_item(
+            Key={"landmarkId": lid}, ConsistentRead=True
+        ).get("Item")
+        if marker:
+            excluded[cid].add(lid)
+            exclusions.append({"clusterId": cid, "landmarkId": lid, "reason": "deletion_requested"})
+        else:
+            remaining.append(row)
+    skips = [
+        dict(
+            clusterId=cid,
+            reason="all_members_deletion_requested",
+            excludedLandmarkIds=sorted(ids),
+            classNames=[],
+            discoveredPositiveCounts={},
+        )
+        for cid, ids in sorted(members.items())
+        if ids == excluded[cid]
+    ]
+    return remaining, exclusions, skips
+
 
 def load_cluster_metadata() -> Tuple[Dict[str, int], Dict[str, dict], dict]:
     landmarks_table = dynamodb.Table(LANDMARKS_TABLE)
@@ -164,9 +200,20 @@ def load_cluster_metadata() -> Tuple[Dict[str, int], Dict[str, dict], dict]:
         dirty_cluster_ids = {int(item["clusterId"]) for item in mapping_items if bool(item.get("isDirtyForTraining"))}
         mapping_items = [item for item in mapping_items if int(item["clusterId"]) in dirty_cluster_ids]
 
+    mapping_items, exclusions, deletion_skips = account_for_deleted_members(mapping_items)
+    snapshot_metadata = dict(
+        snapshot_metadata,
+        deletionExcludedLandmarks=exclusions,
+        deletionSkippedClusters=deletion_skips,
+    )
+
     landmark_items = scan_all(landmarks_table, {
-        "ProjectionExpression": "landmarkId, #lbl, shortDescription, latitude, longitude, isActive, createdAt, updatedAt, #st, forceTrainEnabled",
-        "ExpressionAttributeNames": {"#lbl": "label", "#st": "status"}, "ConsistentRead": True
+        "ProjectionExpression": (
+            "landmarkId, #lbl, shortDescription, latitude, longitude, isActive, "
+            "createdAt, updatedAt, #st, forceTrainEnabled, isTrained, datasetClassName, requiredFrames"
+        ),
+        "ExpressionAttributeNames": {"#lbl": "label", "#st": "status"},
+        "ConsistentRead": True,
     })
 
     landmark_id_to_metadata: Dict[str, dict] = {}
@@ -175,12 +222,23 @@ def load_cluster_metadata() -> Tuple[Dict[str, int], Dict[str, dict], dict]:
         label = str(item.get("label", "")).strip()
         if not landmark_id or not label or label.lower() in NEGATIVE_NAMES:
             continue
-        folder = label_to_s3_folder(label)
+        folder = str(item.get("datasetClassName") or "").strip() or label_to_s3_folder(label)
+        raw_status = str(item.get("status") or "").strip().upper()
+        is_trained = bool(item.get("isTrained")) or raw_status == "ACTIVE"
+        resolved_status = raw_status if raw_status else ("ACTIVE" if is_trained else "PREPARING_DATA")
+
         landmark_id_to_metadata[landmark_id] = {
-            "landmarkId": landmark_id, "label": label, "shortDescription": str(item.get("shortDescription", "")).strip(),
-            "latitude": item.get("latitude"), "longitude": item.get("longitude"), "folderName": folder,
-            "isActive": item.get("isActive"), "status": item.get("status", "ACTIVE"),
-            "forceTrainEnabled": item.get("forceTrainEnabled", False)
+            "landmarkId": landmark_id,
+            "label": label,
+            "shortDescription": str(item.get("shortDescription", "")).strip(),
+            "latitude": item.get("latitude"),
+            "longitude": item.get("longitude"),
+            "folderName": folder,
+            "isActive": item.get("isActive"),
+            "status": resolved_status,
+            "isTrained": is_trained,
+            "forceTrainEnabled": bool(item.get("forceTrainEnabled", False)),
+            "requiredFrames": int(item["requiredFrames"]) if item.get("requiredFrames") is not None else MIN_IMAGES_PER_CLASS,
         }
 
     mapped_candidates_by_folder: Dict[str, List[dict]] = defaultdict(list)
@@ -199,22 +257,20 @@ def load_cluster_metadata() -> Tuple[Dict[str, int], Dict[str, dict], dict]:
         if len(candidates) != 1:
             print(f"[Packager] WARNING: Ambiguous dataset folder '{folder}'. Skipping mixed landmark media.")
             continue
-            
-        owners = [m for m in landmark_id_to_metadata.values() if m['folderName'] == folder]
+
+        owners = [m for m in landmark_id_to_metadata.values() if m["folderName"] == folder]
         if len(owners) != 1:
             print(f"[Packager] WARNING: Shared dataset folder '{folder}'. Skipping to prevent unsafe attribution.")
             continue
-            
+
         try:
-            guard.check(candidates[0]['metadata']['landmarkId'])
+            guard.check(candidates[0]["metadata"]["landmarkId"])
         except DeletionBlocked as exc:
-            print(f"[Packager] EXCLUDED {exc}")
-            continue
+            raise RuntimeError("Eligibility changed after deletion accounting; start a fresh run") from exc
 
         chosen = candidates[0]
         chosen_metadata = chosen["metadata"]
-        
-        # Defensive check for invalid or missing coordinates
+
         try:
             latitude, longitude = validate_required_coordinates(chosen_metadata)
         except ValueError as exc:
@@ -288,15 +344,13 @@ def process_class(
     class_id: int,
     keys: List[str]
 ) -> Tuple[int, int]:
-    
     count = 0
     missing_label_count = 0
 
-    for i in range(len(keys)):
-        image_key = keys[i]
+    for image_key in keys:
         original_filename = image_key.rsplit("/", 1)[-1]
         split = stable_split(f"{class_name}/{original_filename}", TRAIN_SPLIT)
-        
+
         out_filename = safe_name(class_name, original_filename)
         out_stem = os.path.splitext(out_filename)[0]
 
@@ -385,14 +439,20 @@ def process_hard_negatives_for_cluster(bucket: str, dest_prefix: str, cluster_id
 # Output helpers
 # ---------------------------------------------------------------------------
 
-def write_manifest(bucket: str, run_dest_root: str, training_run_id: str, mapping_version: str, source_mapping_revision: str, published_mapping_count: int, cluster_summaries: List[dict], skipped_clusters: List[dict]):
+def write_manifest(bucket: str, run_dest_root: str, training_run_id: str, mapping_version: str, source_mapping_revision: str, published_mapping_count: int, cluster_summaries: List[dict], skipped_clusters: List[dict], excluded_landmarks=None):
+    for row in excluded_landmarks or []:
+        if not guard.db.Table(guard.marker_name).get_item(
+            Key={"landmarkId": row["landmarkId"]}, ConsistentRead=True
+        ).get("Item"):
+            raise RuntimeError("Deletion evidence changed before manifest publication")
     manifest = {
         "trainingRunId": training_run_id, "mappingVersion": mapping_version, "sourceMappingRevision": source_mapping_revision,
         "publishedMappingCount": published_mapping_count, "sourceDatasetPrefix": SRC_PREFIX, "outputDatasetPrefix": run_dest_root,
         "balanceStrategy": BALANCE_STRATEGY, "maxImagesPerClass": MAX_IMAGES_PER_CLASS, "minImagesPerClass": MIN_IMAGES_PER_CLASS,
         "includeGlobalNegatives": INCLUDE_NEGATIVES, "globalNegPrefix": GLOBAL_NEG_PREFIX, "negRatio": NEG_RATIO, "negMax": NEG_MAX,
         "includeHardNegatives": INCLUDE_HARD_NEGATIVES, "hardNegRoot": HARD_NEG_ROOT, "hardNegRatio": HARD_NEG_RATIO, "hardNegMaxPerLandmark": HARD_NEG_MAX_PER_LANDMARK,
-        "includedClusters": cluster_summaries, "skippedClusters": skipped_clusters
+        "includedClusters": cluster_summaries, "skippedClusters": skipped_clusters,
+        "excludedLandmarks": excluded_landmarks or []
     }
     write_text(bucket, f"{run_dest_root}manifest.json", json.dumps(manifest, indent=2, ensure_ascii=False), content_type="application/json")
 
@@ -424,14 +484,15 @@ def write_landmark_manifest(bucket, dest_prefix, cluster_id, training_run_id, ma
 # ---------------------------------------------------------------------------
 
 def main():
+    validate_run(TRAINING_RUN_ID, TRAINING_RUN_STARTED_AT)
     src_prefix = normalize_prefix(SRC_PREFIX)
     dest_prefix = normalize_prefix(DEST_PREFIX)
     run_dest_root = f"{dest_prefix.rstrip('/')}/{TRAINING_RUN_ID}/" if TRAINING_RUN_ID else dest_prefix
-    if not TRAINING_RUN_ID or '/' in TRAINING_RUN_ID or '..' in TRAINING_RUN_ID:
-        raise ValueError('A unique TRAINING_RUN_ID without path separators is required')
+    if not TRAINING_RUN_ID or "/" in TRAINING_RUN_ID or ".." in TRAINING_RUN_ID:
+        raise ValueError("A unique TRAINING_RUN_ID without path separators is required")
     guard.ids.clear()
     if list_objects(BUCKET, run_dest_root):
-        raise ValueError('Run output prefix already exists. Start a fresh execution; do not reuse partial output.')
+        raise ValueError("Run output prefix already exists. Start a fresh execution; do not reuse partial output.")
 
     folder_to_cluster, folder_to_landmark, snapshot_metadata = load_cluster_metadata()
     source_mapping_revision = str(snapshot_metadata["sourceRevision"])
@@ -442,79 +503,113 @@ def main():
         cluster_to_folders[int(cluster_id)].append(folder)
 
     if not cluster_to_folders:
-        write_manifest(BUCKET, run_dest_root, TRAINING_RUN_ID, MAPPING_VERSION, source_mapping_revision, published_mapping_count, [], [{"reason": "no_cluster_mappings"}])
+        write_manifest(
+            BUCKET, run_dest_root, TRAINING_RUN_ID, MAPPING_VERSION, source_mapping_revision,
+            published_mapping_count, [], snapshot_metadata["deletionSkippedClusters"],
+            snapshot_metadata["deletionExcludedLandmarks"],
+        )
         return
 
     cluster_summaries = []
-    skipped_clusters = []
+    skipped_clusters = list(snapshot_metadata["deletionSkippedClusters"])
 
     for cluster_id in sorted(cluster_to_folders.keys()):
         raw_folders = sorted(cluster_to_folders[cluster_id])
         cluster_dest = f"{run_dest_root}cluster-{cluster_id}/"
-        
+
         valid_folders = []
         class_to_keys: Dict[str, List[str]] = {}
         discovered_positive_counts: Dict[str, int] = {}
 
         for folder in raw_folders:
             metadata = folder_to_landmark.get(folder, {})
-            status = metadata.get("status", "ACTIVE")
-            force_train = metadata.get("forceTrainEnabled", False)
+            status = str(metadata.get("status") or "").strip().upper()
+            already_trained = bool(metadata.get("isTrained")) or status == "ACTIVE"
+            force_train = bool(metadata.get("forceTrainEnabled", False))
+            required_frames = int(metadata.get("requiredFrames") or MIN_IMAGES_PER_CLASS)
             landmark_id = metadata.get("landmarkId")
-            
+
             if status in ["DELETING", "DELETED", "FAILED"]:
-                print(f"  [{folder}] ⏩ Skipping because DB status is {status}")
+                print(f"  [{folder}] Skipping because DB status is {status}")
                 continue
-                
+
             try:
                 guard.check(landmark_id)
             except DeletionBlocked as exc:
-                print(f"  [{folder}] ⏩ EXCLUDED during pre-flight check: {exc}")
-                continue
+                raise RuntimeError("Eligibility changed during packaging; start a fresh run") from exc
 
             keys = image_keys_for_class(BUCKET, src_prefix, folder)
             target_count = len(keys)
             discovered_positive_counts[folder] = target_count
-            
-            if target_count < MIN_IMAGES_PER_CLASS and not force_train:
-                missing_frames = MIN_IMAGES_PER_CLASS - target_count
-                seconds_needed = math.ceil(missing_frames / 30.0)
-                print(f"  [{folder}] ❌ SHORTFALL: {target_count}/{MIN_IMAGES_PER_CLASS} clean frames. Skipping.")
-                
+
+            if already_trained:
+                if target_count == 0:
+                    print(f"  [{folder}] WARNING: Already-trained landmark has 0 labeled images in S3. Skipping without downgrading ACTIVE.")
+                    continue
+                print(f"  [{folder}] RETRAIN: Keeping already-trained ACTIVE landmark in cluster ({target_count} frames).")
                 if landmark_id:
                     try:
-                        guard.update(landmark_id,
-                            'SET #st = :s, cleanFrameCount = :c, requiredFrames = :r, secondsNeeded = :sec',
-                            {'#st': 'status'}, {':s': 'NEEDS_MORE_MEDIA', ':c': target_count,
-                            ':r': MIN_IMAGES_PER_CLASS, ':sec': seconds_needed})
+                        packaging_progress(
+                            guard, landmark_id, "TRAINING",
+                            TRAINING_RUN_ID, TRAINING_RUN_STARTED_AT,
+                            {"cleanFrameCount": target_count, "requiredFrames": required_frames},
+                        )
+                        guard.ids.add(landmark_id)
                     except DeletionBlocked as exc:
-                        print(f"  [{folder}] ⏩ EXCLUDED during shortfall update: {exc}")
-                continue
-                
-            if force_train:
-                print(f"  [{folder}] ⚠️ FORCE TRAIN ENABLED. Bypassing minimum frame requirements ({target_count} frames).")
+                        raise RuntimeError("Eligibility changed during packaging; start a fresh run") from exc
             else:
-                print(f"  [{folder}] ✅ MEDIA MET: {target_count}/{MIN_IMAGES_PER_CLASS} frames. Included in cluster.")
-                
-            if landmark_id:
-                try:
-                    guard.update(landmark_id,
-                        'SET #st = :s, cleanFrameCount = :c, requiredFrames = :r',
-                        {'#st': 'status'}, {':s': 'TRAINING', ':c': target_count, ':r': MIN_IMAGES_PER_CLASS})
-                    guard.ids.add(landmark_id)
-                except DeletionBlocked as exc:
-                    print(f"  [{folder}] ⏩ EXCLUDED before training lock: {exc}")
+                # Do not interrupt an in-progress AutoLabeler job by downgrading PREPARING_DATA prematurely
+                if status == "PREPARING_DATA" and not force_train and target_count < required_frames:
+                    print(f"  [{folder}] Still PREPARING_DATA ({target_count}/{required_frames} frames). Waiting for AutoLabeler.")
                     continue
+
+                if target_count == 0 or (target_count < required_frames and not force_train):
+                    missing_frames = max(0, required_frames - target_count)
+                    seconds_needed = math.ceil(missing_frames / 30.0) if missing_frames > 0 else math.ceil(required_frames / 30.0)
+                    print(f"  [{folder}] SHORTFALL: {target_count}/{required_frames} labeled frames. Skipping.")
+
+                    if landmark_id:
+                        try:
+                            packaging_progress(
+                                guard, landmark_id, "NEEDS_MORE_MEDIA",
+                                TRAINING_RUN_ID, TRAINING_RUN_STARTED_AT,
+                                {
+                                    "cleanFrameCount": target_count,
+                                    "requiredFrames": required_frames,
+                                    "secondsNeeded": seconds_needed,
+                                },
+                            )
+                        except DeletionBlocked as exc:
+                            raise RuntimeError("Eligibility changed during packaging; start a fresh run") from exc
+                    continue
+
+                if force_train:
+                    print(f"  [{folder}] FORCE TRAIN ENABLED. Bypassing minimum frame requirements ({target_count} frames).")
+                else:
+                    print(f"  [{folder}] MEDIA MET: {target_count}/{required_frames} frames. Included in cluster.")
+
+                if landmark_id:
+                    try:
+                        packaging_progress(
+                            guard, landmark_id, "TRAINING",
+                            TRAINING_RUN_ID, TRAINING_RUN_STARTED_AT,
+                            {"cleanFrameCount": target_count, "requiredFrames": required_frames, "secondsNeeded": 0},
+                        )
+                        guard.ids.add(landmark_id)
+                    except DeletionBlocked as exc:
+                        raise RuntimeError("Eligibility changed during packaging; start a fresh run") from exc
 
             valid_folders.append(folder)
             class_to_keys[folder] = keys
 
         folders = valid_folders
-        
+
         if not folders:
             skipped_clusters.append({
-                "clusterId": cluster_id, "reason": "no_positive_images_or_failed_threshold",
-                "classNames": raw_folders, "discoveredPositiveCounts": discovered_positive_counts
+                "clusterId": cluster_id,
+                "reason": "no_positive_images_or_failed_threshold",
+                "classNames": raw_folders,
+                "discoveredPositiveCounts": discovered_positive_counts,
             })
             print(f"  WARNING: Cluster {cluster_id} failed the media threshold or is empty. Skipping cluster.")
             continue
@@ -537,7 +632,7 @@ def main():
 
             processed_count, missing_label_count = process_class(
                 bucket=BUCKET, src_prefix=src_prefix, dest_prefix=cluster_dest,
-                class_name=folder, class_id=class_id, keys=selected_keys
+                class_name=folder, class_id=class_id, keys=selected_keys,
             )
 
             per_class_positive_counts[folder] = processed_count
@@ -547,14 +642,16 @@ def main():
 
         guard.check_all()
         global_negative_count = process_global_negatives(BUCKET, cluster_dest, total_pos, cluster_id)
-        hard_negative_count, per_landmark_hard_negative_counts = process_hard_negatives_for_cluster(BUCKET, cluster_dest, cluster_id, folders, per_class_positive_counts)
+        hard_negative_count, per_landmark_hard_negative_counts = process_hard_negatives_for_cluster(
+            BUCKET, cluster_dest, cluster_id, folders, per_class_positive_counts
+        )
         guard.check_all()
         write_data_yaml(BUCKET, cluster_dest, folders)
 
         landmark_manifest_key = write_landmark_manifest(
             bucket=BUCKET, dest_prefix=cluster_dest, cluster_id=cluster_id, training_run_id=TRAINING_RUN_ID,
             mapping_version=MAPPING_VERSION, source_mapping_revision=source_mapping_revision,
-            class_names=folders, folder_to_landmark=folder_to_landmark, per_class_positive_counts=per_class_positive_counts
+            class_names=folders, folder_to_landmark=folder_to_landmark, per_class_positive_counts=per_class_positive_counts,
         )
 
         total_image_count = total_pos + global_negative_count + hard_negative_count
@@ -567,11 +664,15 @@ def main():
             "discoveredPositiveCounts": discovered_positive_counts, "perClassPositiveCounts": per_class_positive_counts,
             "perClassMissingLabelCounts": per_class_missing_label_counts, "missingLabelCount": total_missing_labels,
             "perLandmarkHardNegativeCounts": per_landmark_hard_negative_counts, "balanceStrategy": BALANCE_STRATEGY,
-            "capPerClass": cap, "globalNegPrefix": normalize_prefix(GLOBAL_NEG_PREFIX), "hardNegRoot": normalize_prefix(HARD_NEG_ROOT)
+            "capPerClass": cap, "globalNegPrefix": normalize_prefix(GLOBAL_NEG_PREFIX), "hardNegRoot": normalize_prefix(HARD_NEG_ROOT),
         })
 
     guard.check_all()
-    write_manifest(BUCKET, run_dest_root, TRAINING_RUN_ID, MAPPING_VERSION, source_mapping_revision, published_mapping_count, cluster_summaries, skipped_clusters)
+    write_manifest(
+        BUCKET, run_dest_root, TRAINING_RUN_ID, MAPPING_VERSION, source_mapping_revision,
+        published_mapping_count, cluster_summaries, skipped_clusters,
+        snapshot_metadata["deletionExcludedLandmarks"],
+    )
 
 if __name__ == "__main__":
     main()

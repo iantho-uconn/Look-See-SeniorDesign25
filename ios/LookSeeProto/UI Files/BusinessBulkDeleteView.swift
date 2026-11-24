@@ -285,8 +285,6 @@ struct BusinessBulkDeleteView: View {
     }
 
     private func displayLabel(for landmark: BusinessLandmark) -> String {
-        landmark.label.isEmpty
-            ? "Untitled Landmark"
-            : landmark.label
+        landmark.effectiveDisplayName
     }
 }

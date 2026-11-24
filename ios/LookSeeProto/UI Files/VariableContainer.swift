@@ -16,6 +16,11 @@ struct PendingMediaProcessingState: Codable, Equatable, Sendable {
     var uploadCompletedAt: TimeInterval?
 }
 
+struct CachedCoordinate: Codable, Equatable, Sendable {
+    let latitude: Double
+    let longitude: Double
+}
+
 final class SuppressionCache: @unchecked Sendable {
     static let shared = SuppressionCache()
 
@@ -24,11 +29,15 @@ final class SuppressionCache: @unchecked Sendable {
     private let hiddenMapDefaultsKey = "looksee_hidden_map_landmark_ids"
     private let modifiedDefaultsKey = "looksee_locally_modified_landmark_ids"
     private let processingDefaultsKey = "looksee_processing_new_data_landmarks"
+    private let displayNamesDefaultsKey = "looksee_landmark_display_names"
+    private let coordinatesDefaultsKey = "looksee_landmark_coordinates"
 
     private var inactiveIds: Set<String>
     private var hiddenMapIds: Set<String>
     private var locallyModifiedIds: Set<String>
     private var processingStates: [String: PendingMediaProcessingState]
+    private var displayNames: [String: String]
+    private var coordinates: [String: CachedCoordinate]
 
     private init() {
         let savedInactive = UserDefaults.standard.stringArray(forKey: inactiveDefaultsKey) ?? []
@@ -37,12 +46,20 @@ final class SuppressionCache: @unchecked Sendable {
         self.inactiveIds = Set(savedInactive)
         self.hiddenMapIds = Set(savedHidden)
         self.locallyModifiedIds = Set(savedModified)
+        self.displayNames = UserDefaults.standard.dictionary(forKey: displayNamesDefaultsKey) as? [String: String] ?? [:]
 
         if let data = UserDefaults.standard.data(forKey: processingDefaultsKey),
            let decoded = try? JSONDecoder().decode([String: PendingMediaProcessingState].self, from: data) {
             self.processingStates = decoded
         } else {
             self.processingStates = [:]
+        }
+
+        if let data = UserDefaults.standard.data(forKey: coordinatesDefaultsKey),
+           let decoded = try? JSONDecoder().decode([String: CachedCoordinate].self, from: data) {
+            self.coordinates = decoded
+        } else {
+            self.coordinates = [:]
         }
     }
 
@@ -68,6 +85,122 @@ final class SuppressionCache: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return locallyModifiedIds.contains(trimmed)
+    }
+
+    func displayName(for id: String) -> String? {
+        let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        lock.lock()
+        defer { lock.unlock() }
+        let value = displayNames[trimmed]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (value?.isEmpty == false) ? value : nil
+    }
+
+    func setDisplayName(_ name: String, for id: String) {
+        let trimmedId = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedId.isEmpty, !trimmedName.isEmpty else { return }
+
+        lock.lock()
+        let changed = displayNames[trimmedId] != trimmedName
+        if changed {
+            displayNames[trimmedId] = trimmedName
+        }
+        let snapshot = displayNames
+        lock.unlock()
+
+        if changed {
+            DispatchQueue.global(qos: .background).async {
+                UserDefaults.standard.set(snapshot, forKey: self.displayNamesDefaultsKey)
+            }
+        }
+    }
+
+    func mergeDisplayNames(_ updates: [String: String]) {
+        guard !updates.isEmpty else { return }
+
+        lock.lock()
+        var changed = false
+        for (rawId, rawName) in updates {
+            let id = rawId.trimmingCharacters(in: .whitespacesAndNewlines)
+            let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !id.isEmpty, !name.isEmpty else { continue }
+            if displayNames[id] != name {
+                displayNames[id] = name
+                changed = true
+            }
+        }
+        let snapshot = displayNames
+        lock.unlock()
+
+        if changed {
+            DispatchQueue.global(qos: .background).async {
+                UserDefaults.standard.set(snapshot, forKey: self.displayNamesDefaultsKey)
+            }
+        }
+    }
+
+    func coordinates(for id: String) -> CachedCoordinate? {
+        let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        lock.lock()
+        defer { lock.unlock() }
+        return coordinates[trimmed]
+    }
+
+    func setCoordinates(latitude: Double, longitude: Double, for id: String) {
+        let trimmedId = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedId.isEmpty,
+              latitude.isFinite, longitude.isFinite,
+              (-90.0...90.0).contains(latitude),
+              (-180.0...180.0).contains(longitude),
+              !(latitude == 0 && longitude == 0) else { return }
+
+        let coord = CachedCoordinate(latitude: latitude, longitude: longitude)
+        lock.lock()
+        let changed = coordinates[trimmedId] != coord
+        if changed {
+            coordinates[trimmedId] = coord
+        }
+        let snapshot = coordinates
+        lock.unlock()
+
+        if changed {
+            DispatchQueue.global(qos: .background).async {
+                if let encoded = try? JSONEncoder().encode(snapshot) {
+                    UserDefaults.standard.set(encoded, forKey: self.coordinatesDefaultsKey)
+                }
+            }
+        }
+    }
+
+    func mergeCoordinates(_ updates: [String: CachedCoordinate]) {
+        guard !updates.isEmpty else { return }
+
+        lock.lock()
+        var changed = false
+        for (rawId, coord) in updates {
+            let id = rawId.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !id.isEmpty,
+                  coord.latitude.isFinite, coord.longitude.isFinite,
+                  (-90.0...90.0).contains(coord.latitude),
+                  (-180.0...180.0).contains(coord.longitude),
+                  !(coord.latitude == 0 && coord.longitude == 0) else { continue }
+            if coordinates[id] != coord {
+                coordinates[id] = coord
+                changed = true
+            }
+        }
+        let snapshot = coordinates
+        lock.unlock()
+
+        if changed {
+            DispatchQueue.global(qos: .background).async {
+                if let encoded = try? JSONEncoder().encode(snapshot) {
+                    UserDefaults.standard.set(encoded, forKey: self.coordinatesDefaultsKey)
+                }
+            }
+        }
     }
 
     func update(inactive: Set<String>, hidden: Set<String>, modified: Set<String>) {
@@ -133,6 +266,22 @@ final class VariableContainer: ObservableObject {
         return SuppressionCache.shared.isHidden(landmarkId)
     }
 
+    nonisolated static func displayName(for landmarkId: String) -> String? {
+        return SuppressionCache.shared.displayName(for: landmarkId)
+    }
+
+    nonisolated static func coordinates(for landmarkId: String) -> CachedCoordinate? {
+        return SuppressionCache.shared.coordinates(for: landmarkId)
+    }
+
+    func setDisplayName(landmarkId: String, displayName: String) {
+        SuppressionCache.shared.setDisplayName(displayName, for: landmarkId)
+    }
+
+    func setCoordinates(landmarkId: String, latitude: Double, longitude: Double) {
+        SuppressionCache.shared.setCoordinates(latitude: latitude, longitude: longitude, for: landmarkId)
+    }
+
     func isLocallyModified(_ landmarkId: String) -> Bool {
         return SuppressionCache.shared.isLocallyModified(landmarkId)
     }
@@ -183,7 +332,6 @@ final class VariableContainer: ObservableObject {
     @Published var processingNewDataById: [String: PendingMediaProcessingState] = [:]
     private var locallyModifiedIds: Set<String> = []
 
-    // Timeout after upload completion if the backend frame count doesn't change (e.g. 0 new frames extracted)
     private let postUploadProcessingTimeout: TimeInterval = 240
     private let maxOverallProcessingTimeout: TimeInterval = 900
 
@@ -195,7 +343,6 @@ final class VariableContainer: ObservableObject {
         resetLandmarkDisplay()
     }
 
-    /// An independent display model. Owner previews never change the scan popup.
     static func makePopupPreview() -> VariableContainer {
         VariableContainer()
     }
@@ -311,6 +458,24 @@ final class VariableContainer: ObservableObject {
     }
 
     func reconcileProcessingNewData(with landmarks: [BusinessLandmark]) {
+        var nameUpdates: [String: String] = [:]
+        var coordUpdates: [String: CachedCoordinate] = [:]
+
+        for landmark in landmarks {
+            let id = landmark.landmarkId.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !id.isEmpty else { continue }
+
+            let name = landmark.effectiveDisplayName.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !name.isEmpty {
+                nameUpdates[id] = name
+            }
+            if let lat = landmark.latitude, let lon = landmark.longitude {
+                coordUpdates[id] = CachedCoordinate(latitude: lat, longitude: lon)
+            }
+        }
+        SuppressionCache.shared.mergeDisplayNames(nameUpdates)
+        SuppressionCache.shared.mergeCoordinates(coordUpdates)
+
         guard !processingNewDataById.isEmpty else { return }
         let now = Date().timeIntervalSince1970
         let queuedIds = Set(
@@ -381,14 +546,20 @@ final class VariableContainer: ObservableObject {
         var updatedInactive = inactiveLandmarkIds
         var updatedHidden = hiddenMapLandmarkIds
         var updatedModified = locallyModifiedIds
+        var nameUpdates: [String: String] = [:]
+        var coordUpdates: [String: CachedCoordinate] = [:]
 
         for item in allLandmarks {
             let id = item.landmarkId.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !id.isEmpty else { continue }
 
+            nameUpdates[id] = item.effectiveDisplayName
+            coordUpdates[id] = CachedCoordinate(latitude: item.latitude, longitude: item.longitude)
+
             if updatedModified.contains(id) {
                 let localIsActive = !updatedInactive.contains(id)
-                if item.isActive == localIsActive {
+                let localIsVisible = !updatedHidden.contains(id)
+                if item.isActive == localIsActive && item.isVisibleOnMap == localIsVisible {
                     updatedModified.remove(id)
                 } else {
                     continue
@@ -408,6 +579,8 @@ final class VariableContainer: ObservableObject {
             }
         }
 
+        SuppressionCache.shared.mergeDisplayNames(nameUpdates)
+        SuppressionCache.shared.mergeCoordinates(coordUpdates)
         inactiveLandmarkIds = updatedInactive
         hiddenMapLandmarkIds = updatedHidden
         locallyModifiedIds = updatedModified
@@ -435,7 +608,6 @@ final class VariableContainer: ObservableObject {
             hiddenMapLandmarkIds.insert(id)
         }
 
-        // Keep cached allLandmarks in sync immediately so reactivation works before the next map fetch
         if let index = allLandmarks.firstIndex(where: { $0.landmarkId == id }) {
             isUpdatingNearbyLocally = true
             defer { isUpdatingNearbyLocally = false }
@@ -466,7 +638,7 @@ final class VariableContainer: ObservableObject {
         landmarkTrainingRunId = trainingRunId
         landmarkDatasetClassName = entry.datasetClassName
 
-        landmarkName = entry.label
+        landmarkName = Self.displayName(for: entry.landmarkId) ?? entry.label
 
         let trimmedDescription = entry.shortDescription
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -521,6 +693,8 @@ final class VariableContainer: ObservableObject {
 
         self.landmarkId = id
         self.landmarkName = name
+        setDisplayName(landmarkId: id, displayName: name)
+        setCoordinates(landmarkId: id, latitude: latitude, longitude: longitude)
 
         let trimmedDesc = description.trimmingCharacters(in: .whitespacesAndNewlines)
         self.landmarkDescription = trimmedDesc.isEmpty ? "No description is available for this landmark." : trimmedDesc

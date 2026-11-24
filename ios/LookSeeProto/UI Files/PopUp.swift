@@ -28,7 +28,7 @@ struct PopUp: View {
     private let purpleStart = Color(red: 0.25, green: 0.10, blue: 0.90)
     private let purpleEnd = Color(red: 0.50, green: 0.15, blue: 0.95)
     private let promotionOrange = Color(red: 1.00, green: 0.58, blue: 0.18)
-    private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00) // The blue from Image 3
+    private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00)
 
     var body: some View {
         GeometryReader { proxy in
@@ -42,30 +42,28 @@ struct PopUp: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         }
         .environment(\.colorScheme, .dark)
-        // 🚀 NEW: Silent Analytics Ping
         .onAppear {
             guard !isOwnerPreview else { return }
             let currentLandmarkId = infoView.landmarkId
             let currentOwnerId = infoView.reportedOwnerId ?? "unknown"
-            
+
             // Fire-and-forget background ping so it doesn't slow down the UI
             Task.detached(priority: .background) {
                 guard let url = URL(string: "https://d11vl3v9w133rh.cloudfront.net/analytics/click") else { return }
-                
+
                 var request = URLRequest(url: url)
                 request.httpMethod = "POST"
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                
+
                 let body: [String: Any] = [
                     "landmarkId": currentLandmarkId,
                     "ownerUserId": currentOwnerId
                 ]
-                
+
                 request.httpBody = try? JSONSerialization.data(withJSONObject: body)
-                
-                // 🚀 ADDED: Attaches App Attest signature headers automatically
+
                 await request.signWithAppAttest()
-                
+
                 _ = try? await URLSession.shared.data(for: request)
             }
         }
@@ -132,8 +130,7 @@ struct PopUp: View {
             }
 
             MerchantCardView(vm: infoView)
-            
-            // 🚀 NEW: Appends the Map Actions right below the Merchant Card
+
             if infoView.isMapPin {
                 mapActionButtons
             }
@@ -156,11 +153,10 @@ struct PopUp: View {
     }
 
     // MARK: - Map Action Buttons
-    
+
     @ViewBuilder
     private var mapActionButtons: some View {
         HStack(spacing: 12) {
-            // Directions Button
             Button {
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 openAppleMaps()
@@ -173,11 +169,10 @@ struct PopUp: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 16)
                 .background(Color(uiColor: .tertiarySystemFill))
-                .foregroundStyle(primaryColor) // Matches the blue
+                .foregroundStyle(primaryColor)
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
 
-            // Report Button
             Button {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 showReportSheet = true
@@ -186,13 +181,13 @@ struct PopUp: View {
                     .font(.system(size: 20))
                     .frame(width: 54, height: 54)
                     .background(Color.red.opacity(0.15))
-                    .foregroundStyle(.red) // Matches the red flag
+                    .foregroundStyle(.red)
                     .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
         }
         .padding(.top, 4)
     }
-    
+
     private func openAppleMaps() {
         guard let lat = infoView.mapLatitude, let lon = infoView.mapLongitude else { return }
         let mapItem = MKMapItem(placemark: MKPlacemark(coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lon)))
@@ -530,7 +525,7 @@ struct BusinessLandmarkPopupPreview: View {
 
             previewInfo.resetLandmarkDisplay()
             previewInfo.landmarkId = live.landmarkId
-            previewInfo.landmarkName = live.label
+            previewInfo.landmarkName = live.effectiveDisplayName
             previewInfo.landmarkDescription = live.shortDescription
             previewInfo.landmarkWebsiteUrl = live.websiteUrl ?? ""
             previewInfo.merchantName = live.merchantName ?? ""
@@ -568,22 +563,20 @@ struct MapReportSheet: View {
     let landmarkId: String
     let landmarkLabel: String
     let reportedOwnerId: String
-    
+
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var vm: AuthViewModel
-    
+
     @State private var selectedReason: ReportReason? = nil
     @State private var customTitle = ""
     @State private var customExplanation = ""
     @State private var isSubmitting = false
     @State private var reportSuccess = false
-    
-    // 🚀 NEW: Upgraded to generous character limits for safety
+
     private let maxDescLength = 3000
     private let maxTitleLength = 100
     private let primaryColor = Color(red: 0.22, green: 0.49, blue: 1.00)
 
-    // 🚀 NEW: Added the Copyright/DMCA Option
     enum ReportReason: String, CaseIterable, Identifiable {
         case inappropriate = "Inappropriate content"
         case ownership = "Landmark ownership issue"
@@ -596,7 +589,7 @@ struct MapReportSheet: View {
             switch self {
             case .inappropriate: return "exclamationmark.shield.fill"
             case .ownership: return "person.badge.key.fill"
-            case .copyright: return "c.circle" // Standard copyright icon
+            case .copyright: return "c.circle"
             case .other: return "text.bubble.fill"
             }
         }
@@ -613,21 +606,20 @@ struct MapReportSheet: View {
 
     private var isFormValid: Bool {
         guard let reason = selectedReason else { return false }
-         
+
         if reason == .other {
             let hasTitle = !customTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             let hasDesc = !customExplanation.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             return hasTitle && hasDesc
         }
-         
-        // For standard reasons, text is optional
+
         return true
     }
 
     var body: some View {
         ZStack {
             Color(uiColor: .systemGroupedBackground).ignoresSafeArea()
-             
+
             if reportSuccess {
                 VStack(spacing: 16) {
                     Image(systemName: "checkmark.circle.fill")
@@ -650,7 +642,7 @@ struct MapReportSheet: View {
                                 Text("Report Landmark")
                                     .font(.system(size: 26, weight: .bold, design: .rounded))
                                     .foregroundStyle(.primary)
-                               
+
                                 Text("Why are you reporting '\(landmarkLabel)'?")
                                     .font(.system(size: 15, weight: .medium))
                                     .foregroundStyle(.secondary)
@@ -666,7 +658,7 @@ struct MapReportSheet: View {
 
                             if selectedReason != nil {
                                 VStack(alignment: .leading, spacing: 8) {
-                                   
+
                                     if selectedReason == .other {
                                         HStack {
                                             Text("Custom Issue Title (Required)")
@@ -678,7 +670,7 @@ struct MapReportSheet: View {
                                                 .font(.system(size: 11, weight: .bold, design: .monospaced))
                                                 .foregroundStyle(customTitle.count >= maxTitleLength ? .red : .secondary)
                                         }
-                                       
+
                                         TextField("Short title of the issue", text: $customTitle)
                                             .font(.system(size: 15))
                                             .padding(12)
@@ -691,7 +683,7 @@ struct MapReportSheet: View {
                                                 }
                                             }
                                     }
-                                   
+
                                     HStack {
                                         Text(selectedReason == .other ? "Please describe the issue (Required)" : "Additional details (Optional)")
                                             .font(.system(size: 13, weight: .bold, design: .rounded))
@@ -781,7 +773,7 @@ struct MapReportSheet: View {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .fill(reason.tintColor.opacity(0.15))
                         .frame(width: 42, height: 42)
-                    
+
                     Image(systemName: reason.icon)
                         .font(.system(size: 18, weight: .semibold))
                         .foregroundStyle(reason.tintColor)
@@ -798,7 +790,7 @@ struct MapReportSheet: View {
                     Circle()
                         .stroke(isSelected ? primaryColor : Color(uiColor: .tertiaryLabel), lineWidth: 2)
                         .frame(width: 22, height: 22)
-                    
+
                     if isSelected {
                         Circle()
                             .fill(primaryColor)
@@ -823,30 +815,27 @@ struct MapReportSheet: View {
     private func submitReport() async {
         UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
         isSubmitting = true
-         
+
         let safeExplanation = customExplanation.trimmingCharacters(in: .whitespacesAndNewlines)
         let safeCustomTitle = customTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         let safeEmail = vm.userEmail ?? "unknown@user.com"
-         
-        // Determines the title format depending on if they used 'Other' or a standard reason
+
         let finalReason = (selectedReason == .other && !safeCustomTitle.isEmpty) ? safeCustomTitle : (selectedReason?.rawValue ?? "Unknown")
         let finalCategory = selectedReason == .other ? "Custom Issue" : "Landmark Report"
-        
-        // 🚀 Embeds critical map context directly into the Jira ticket description
+
         let fullDescription = """
         \(safeExplanation.isEmpty ? "No additional details provided." : safeExplanation)
-        
+
         ---
         Landmark Name: \(landmarkLabel)
         Landmark ID: \(landmarkId)
         Reported Owner ID: \(reportedOwnerId)
         """
 
-        // 🚀 Uses your secure CloudFront endpoint to route this to Jira
         let payload: [String: Any] = [
             "email": safeEmail,
             "category": finalCategory,
-            "severity": "High", // Map reports demand faster attention
+            "severity": "High",
             "title": "[\(finalReason)] \(landmarkLabel)",
             "description": fullDescription
         ]
@@ -856,7 +845,7 @@ struct MapReportSheet: View {
             await MainActor.run { isSubmitting = false }
             return
         }
-        
+
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
